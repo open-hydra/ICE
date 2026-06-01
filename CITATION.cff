@@ -1,0 +1,9 @@
+cff-version: 0.1.0-alpha
+title: "ICE"
+authors:
+  - family-names: "Cocirla"
+    given-names: "Gianluca"
+license: GPL-3.0
+url: ""
+doi: ""
+type: software

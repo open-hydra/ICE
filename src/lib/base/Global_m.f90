@@ -1,0 +1,17 @@
+module ICE_Global_m
+  use ICE_Parameters_m
+  implicit none
+
+  character(len=clen) :: ICE_phase_prefix = 'part-'
+
+  integer :: ndir     ! Number of spatial dimensions (set by setup_metrics)
+  integer :: gc=2     ! Ghost cells per face
+  integer :: nres=5   ! Number of tracked residuals (rho, u, v, w, T)
+
+  ! Condensed-phase topology (set by Assign_Setup after reading input.ini)
+  integer                                          :: ngroups
+  integer                                          :: nrk
+  integer,              dimension(:), allocatable  :: npop
+  integer,              dimension(:), allocatable  :: ncond
+
+end module ICE_Global_m
