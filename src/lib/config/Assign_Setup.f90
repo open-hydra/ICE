@@ -50,7 +50,6 @@ contains
     end if
 
     ! --- Validate models and compute ncond/npop ---
-    write(*, '(A)') " Checking input file... "
     allocate(npop(1:3)); npop = 0
     allocate(ncond(1:ngroups)); ncond = 0
     do p = 1, ngroups
@@ -58,15 +57,12 @@ contains
       case ('MK')
         npop(1)  = npop(1) + 1
         ncond(p) = 6
-        write(*, '(A,I0,A)') " - ICE group ", p, " [MK / Saurel] ---> OK"
       case ('IG')
         npop(2)  = npop(2) + 1
         ncond(p) = 7
-        write(*, '(A,I0,A)') " - ICE group ", p, " [IG / Rusanov] ---> OK"
       case ('AG')
         npop(3)  = npop(3) + 1
         ncond(p) = 12
-        write(*, '(A,I0,A)') " - ICE group ", p, " [AG / Rusanov] ---> OK"
       end select
     end do
 

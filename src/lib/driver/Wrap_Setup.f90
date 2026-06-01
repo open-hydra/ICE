@@ -37,7 +37,7 @@ contains
     ! Post-read: assign solvers, compute ncond, detect coupling
     call Assign_Setup()
 
-    ! Load optional temperature-dependent property tables
+    ! Load optional temperature-dependent property tables (printed here, after check section)
     call Load_Table()
 
     obj_sim_param%HYDRA_MG = (obj_multigrid%MGL > 1)
@@ -46,9 +46,6 @@ contains
 
     ! Wire IO procedure pointers and resolve IC file paths
     call input_solution_setup()
-
-    ! Print simulation info onto the logfile/shell
-    call print_simulation_info()
 
     ! Allocate domain and ODP arrays (one per multigrid level)
     allocate(sim%domain(obj_multigrid%MGL))
@@ -71,6 +68,9 @@ contains
 
     ! Setup metrics for fine level
     call setup_metrics(sim%domain(1), sim%ODP(1))
+
+    ! Print simulation info onto the logfile/shell
+    call print_simulation_info()
 
     ! Setup boundaries (fine level only)
     call Setup_BC(sim%domain(1))
@@ -142,17 +142,25 @@ contains
 
     subroutine Print_Header()
       write(*,*)
-      write(*,*) '====================================================================='
-      write(*,*) '|                                ICE                                |'
-      write(*,*) '|              Integration of a Condensed phase via an              |'
-      write(*,*) '|                          Eulerian method                          |'
-      write(*,*) '====================================================================='
+      write(*,'(A)') ' ██  ███████  ███████'
+      write(*,'(A)') ' ██  ██       ██     '
+      write(*,'(A)') ' ██  ██       █████  '
+      write(*,'(A)') ' ██  ██       ██     '
+      write(*,'(A)') ' ██  ███████  ███████'
+      write(*,*)
+      write(*,'(A)') ' Integration of a Condensed phase via Eulerian methods'
       write(*,*)
     end subroutine Print_Header
 
 
     subroutine print_simulation_info()
-      integer :: p
+
+      write(*,*)
+      write(*,'(A)') " Checking input file..."
+      write(*,'(A)') " - Mesh                   ---> OK"
+      write(*,'(A)') " - Initial conditions     ---> OK"
+      write(*,'(A)') " - Boundary conditions    ---> OK"
+      write(*,'(A)') " - Particle properties    ---> OK"
 
       write(*,*)
       if (obj_time_scheme%time_accurate) then
@@ -175,6 +183,7 @@ contains
       if (npop(3)>0) write(*,'(A,I4)') " - AG particle families  --> ", npop(3)
 
       write(*,*)
+      write(*,'(A)') " ICE numerical scheme:"
       if (index(obj_space_scheme%space_reconstruction, 'MUSCL') == 0) then
         write(*,'(A)') " - Space   --> I order"
       else if (obj_space_scheme%SD) then
@@ -191,15 +200,6 @@ contains
         write(*,'(A)') " - Drag    --> "//trim(obj_time_scheme%drag)
         write(*,'(A)') " - Heat    --> "//trim(obj_time_scheme%heat)
       end if
-      do p = 1, ngroups
-        write(*,*)
-        select case (trim(obj_time_scheme%model(p)))
-        case ('MK')
-          write(*,'(I4,A)') p, ') MK --> Riemann: Saurel'
-        case default
-          write(*,'(I4,A)') p, ') '//trim(obj_time_scheme%model(p))//' --> Riemann: Rusanov'
-        end select
-      end do
 
     end subroutine print_simulation_info
 

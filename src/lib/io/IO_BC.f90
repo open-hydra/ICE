@@ -72,10 +72,10 @@ contains
     implicit none
     write(*,*)
     write(*,'(A)') ' Boundary Conditions:'
-    write(*,'(A,T35,I0)') '   Connection',    nconn
-    write(*,'(A,T35,I0)') '   Symmetry',      nsym
-    write(*,'(A,T35,I0)') '   Inflow',        nio
-    write(*,'(A,T35,I0)') '   Extrapolation', next
+    if (nconn > 0) write(*,'(A,T35,I0)') '   Connection',    nconn
+    if (nsym  > 0) write(*,'(A,T35,I0)') '   Symmetry',      nsym
+    if (nio   > 0) write(*,'(A,T35,I0)') '   Inflow',        nio
+    if (next  > 0) write(*,'(A,T35,I0)') '   Extrapolation', next
     write(*,*)
   end subroutine Print_BC_Summary
 

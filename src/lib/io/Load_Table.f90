@@ -49,8 +49,6 @@ contains
 
     obj_condensed%use_table   = .true.
     obj_condensed%description = 'Table-based rho_al(T) and cs_al(T) from part-properties.dat'
-    write(*,'(A,I0,A,I0,A)') ' [Load_Table] Loaded part-properties.dat: T = [', &
-      obj_condensed%T_min, ':', obj_condensed%T_max, '] K'
 
   end subroutine Load_Table
 
