@@ -45,5 +45,5 @@ l2 = math.sqrt(sum((a - b)**2 for a, b in zip(out_rho, ref_rho)) / n)
 GREEN, RED, RESET = '\033[92m', '\033[91m', '\033[0m'
 passed = l2 <= 1e-10
 result = f'{GREEN}PASS{RESET}' if passed else f'{RED}FAIL{RESET}'
-print(f'Doisneau MK  -->  {result}')
+print(f'Doisneau IG  -->  {result}')
 sys.exit(0 if passed else 1)

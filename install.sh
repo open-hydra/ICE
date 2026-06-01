@@ -102,7 +102,7 @@ USE_OPENMP="false"
 USE_MPI="false"
 USE_TECIO="false"
 REMOTE="false"
-BUILD_TYPE="DEBUG"
+BUILD_TYPE="RELEASE"
 
 # Define allowed options for each command using regular arrays
 CMD=("build" "compile" "update")
