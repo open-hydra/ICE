@@ -11,5 +11,6 @@ bin
 *.exe
 
 # Test output files
+log*
 error*
 OUTPUT
