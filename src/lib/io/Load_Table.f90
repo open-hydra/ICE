@@ -7,15 +7,33 @@ module ICE_Load_Table
 
 contains
 
+  !> Optional table of rho(T) and cs(T) for the condensed phase, read from
+  !  INPUT/<phase-prefix>properties.dat. Absent => get_rho_al/get_cs_al fall back to the constant
+  !  [ICE-Physics] rho/cs. Both outcomes are REPORTED: the fallback is a legitimate configuration,
+  !  but a silent one is indistinguishable from "the table was there and I failed to find it", which
+  !  is exactly how a mis-named file turns into a plausible wrong answer.
+  !
+  !  The path MUST be built from ICE_phase_prefix, like IO_BC.f90 and IO_Solution.f90. It used to be
+  !  the literal 'INPUT/part-properties.dat', which agreed with the prefix only because the default
+  !  is 'part-' (Global_m.f90) -- so any case whose phase file was not part-phase.txt silently lost
+  !  its table. Callers: Wrap_Setup.f90 calls this unconditionally, AFTER the prefix is assigned.
   subroutine Load_Table()
     use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Global_m,       only: ICE_phase_prefix
     implicit none
     integer  :: ios, unitFile, npts, i, iT
     real(R8) :: T, cp, rho, h
     character(len=512) :: line, token
+    character(len=512) :: tablefile
 
-    open(newunit=unitFile, file='INPUT/part-properties.dat', status='old', iostat=ios)
-    if (ios /= 0) return
+    tablefile = 'INPUT/'//trim(ICE_phase_prefix)//'properties.dat'
+
+    open(newunit=unitFile, file=trim(tablefile), status='old', iostat=ios)
+    if (ios /= 0) then
+      write(*,'(A)') ' [ICE] condensed properties: no '//trim(tablefile)// &
+                     ' -- using the constant [ICE-Physics] rho/cs'
+      return
+    endif
 
     ! Skip TITLE line
     read(unitFile, '(A)', iostat=ios) line
@@ -28,6 +46,8 @@ contains
     call extract_integer_after(line, 'I=', npts)
     if (npts <= 0) then
       close(unitFile)
+      write(*,'(A)') ' [ICE] condensed properties: '//trim(tablefile)// &
+                     ' has no readable "I=<n>" point count -- using the constant [ICE-Physics] rho/cs'
       return
     end if
 
@@ -48,7 +68,10 @@ contains
     close(unitFile)
 
     obj_condensed%use_table   = .true.
-    obj_condensed%description = 'Table-based rho_al(T) and cs_al(T) from part-properties.dat'
+    obj_condensed%description = 'Table-based rho_al(T) and cs_al(T) from '//trim(tablefile)
+
+    write(*,'(A,I0,A)') ' [ICE] condensed properties: table from '//trim(tablefile)//' (', npts, &
+                        ' points, indexed by integer T)'
 
   end subroutine Load_Table
 
