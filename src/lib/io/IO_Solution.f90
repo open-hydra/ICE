@@ -226,6 +226,17 @@ contains
       error = vtk_read_structured_multiblock(orion=IOfield_cond, &
                 vtmpath=condinit(1:len(trim(condinit))-4), &
                 vtspath='INPUT/vtk/field', time=IOtime)
+    case default
+      !> Neither reader matched, so the field would be left EMPTY and every later size()
+      !  silently returns zero -- allocate_data then makes a zero-length bc array and the run
+      !  segfaults far from here, with nothing in the log pointing back. Note the registered
+      !  DEFAULT for bck-format is 'native binary', which lands here: a case that omits the key
+      !  hits this path. Fail where the cause is still visible.
+      write(*,'(A)') '  [ICE::read_vtk_tec] cannot read the initial condition.'
+      write(*,'(A)') '  ICE-IO / bck-format is "'//trim(obj_io%bck_fmt(1))//'", which is neither'
+      write(*,'(A)') '  "tecplot" nor "vtk", so no reader was selected. Set bck-format explicitly,'
+      write(*,'(A)') '  e.g.  bck-format = tecplot ascii'
+      error stop
     end select
 
   end subroutine read_vtk_tec
