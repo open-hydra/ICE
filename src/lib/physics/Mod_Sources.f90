@@ -91,7 +91,7 @@ contains
 
     !> Mass and convective heat exchange
     !> No combustion
-    Nu = heat(Re,Pr,Ma)
+    Nu = heat(Re,Pr,Ma,obj_time_scheme%heatSelect)
     force(1) = 0._R8
     force(5) = 2._R8*Nu*gas_k*pi*Rp*(gas_prim(ng)-cond_prim(n-1))*cond_prim(n)
 

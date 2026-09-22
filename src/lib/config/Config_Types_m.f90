@@ -99,6 +99,7 @@ module ICE_Config_Types_m
     character(len=llen) :: drag          ! Drag model (global, same for all families)
     integer  :: dragSelect     ! Drag model as the selector Lib_Drag dispatches on
     character(len=llen) :: heat          ! Heat transfer model (global, same for all families)
+    integer  :: heatSelect     ! Heat model as the selector Lib_Heat dispatches on
     ! Per-family (only model type differs across families)
     character(len=llen), allocatable :: model(:)
   end type time_scheme_t
