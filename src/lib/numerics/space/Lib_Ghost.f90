@@ -4,6 +4,9 @@ module ICE_Lib_Ghost
   use ICE_Advanced_Types_m
   use ICE_Config_Types_m, only: obj_condensed, obj_time_scheme
   use ICE_Mod_Metrics, only : delthe
+  use ICE_Lib_MK, only : prim_2_cons_MK, cons_2_prim_MK
+  use ICE_Lib_IG, only : prim_2_cons_IG, cons_2_prim_IG
+  use ICE_Lib_AG, only : prim_2_cons_AG, cons_2_prim_AG
 
   implicit none
   private
@@ -180,6 +183,10 @@ contains
           grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),im,jm,km)
 
 
+        case (102) !> chimera: first ghost layer from its donors
+          call ghost_chimera(grid%blk, grid%bc(i), 1)
+
+
       end select
 
     enddo
@@ -224,6 +231,9 @@ contains
           grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig2,jg2,kg2) = &
             grid%blk(bs)%cond_phase(pm)%prim(1:ncond(pm),is,js,ks)
 
+        case (102) !> chimera: second ghost layer from its own donors
+          call ghost_chimera(grid%blk, grid%bc(i), 2)
+
         case default !> 2nd-order extrapolation: P(g2) = 3*P(g1) - 3*P(m) + P(m+1)
           ip = im + guide(fm,1) ; jp = jm + guide(fm,2) ; kp = km + guide(fm,3)
           grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig2,jg2,kg2) = &
@@ -238,6 +248,71 @@ contains
     !$OMP END PARALLEL
 
   end subroutine fill_second_ghost
+
+
+  !> Chimera ghost cell of layer g: conservative blend of the donor cells found by
+  !> ATLAS BCB, cons(ghost) = sum_c w_c * cons(donor_c), as MOSE's Ghost_Chimera does.
+  !> Donors are interior cells, so this only reads interior data and is safe inside
+  !> the OMP loops over bc entries.
+  subroutine ghost_chimera(blk, bc, g)
+    implicit none
+    type(ICE_block_type), intent(inout) :: blk(:)
+    type(ICE_bc_type),    intent(in)    :: bc
+    integer(kind=I4),     intent(in)    :: g
+    integer(kind=I4) :: c, c1, c2, pm, nv, bs, is, js, ks, ig, jg, kg
+    real(kind=R8)    :: consg(12)
+
+    pm = bc%p
+    nv = ncond(pm)
+    if (g == 1) then
+      c1 = 1          ; c2 = bc%ni(1)
+    else
+      c1 = bc%ni(1)+1 ; c2 = sum(bc%ni)
+    endif
+
+    consg = 0._R8
+    do c = c1, c2
+      bs = bc%donorID(c,1) ; is = bc%donorID(c,2) ; js = bc%donorID(c,3) ; ks = bc%donorID(c,4)
+      consg(1:nv) = consg(1:nv) + bc%volume_fraction(c) * &
+                    model_prim_2_cons(pm, blk(bs)%cond_phase(pm)%prim(1:nv,is,js,ks))
+    enddo
+
+    ig = bc%i - g*guide(bc%f,1) ; jg = bc%j - g*guide(bc%f,2) ; kg = bc%k - g*guide(bc%f,3)
+    blk(bc%b)%cond_phase(pm)%prim(1:nv,ig,jg,kg) = model_cons_2_prim(pm, consg(1:nv))
+
+  end subroutine ghost_chimera
+
+
+  !> Group-specific conversions. The model procedure pointers in ICE_Lib_Model are bound to
+  !> one group at a time, while the ghost loops cover every group, so dispatch explicitly.
+  function model_prim_2_cons(p, prim) result(cons)
+    implicit none
+    integer(kind=I4), intent(in) :: p
+    real(kind=R8),    intent(in) :: prim(:)
+    real(kind=R8)                :: cons(size(prim))
+
+    select case (trim(obj_time_scheme%model(p)))
+    case ('MK'); cons = prim_2_cons_MK(prim)
+    case ('IG'); cons = prim_2_cons_IG(prim)
+    case ('AG'); cons = prim_2_cons_AG(prim)
+    end select
+
+  end function model_prim_2_cons
+
+
+  function model_cons_2_prim(p, cons) result(prim)
+    implicit none
+    integer(kind=I4), intent(in) :: p
+    real(kind=R8),    intent(in) :: cons(:)
+    real(kind=R8)                :: prim(size(cons))
+
+    select case (trim(obj_time_scheme%model(p)))
+    case ('MK'); prim = cons_2_prim_MK(cons)
+    case ('IG'); prim = cons_2_prim_IG(cons)
+    case ('AG'); prim = cons_2_prim_AG(cons)
+    end select
+
+  end function model_cons_2_prim
 
 
 end module ICE_Lib_Ghost

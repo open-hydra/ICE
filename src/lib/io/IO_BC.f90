@@ -7,7 +7,7 @@ module ICE_IO_BC
   private
   public :: Setup_BC, Print_BC_Summary
 
-  integer :: nconn = 0, nsym = 0, nio = 0, next = 0
+  integer :: nconn = 0, nsym = 0, nio = 0, next = 0, nchim = 0
 
 contains
 
@@ -35,7 +35,10 @@ contains
   !      ATLAS 300 (symmetry)     -> 3
   !      ATLAS 400 (extrapolation)-> 11
   !      ATLAS 401 (inlet)        -> 4   with injtype = 0
+  !      ATLAS 402/403 (inlet)    -> 4   with injtype = 1/2
   !      ATLAS 101/201 (connect)  -> 1
+  !      ATLAS 102 (chimera)      -> 102 no legacy equivalent, so the ATLAS code is kept;
+  !                                      filled by Ghost_Chimera in Lib_Ghost
   subroutine Setup_BC(grid)
     use ICE_Global_m, only: ngroups
     implicit none
@@ -48,7 +51,7 @@ contains
 
     bc  => grid%bc
     nbc => grid%n_bf
-    nconn = 0; nsym = 0; nio = 0; next = 0
+    nconn = 0; nsym = 0; nio = 0; next = 0; nchim = 0
 
     open(newunit=unitfile, file='INPUT/'//trim(ICE_phase_prefix)//'bc.txt', &
          status='old', iostat=ios)
@@ -115,10 +118,14 @@ contains
     real(R8)    :: massflux, velocity, temperature, radius, alpha, beta
     integer(I4) :: injtype
     character(len=32) :: alpha_tok, beta_tok
+    integer(I4) :: nchi(2), s, nzero_chim
+    integer(I4),  allocatable :: donorID(:,:)
+    real(R8),     allocatable :: weight(:)
 
     if (ngroups <= 0) error stop 'Read_BC_ATLAS: ngroups not set'
     if (mod(size(bc), ngroups) /= 0) error stop 'Read_BC_ATLAS: bc array is not a multiple of ngroups'
     ncell = size(bc) / ngroups
+    nzero_chim = 0
 
     do n = 1, ncell
 
@@ -147,6 +154,24 @@ contains
         case (101, 201)          ! connection / periodic -> ICE type 1
           nconn = nconn + 1
           read(unitfile,*,iostat=ios) cs(1:9)
+
+        case (102)               ! chimera -> ICE type 102
+          !> Payload: `nchi_g1 nchi_g2`, then nchi_g1 + nchi_g2 donor lines `b i j k weight`,
+          !  ghost layer 1 first. Weights are normalised per layer by ATLAS.
+          nchim = nchim + 1
+          read(unitfile,*,iostat=ios) nchi
+          if (ios == 0) then
+            if (allocated(donorID)) deallocate(donorID, weight)
+            allocate(donorID(sum(nchi),4), weight(sum(nchi)))
+            do s = 1, sum(nchi)
+              read(unitfile,*,iostat=ios) donorID(s,1:4), weight(s)
+              if (ios /= 0) exit
+            enddo
+            if (ios == 0) then
+              if (sum(weight(1:nchi(1))) < 0.5_R8 .or. &
+                  sum(weight(nchi(1)+1:sum(nchi))) < 0.5_R8) nzero_chim = nzero_chim + 1
+            endif
+          endif
 
         case (200)               ! axisymmetry -> ICE type 2 (skipped downstream), no payload
           continue
@@ -226,9 +251,20 @@ contains
           bc(idx)%d11 = cs(6); bc(idx)%d12 = cs(7)
           bc(idx)%d21 = cs(8); bc(idx)%d22 = cs(9)
         endif
+        if (code == 102) then
+          bc(idx)%ni              = nchi
+          bc(idx)%donorID         = donorID
+          bc(idx)%volume_fraction = weight
+        endif
       enddo
 
     end do
+
+    if (nzero_chim > 0) then
+      write(*,'(A,I0,A)') '  [ICE::Setup_BC] ', nzero_chim, ' chimera records have a ghost layer '// &
+        'whose donor weights sum to ~0 (no donor found by ATLAS BCB). Fix the BC file before running.'
+      error stop
+    endif
 
   end subroutine Read_BC_ATLAS
 
@@ -244,7 +280,8 @@ contains
       case (200);      t = 2
       case (300);      t = 3
       case (400);      t = 11
-      case (401);      t = 4
+      case (102);      t = 102
+      case (401:403);  t = 4
       case default;    t = 0
     end select
 
@@ -328,6 +365,7 @@ contains
     if (nsym  > 0) write(*,'(A,T35,I0)') '   Symmetry',      nsym
     if (nio   > 0) write(*,'(A,T35,I0)') '   Inflow',        nio
     if (next  > 0) write(*,'(A,T35,I0)') '   Extrapolation', next
+    if (nchim > 0) write(*,'(A,T35,I0)') '   Chimera',       nchim
     write(*,*)
   end subroutine Print_BC_Summary
 

@@ -23,6 +23,9 @@ module ICE_Advanced_Types_m
     integer  :: i, j, k, b, f                          ! Location in grid
     integer  :: type                                    ! BC type
     integer  :: bs, is, js, ks, fs, d11, d12, d21, d22 ! Connection specs
+    integer               :: ni(2) = 0                 ! Chimera: donors per ghost layer
+    integer,  allocatable :: donorID(:,:)               ! Chimera: (donor, [b i j k]), layer 1 then 2
+    real(R8), allocatable :: volume_fraction(:)         ! Chimera: donor weights, sum to 1 per layer
     type(ICE_tensor_3D_type) :: Mg(2)                  ! Ghost cell metric tensor
     type(ICE_vector_3D_type) :: dlg(2)                 ! Ghost cell average cell length
     real(R8) :: volg(2)                                 ! Ghost cell volume
