@@ -1,0 +1,83 @@
+# ---------------------------------------------------------------------------
+#  CTest definitions for the ICE test cases
+#
+#  Tiers are expressed through LABELS:
+#    fast        -> short runs of hard invariants; run by the pre-push hook
+#                   (ctest -L fast)
+#    validation  -> full case compared against its stored reference solution
+#    needs-mpi   -> requires an MPI build (USE_MPI=ON); registered only then
+#
+#  The cases run in their own source directory and leave their output in it,
+#  exactly as when they are run by hand with ./ICE.sh.
+# ---------------------------------------------------------------------------
+
+set(ICE_TEST_THREADS 1 CACHE STRING "OpenMP threads per rank used by the CTest cases")
+set(ICE_TEST_RANKS   1 CACHE STRING "MPI ranks used by the CTest validation cases (needs USE_MPI)")
+
+set(_ICE_TEST_ENV "KMP_STACKSIZE=100M")
+
+# Register a case: run the solver through its ICE.sh, then its verify.py.
+function(ice_add_case)
+    cmake_parse_arguments(T "" "NAME;DIR;TIMEOUT" "LABELS" ${ARGN})
+    if(NOT T_TIMEOUT)
+        set(T_TIMEOUT 1800)
+    endif()
+    add_test(
+        NAME    ${T_NAME}
+        COMMAND bash -c "./ICE.sh -m ${ICE_TEST_RANKS} -p ${ICE_TEST_THREADS} solve && python3 -B verify.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/test/${T_DIR}"
+    )
+    set_tests_properties(${T_NAME} PROPERTIES
+        LABELS      "${T_LABELS}"
+        TIMEOUT     ${T_TIMEOUT}
+        ENVIRONMENT "${_ICE_TEST_ENV}"
+    )
+endfunction()
+
+# Register a self-contained fast test driven by its own run.sh.
+function(ice_add_fast_script NAME DIR)
+    add_test(
+        NAME    ${NAME}
+        COMMAND bash -c "./run.sh"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/test/${DIR}"
+    )
+    set_tests_properties(${NAME} PROPERTIES
+        LABELS      "${ARGN}"
+        TIMEOUT     600
+        ENVIRONMENT "${_ICE_TEST_ENV}"
+    )
+endfunction()
+
+# ===========================================================================
+#  VALIDATION tier  (ctest -L validation) - the crossing-jets suite
+# ===========================================================================
+
+# Free-streaming crossing jets, one case per closure (docs/vv/crossing-jets.md)
+ice_add_case(NAME DoisneauMK DIR Doisneau/MK LABELS "validation;MK;2D")
+ice_add_case(NAME DoisneauIG DIR Doisneau/IG LABELS "validation;IG;2D")
+ice_add_case(NAME DoisneauAG DIR Doisneau/AG LABELS "validation;AG;2D")
+
+# Same case on two overlapping non-matching blocks (docs/vv/chimera.md)
+ice_add_case(NAME DoisneauChimera DIR Doisneau/IG-chimera LABELS "validation;IG;chimera;2D")
+
+# Same case on four blocks joined by connections (docs/vv/multiblock-mpi.md)
+ice_add_case(NAME DoisneauSplit4 DIR Doisneau/IG-split4 LABELS "validation;IG;connection;2D")
+
+# ===========================================================================
+#  FAST tier  (pre-push: ctest -L fast) - short runs, no stored references
+# ===========================================================================
+
+# Thread count must not change the answer: 1 vs 4 threads, bit-identical
+ice_add_fast_script(OpenMPEquiv fast/openmp-equiv "fast;implementation")
+
+# Rank count must not change the answer either. Needs an MPI build, so it is
+# registered only when there is one.
+if(USE_MPI)
+    ice_add_fast_script(MPIEquivConnection fast/mpi-equiv "fast;implementation;needs-mpi")
+    set_tests_properties(MPIEquivConnection PROPERTIES
+        ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-split4")
+
+    ice_add_fast_script(MPIEquivChimera fast/mpi-equiv "fast;implementation;chimera;needs-mpi")
+    set_tests_properties(MPIEquivChimera PROPERTIES
+        ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-chimera")
+endif()

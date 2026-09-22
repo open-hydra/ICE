@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Git pre-push hook - runs the CTest suite before allowing a push.
+# Activate with:  git config core.hooksPath .githooks
+#
+# The whole suite takes about a minute on a workstation. To run only the fast
+# tier instead:  ICE_PREPUSH_LABEL=fast git push
+# Other knobs:   ICE_BUILD_DIR, ICE_PREPUSH_JOBS
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+BUILD_DIR="${ICE_BUILD_DIR:-}"
+
+if [[ -z "$BUILD_DIR" ]]; then
+    for d in "${REPO_ROOT}/build" "${REPO_ROOT}"/build-*; do
+        if [[ -f "$d/CTestTestfile.cmake" ]]; then
+            BUILD_DIR=$d
+            break
+        fi
+    done
+fi
+
+if [[ -z "$BUILD_DIR" || ! -f "${BUILD_DIR}/CTestTestfile.cmake" ]]; then
+    echo "[pre-push] No configured build directory found - skipping tests."
+    echo "[pre-push] Run './install.sh build ...' first, or set ICE_BUILD_DIR."
+    exit 0
+fi
+
+SELECT=()
+[[ -n "${ICE_PREPUSH_LABEL:-}" ]] && SELECT=(-L "${ICE_PREPUSH_LABEL}")
+
+echo "[pre-push] Running CTest in ${BUILD_DIR} ${ICE_PREPUSH_LABEL:+(label: ${ICE_PREPUSH_LABEL})}..."
+if ctest --test-dir "${BUILD_DIR}" "${SELECT[@]}" \
+         -j "${ICE_PREPUSH_JOBS:-5}" --output-on-failure --timeout 1800; then
+    echo "[pre-push] All tests passed."
+else
+    echo "[pre-push] Tests FAILED - push aborted."
+    exit 1
+fi

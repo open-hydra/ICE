@@ -1,6 +1,6 @@
 """V&V figures and metrics for the Doisneau crossing-jets cases.
 
-Run after `./test.sh check all` (it reads each case's OUTPUT/part-field.tec) with
+Run after `ctest --test-dir build` (it reads each case's OUTPUT/part-field.tec) with
     cd test/Doisneau && python3 plot_vv.py
 Writes transparent SVGs into docs/vv/images/ and prints the numbers quoted in the docs.
 """

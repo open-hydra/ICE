@@ -25,6 +25,11 @@ ICE/
 │       ├── numerics/       # Flux computation and time integration
 │       ├── parallel/       # MPI and ghost-cell exchange
 │       └── physics/        # Drag, heat transfer, and phase-change models
+├── test/                   # Test cases, wired into CTest
+│   ├── CMakeLists.txt      # CTest definitions and labels
+│   ├── Doisneau/           # Crossing-jets validation cases
+│   └── fast/               # Short invariant checks (pre-push tier)
+├── .githooks/pre-push      # Runs CTest before a push
 ├── CMakeLists.txt
 ├── install.sh
 ├── LICENSE

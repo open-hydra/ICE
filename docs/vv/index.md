@@ -21,11 +21,11 @@ Each case lives under `test/` with a `verify.py` script that compares the densit
 against the case's stored reference solution (L2 norm, tolerance $10^{-4}$).
 
 ```bash
-cd test
-./test.sh -p 8 check all            # run and verify every case with 8 OpenMP threads
-./test.sh -p 8 check Doisneau/IG    # a single case
-./test.sh -m 2 -p 4 check all       # 2 MPI ranks x 4 threads each (MPI build)
+ctest --test-dir build -j 5 --output-on-failure   # run and verify every case
+ctest --test-dir build -R DoisneauIG -V           # a single case
 ```
+
+See [Testing](../development/testing.md) for the tiers, the labels and the pre-push hook.
 
 The figures on these pages are produced from the same runs:
 
