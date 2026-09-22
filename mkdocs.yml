@@ -109,6 +109,7 @@ nav:
     - Crossing Jets: vv/crossing-jets.md
     - Chimera Overset: vv/chimera.md
     - Multi-block and MPI: vv/multiblock-mpi.md
+    - Code Verification: vv/verification.md
 
   - Developer Guide:
     - development/index.md

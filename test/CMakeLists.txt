@@ -34,6 +34,21 @@ function(ice_add_case)
     )
 endfunction()
 
+# Register a code-verification case: a Python driver that builds its own inputs,
+# runs the solver and compares against a solution known independently of ICE.
+function(ice_add_verification NAME DIR)
+    add_test(
+        NAME    ${NAME}
+        COMMAND bash -c "python3 -B run.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/test/verification/${DIR}"
+    )
+    set_tests_properties(${NAME} PROPERTIES
+        LABELS      "${ARGN}"
+        TIMEOUT     900
+        ENVIRONMENT "${_ICE_TEST_ENV}"
+    )
+endfunction()
+
 # Register a self-contained fast test driven by its own run.sh.
 function(ice_add_fast_script NAME DIR)
     add_test(
@@ -62,6 +77,25 @@ ice_add_case(NAME DoisneauChimera DIR Doisneau/IG-chimera LABELS "validation;IG;
 
 # Same case on four blocks joined by connections (docs/vv/multiblock-mpi.md)
 ice_add_case(NAME DoisneauSplit4 DIR Doisneau/IG-split4 LABELS "validation;IG;connection;2D")
+
+# ===========================================================================
+#  VERIFICATION tier  (ctest -L verification) - exact and reference solutions
+#
+#  These compare ICE against solutions that do not come from ICE, so they can
+#  fail on day one; the validation cases above can only detect a change.
+# ===========================================================================
+
+# Drag and heat source terms against their closed-form relaxation
+ice_add_verification(DragRelaxation    A-drag-relaxation   "fast;verification;sources")
+ice_add_verification(ThermalRelaxation B-thermal-relaxation "fast;verification;sources")
+
+# Eulerian transport against free advection, with a grid-refinement study
+ice_add_verification(SineAdvection     C-advection-sine    "fast;verification;transport")
+
+# Every drag and Nusselt correlation against an independent integration. Slower
+# than the fast tier allows, since each law is a separate run.
+ice_add_verification(DragMatrix        D-drag-matrix       "verification;sources")
+ice_add_verification(HeatMatrix        E-heat-matrix       "verification;sources")
 
 # ===========================================================================
 #  FAST tier  (pre-push: ctest -L fast) - short runs, no stored references

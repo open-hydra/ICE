@@ -106,8 +106,11 @@ contains
          .or. (mod(grid%iter, obj_io%bck_diter) == 0) &
          .or. (grid%time >= obj_sim_param%time_from_call + obj_io%sol_dtime)
 
+    !> res-threshold = 0 means "never stop on the residual". Without it a transient
+    !> whose density happens to be stationary -- a cloud relaxing in velocity only --
+    !> reports a zero density residual and is declared converged at the first iteration.
     endsim = (obj_sim_param%iter_from_call >= grid%itermax)                                        &
-         .or. (obj_multigrid%MG_level == 1 .and.                                                 &
+         .or. (obj_multigrid%MG_level == 1 .and. obj_sim_param%res_threshold > 0._R8 .and.       &
                obj_sim_param%residuotot(1) <= obj_sim_param%res_threshold)                       &
          .or. (grid%time >= obj_sim_param%time_threshold)
 

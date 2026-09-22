@@ -13,6 +13,13 @@ test/
 │   ├── IG-chimera/            # Two overlapping non-matching blocks (ATLAS 102)
 │   ├── IG-split4/             # Four blocks joined by connections (ATLAS 101)
 │   └── plot_vv.py             # Regenerates the V&V figures from the case outputs
+├── verification/              # Exact-solution cases, inputs generated on the fly
+│   ├── common.py              # Case generation, reference correlations and ODE solver
+│   ├── A-drag-relaxation/     # Stokes drag against its closed form + RK order study
+│   ├── B-thermal-relaxation/  # Nu = 2 heat exchange against its closed form
+│   ├── C-advection-sine/      # Periodic transport + grid-refinement order study
+│   ├── D-drag-matrix/         # All 13 drag laws against an independent integration
+│   └── E-heat-matrix/         # All 7 Nusselt laws, likewise
 └── fast/                      # Short invariant checks, no stored references
     ├── common.sh              # Shared helpers (short run, compare byte for byte)
     ├── openmp-equiv/          # 1 vs 4 threads bit-identical
@@ -27,6 +34,13 @@ and an `ICE.sh` run script. The cases and what they verify are described in
 
 The fast tests own no data: they copy one of the `Doisneau` cases, shorten it to 200
 iterations, and run it twice under different parallel settings.
+
+The verification cases own no data either: each `run.py` writes its own mesh, initial
+condition, boundary conditions and `input.ini` into a scratch `work/` directory, runs
+the solver there and compares against a closed form or an independently integrated
+reference. What each one verifies is described in
+[Code Verification](../vv/verification.md). Set `ICE_KEEP_WORK=1` to keep the generated
+cases for inspection after a pass.
 
 ## Running the tests
 
@@ -45,6 +59,8 @@ running `./ICE.sh solve` by hand does.
 |-------|---------|
 | `fast` | Short runs of hard invariants (no stored reference); a few seconds each |
 | `validation` | Full case compared against its stored reference solution |
+| `verification` | Compared against a solution that does not come from ICE (closed form or independent integration) |
+| `sources` / `transport` | Coverage area of a verification case |
 | `needs-mpi` | Needs an MPI build; registered only when `USE_MPI=ON` |
 | `MK` / `IG` / `AG`, `chimera`, `connection`, `2D` | Coverage area |
 

@@ -16,3 +16,4 @@ log*
 error*
 OUTPUT
 test/fast/*/work
+test/verification/*/work
