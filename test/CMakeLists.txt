@@ -97,6 +97,14 @@ ice_add_verification(SineAdvection     C-advection-sine    "fast;verification;tr
 ice_add_verification(DragMatrix        D-drag-matrix       "verification;sources")
 ice_add_verification(HeatMatrix        E-heat-matrix       "verification;sources")
 
+# Berthon's Riemann problems for the anisotropic Gaussian closure, against the
+# analytical wave patterns (docs/vv/berthon.md). These are full case directories
+# rather than self-building drivers, so they go through ice_add_case; they are the
+# only fast-tier cases that exercise AG, its Rusanov solver and the MC limiter.
+ice_add_case(NAME BerthonSCS DIR Berthon/SCS LABELS "fast;verification;AG;transport;1D")
+ice_add_case(NAME BerthonRCS DIR Berthon/RCS LABELS "fast;verification;AG;transport;1D")
+ice_add_case(NAME BerthonRCR DIR Berthon/RCR LABELS "fast;verification;AG;transport;1D")
+
 # ===========================================================================
 #  FAST tier  (pre-push: ctest -L fast) - short runs, no stored references
 # ===========================================================================

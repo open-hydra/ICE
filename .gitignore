@@ -17,3 +17,6 @@ error*
 OUTPUT
 test/fast/*/work
 test/verification/*/work
+
+# Compiled IC/BC builders shipped as source with the Berthon cases
+test/Berthon/*/IBCB

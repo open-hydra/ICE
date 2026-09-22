@@ -13,6 +13,11 @@ test/
 │   ├── IG-chimera/            # Two overlapping non-matching blocks (ATLAS 102)
 │   ├── IG-split4/             # Four blocks joined by connections (ATLAS 101)
 │   └── plot_vv.py             # Regenerates the V&V figures from the case outputs
+├── Berthon/                   # 1D Riemann problems for the AG closure
+│   ├── SCS/  RCS/  RCR/       # Shock-contact-shock, rarefaction-contact-shock, ...
+│   ├── Results/               # The analytical wave patterns each case is checked against
+│   ├── berthon.py             # Exact-solution reader and the L1 comparison
+│   └── plot_vv.py             # Regenerates the V&V figures from the case outputs
 ├── verification/              # Exact-solution cases, inputs generated on the fly
 │   ├── common.py              # Case generation, reference correlations and ODE solver
 │   ├── A-drag-relaxation/     # Stokes drag against its closed form + RK order study
@@ -32,6 +37,12 @@ boundary conditions, particle properties), `MESH/`, a stored `reference/` soluti
 and an `ICE.sh` run script. The cases and what they verify are described in
 [Verification & Validation](../vv/index.md).
 
+Each case under `Berthon/` is laid out the same way, but has no stored reference of its
+own: its `verify.py` compares six fields against the analytical wave pattern in
+`Berthon/Results/` (L1 norm over the domain), and `IBCB.f90` is the small program that
+wrote its initial and boundary conditions. See
+[Berthon Riemann Problems](../vv/berthon.md).
+
 The fast tests own no data: they copy one of the `Doisneau` cases, shorten it to 200
 iterations, and run it twice under different parallel settings.
 
@@ -46,7 +57,7 @@ cases for inspection after a pass.
 
 ```bash
 ctest --test-dir build -j 5 --output-on-failure   # everything, about a minute
-ctest --test-dir build -L fast                    # the fast tier only, ~12 s
+ctest --test-dir build -L fast                    # the fast tier only, ~15 s
 ctest --test-dir build -R DoisneauIG -V           # a single case, with live output
 ```
 
@@ -62,7 +73,7 @@ running `./ICE.sh solve` by hand does.
 | `verification` | Compared against a solution that does not come from ICE (closed form or independent integration) |
 | `sources` / `transport` | Coverage area of a verification case |
 | `needs-mpi` | Needs an MPI build; registered only when `USE_MPI=ON` |
-| `MK` / `IG` / `AG`, `chimera`, `connection`, `2D` | Coverage area |
+| `MK` / `IG` / `AG`, `chimera`, `connection`, `1D` / `2D` | Coverage area |
 
 ### Threads and ranks
 

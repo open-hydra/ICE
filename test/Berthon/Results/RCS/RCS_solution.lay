@@ -1,0 +1,1163 @@
+#!MC 1410
+$!VarSet |LFDSFN1| = '"RCS_rusanov.tec"'
+$!VarSet |LFDSVL1| = '"x" "y" "z" "rho_p1" "u_p1" "v_p1" "w_p1" "P11_p1" "P12_p1" "P13_p1" "P22_p1" "P23_p1" "P33_p1" "T_p1" "n_p1"'
+$!VarSet |LFDSFN2| = '"RCS_exact.tec"'
+$!VarSet |LFDSVL2| = '"x" "y" "z" "rho_p1" "u_p1" "v_p1" "w_p1" "P11_p1" "P12_p1" "P13_p1" "P22_p1" "P23_p1" "P33_p1" "T_p1" "n_p1" "V"'
+$!SetStyleBase Factory
+$!GlobalPaper 
+  PaperSizeInfo
+    {
+    Letter
+      {
+      Width = 8.5
+      Height = 11
+      LeftHardClipOffset = 0.125
+      RightHardClipOffset = 0.125
+      TopHardClipOffset = 0.125
+      BottomHardClipOffset = 0.125
+      }
+    }
+$!Page 
+  Name = 'Untitled'
+  PaperAttributes
+    {
+    BackgroundColor = White
+    IsTransparent = Yes
+    OrientPortrait = No
+    ShowGrid = Yes
+    ShowRuler = No
+    ShowPaper = Yes
+    PaperSize = Letter
+    RulerSpacing = OneInch
+    PaperGridSpacing = HalfInch
+    RegionInWorkArea
+      {
+      X1 = 1
+      Y1 = 0.25
+      X2 = 10
+      Y2 = 8.25
+      }
+    }
+### Frame Number 1 ###
+$!ReadDataSet  '|LFDSFN1|'
+  InitialPlotType = XYLine
+  IncludeText = No
+  IncludeGeom = No
+  AssignStrandIDs = Yes
+  VarLoadMode = ByName
+  VarNameList = '|LFDSVL1|'
+$!RemoveVar |LFDSVL1|
+$!RemoveVar |LFDSFN1|
+$!ReadDataSet  '|LFDSFN2|'
+  InitialPlotType = XYLine
+  IncludeText = No
+  IncludeGeom = No
+  ReadDataOption = Append
+  ResetStyle = No
+  AssignStrandIDs = Yes
+  VarLoadMode = ByName
+  VarNameList = '|LFDSVL2|'
+$!RemoveVar |LFDSVL2|
+$!RemoveVar |LFDSFN2|
+$!AlterData  [1]
+  IgnoreDivideByZero = Yes
+  Equation = '{D} = v8*v11 - v9*v9'
+$!FrameLayout 
+  ShowBorder = No
+  ShowHeader = No
+  HeaderColor = Red
+  XYPos
+    {
+    X = 0.2125
+    Y = 0.2125
+    }
+  Width = 5.2344
+  Height = 2.6208
+$!ThreeDAxis 
+  AspectRatioLimit = 25
+  BoxAspectRatioLimit = 25
+$!PlotType  = XYLine
+$!FrameName  = 'Frame 001'
+$!GlobalTime 
+  SolutionTime = 0
+$!DeleteLineMaps 
+$!ActiveLineMaps  =  [1-2]
+$!GlobalLinePlot 
+  DataLabels
+    {
+    DistanceSkip = 5
+    }
+  Legend
+    {
+    Show = Yes
+    TextShape
+      {
+      Height = 5
+      }
+    Box
+      {
+      BoxType = Filled
+      }
+    XYPos
+      {
+      X = 87.849
+      Y = 87.972
+      }
+    }
+$!LineMap  [1]
+  Name = 'Rusanov'
+  Assign
+    {
+    Zone = 1
+    XAxisVar = 1
+    YAxisVar = 4
+    }
+  Lines
+    {
+    Color = Red
+    LineThickness = 1
+    }
+  Symbols
+    {
+    Color = Red
+    FillColor = Red
+    }
+  BarCharts
+    {
+    Color = Red
+    FillColor = Red
+    }
+  ErrorBars
+    {
+    Color = Red
+    }
+$!LineMap  [2]
+  Name = 'Exact'
+  Assign
+    {
+    Zone = 2
+    XAxisVar = 1
+    YAxisVar = 16
+    }
+  Lines
+    {
+    Color = Green
+    LinePattern = Dashed
+    LineThickness = 1
+    }
+  Symbols
+    {
+    Color = Green
+    FillColor = Green
+    }
+  BarCharts
+    {
+    Color = Green
+    FillColor = Green
+    }
+  ErrorBars
+    {
+    Color = Green
+    }
+$!XYLineAxis 
+  DepXToYRatio = 1
+  GridArea
+    {
+    DrawBorder = Yes
+    LineThickness = 0.8
+    }
+$!XYLineAxis 
+  XDetail 1
+    {
+    RangeMin = -0.5
+    RangeMax = 0.5
+    AutoGrid = No
+    GRSpacing = 0.1
+    Ticks
+      {
+      LineThickness = 0.8
+      }
+    TickLabel
+      {
+      TextShape
+        {
+        IsBold = Yes
+        Height = 5
+        }
+      }
+    Gridlines
+      {
+      Show = Yes
+      Color = Custom2
+      }
+    Title
+      {
+      TitleMode = UseText
+      Text = 'Length'
+      TextShape
+        {
+        Height = 6
+        }
+      Offset = 5
+      }
+    AxisLine
+      {
+      LineThickness = 0.8
+      }
+    }
+$!XYLineAxis 
+  YDetail 1
+    {
+    RangeMin = 0
+    RangeMax = 1.1999999999999999556
+    AutoGrid = No
+    GRSpacing = 0.2
+    Ticks
+      {
+      LineThickness = 0.8
+      }
+    TickLabel
+      {
+      TextShape
+        {
+        IsBold = Yes
+        Height = 5
+        }
+      }
+    Gridlines
+      {
+      Show = Yes
+      Color = Custom2
+      }
+    Title
+      {
+      TitleMode = UseText
+      Text = 'Density'
+      TextShape
+        {
+        Height = 6
+        }
+      }
+    AxisLine
+      {
+      LineThickness = 0.8
+      }
+    }
+### Frame Number 2 ###
+$!CreateNewFrame 
+$!FrameLayout 
+  ShowBorder = No
+  ShowHeader = No
+  HeaderColor = Red
+  XYPos
+    {
+    X = 5.5531
+    Y = 0.2125
+    }
+  Width = 5.2344
+  Height = 2.6208
+$!ThreeDAxis 
+  AspectRatioLimit = 25
+  BoxAspectRatioLimit = 25
+$!PlotType  = XYLine
+$!FrameName  = 'Frame 002'
+$!GlobalTime 
+  SolutionTime = 0
+$!DeleteLineMaps 
+$!ActiveLineMaps  =  [1-2]
+$!GlobalLinePlot 
+  DataLabels
+    {
+    DistanceSkip = 5
+    }
+  Legend
+    {
+    Show = Yes
+    TextShape
+      {
+      Height = 5
+      }
+    Box
+      {
+      BoxType = Filled
+      }
+    XYPos
+      {
+      X = 41.449
+      Y = 87.972
+      }
+    }
+$!LineMap  [1]
+  Name = 'Rusanov'
+  Assign
+    {
+    Zone = 1
+    XAxisVar = 1
+    YAxisVar = 5
+    }
+  Lines
+    {
+    Color = Red
+    LineThickness = 1
+    }
+  Symbols
+    {
+    Color = Red
+    FillColor = Red
+    }
+  BarCharts
+    {
+    Color = Red
+    FillColor = Red
+    }
+  ErrorBars
+    {
+    Color = Red
+    }
+$!LineMap  [2]
+  Name = 'Exact'
+  Assign
+    {
+    Zone = 3
+    XAxisVar = 1
+    YAxisVar = 16
+    }
+  Lines
+    {
+    Color = Green
+    LinePattern = Dashed
+    LineThickness = 1
+    }
+  Symbols
+    {
+    Color = Green
+    FillColor = Green
+    }
+  BarCharts
+    {
+    Color = Green
+    FillColor = Green
+    }
+  ErrorBars
+    {
+    Color = Green
+    }
+$!XYLineAxis 
+  DepXToYRatio = 1
+  GridArea
+    {
+    DrawBorder = Yes
+    LineThickness = 0.8
+    }
+$!XYLineAxis 
+  XDetail 1
+    {
+    RangeMin = -0.5
+    RangeMax = 0.5
+    AutoGrid = No
+    GRSpacing = 0.1
+    Ticks
+      {
+      LineThickness = 0.8
+      }
+    TickLabel
+      {
+      TextShape
+        {
+        IsBold = Yes
+        Height = 5
+        }
+      }
+    Gridlines
+      {
+      Show = Yes
+      Color = Custom2
+      }
+    Title
+      {
+      TitleMode = UseText
+      Text = 'Length'
+      TextShape
+        {
+        Height = 6
+        }
+      Offset = 5
+      }
+    AxisLine
+      {
+      LineThickness = 0.8
+      }
+    }
+$!XYLineAxis 
+  YDetail 1
+    {
+    RangeMin = -0.2000000000000000111
+    RangeMax = 1
+    AutoGrid = No
+    GRSpacing = 0.2
+    Ticks
+      {
+      LineThickness = 0.8
+      }
+    TickLabel
+      {
+      TextShape
+        {
+        IsBold = Yes
+        Height = 5
+        }
+      }
+    Gridlines
+      {
+      Show = Yes
+      Color = Custom2
+      }
+    Title
+      {
+      TitleMode = UseText
+      Text = 'X Velocity'
+      TextShape
+        {
+        Height = 6
+        }
+      }
+    AxisLine
+      {
+      LineThickness = 0.8
+      }
+    }
+### Frame Number 3 ###
+$!CreateNewFrame 
+$!FrameLayout 
+  ShowBorder = No
+  ShowHeader = No
+  HeaderColor = Red
+  XYPos
+    {
+    X = 0.2125
+    Y = 2.9396
+    }
+  Width = 5.2344
+  Height = 2.6208
+$!ThreeDAxis 
+  AspectRatioLimit = 25
+  BoxAspectRatioLimit = 25
+$!PlotType  = XYLine
+$!FrameName  = 'Frame 003'
+$!GlobalTime 
+  SolutionTime = 0
+$!DeleteLineMaps 
+$!ActiveLineMaps  =  [1-2]
+$!GlobalLinePlot 
+  DataLabels
+    {
+    DistanceSkip = 5
+    }
+  Legend
+    {
+    Show = Yes
+    TextShape
+      {
+      Height = 5
+      }
+    Box
+      {
+      BoxType = Filled
+      }
+    XYPos
+      {
+      X = 41.449
+      Y = 87.972
+      }
+    }
+$!LineMap  [1]
+  Name = 'Rusanov'
+  Assign
+    {
+    Zone = 1
+    XAxisVar = 1
+    YAxisVar = 6
+    }
+  Lines
+    {
+    Color = Red
+    LineThickness = 1
+    }
+  Symbols
+    {
+    Color = Red
+    FillColor = Red
+    }
+  BarCharts
+    {
+    Color = Red
+    FillColor = Red
+    }
+  ErrorBars
+    {
+    Color = Red
+    }
+$!LineMap  [2]
+  Name = 'Exact'
+  Assign
+    {
+    Zone = 4
+    XAxisVar = 1
+    YAxisVar = 16
+    }
+  Lines
+    {
+    Color = Green
+    LinePattern = Dashed
+    LineThickness = 1
+    }
+  Symbols
+    {
+    Color = Green
+    FillColor = Green
+    }
+  BarCharts
+    {
+    Color = Green
+    FillColor = Green
+    }
+  ErrorBars
+    {
+    Color = Green
+    }
+$!XYLineAxis 
+  DepXToYRatio = 1
+  GridArea
+    {
+    DrawBorder = Yes
+    LineThickness = 0.8
+    }
+$!XYLineAxis 
+  XDetail 1
+    {
+    RangeMin = -0.5
+    RangeMax = 0.5
+    AutoGrid = No
+    GRSpacing = 0.1
+    Ticks
+      {
+      LineThickness = 0.8
+      }
+    TickLabel
+      {
+      TextShape
+        {
+        IsBold = Yes
+        Height = 5
+        }
+      }
+    Gridlines
+      {
+      Show = Yes
+      Color = Custom2
+      }
+    Title
+      {
+      TitleMode = UseText
+      Text = 'Length'
+      TextShape
+        {
+        Height = 6
+        }
+      Offset = 5
+      }
+    AxisLine
+      {
+      LineThickness = 0.8
+      }
+    }
+$!XYLineAxis 
+  YDetail 1
+    {
+    RangeMin = -0.2000000000000000111
+    RangeMax = 0.5
+    AutoGrid = No
+    GRSpacing = 0.1
+    Ticks
+      {
+      LineThickness = 0.8
+      }
+    TickLabel
+      {
+      TextShape
+        {
+        IsBold = Yes
+        Height = 5
+        }
+      }
+    Gridlines
+      {
+      Show = Yes
+      Color = Custom2
+      }
+    Title
+      {
+      TitleMode = UseText
+      Text = 'Y Velocity'
+      TextShape
+        {
+        Height = 6
+        }
+      }
+    AxisLine
+      {
+      LineThickness = 0.8
+      }
+    }
+### Frame Number 4 ###
+$!CreateNewFrame 
+$!FrameLayout 
+  ShowBorder = No
+  ShowHeader = No
+  HeaderColor = Red
+  XYPos
+    {
+    X = 5.5531
+    Y = 2.9396
+    }
+  Width = 5.2344
+  Height = 2.6208
+$!ThreeDAxis 
+  AspectRatioLimit = 25
+  BoxAspectRatioLimit = 25
+$!PlotType  = XYLine
+$!FrameName  = 'Frame 004'
+$!GlobalTime 
+  SolutionTime = 0
+$!DeleteLineMaps 
+$!ActiveLineMaps  =  [1-2]
+$!GlobalLinePlot 
+  DataLabels
+    {
+    DistanceSkip = 5
+    }
+  Legend
+    {
+    Show = Yes
+    TextShape
+      {
+      Height = 5
+      }
+    Box
+      {
+      BoxType = Filled
+      }
+    XYPos
+      {
+      X = 87.849
+      Y = 87.972
+      }
+    }
+$!LineMap  [1]
+  Name = 'Rusanov'
+  Assign
+    {
+    Zone = 1
+    XAxisVar = 1
+    YAxisVar = 8
+    }
+  Lines
+    {
+    Color = Red
+    LineThickness = 1
+    }
+  Symbols
+    {
+    Color = Red
+    FillColor = Red
+    }
+  BarCharts
+    {
+    Color = Red
+    FillColor = Red
+    }
+  ErrorBars
+    {
+    Color = Red
+    }
+$!LineMap  [2]
+  Name = 'Exact'
+  Assign
+    {
+    Zone = 5
+    XAxisVar = 1
+    YAxisVar = 16
+    }
+  Lines
+    {
+    Color = Green
+    LinePattern = Dashed
+    LineThickness = 1
+    }
+  Symbols
+    {
+    Color = Green
+    FillColor = Green
+    }
+  BarCharts
+    {
+    Color = Green
+    FillColor = Green
+    }
+  ErrorBars
+    {
+    Color = Green
+    }
+$!XYLineAxis 
+  DepXToYRatio = 1
+  GridArea
+    {
+    DrawBorder = Yes
+    LineThickness = 0.8
+    }
+  ViewportPosition
+    {
+    X2 = 87.993
+    Y2 = 88.154
+    }
+  ViewportTopSnapTarget = 88.154
+$!XYLineAxis 
+  XDetail 1
+    {
+    RangeMin = -0.5
+    RangeMax = 0.5
+    AutoGrid = No
+    GRSpacing = 0.1
+    Ticks
+      {
+      LineThickness = 0.8
+      }
+    TickLabel
+      {
+      TextShape
+        {
+        IsBold = Yes
+        Height = 5
+        }
+      }
+    Gridlines
+      {
+      Show = Yes
+      Color = Custom2
+      }
+    Title
+      {
+      TitleMode = UseText
+      Text = 'Length'
+      TextShape
+        {
+        Height = 6
+        }
+      Offset = 5
+      }
+    }
+$!XYLineAxis 
+  YDetail 1
+    {
+    RangeMin = 0
+    RangeMax = 2.5
+    AutoGrid = No
+    GRSpacing = 0.5
+    Ticks
+      {
+      LineThickness = 0.8
+      }
+    TickLabel
+      {
+      TextShape
+        {
+        IsBold = Yes
+        Height = 5
+        }
+      }
+    Gridlines
+      {
+      Show = Yes
+      Color = Custom2
+      }
+    Title
+      {
+      TitleMode = UseText
+      Text = 'XX Pressure'
+      TextShape
+        {
+        Height = 6
+        }
+      }
+    AxisLine
+      {
+      LineThickness = 0.8
+      }
+    }
+### Frame Number 5 ###
+$!CreateNewFrame 
+$!FrameLayout 
+  ShowBorder = No
+  ShowHeader = No
+  HeaderColor = Red
+  XYPos
+    {
+    X = 0.2125
+    Y = 5.6667
+    }
+  Width = 5.2344
+  Height = 2.6208
+$!ThreeDAxis 
+  AspectRatioLimit = 25
+  BoxAspectRatioLimit = 25
+$!PlotType  = XYLine
+$!FrameName  = 'Frame 005'
+$!GlobalTime 
+  SolutionTime = 0
+$!DeleteLineMaps 
+$!ActiveLineMaps  =  [1-2]
+$!GlobalLinePlot 
+  DataLabels
+    {
+    DistanceSkip = 5
+    }
+  Legend
+    {
+    Show = Yes
+    TextShape
+      {
+      Height = 5
+      }
+    Box
+      {
+      BoxType = Filled
+      }
+    XYPos
+      {
+      X = 87.849
+      Y = 87.972
+      }
+    }
+$!LineMap  [1]
+  Name = 'Rusanov'
+  Assign
+    {
+    Zone = 1
+    XAxisVar = 1
+    YAxisVar = 11
+    }
+  Lines
+    {
+    Color = Red
+    LineThickness = 1
+    }
+  Symbols
+    {
+    Color = Red
+    FillColor = Red
+    }
+  BarCharts
+    {
+    Color = Red
+    FillColor = Red
+    }
+  ErrorBars
+    {
+    Color = Red
+    }
+$!LineMap  [2]
+  Name = 'Exact'
+  Assign
+    {
+    Zone = 6
+    XAxisVar = 1
+    YAxisVar = 16
+    }
+  Lines
+    {
+    Color = Green
+    LinePattern = Dashed
+    LineThickness = 1
+    }
+  Symbols
+    {
+    Color = Green
+    FillColor = Green
+    }
+  BarCharts
+    {
+    Color = Green
+    FillColor = Green
+    }
+  ErrorBars
+    {
+    Color = Green
+    }
+$!XYLineAxis 
+  DepXToYRatio = 1
+  GridArea
+    {
+    DrawBorder = Yes
+    LineThickness = 0.8
+    }
+$!XYLineAxis 
+  XDetail 1
+    {
+    RangeMin = -0.5
+    RangeMax = 0.5
+    AutoGrid = No
+    GRSpacing = 0.1
+    Ticks
+      {
+      LineThickness = 0.8
+      }
+    TickLabel
+      {
+      TextShape
+        {
+        IsBold = Yes
+        Height = 5
+        }
+      }
+    Gridlines
+      {
+      Show = Yes
+      Color = Custom2
+      }
+    Title
+      {
+      TitleMode = UseText
+      Text = 'Length'
+      TextShape
+        {
+        Height = 6
+        }
+      Offset = 5
+      }
+    AxisLine
+      {
+      LineThickness = 0.8
+      }
+    }
+$!XYLineAxis 
+  YDetail 1
+    {
+    RangeMin = 0
+    RangeMax = 1
+    GRSpacing = 0.2
+    Ticks
+      {
+      LineThickness = 0.8
+      }
+    TickLabel
+      {
+      TextShape
+        {
+        IsBold = Yes
+        Height = 5
+        }
+      }
+    Gridlines
+      {
+      Show = Yes
+      Color = Custom2
+      }
+    Title
+      {
+      TitleMode = UseText
+      Text = 'YY Pressure'
+      TextShape
+        {
+        Height = 6
+        }
+      }
+    AxisLine
+      {
+      LineThickness = 0.8
+      }
+    }
+### Frame Number 6 ###
+$!CreateNewFrame 
+$!FrameLayout 
+  ShowBorder = No
+  ShowHeader = No
+  HeaderColor = Red
+  XYPos
+    {
+    X = 5.5531
+    Y = 5.6667
+    }
+  Width = 5.2344
+  Height = 2.6208
+$!ThreeDAxis 
+  AspectRatioLimit = 25
+  BoxAspectRatioLimit = 25
+$!PlotType  = XYLine
+$!FrameName  = 'Frame 006'
+$!GlobalTime 
+  SolutionTime = 0
+$!DeleteLineMaps 
+$!ActiveLineMaps  =  [1-2]
+$!GlobalLinePlot 
+  DataLabels
+    {
+    DistanceSkip = 5
+    }
+  Legend
+    {
+    Show = Yes
+    TextShape
+      {
+      Height = 5
+      }
+    Box
+      {
+      BoxType = Filled
+      }
+    XYPos
+      {
+      X = 87.849
+      Y = 87.972
+      }
+    }
+$!LineMap  [1]
+  Name = 'Rusanov'
+  Assign
+    {
+    Zone = 1
+    XAxisVar = 1
+    YAxisVar = 17
+    }
+  Lines
+    {
+    Color = Red
+    LineThickness = 1
+    }
+  Symbols
+    {
+    Color = Red
+    FillColor = Red
+    }
+  BarCharts
+    {
+    Color = Red
+    FillColor = Red
+    }
+  ErrorBars
+    {
+    Color = Red
+    }
+$!LineMap  [2]
+  Name = 'Exact'
+  Assign
+    {
+    Zone = 7
+    XAxisVar = 1
+    YAxisVar = 16
+    }
+  Lines
+    {
+    Color = Green
+    LinePattern = Dashed
+    LineThickness = 1
+    }
+  Symbols
+    {
+    Color = Green
+    FillColor = Green
+    }
+  BarCharts
+    {
+    Color = Green
+    FillColor = Green
+    }
+  ErrorBars
+    {
+    Color = Green
+    }
+$!XYLineAxis 
+  DepXToYRatio = 1
+  GridArea
+    {
+    DrawBorder = Yes
+    LineThickness = 0.8
+    }
+$!XYLineAxis 
+  XDetail 1
+    {
+    RangeMin = -0.5
+    RangeMax = 0.5
+    AutoGrid = No
+    GRSpacing = 0.1
+    Ticks
+      {
+      LineThickness = 0.8
+      }
+    TickLabel
+      {
+      TextShape
+        {
+        IsBold = Yes
+        Height = 5
+        }
+      }
+    Gridlines
+      {
+      Show = Yes
+      Color = Custom2
+      }
+    Title
+      {
+      TitleMode = UseText
+      Text = 'Length'
+      TextShape
+        {
+        Height = 6
+        }
+      Offset = 5
+      }
+    AxisLine
+      {
+      LineThickness = 0.8
+      }
+    }
+$!XYLineAxis 
+  YDetail 1
+    {
+    RangeMin = 0
+    RangeMax = 1.3999999999999999112
+    GRSpacing = 0.2
+    Ticks
+      {
+      LineThickness = 0.8
+      }
+    TickLabel
+      {
+      TextShape
+        {
+        IsBold = Yes
+        Height = 5
+        }
+      }
+    Gridlines
+      {
+      Show = Yes
+      Color = Custom2
+      }
+    Title
+      {
+      TitleMode = UseText
+      Text = 'Determinant'
+      TextShape
+        {
+        Height = 6
+        }
+      }
+    AxisLine
+      {
+      LineThickness = 0.8
+      }
+    }
+$!FrameControl ActivateByNumber
+  Frame = 4
+$!SetStyleBase Config
