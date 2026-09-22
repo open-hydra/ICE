@@ -18,7 +18,7 @@ test/
 │   ├── A-drag-relaxation/     # Stokes drag against its closed form + RK order study
 │   ├── B-thermal-relaxation/  # Nu = 2 heat exchange against its closed form
 │   ├── C-advection-sine/      # Periodic transport + grid-refinement order study
-│   ├── D-drag-matrix/         # All 13 drag laws against an independent integration
+│   ├── D-drag-matrix/         # All 12 drag laws against an independent integration
 │   └── E-heat-matrix/         # All 7 Nusselt laws, likewise
 └── fast/                      # Short invariant checks, no stored references
     ├── common.sh              # Shared helpers (short run, compare byte for byte)

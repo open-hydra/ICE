@@ -97,6 +97,7 @@ module ICE_Config_Types_m
     logical  :: time_accurate  ! Time-accurate integration flag
     character(len=llen) :: solver_type   ! Time integrator: '1'=Euler, '2'=RK2, '3'=RK3
     character(len=llen) :: drag          ! Drag model (global, same for all families)
+    integer  :: dragSelect     ! Drag model as the selector Lib_Drag dispatches on
     character(len=llen) :: heat          ! Heat transfer model (global, same for all families)
     ! Per-family (only model type differs across families)
     character(len=llen), allocatable :: model(:)

@@ -45,7 +45,7 @@ contains
 
     ! --- Assign global drag/heat (only used when coupled) ---
     if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) then
-      call assign_drag(obj_time_scheme%drag)
+      call assign_drag(obj_time_scheme%drag, obj_time_scheme%dragSelect)
       call assign_heat(obj_time_scheme%heat)
     end if
 

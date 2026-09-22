@@ -1,6 +1,6 @@
 """D. Every drag correlation, against an independent integration.
 
-Case A verifies one law (Stokes) against a closed form. ICE offers thirteen, and the
+Case A verifies one law (Stokes) against a closed form. ICE offers twelve, and the
 rest have no coverage at all. Each one is run in the same uniform box and checked
 twice:
 
@@ -26,13 +26,13 @@ from common import Case, Physics, Report                            # noqa: E402
 WORK = Path(__file__).resolve().parent / 'work'
 RHO, U, V, W, T, N = range(6)
 
-LAWS = ('Newton', 'Stokes', 'Schlichting', 'Schiller-Naumann', 'Chang', 'Wen-Yu',
-        'Putnam', 'Clift-Gauvin', 'Morsi-Alexander', 'Carlson-Hoglund', 'Henderson',
-        'Crowe', 'Hermsen')
+LAWS = ('Newton', 'Stokes', 'Schlichting', 'Schiller-Naumann', 'Wen-Yu', 'Putnam',
+        'Clift-Gauvin', 'Morsi-Alexander', 'Carlson-Hoglund', 'Henderson', 'Crowe',
+        'Hermsen')
 
 # Laws that are a Stokes law times a correction which vanishes as Re -> 0
-STOKES_LIMIT = ('Stokes', 'Schlichting', 'Schiller-Naumann', 'Chang', 'Wen-Yu',
-                'Putnam', 'Clift-Gauvin', 'Morsi-Alexander')
+STOKES_LIMIT = ('Stokes', 'Schlichting', 'Schiller-Naumann', 'Wen-Yu', 'Putnam',
+                'Clift-Gauvin', 'Morsi-Alexander')
 
 T_END = 0.03
 

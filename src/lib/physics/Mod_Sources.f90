@@ -45,7 +45,7 @@ contains
   
   subroutine compute_source_ (cond_prim, cond_tau, gas_prim, gas_R, gas_gam, gas_k, gas_mu, source)
     use ICE_Parameters_m, only: pi, sigma_SB, I4
-    use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Config_Types_m, only: obj_condensed, obj_time_scheme
     use ICE_Lib_Model
     use ICE_Lib_Drag
     use ICE_Lib_Heat
@@ -84,7 +84,7 @@ contains
     Tr = cond_prim(n-1)/gas_prim(5)
 
     !> Drag coefficient
-    Cd = drag(Re,Ma,gas_gam,Tr)
+    Cd = drag(Re,Ma,gas_gam,Tr,obj_time_scheme%dragSelect)
 
     !> Slip velocity
     force(2:4) = gas_prim(2:4) - cond_prim(2:4)

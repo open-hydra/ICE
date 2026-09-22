@@ -218,9 +218,6 @@ def drag_coefficient(law, Re, Ma, G, Tr):
         return 24.0 / (Re + TOLL) * (1.0 + 3.0 * Re / 16.0)
     if law == 'Schiller-Naumann':
         return 24.0 / (Re + TOLL) * (1.0 + 0.15 * Re ** 0.687)
-    if law == 'Chang':
-        return 24.0 / (Re + TOLL) * (1.0 + 0.15 * Re ** 0.687) \
-             + 0.42 / (1.0 + 42500.0 * (Re + TOLL) ** (-1.16))
     if law == 'Wen-Yu':
         return 24.0 / (Re + TOLL) * (1.0 + 0.15 * Re ** 0.687) if Re <= 1000.0 else 0.43
     if law == 'Putnam':
@@ -250,11 +247,11 @@ def drag_coefficient(law, Re, Ma, G, Tr):
             return _henderson_sup(Re, Ma, G, Tr)
         Cd1 = _henderson_sub(Re, 1.00, G, Tr)
         Cd2 = _henderson_sup(Re, 1.75, G, Tr)
-        return Cd1 + 0.75 * (Ma - 1.0) * (Cd2 - Cd1)
+        return Cd1 + 4.0 / 3.0 * (Ma - 1.0) * (Cd2 - Cd1)
     if law in ('Crowe', 'Hermsen'):
         if law == 'Crowe':
-            gfun = 10.0 ** (1.25 * (1.0 + math.tanh(0.77 * math.log10(Re) - 1.92)))
-            hfun = 2.3 + 1.7 * Tr ** 0.5 - 2.3 * math.tanh(1.17 * math.log10(Ma))
+            gfun = 10.0 ** (1.25 * (1.0 + math.tanh(0.77 * math.log10(Re + TOLL) - 1.92)))
+            hfun = 2.3 + 1.7 * Tr ** 0.5 - 2.3 * math.tanh(1.17 * math.log10(Ma + TOLL))
         else:
             gfun = (1.0 + Re * (12.278 + 0.548 * Re)) / (1.0 + 11.278 * Re)
             hfun = 5.6 / (1.0 + Ma) + 1.7 * Tr ** 0.5

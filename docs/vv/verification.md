@@ -108,7 +108,7 @@ pressureless cloud moving at one speed has nothing that could change it.
 
 ## D. Every drag correlation
 
-ICE offers thirteen drag laws. Case A verifies one of them against a closed form; this
+ICE offers twelve drag laws. Case A verifies one of them against a closed form; this
 case covers the rest, in two ways.
 
 **At vanishing slip** ($Re = 6.7\times10^{-3}$) the laws that are a Stokes law plus a
@@ -120,7 +120,7 @@ how the correlation is written in ICE:
 | Stokes | $4.1\times10^{-7}$ |
 | Morsi-Alexander | $4.1\times10^{-7}$ |
 | Schlichting | $2.9\times10^{-4}$ |
-| Schiller-Naumann, Chang, Wen-Yu, Clift-Gauvin | $1.3\times10^{-3}$ |
+| Schiller-Naumann, Wen-Yu, Clift-Gauvin | $1.3\times10^{-3}$ |
 | Putnam | $1.6\times10^{-3}$ |
 
 Morsi-Alexander is piecewise and its $Re \le 0.1$ branch *is* the Stokes law, which is
@@ -130,8 +130,14 @@ the expected behaviour and not an error.
 **At finite slip** every law is compared against an RK4 integration of
 $du/dt = (u_g-u)/\tau(u)$ using the same correlation, evaluated independently in
 Python. Two sweeps are run, at $Re = 67$ and at $Re = 1333$, the second one to reach
-the branches that only switch formula above $Re = 1000$. All thirteen agree with the
+the branches that only switch formula above $Re = 1000$. All twelve agree with the
 reference to between $5\times10^{-10}$ and $2\times10^{-6}$ of $u_g$.
+
+!!! warning "Henderson only ever runs subsonic"
+    `Mod_Sources` clips the Mach number at 1 before calling the correlation, so
+    Henderson's supersonic branch and the bridge between them cannot be reached from
+    the solver and nothing here covers them. The same clip saturates the compressibility
+    corrections of Carlson-Hoglund, Crowe and Hermsen at $Ma = 1$.
 
 !!! note "What this check can and cannot catch"
     It catches a law that is mis-wired, mis-selected, divergent, or integrated
