@@ -45,7 +45,9 @@ there would show up as spurious heating.
 
 **Time-step refinement.** Since the field stays uniform the space discretisation
 contributes nothing, and the error is purely the time integration of the source term.
-Halving the CFL number halves the step, and the observed order is the scheme's:
+Halving the CFL number halves the step, and the observed order is the scheme's. The case
+also checks that `dt-max` bounds the step, by measuring how far past its end time a run
+with a tighter ceiling goes:
 
 | CFL | 0.8 | 0.4 | 0.2 | Observed order |
 |---|---|---|---|---|
@@ -88,9 +90,10 @@ $$
 $$
 
 The comparison is against the exact *cell average*, so the measured order is not
-polluted by the difference between a cell average and a point value. ICE's 1 ms time
-step ceiling holds $\Delta t$ at $10^{-4}$ s on all four meshes, so the time error is
-common to them and what the refinement measures is the space discretisation.
+polluted by the difference between a cell average and a point value. The `dt-max`
+ceiling (default $10^{-4}$ s) holds $\Delta t$ at the same value on all four meshes, so
+the time error is common to them and what the refinement measures is the space
+discretisation.
 
 | Cells | 25 | 50 | 100 | 200 | Observed order |
 |---|---|---|---|---|---|

@@ -8,13 +8,14 @@ module ICE_Mod_dt
 
 contains
 
-  subroutine compute_dt (p, cfl, cfl_rampa_iter, grid)
+  subroutine compute_dt (p, cfl, cfl_rampa_iter, dt_max, grid)
     use ICE_Global_m
     use ICE_Advanced_Types_m
     implicit none
     integer(kind=I4), intent(in)  :: p
     real(kind=R8), intent(in)     :: cfl
     integer(kind=I4), intent(in)  :: cfl_rampa_iter
+    real(kind=R8), intent(in)     :: dt_max
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4) :: b, i, j, k
     real(kind=R8)    :: dtmin
@@ -36,7 +37,8 @@ contains
         call compute_dt_ (grid%blk(b)%cond_phase(p)%prim(:,i,j,k), &
                           grid%blk(b)%dl(i,j,k)%c,                 &
                           grid%blk(b)%M(i,j,k)%c,                  &
-                          grid%blk(b)%cond_phase(p)%dt(i,j,k))
+                          grid%blk(b)%cond_phase(p)%dt(i,j,k),     &
+                          dt_max)
          
         grid%blk(b)%cond_phase(p)%dt(i,j,k) = grid%blk(b)%cond_phase(p)%dt(i,j,k) * cfl
 
@@ -59,13 +61,14 @@ contains
   end subroutine compute_dt    
   
   
-  subroutine compute_dt_ (prim, length, tensor, dt)
+  subroutine compute_dt_ (prim, length, tensor, dt, dt_max)
     use ICE_Lib_Model
     implicit none
     real(kind=R8), dimension(:),   intent(in)    :: prim
     real(kind=R8), dimension(:),   intent(in)    :: length
     real(kind=R8), dimension(:,:), intent(in)    :: tensor
     real(kind=R8),                 intent(inout) :: dt
+    real(kind=R8),                 intent(in)    :: dt_max
     
     integer(kind=I4) :: d
     real(kind=R8)    :: versor(3)
@@ -78,7 +81,7 @@ contains
       speed  = abs( dot_product (prim(2:4), versor) )
       
       dtd = length(d) / (speed + sound)
-      dt = min (1e-4,dt,dtd)
+      dt = min (dt_max,dt,dtd)
 
     enddo    
 

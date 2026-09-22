@@ -32,6 +32,9 @@ contains
 
     call reg%add(trim(section), 'cfl',                obj_time_scheme%cfl,            &
                  '0.5',    'CFL stability parameter',            '> 0', .false.)
+    call reg%add(trim(section), 'dt-max',             obj_time_scheme%dt_max,         &
+                 '1e-4',   'Ceiling on the local time step [s], applied before the CFL '// &
+                           'factor: the step never exceeds cfl * dt-max', '> 0', .false.)
     call reg%add(trim(section), 'cfl-rise-threshold', obj_time_scheme%cfl_rampa_iter, &
                  '0',      'CFL ramp start iteration',           '>= 0',.false.)
     call reg%add(trim(section), 'time-accurate',      obj_time_scheme%time_accurate,  &

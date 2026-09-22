@@ -29,7 +29,7 @@ def exact(ph, t, up0=0.0):
     return ph.ug + (up0 - ph.ug) * math.exp(-t / ph.tau_stokes)
 
 
-def relax_case(ph, t_end, cfl=0.8, rk=2, nx=8, Lx=1.0, Ly=None, name='relax'):
+def relax_case(ph, t_end, cfl=0.8, rk=2, nx=8, Lx=1.0, Ly=None, dt_max=None, name='relax'):
     """Uniform cloud, one-way coupled to a uniform gas, run to t_end."""
     case = Case(WORK / name, nx=nx, Lx=Lx, Ly=Ly)
     case.particles(rho=ph.rho_p, u=0.0, v=ph.vg, w=0.0, T=ph.Tg, n=ph.n)
@@ -37,7 +37,7 @@ def relax_case(ph, t_end, cfl=0.8, rk=2, nx=8, Lx=1.0, Ly=None, name='relax'):
              R=ph.R, gam=ph.gam, k=ph.kg, mu=ph.mu)
     case.boundaries('extrapolation')
     case.ini(t_end=t_end, cfl=cfl, rk=rk, drag='Stokes', heat='Stokes',
-             rho_al=ph.rho_al, cs=ph.cs)
+             rho_al=ph.rho_al, cs=ph.cs, dt_max=dt_max)
     return case.run()
 
 
@@ -71,6 +71,19 @@ def main():
                   't = %.2f tau: temperature unchanged (no drag heating)' % ratio)
 
     rep.check(worst <= 1e-5, 'velocity matches the exact solution to %.1e of u_g' % worst)
+
+    # --- dt-max really does bound the step ------------------------------------------
+    # The run stops at the first step past its end time, so the overshoot is smaller
+    # than one step: it shows the ceiling (times the CFL number) was applied.
+    cfl, dt_max, target = 0.8, 1.0e-5, 0.5 * tau
+    sol = relax_case(ph, target, cfl=cfl, dt_max=dt_max, name='dtmax')
+    over = sol['time'] - target
+    print('   dt-max = %.0e s: overshoot %.2e s (one step is at most %.2e s)'
+          % (dt_max, over, cfl * dt_max))
+    rep.check(0.0 <= over <= 1.001 * cfl * dt_max,
+              'dt-max bounds the time step')
+    rep.check(abs(sol['var'][U][0] - exact(ph, sol['time'])) / ph.ug <= 1e-5,
+              'the shorter step still matches the exact solution')
 
     # --- Time-step refinement ------------------------------------------------------
     # A transverse velocity common to gas and particles keeps the CFL condition, not

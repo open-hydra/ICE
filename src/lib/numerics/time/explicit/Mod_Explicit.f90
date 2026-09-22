@@ -39,7 +39,8 @@ contains
     !$omp parallel
     do p = 1, ngroups
       call assign_sound_make(p)
-      call compute_dt(p, obj_time_scheme%cfl, obj_time_scheme%cfl_rampa_iter, grid)
+      call compute_dt(p, obj_time_scheme%cfl, obj_time_scheme%cfl_rampa_iter, &
+                      obj_time_scheme%dt_max, grid)
     end do
     !$omp end parallel
 

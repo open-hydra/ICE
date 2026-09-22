@@ -153,11 +153,14 @@ class Case(object):
         write_bc(self.dir / 'INPUT/part-bc.txt', self.nx, self.ny, self.nz, mode)
 
     def ini(self, t_end=None, iters=1000000000, cfl=0.8, rk=2, drag='Stokes', heat='Stokes',
-            reconstruction='MUSCL', limiter='VANLEER', rho_al=1000.0, cs=900.0):
+            reconstruction='MUSCL', limiter='VANLEER', rho_al=1000.0, cs=900.0, dt_max=None):
+        parameters = {'cfl': cfl, 'time-accurate': True, 'iter-threshold': iters,
+                      'time-threshold': t_end if t_end is not None else 1e30,
+                      'res-threshold': 0.0}
+        if dt_max is not None:
+            parameters['dt-max'] = dt_max
         write_ini(self.dir / 'input.ini', {
-            'ICE-Parameters': {'cfl': cfl, 'time-accurate': True, 'iter-threshold': iters,
-                               'time-threshold': t_end if t_end is not None else 1e30,
-                               'res-threshold': 0.0},
+            'ICE-Parameters': parameters,
             'ICE-Scheme': {'space-reconstruction': reconstruction, 'flux-limiter': limiter,
                            'time': rk, 'drag': drag, 'heat': heat},
             'ICE-Family1': {'model': 'MK'},
