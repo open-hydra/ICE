@@ -21,13 +21,14 @@ contains
     real(kind=R8)    :: normal(3), area
     real(kind=R8)    :: dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th
     real(kind=R8)    :: beta_val
-    real(kind=R8)    :: priml(12), primr(12)
+    real(kind=R8)    :: priml(12), primr(12), flux(12)
+    integer(kind=I4) :: v
 
     !$OMP PARALLEL DEFAULT(NONE), &
     !$OMP SHARED(grid, ngroups, ncond, riemann), &
     !$OMP PRIVATE(n, b, f, p, i, j, k, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, &
     !$OMP         dir, normal, area, dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th, &
-    !$OMP         beta_val, priml, primr)
+    !$OMP         beta_val, priml, primr, flux, v)
     do b = 1, grid%nb
       do p = 1, ngroups
 
@@ -80,9 +81,7 @@ contains
                                   dl0, dl1, dl2, dll, dlr,                                 &
                                   priml(1:ncond(p)), primr(1:ncond(p)), beta_val)
 
-        grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = &
-          grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) + &
-          riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal) * area
+        flux(1:ncond(p)) = riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal) * area
 
         case (2,4,6)
         !> Even faces: stencil (m-1, m, g1, g2) → priml=interior side, primr=ghost side
@@ -102,11 +101,16 @@ contains
                                   dl0, dl1, dl2, dll, dlr,                                 &
                                   priml(1:ncond(p)), primr(1:ncond(p)), beta_val)
 
-        grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = &
-          grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) - &
-          riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal) * area
+        flux(1:ncond(p)) = - riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal) * area
 
       end select
+
+      !> Edge and corner cells carry one entry per boundary face, handled by different
+      !> threads: accumulate atomically.
+      do v = 1, ncond(p)
+        !$OMP ATOMIC
+        grid%blk(b)%cond_phase(p)%residual(v,i,j,k) = grid%blk(b)%cond_phase(p)%residual(v,i,j,k) + flux(v)
+      enddo
 
     enddo
     !$OMP END PARALLEL
