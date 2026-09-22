@@ -71,9 +71,12 @@ running `./ICE.sh solve` by hand does.
 | `fast` | Short runs of hard invariants (no stored reference); a few seconds each |
 | `validation` | Full case compared against its stored reference solution |
 | `verification` | Compared against a solution that does not come from ICE (closed form or independent integration) |
-| `sources` / `transport` | Coverage area of a verification case |
 | `needs-mpi` | Needs an MPI build; registered only when `USE_MPI=ON` |
-| `MK` / `IG` / `AG`, `chimera`, `connection`, `1D` / `2D` | Coverage area |
+| `sources`, `transport`, `implementation` | What part of the solver a case covers |
+| `MK`, `IG`, `AG`, `chimera`, `connection`, `1D`, `2D` | What configuration it covers |
+
+Labels combine, so `ctest -L AG` runs every case touching the anisotropic Gaussian
+closure whatever its tier, and `ctest -L fast` is what the pre-push hook runs.
 
 ### Threads and ranks
 
@@ -104,16 +107,40 @@ ICE_BUILD_DIR=/path/to/build git push
 ICE_PREPUSH_JOBS=2 git push
 ```
 
-## Adding a new test case
+## Adding a case
 
-1. Create a directory under `test/`, with `input.ini`, `INPUT/` and `ICE.sh` (copy an
-   existing case).
-2. Add a `verify.py` that exits with status 0 on success.
-3. Register it in `test/CMakeLists.txt` with `ice_add_case`, giving it labels.
-4. Create its reference solution from a run you trust:
+Decide first which kind it is, because the two are registered differently and carry
+different weight.
+
+### A validation case
+
+It compares a full run against a stored solution of ICE's own, so it can only detect
+*change*. Use one when the physics has no closed form but a regression would matter.
+
+1. Create a directory under `test/`, with `input.ini`, `INPUT/` and `ICE.sh` — copy an
+   existing case rather than writing `ICE.sh` from scratch.
+2. Write a `verify.py` that exits 0 on success and prints enough to diagnose a failure.
+3. Produce the reference from a run you have reason to trust, and say in the commit why
+   you trust it:
    ```bash
-   cd test/<case> && ./ICE.sh solve && cp OUTPUT/part-field.tec reference/
+   cd test/<case> && ./ICE.sh solve && mkdir -p reference && cp OUTPUT/part-field.tec reference/
    ```
-5. Document the case and its expected solution on a V&V page.
+4. Register it with `ice_add_case`, labelled `validation` plus its coverage.
+
+### A verification case
+
+It compares against a solution that does not come from ICE — a closed form, or an
+integration done independently — so it can fail on its first run, and a failure means
+something. Prefer one whenever the problem admits an exact answer.
+
+1. Add a directory under `test/verification/` with a `run.py` that writes its own mesh,
+   initial condition, boundary table and `input.ini` into `work/`, runs the solver there
+   and compares. `common.py` has the helpers for all of that.
+2. Register it with `ice_add_verification`, labelled `verification` plus its coverage,
+   and add `fast` if it runs in a few seconds.
+
+Either way, document what the case checks and what tolerance it uses on a
+[V&V page](../vv/index.md) — a tolerance with no recorded reasoning is one nobody can
+tighten later.
 
 ---

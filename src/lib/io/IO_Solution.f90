@@ -59,7 +59,7 @@ contains
       write_bck => write_vtk_tec
     end select
 
-    if (obj_sim_param%owcoupled) gasinit = 'INPUT/gas.tec'
+    if (obj_sim_param%owcoupled) gasinit = trim(obj_io%gaspath)//'gas.tec'
 
     if (obj_sim_param%newrun) then
       condinit = 'INPUT/'//trim(ICE_phase_prefix)//'ic'//trim(obj_io%extension)

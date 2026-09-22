@@ -4,62 +4,128 @@
 
 ```
 ICE/
-├── bin/                    # Compiled executables (generated)
-├── build/                  # CMake build directory (generated)
-├── cmake/                  # CMake helper files
-│   └── ICEConfig.cmake.in
-├── docs/                   # MkDocs documentation source
-├── lib/                    # Third-party dependencies (submodules)
-│   ├── ORION/
-│   └── third_party/FiNeR/
+├── bin/                        # ICE and DocGen (generated)
+├── cmake/                      # Compiler-flag probing and Find modules
+├── docs/                       # This documentation (MkDocs)
+├── lib/
+│   ├── ORION/                  # Submodule: mesh and solution I/O
+│   └── third_party/FiNeR/      # Submodule: INI parser
 ├── src/
-│   ├── app/                # Entry-point programs
-│   │   ├── main.f90        # ICE executable
-│   │   └── docgen.f90      # Input registry documentation generator
-│   └── lib/                # ICE library source
-│       ├── base/           # Fundamental types and parameters
-│       ├── config/         # INI file reading and configuration
-│       ├── diagnostic/     # Residual monitoring and diagnostics
-│       ├── driver/         # Top-level solve/setup/postprocess routines
-│       ├── io/             # Solution and restart I/O
-│       ├── numerics/       # Flux computation and time integration
-│       ├── parallel/       # MPI and ghost-cell exchange
-│       └── physics/        # Drag, heat transfer, and phase-change models
-├── test/                   # Test cases, wired into CTest
-│   ├── CMakeLists.txt      # CTest definitions and labels
-│   ├── Doisneau/           # Crossing-jets validation cases
-│   └── fast/               # Short invariant checks (pre-push tier)
-├── .githooks/pre-push      # Runs CTest before a push
+│   ├── app/
+│   │   ├── main.f90            # The solver executable
+│   │   └── docgen.f90          # Regenerates docs/user/registry.md
+│   └── lib/                    # Everything else, built into libICEL.a
+├── test/                       # Cases, wired into CTest
+├── .githooks/pre-push          # Runs CTest before a push
 ├── CMakeLists.txt
 ├── install.sh
-├── LICENSE
-├── CITATION.cff
 └── mkdocs.yml
 ```
 
-## Module naming convention
+## Library layout
 
-All public modules follow the pattern `ICE_<Subdirectory>_<Name>_m` or `ICE_<Name>_m` for cross-cutting modules. Examples:
+```
+src/lib/
+├── base/
+│   ├── Parameters_m.f90        # Kinds, string lengths, pi, Stefan-Boltzmann
+│   ├── Base_Types_m.f90        # Vectors, faces, metric containers
+│   ├── Advanced_Types_m.f90    # Block, domain, BC and simulation types
+│   ├── Global_m.f90            # ngroups, ncond, ghost-layer count, phase prefix
+│   └── Series_Data_m.f90
+├── config/
+│   ├── Registry.f90            # The input registry: add, validate, emit markdown
+│   ├── Register_*.f90          # One per section group; the source of truth for inputs
+│   ├── Backend_INI.f90         # FiNeR wrapper; scans for families, probes, MG levels
+│   ├── Read_Ini.f90            # Scan, register, load, validate
+│   ├── Assign_Setup.f90        # Post-read derivations: closures, ncond, coupling
+│   └── Config_Types_m.f90      # The obj_* configuration objects
+├── driver/
+│   ├── Procedures_m.f90        # The ICE_type facade: setup / solve / postprocess
+│   ├── Wrap_Setup.f90          # Read, allocate, metrics, BCs, partition, gas
+│   ├── Wrap_Solve.f90          # One step, plus the grid-level transition
+│   ├── Wrap_Postprocess.f90    # Output frequencies, shell reporting, restart files
+│   ├── Mod_Allocate_Data.f90
+│   └── Mod_Phase.f90           # Maps the ORION arrays onto the phase state
+├── io/
+│   ├── IO_Solution.f90         # Solution and restart read/write via ORION
+│   ├── IO_BC.f90               # Parses the ATLAS boundary table
+│   ├── IO_Probes.f90
+│   └── Load_Table.f90          # Optional rho(T), cs(T) table
+├── numerics/
+│   ├── space/
+│   │   ├── Mod_Metrics.f90         # Areas, normals, volumes, dimensionality
+│   │   ├── Lib_Ghost.f90           # Ghost fill for every boundary type
+│   │   ├── Lib_Reconstruction.f90  # Limited piecewise-linear states
+│   │   ├── Lib_Limiters.f90        # Eleven limiters
+│   │   └── Lib_Shock_Detector.f90  # The MUSCL-SD sensor
+│   ├── fluxes/
+│   │   ├── Mod_Fluxes.f90          # Interior faces, two-pass to avoid races
+│   │   ├── bc/Mod_BC_Fluxes.f90    # Boundary faces, from the ghost values
+│   │   └── riemann/Lib_Riemann.f90 # Upwind, Rusanov, HLLE
+│   ├── time/
+│   │   ├── Mod_dt.f90              # CFL step, local or global
+│   │   └── explicit/               # RK stages, residual, IRS, state update
+│   └── multigrid/                  # Coarse-grid construction and prolongation
+├── parallel/
+│   ├── Mod_MPI.f90             # Environment, block partition, collectives
+│   └── Mod_GhostExchange.f90   # Halo schedule and persistent requests
+├── physics/
+│   ├── Lib_Model_MK/IG/AG.f90  # The three closures
+│   ├── Lib_Model.f90           # Binds the model procedures to the active family
+│   ├── Lib_Drag.f90            # Twelve drag correlations
+│   ├── Lib_Heat.f90            # Seven Nusselt correlations
+│   └── Mod_Sources.f90         # Assembles the source vector
+└── diagnostic/
+    └── Mod_Diagnostic.f90      # Residual norms and their output
+```
+
+## Where to change what
+
+| To change | Edit |
+|---|---|
+| An input parameter, its default or its validation | the matching `config/Register_*.f90`, then run `bin/DocGen` |
+| A drag or Nusselt correlation | `physics/Lib_Drag.f90` / `Lib_Heat.f90`, and the Python mirror in `test/verification/common.py` |
+| A closure | the three `physics/Lib_Model_*.f90` plus `ncond` in `config/Assign_Setup.f90` |
+| A boundary type | `io/IO_BC.f90` to parse it and `numerics/space/Lib_Ghost.f90` to apply it |
+| The time integrator | `numerics/time/explicit/Lib_RK.f90` |
+
+## Module naming
+
+A file `<dir>/<Name>.f90` defines module `ICE_<Name>`, with the `Mod_`/`Lib_` prefix
+kept and `_m` suffixes preserved:
 
 | File | Module |
 |------|--------|
 | `base/Parameters_m.f90` | `ICE_Parameters_m` |
-| `base/Advanced_Types_m.f90` | `ICE_Advanced_Types_m` |
 | `parallel/Mod_MPI.f90` | `ICE_Mod_MPI` |
+| `physics/Lib_Drag.f90` | `ICE_Lib_Drag` |
 | `numerics/fluxes/bc/Mod_BC_Fluxes.f90` | `ICE_Mod_BC_Fluxes` |
+
+Sources are collected by a recursive glob, so a new `.f90` anywhere under `src/lib/` is
+picked up on the next configure without editing any `CMakeLists.txt`.
+
+## Selecting behaviour at runtime
+
+Two patterns coexist.
+
+**Integer selectors.** `Lib_Drag` and `Lib_Heat` are collections of `pure` functions
+dispatched by an integer carried in the configuration (`dragSelect`, `heatSelect`).
+Nothing mutable is shared, so the source loops are safe to thread and the functions can
+be called from a `pure` context.
+
+**Procedure pointers.** `Lib_Model`, `Lib_Riemann` and `Lib_Limiters` hold module-level
+pointers bound once per family, before the loop that uses them
+(`assign_all`, `assign_riemann`, `assign_limiter`). Because the binding is per family
+and the loops over families are serial, this is safe as written, but it is why
+`Lib_Ghost` — which walks every family in one loop — dispatches on the closure name
+explicitly instead of using the pointers.
 
 ## Build system
 
-ICE uses CMake (≥ 3.23). The library target is `ICEL` with alias `ICEL::ICEL`. The main executable target is `ICE`; the documentation generator is `DocGen`.
+CMake 3.23 or newer. The library target is `ICEL` (alias `ICEL::ICEL`); the executables
+are `ICE` and `DocGen`, both written to `bin/`. Options are listed under
+[Installation](../getting-started/installation.md).
 
-Key CMake options:
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `USE_OPENMP` | `OFF` | Enable OpenMP |
-| `USE_MPI` | `OFF` | Enable MPI |
-| `USE_TECIO` | `OFF` | Enable TecIO binary output |
-| `ORION_PATH` | `lib/ORION/` | Path to ORION submodule |
-| `FINER_PATH` | `lib/third_party/FiNeR/` | Path to FiNeR submodule |
-
----
+MPI support is a compile-time definition, `USE_MPI`. Everything MPI-specific is behind
+it, and `Mod_MPI` provides no-op versions of its interface when it is off, so the rest
+of the code has no conditionals in it.

@@ -4,13 +4,18 @@ title: Overview
 
 # Overview
 
-ICE (**I**nternal **C**ondensed-phase **E**quations) is an open-source Eulerian solver for dispersed condensed phases on multi-block structured grids, written in modern Fortran. It targets a wide range of particulate-phase problems — from mono-disperse aluminium particle suspensions to multi-group polydisperse flows with coupled heat transfer, drag, and phase change.
+ICE (*Integration of a Condensed phase via an Eulerian method*) is an
+open-source solver for a dispersed condensed phase — droplets or solid particles —
+on multi-block structured grids, written in modern Fortran. It carries the particle
+cloud as a continuum rather than as individual parcels, and can run on its own or
+against a frozen gas field produced by another solver.
 
 ---
 
 ## Hydra CFD Suite
 
-ICE is the **condensed-phase solver** of the **Hydra** CFD ecosystem — an integrated suite of tools for multi-physics simulation of complex systems.
+ICE is the **condensed-phase solver** of the **Hydra** CFD ecosystem — an integrated
+suite of tools for multi-physics simulation of complex systems.
 
 | Component | Role | Status |
 |-----------|------|--------|
@@ -20,133 +25,136 @@ ICE is the **condensed-phase solver** of the **Hydra** CFD ecosystem — an inte
 | **ICE** | Solver: Eulerian condensed-phase equations for dispersed particles | This package |
 
 !!! info "Using ICE without ATLAS"
-    The input files required by ICE (initial conditions, boundary condition table, material property data) are **typically produced by ATLAS**. If ATLAS is not available, all input files can be prepared manually; see the [User Guide](user/using.md) for the expected formats.
+    The boundary-condition table ICE reads is normally written by ATLAS BCB, and the
+    property table by ATLAS. Both are plain text and can be written by hand; the
+    formats are given under [Boundary Conditions](user/boundary-conditions.md) and
+    [Initial Conditions](user/initial-conditions.md).
 
 ---
 
-## ICE Capabilities
+## What ICE solves
 
-ICE solves the Eulerian equations for the condensed (particulate) phase using the **monokinetic (MK) closure**, in which all particles within a group share the same velocity. The conservative-variable vector for each group is:
+The cloud is described by a bulk density $\rho_p$ (mass of condensed material per unit
+volume of *mixture*, kg/m³) and a number density $n$ (particles per m³). The particle
+radius is not a state variable: it follows from the two,
 
 $$
-\mathbf{U} = \begin{pmatrix} \alpha_p \rho_p \\ \alpha_p \rho_p u \\ \alpha_p \rho_p v \\ \alpha_p \rho_p w \\ \alpha_p \rho_p e_p \\ \alpha_p \end{pmatrix}
+R_p = \left(\frac{3}{4\pi}\,\frac{\rho_p}{n\,\rho_{al}}\right)^{1/3},
 $$
 
-where $\alpha_p$ is the particle volume fraction, $\rho_p$ the material density, $(u,v,w)$ the particle velocity, and $e_p$ the specific total energy. The governing equations include source terms for drag, heat exchange, and phase change.
+with $\rho_{al}$ the density of the condensed material itself. One consequence is that
+a cell can hold a different particle size from its neighbour without any extra
+bookkeeping.
+
+ICE offers three closures for the velocity distribution inside a cell, chosen per
+family:
+
+| Closure | Variables | State |
+|---|---|---|
+| **MK** — monokinetic | 6 | $\rho_p,\ u,\ v,\ w,\ T_p,\ n$ |
+| **IG** — isotropic Gaussian | 7 | $\rho_p,\ u,\ v,\ w,\ P,\ T_p,\ n$ |
+| **AG** — anisotropic Gaussian | 12 | $\rho_p,\ u,\ v,\ w,\ P_{11},\ P_{12},\ P_{13},\ P_{22},\ P_{23},\ P_{33},\ T_p,\ n$ |
+
+MK assumes every particle in a cell moves at the same velocity, which makes the system
+pressureless: two clouds meeting at an angle pass through each other only if the
+scheme lets them, and their trajectories cross in a singularity. IG adds one scalar
+velocity dispersion, AG the full symmetric dispersion tensor, which is what lets a
+crossing or a shear be represented. See
+[Governing Equations](theory/governing-equations.md).
+
+Several families can be carried at once, each with its own closure, set by one
+`[ICE-FamilyN]` section per family. They share the mesh and the gas field but not
+their state, and do not exchange mass or momentum with one another.
 
 ---
 
-## Physical Models
+## Physical models
 
-### Particle properties
+Source terms are active only when a gas field is present — that is, when
+`INPUT/gas.tec` exists. Without it ICE runs 0-way coupled and transports the cloud
+with no exchange at all.
 
-ICE models each particle group as a condensed material with constant thermophysical properties.
+| Term | What it does |
+|---|---|
+| Drag | Momentum and the matching kinetic-energy exchange with the gas, through a relaxation time built from $C_d$. Twelve correlations. |
+| Convective heat | Energy exchange through a Nusselt number. Seven correlations. |
+| Radiation | Grey-body exchange with the local gas temperature, at emissivity `emiss`. |
 
-| Property | Symbol | Description |
-|----------|--------|-------------|
-| Material density | $\rho_p$ | Mass per unit volume of particle material |
-| Specific heat | $c_{s,p}$ | Constant-pressure heat capacity |
-| Latent heat | $L_v$ | Latent heat of vaporisation |
-| Heat of combustion | $q_p$ | Energy released per unit mass of reacted particle |
+The correlations and their expressions are listed under
+[Particle Physics](theory/physics.md). Mass transfer between the phases
+(vaporisation, combustion) is present in the equations as a term but is not evaluated:
+the closures carry it, the source routine sets it to zero.
 
-### Multi-group polydisperse model
-
-A population of $N_\text{grp}$ independent groups is supported, each representing particles of a distinct size or material. Within each group, the monokinetic closure assumes all particles share the same local velocity. The group populations are specified at initialisation via `npop` and `ncond` arrays.
-
-### Heat transfer
-
-Gas–particle heat exchange is modelled via a Nusselt correlation:
-
-$$
-\dot{q}_{gp} = \frac{6 \alpha_p \lambda_g}{d_p^2}\, Nu(Re_p, Pr, Ma) \,(T_g - T_p)
-$$
-
-Available Nusselt models:
-
-| Model | Conditions |
-|-------|-----------|
-| Stokes | $Re_p \ll 1$ |
-| Ranz–Marshall | Moderate Reynolds number |
-
-### Drag
-
-Drag source terms are computed from the particle slip velocity and a drag coefficient $C_D(Re_p, Ma)$ selected from several built-in correlations.
-
-### Radiation
-
-Thermal radiation is modelled via the Stefan–Boltzmann law with configurable emissivity $\varepsilon$:
-
-$$
-\dot{q}_\text{rad} = \varepsilon \sigma (T_\text{ref}^4 - T_p^4)
-$$
+The material density and specific heat can be constants from `[ICE-Physics]` or
+tabulated against temperature in `INPUT/part-properties.dat`; the table wins when it is
+present, and ICE says at startup which of the two it is using.
 
 ---
 
-## Numerical Methods
-
-### Spatial discretisation
+## Numerical methods
 
 | | Details |
 |-|---------|
-| Framework | Cell-centred finite volume on structured multi-block hexahedral grids |
-| Convective flux | High-order reconstruction with flux limiters |
-| Source terms | Point-implicit treatment for stiff drag and heat-transfer terms |
-| Metric tensor | Computational-to-physical mapping evaluated per face |
+| Framework | Cell-centred finite volume on multi-block structured hexahedral grids, two ghost layers per face |
+| Reconstruction | First order, or MUSCL with a choice of eleven limiters; MUSCL-SD blends back towards first order near a shock through a Jameson-type density sensor |
+| Riemann solver | Chosen from the closure: an upwind flux for MK (pressureless), Rusanov for IG and AG |
+| Dimensionality | 1-D, 2-D or 3-D, inferred from the block dimensions |
+| Time integration | Explicit forward Euler, SSP-RK2 or SSP-RK3 |
+| Time step | Global minimum (time accurate) or per cell (steady state), from a CFL condition capped by `dt-max` |
+| Convergence aids | Implicit residual smoothing; grid sequencing from a coarse level up |
+| Source terms | Evaluated explicitly, inside the Runge-Kutta stages |
 
-### Time integration
-
-| | Details |
-|-|---------|
-| Explicit scheme | Multi-stage Runge–Kutta (RK) |
-| Stability | CFL condition on particle convection |
-| Steady-state mode | Local time stepping |
-| Time-accurate mode | Global minimum $\Delta t$ |
+Details in [Spatial Discretization](theory/numerics.md) and
+[Time Integration](theory/time-integration.md).
 
 ### Parallel computing
 
 | Mode | Details |
 |------|---------|
-| Shared memory | OpenMP thread-level parallelism |
-| Distributed memory | MPI domain decomposition across blocks (ghost-cell exchange) |
-| Hybrid | OpenMP + MPI combined runs on HPC clusters |
+| Shared memory | OpenMP over the cells of each block |
+| Distributed memory | MPI over whole blocks: each rank updates the blocks it owns and exchanges the interior cells its neighbours' ghosts read |
+| Hybrid | Both together, threads inside each rank |
+
+The number of ranks does not change the answer: a run on four ranks is bit-for-bit
+identical to a serial one. See [Multi-block and MPI](vv/multiblock-mpi.md).
 
 ---
 
-## Code Dependencies
+## Dependencies
 
-### Required libraries
+### Required
 
 | Library | Role | Source |
 |---------|------|--------|
-| [ORION](https://github.com/MarcoGrossi92/ORION) | Multi-format I/O — Tecplot, VTK | Bundled submodule |
+| [ORION](https://github.com/MarcoGrossi92/ORION) | Mesh and solution I/O — Tecplot, VTK | Bundled submodule |
 | [FiNeR](https://github.com/szaghi/FiNeR) | INI configuration file parser | Bundled submodule |
 
-### Optional libraries
+### Optional
 
 | Library | Role |
 |---------|------|
 | OpenMP | Shared-memory thread parallelism |
 | MPI | Distributed-memory parallelism |
-| TecIO | Binary Tecplot output |
+| TecIO | Binary Tecplot output, through ORION |
 
 ### Build toolchain
 
-| Tool | Minimum version |
-|------|----------------|
-| CMake | 3.23 |
-| Fortran compiler | GNU gfortran 11+ or Intel ifx/ifort |
-| C / C++ compiler | GCC or ICC (for ORION and the optional TecIO) |
+| Tool | Requirement |
+|------|-------------|
+| CMake | 3.23 or newer |
+| Fortran compiler | GNU `gfortran` or Intel `ifx` |
+| C / C++ compiler | Needed by ORION and, if enabled, TecIO |
 
 ---
 
-## Documentation Guide
+## Documentation guide
 
 | Section | What you'll find |
 |---------|-----------------|
 | [**Getting Started**](getting-started/index.md) | Installation, prerequisites, and first run |
-| [**User Guide**](user/index.md) | Running simulations, configuring input files, boundary conditions, output |
+| [**User Guide**](user/index.md) | Case layout, `input.ini`, initial and boundary conditions, output |
 | [**Theory Guide**](theory/index.md) | Governing equations, numerical methods, particle physics models |
-| [**Verification & Validation**](vv/index.md) | Test cases and analytical benchmarks |
+| [**Verification & Validation**](vv/index.md) | Test cases, exact solutions and analytical benchmarks |
 | [**Developer Guide**](development/index.md) | Repository architecture, testing framework, contribution guidelines |
 | [**About**](about/index.md) | License, acknowledgements, and contributors |
 
@@ -154,7 +162,8 @@ $$
 
 ## License
 
-ICE is free and open-source software released under the **[GNU General Public License v3.0](about/license.md)** (GPL-3.0).
+ICE is free and open-source software released under the **[GNU General Public License
+v3.0](about/license.md)** (GPL-3.0).
 
 | Permission | |
 |------------|-|

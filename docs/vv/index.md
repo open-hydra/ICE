@@ -4,41 +4,60 @@ title: Verification & Validation
 
 # Verification & Validation
 
-Test cases used to verify the numerical implementation of ICE, by comparison against
-exact solutions and against ICE's own single-block results.
+Two different questions are asked on these pages, and it is worth keeping them apart.
 
-The [code-verification](verification.md) cases and the [Berthon Riemann
-problems](berthon.md) compare ICE against solutions that come from outside ICE, so they
-can fail on their first run. The other cases compare against exact free streaming or
-against ICE's own single-block solution.
+**Verification** asks whether ICE solves its equations correctly, by comparing against a
+solution that does not come from ICE: a closed form, an analytical wave pattern, or an
+integration performed independently in Python. These cases can fail on their first run,
+and a failure means something is wrong.
+
+**Regression** asks only whether ICE still gives the answer it used to, by comparing
+against a stored solution of its own. These cases cannot tell you the answer is right —
+only that it has not changed.
+
+Most pages here do both: they establish the answer against an exact solution once, and
+then keep a stored reference so a change is caught.
 
 ## Test suite
 
-| Test | Dim | Models | Physics | Verification | Regression case |
+| Test | Dim | Closures | What it exercises | Compared against | Cases |
 |---|---|---|---|---|---|
-| [Crossing Jets](crossing-jets.md) | 2D | MK, IG, AG | Two free-streaming particle jets crossing at 90° | Exact free-streaming solution | `Doisneau/MK`, `Doisneau/IG`, `Doisneau/AG` |
-| [Chimera Overset](chimera.md) | 2D | IG | Crossing jets on two overlapping, non-matching blocks | Single-block solution; matched-resolution control | `Doisneau/IG-chimera` |
-| [Multi-block and MPI](multiblock-mpi.md) | 2D | IG | Crossing jets on four blocks joined by connections | Single-block solution; identical results on 1 to 4 MPI ranks | `Doisneau/IG-split4` |
-| [Berthon Riemann Problems](berthon.md) | 1D | AG | Shock, contact and rarefaction waves of the Gaussian closure | Analytical wave patterns | `Berthon/SCS`, `Berthon/RCS`, `Berthon/RCR` |
-| [Code Verification](verification.md) | 1D | MK | Drag and heat relaxation, periodic advection, every drag and Nusselt law | Closed-form solutions and independent RK4 integration | `verification/A` … `verification/E` |
+| [Crossing Jets](crossing-jets.md) | 2D | MK, IG, AG | Free streaming, inlets, how each closure handles crossing streams | Exact free-streaming solution | `Doisneau/MK`, `Doisneau/IG`, `Doisneau/AG` |
+| [Chimera Overset](chimera.md) | 2D | IG | Overset interpolation between overlapping non-matching blocks | The same case on a single block, plus a matched-resolution control | `Doisneau/IG-chimera` |
+| [Multi-block and MPI](multiblock-mpi.md) | 2D | IG | Block connections and the rank decomposition | The single block; and 1 to 4 ranks against each other | `Doisneau/IG-split4` |
+| [Berthon Riemann Problems](berthon.md) | 1D | AG | Shocks, contacts and rarefactions of the Gaussian system | Analytical wave patterns | `Berthon/SCS`, `Berthon/RCS`, `Berthon/RCR` |
+| [Code Verification](verification.md) | 1D | MK | Drag and heat relaxation, periodic advection, every drag and Nusselt correlation | Closed forms and independent RK4 integrations | `verification/A` … `verification/E` |
 
-## Running the tests
+Read together they cover: every closure, both source terms and all nineteen of their
+correlations, the transport operator and its order of accuracy, the time integrator and
+its order, and every way a block can talk to another one.
 
-Each case lives under `test/` with a `verify.py` script: the crossing-jets cases compare
-the density field against the case's stored reference solution (L2 norm, tolerance
-$10^{-4}$), the Berthon cases compare six fields against the analytical wave pattern
-(L1 norm), and the code-verification cases build their own inputs from scratch.
+### What is not covered
 
-```bash
-ctest --test-dir build -j 5 --output-on-failure   # run and verify every case
-ctest --test-dir build -R DoisneauIG -V           # a single case
-```
+Restart, probes, grid sequencing and implicit residual smoothing have no case. Nor does
+any three-dimensional configuration — every case here is 1-D or 2-D — or any run with
+more than one family.
 
-See [Testing](../development/testing.md) for the tiers, the labels and the pre-push hook.
-
-The figures on these pages are produced from the same runs:
+## Running them
 
 ```bash
-cd test/Doisneau
-python3 plot_vv.py                  # writes docs/vv/images/*.svg and prints the quoted metrics
+ctest --test-dir build -j 5 --output-on-failure   # everything, about a minute
+ctest --test-dir build -L verification            # only the cases with an outside answer
+ctest --test-dir build -R DoisneauIG -V           # one case, with live output
 ```
+
+Each case under `test/Doisneau/` and `test/Berthon/` runs in its own directory through
+`ICE.sh` and checks itself with a `verify.py`; the cases under `test/verification/`
+generate their inputs from scratch into a scratch directory. See
+[Testing](../development/testing.md) for the tiers, the labels and the pre-push hook.
+
+## Regenerating the figures
+
+The figures on these pages come from the same runs, after the cases have been run:
+
+```bash
+cd test/Doisneau && python3 plot_vv.py   # crossing jets and chimera
+cd test/Berthon  && python3 plot_vv.py   # the Riemann problems
+```
+
+Both write into `docs/vv/images/` and print the numbers quoted in the text.

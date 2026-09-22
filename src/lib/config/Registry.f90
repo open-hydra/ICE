@@ -274,7 +274,7 @@ contains
   subroutine generate_markdown(this, filename)
     class(registry_t), intent(in)           :: this
     character(*),      intent(in), optional :: filename
-    integer :: i, unit
+    integer :: i, j, unit
     character(len=:), allocatable :: fileout, current_section
     logical :: new_section
     if (present(filename)) then
@@ -283,27 +283,37 @@ contains
       fileout = "registry.md"
     end if
     open(newunit=unit, file=fileout, status="replace")
-    write(unit,'(A)') "# ICE Input Parameters"
+    write(unit,'(A)') "# Input Parameters"
     write(unit,'(A)') ""
+    write(unit,'(A)') "Generated from the input registry by `bin/DocGen`; regenerate it after"
+    write(unit,'(A)') "changing any `reg%add` call. Every parameter is optional unless the"
+    write(unit,'(A)') "Required column says otherwise, and omitting one selects the default."
+    !> One table per section, gathering entries wherever they were registered: the
+    !  sections are filled by several Register_* routines, so consecutive entries do
+    !  not all belong to the same one.
     do i = 1, this%size
-      if (.not. allocated(current_section)) then
-        new_section = .true.
-      else
-        new_section = trim(this%params(i)%section) /= trim(current_section)
-      end if
-      if (new_section) then
-        current_section = this%params(i)%section
-        write(unit,'(A)') ""
-        write(unit,'(A)') "## "//trim(current_section)
-        write(unit,'(A)') ""
-        write(unit,'(A)') "| Parameter | Default | Allowed | Required | Description |"
-        write(unit,'(A)') "|-----------|---------|---------|----------|-------------|"
-      end if
-      write(unit,'(A)') "| "//trim(this%params(i)%name)// &
-          " | "//trim(this%params(i)%default_str)// &
-          " | "//trim(this%params(i)%allowed)// &
-          " | "//merge("yes"," no", this%params(i)%required)// &
-          " | "//trim(this%params(i)%description)//" |"
+      new_section = .true.
+      do j = 1, i - 1
+        if (trim(this%params(j)%section) == trim(this%params(i)%section)) then
+          new_section = .false.
+          exit
+        end if
+      end do
+      if (.not. new_section) cycle
+      current_section = this%params(i)%section
+      write(unit,'(A)') ""
+      write(unit,'(A)') "## ["//trim(current_section)//"]"
+      write(unit,'(A)') ""
+      write(unit,'(A)') "| Parameter | Default | Allowed | Required | Description |"
+      write(unit,'(A)') "|-----------|---------|---------|----------|-------------|"
+      do j = i, this%size
+        if (trim(this%params(j)%section) /= trim(current_section)) cycle
+        write(unit,'(A)') "| `"//trim(this%params(j)%name)// &
+            "` | "//trim(this%params(j)%default_str)// &
+            " | "//trim(this%params(j)%allowed)// &
+            " | "//merge("yes"," no", this%params(j)%required)// &
+            " | "//trim(this%params(j)%description)//" |"
+      end do
     end do
     close(unit)
   end subroutine generate_markdown

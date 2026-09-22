@@ -23,8 +23,8 @@
       <p class="ice-hero__sub">Integration of a Condensed phase via an Eulerian method</p>
       <p class="ice-hero__body">
         Open-source Eulerian solver for dispersed condensed phases on multi-block structured grids —
-        from mono-disperse aluminium particles to multi-group polydisperse suspensions
-        with coupled heat transfer and phase change.
+        three kinetic closures, twelve drag and seven Nusselt correlations, and a verification
+        suite that checks them against solutions ICE did not produce.
       </p>
 
       <div class="ice-hero__btns">
@@ -64,8 +64,8 @@
               <circle cx="12" cy="4" r="2"/><circle cx="12" cy="20" r="2"/>
             </svg>
           </div>
-          <h3>Eulerian Condensed Phase</h3>
-          <p>Eulerian description of dispersed particles using the monokinetic (MK) closure. Supports mono- and poly-disperse size distributions organised in groups.</p>
+          <h3>Three Kinetic Closures</h3>
+          <p>Monokinetic, isotropic Gaussian and anisotropic Gaussian. The Gaussian closures carry a velocity dispersion, so crossing and shearing particle streams are represented rather than collapsed.</p>
         </article>
 
         <article class="ice-card ice-card--green">
@@ -77,7 +77,7 @@
             </svg>
           </div>
           <h3>Cell-Centred Finite Volume</h3>
-          <p>Conservative finite-volume discretisation on multi-block structured hexahedral grids with high-order flux reconstruction.</p>
+          <p>Conservative discretisation on multi-block structured hexahedral grids, with MUSCL reconstruction, eleven limiters and an optional shock detector. Block connections, periodicity and chimera overset.</p>
         </article>
 
         <article class="ice-card ice-card--emerald">
@@ -87,8 +87,8 @@
               <line x1="12" y1="9" x2="16" y2="9"/>
             </svg>
           </div>
-          <h3>Heat &amp; Mass Transfer</h3>
-          <p>Convective heat exchange between particle and gas phases via Nusselt correlations (Stokes, Ranz–Marshall). Latent heat and phase-change modelling.</p>
+          <h3>Drag &amp; Heat Transfer</h3>
+          <p>Twelve drag correlations and seven Nusselt correlations, from creeping flow to the compressible fits, plus grey-body radiation. Every one of them is verified against an independent integration.</p>
         </article>
 
         <article class="ice-card ice-card--cyan">
@@ -98,7 +98,7 @@
             </svg>
           </div>
           <h3>Explicit Time Marching</h3>
-          <p>Multi-stage Runge–Kutta time integration with CFL-based time-step control. Local and global time stepping for steady-state and time-accurate runs.</p>
+          <p>Forward Euler, SSP-RK2 and SSP-RK3, with CFL-based step control. Global stepping for time-accurate runs, local stepping, residual smoothing and grid sequencing for steady state.</p>
         </article>
 
         <article class="ice-card ice-card--indigo">
@@ -109,7 +109,7 @@
             </svg>
           </div>
           <h3>Parallel Execution</h3>
-          <p>Shared-memory parallelism via OpenMP and distributed-memory MPI with ghost-cell exchange across block boundaries on HPC clusters.</p>
+          <p>OpenMP over cells and MPI over blocks, separately or together. The answer does not depend on either: a four-rank run is bit-for-bit identical to a serial one.</p>
         </article>
 
         <article class="ice-card ice-card--violet">
@@ -121,7 +121,7 @@
             </svg>
           </div>
           <h3>Flexible I/O</h3>
-          <p>Tecplot (ASCII &amp; binary) and VTK output via ORION. Point probes for time histories and full restart capability.</p>
+          <p>Tecplot and VTK output through ORION, temperature-dependent material property tables, point probes for time histories, and restart from any written solution.</p>
         </article>
 
       </div>
@@ -134,7 +134,7 @@
 
       <div class="ice-qs__text">
         <h2>Up and running in minutes</h2>
-        <p>ICE ships with a single install script that handles all dependencies, compiles the Fortran core, and puts the binary on your PATH.</p>
+        <p>One install script fetches the submodules, configures CMake and compiles the Fortran core. The shipped test cases are complete and each checks its own result.</p>
         <div class="ice-qs__links">
           <a href="{{ 'getting-started/installation/' | url }}" class="ice-btn ice-btn--primary">
             Installation guide &rarr;
@@ -155,11 +155,11 @@
           </div>
           <pre class="ice-term__body"><code><span class="tc"># Clone and build</span>
 <span class="tp">$</span> git clone https://github.com/open-hydra/ICE.git
-<span class="tp">$</span> cd ICE &amp;&amp; ./install.sh build --compilers=gnu
+<span class="tp">$</span> cd ICE &amp;&amp; ./install.sh build --compilers=gnu --use-openmp
 
-<span class="tc"># Run a simulation</span>
-<span class="tp">$</span> cd test/mono-disperse
-<span class="tp">$</span> ./ICE.sh solve</code></pre>
+<span class="tc"># Run one of the shipped cases and check it</span>
+<span class="tp">$</span> cd test/Doisneau/IG
+<span class="tp">$</span> ./ICE.sh -p 4 solve &amp;&amp; python3 verify.py</code></pre>
         </div>
       </div>
 

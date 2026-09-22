@@ -20,9 +20,12 @@ contains
     obj_io%description     = 'none'
 
     call reg%add(section, 'sol-format',    obj_io%sol_format,    &
-                 'tecplot ascii', 'Solution output format (writer mode)', '', .false.)
+                 'tecplot ascii', 'Solution output format: "tecplot ascii", or "vtk" with '// &
+                                  '"ascii", "binary" or "raw"', '', .false.)
     call reg%add(section, 'bck-format',    obj_io%bck_format,    &
-                 'native binary',  'Backup output format (writer mode)',   '', .false.)
+                 'tecplot ascii',  'Restart-file format, which also selects the reader for '// &
+                                   'the initial condition: "tecplot ascii" or "vtk ascii" / '// &
+                                   '"vtk binary"', '', .false.)
 
     call reg%add(section, 'sol-diter',     obj_io%sol_diter,     &
                  '1000000000', 'Solution output iteration frequency', '> 0', .false.)
@@ -43,9 +46,11 @@ contains
     call reg%add(section, 'res-diter',     obj_io%res_diter,     &
                  '10',         'Residual history write frequency',    '> 0', .false.)
     call reg%add(section, 'ini-diter',     obj_io%ini_diter,     &
-                 '1000000000', 'Runtime input.ini reload frequency', '> 0', .false.)
+                 '1000000000', 'Re-read input.ini every n iterations, so a running '// &
+                               'simulation can be re-steered', '> 0', .false.)
     call reg%add(section, 'gas-path',      obj_io%gaspath,       &
-                 'INPUT/',     'Gas-phase solution path',         '',    .false.)
+                 'INPUT/',     'Directory holding the one-way-coupling gas file gas.tec', &
+                 '',    .false.)
 
   end subroutine Register_IO_Fields
 
@@ -61,7 +66,8 @@ contains
     allocate(obj_io_probes(n))
     do p = 1, n
       call reg%add(trim(codename)//'-Probes', 'probe'//trim(str(.true.,p)), &
-                   obj_io_probes(p)%file, 'probe-placeholder', 'Probe file name', '', .false.)
+                   obj_io_probes(p)%file, '', 'Name of the section configuring this probe; '// &
+                   'it also names its output file OUTPUT/<name>.txt', '', .false.)
       call Register_One_Probe(p, probes_name(p))
     end do
 

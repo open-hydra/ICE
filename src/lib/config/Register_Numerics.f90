@@ -36,9 +36,11 @@ contains
                  '1e-4',   'Ceiling on the local time step [s], applied before the CFL '// &
                            'factor: the step never exceeds cfl * dt-max', '> 0', .false.)
     call reg%add(trim(section), 'cfl-rise-threshold', obj_time_scheme%cfl_rampa_iter, &
-                 '0',      'CFL ramp start iteration',           '>= 0',.false.)
+                 '0',      'Ramp the CFL number linearly over this many iterations '// &
+                           '(0 = no ramp)',                     '>= 0',.false.)
     call reg%add(trim(section), 'time-accurate',      obj_time_scheme%time_accurate,  &
-                 '.true.', 'Time-accurate integration flag',     '',    .false.)
+                 '.true.', 'Advance every cell with the global minimum step (true) or '// &
+                           'with its own local step, for steady state (false)', '', .false.)
     call reg%add(trim(section), 'irs',      obj_irs%enabled,                         &
                  '.false.', 'Enable implicit residual smoothing', '',   .false.)
     call reg%add(trim(section), 'irs-beta', obj_irs%beta,                             &
@@ -47,15 +49,21 @@ contains
     section = trim(codename)//'-Scheme'
 
     call reg%add(trim(section), 'space-reconstruction', obj_space_scheme%space_reconstruction, &
-                 '',      'Space reconstruction (MUSCL, MUSCL-SD, or empty)', '', .false.)
+                 '',      'Space reconstruction: MUSCL, MUSCL-SD (MUSCL with the '// &
+                          'density shock detector), or empty for first order', '', .false.)
     call reg%add(trim(section), 'flux-limiter',          obj_space_scheme%flux_limiter,        &
-                 'none',  'Flux limiter (VANLEER, MINMOD, MC, SUPERBEE)',      '', .false.)
+                 'none',  'Flux limiter, used only with MUSCL: IORD, MINMOD, VANALBADA, '// &
+                          'VANLEER, OSPRE, UMIST, OSHER, SWEBY, MC, KOREN, SUPERBEE',  '', .false.)
     call reg%add(trim(section), 'time',                  obj_time_scheme%solver_type,          &
-                 '2',     'Time integrator (1=Euler, 2=RK2, 3=RK3)',          '', .false.)
+                 '2',     'Time integrator: 1 = forward Euler, 2 = SSP-RK2, 3 = SSP-RK3', &
+                 '', .false.)
     call reg%add(trim(section), 'drag',                  obj_time_scheme%drag,                 &
-                 'None',  'Drag model (global for all families)',               '', .false.)
+                 'None',  'Drag model, global for all families: Newton, Stokes, '// &
+                          'Schlichting, Schiller-Naumann, Wen-Yu, Putnam, Clift-Gauvin, '// &
+                          'Morsi-Alexander, Carlson-Hoglund, Henderson, Crowe, Hermsen', '', .false.)
     call reg%add(trim(section), 'heat',                  obj_time_scheme%heat,                 &
-                 'None',  'Heat transfer model (global for all families)',      '', .false.)
+                 'None',  'Heat transfer model, global for all families: Stokes, JAXA1, '// &
+                          'JAXA2, JAXA3, Chang, Ranz-Marshall, Kavanau-Drake',          '', .false.)
 
     call Register_Multigrid_Levels(nmgl)
 
@@ -70,11 +78,16 @@ contains
     character(len=256)  :: section
     integer :: m
 
-    obj_multigrid%MGL = nmgl
     allocate(obj_multigrid%iter_threshold(nmgl))
     obj_multigrid%iter_threshold = 1000000000
 
     section = trim(codename)//'-Multigrid'
+
+    call reg%add(trim(section), 'levels', obj_multigrid%MGL, &
+                 '1', 'Number of grid levels. Each coarse level halves every block '// &
+                      'dimension, so every block must be divisible by 2^(levels-1)', &
+                 '> 0', .false.)
+    obj_multigrid%MGL = nmgl
 
     do m = 1, nmgl
       call reg%add(trim(section), 'level'//trim(str(.true.,m))//'-iter', &
@@ -100,7 +113,8 @@ contains
     do p = 1, ngroups
       section = trim(codename)//'-Family'//trim(str(.true.,p))
       call reg%add(trim(section), 'model', obj_time_scheme%model(p), &
-                   '', 'Particle model (MK/IG/AG)', '', .true.)
+                   '', 'Closure for this family: MK (monokinetic, 6 variables), '// &
+                   'IG (isotropic Gaussian, 7) or AG (anisotropic Gaussian, 12)', '', .true.)
     end do
 
   end subroutine Register_Families

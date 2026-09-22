@@ -40,8 +40,13 @@ contains
         obj_space_scheme%flux_limiter = 'VANLEER'
         write(*, '(A)') ' [WARNING] MUSCL without flux-limiter. Van Leer by default.'
       end if
-      call assign_limiter(obj_space_scheme%flux_limiter)
+    else
+      !> Without MUSCL the reconstruction is first order, which IORD expresses as a
+      !  zero slope. state_reconstruction calls the limiter whatever the
+      !  reconstruction, so one must always be assigned.
+      obj_space_scheme%flux_limiter = 'IORD'
     end if
+    call assign_limiter(obj_space_scheme%flux_limiter)
 
     ! --- Assign global drag/heat (only used when coupled) ---
     if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) then
