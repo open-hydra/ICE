@@ -106,6 +106,8 @@ nav:
 
   - Verification & Validation:
     - vv/index.md
+    - Crossing Jets: vv/crossing-jets.md
+    - Chimera Overset: vv/chimera.md
 
   - Developer Guide:
     - development/index.md

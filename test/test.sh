@@ -49,6 +49,7 @@ ALL_TESTS=(
   Doisneau/MK
   Doisneau/IG
   Doisneau/AG
+  Doisneau/IG-chimera
 )
 
 function clean {
