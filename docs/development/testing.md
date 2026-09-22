@@ -11,6 +11,7 @@ cd test
 ./test.sh -p 8 check all            # run and verify every case
 ./test.sh -p 8 check Doisneau/IG    # a single case
 ./test.sh -p 8 update Doisneau/IG   # rerun and overwrite the stored reference
+./test.sh -m 2 -p 4 check all       # 2 MPI ranks x 4 threads (needs an MPI build)
 ./test.sh clean                     # remove run outputs (run from test/ only)
 ```
 

@@ -29,6 +29,7 @@ contains
   !      401-403  inlet (see Read payload below)
   subroutine Setup_BC(grid)
     use ICE_Global_m, only: ngroups
+    use ICE_Mod_MPI, only: mpi_is_root
     implicit none
     type(ICE_domain_type), intent(inout), target :: grid
     type(ICE_bc_type), dimension(:), pointer     :: bc
@@ -179,7 +180,7 @@ contains
       error stop
     endif
 
-    call Print_BC_Summary()
+    if (mpi_is_root) call Print_BC_Summary()
 
   end subroutine Setup_BC
 

@@ -1,5 +1,6 @@
 module ICE_Mod_BC_Fluxes
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+  use ICE_Mod_MPI, only: is_local_block
   use ICE_Lib_Ghost, only: compute_ghost, fill_second_ghost
 
   implicit none
@@ -30,6 +31,7 @@ contains
     !$OMP         dir, normal, area, dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th, &
     !$OMP         beta_val, priml, primr, flux, v)
     do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
       do p = 1, ngroups
 
         !$OMP DO COLLAPSE (3)
@@ -50,6 +52,7 @@ contains
       if (grid%bc(n)%type == 0 .or. grid%bc(n)%type == 200) cycle
 
       b = grid%bc(n)%b
+      if (.not. is_local_block(b)) cycle
       i = grid%bc(n)%i ; j = grid%bc(n)%j ; k = grid%bc(n)%k
       p = grid%bc(n)%p ; f = grid%bc(n)%f
 

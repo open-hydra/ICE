@@ -1,5 +1,6 @@
 module ICE_Lib_Newstate
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+  use ICE_Mod_MPI, only: is_local_block
   use ICE_Global_m
   use ICE_Advanced_Types_m
 
@@ -15,6 +16,7 @@ contains
     integer(kind=I4) :: b, p, i, j, k
 
     do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
       do p = 1, ngroups
         !$omp do collapse(3)
         do k = 1, grid%blk(b)%dim(3)
@@ -39,6 +41,7 @@ contains
 
     !$OMP PARALLEL DEFAULT(NONE) PRIVATE(b,i,j,k,prim_status) SHARED(grid,p,srk)
     do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
 
       !$OMP DO COLLAPSE (3)
       do k = 1, grid%blk(b)%dim(3)

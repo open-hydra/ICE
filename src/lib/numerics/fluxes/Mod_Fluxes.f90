@@ -1,5 +1,6 @@
 module ICE_Mod_Fluxes
   use iso_fortran_env, only: I4 => int32, R8 => real64
+  use ICE_Mod_MPI, only: is_local_block
   use ICE_Lib_Reconstruction, only: state_reconstruction
 
   implicit none
@@ -20,6 +21,7 @@ contains
 
     !$OMP PARALLEL
     do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
 
       !> Shock detector: beta=1 (smooth) or beta=0 (shock)
       if (obj_space_scheme%SD) then

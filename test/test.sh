@@ -19,7 +19,8 @@ function print_usage {
   echo "   ./test.sh clean                => clean all test directories"
   echo
   echo "Options:"
-  echo "   -p | --parallel <n>            => run solver with <n> cores (default: 1)"
+  echo "   -p | --parallel <n>            => run solver with <n> OpenMP threads per rank (default: 1)"
+  echo "   -m | --mpi <n>                 => run solver with <n> MPI ranks (default: 1, needs an MPI build)"
   echo
   exit 1
 }
@@ -31,12 +32,17 @@ NC='\033[0m'
 TESTROOT=$(pwd)
 FILE=$TESTROOT/logfile
 NTHREADS=1
+NMPI=1
 
 # Parse options
 while test $# -gt 0; do
   case "$1" in
     -p | --parallel)
       NTHREADS=$2
+      shift 2
+      ;;
+    -m | --mpi)
+      NMPI=$2
       shift 2
       ;;
     * )
@@ -50,6 +56,7 @@ ALL_TESTS=(
   Doisneau/IG
   Doisneau/AG
   Doisneau/IG-chimera
+  Doisneau/IG-split4
 )
 
 function clean {
@@ -65,7 +72,7 @@ function run_solver {
   local TEST=$1
   cd $TESTROOT/$TEST
   mkdir -p bin OUTPUT
-  bash ICE.sh -p $NTHREADS solve > logfile 2>errors_file
+  bash ICE.sh -m $NMPI -p $NTHREADS solve > logfile 2>errors_file
 }
 
 function check_test {

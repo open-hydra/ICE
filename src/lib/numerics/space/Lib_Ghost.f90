@@ -7,6 +7,8 @@ module ICE_Lib_Ghost
   use ICE_Lib_MK, only : prim_2_cons_MK, cons_2_prim_MK
   use ICE_Lib_IG, only : prim_2_cons_IG, cons_2_prim_IG
   use ICE_Lib_AG, only : prim_2_cons_AG, cons_2_prim_AG
+  use ICE_Mod_MPI, only : is_local_block
+  use ICE_Mod_GhostExchange, only : exchange_ghost_prim
 
   implicit none
   private
@@ -24,6 +26,9 @@ contains
     integer(kind=I4) :: ic, jc, kc
     real(kind=R8)    :: area, normal(1:3), velocity(1:3), veln
 
+    !> Remote cells read below (connection sources, chimera donors) from their owners
+    call exchange_ghost_prim(grid)
+
     !$OMP PARALLEL DEFAULT(NONE), &
     !$OMP SHARED(grid, ncond, obj_condensed, obj_time_scheme), &
     !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, area, normal, velocity, veln)
@@ -32,6 +37,7 @@ contains
 
       !> Preliminary assignments
       bm = grid%bc(i)%b
+      if (.not. is_local_block(bm)) cycle
       im = grid%bc(i)%i
       jm = grid%bc(i)%j
       km = grid%bc(i)%k
@@ -215,6 +221,7 @@ contains
       if (grid%bc(i)%type == 0 .or. grid%bc(i)%type == 200) cycle
 
       bm = grid%bc(i)%b
+      if (.not. is_local_block(bm)) cycle
       im = grid%bc(i)%i ; jm = grid%bc(i)%j ; km = grid%bc(i)%k
       pm = grid%bc(i)%p ; fm = grid%bc(i)%f
 

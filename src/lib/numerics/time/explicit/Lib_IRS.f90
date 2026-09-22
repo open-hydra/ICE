@@ -1,5 +1,6 @@
 module ICE_Lib_IRS
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+  use ICE_Mod_MPI, only: is_local_block
   use ICE_Global_m
   use ICE_Advanced_Types_m
 
@@ -20,6 +21,7 @@ contains
 
     do d = 1, ndir
       do b = 1, grid%nb
+        if (.not. is_local_block(b)) cycle
         call residual_smoothing_(grid%blk(b)%cond_phase(p)%residual, &
                                  grid%blk(b)%dim(1),                 &
                                  grid%blk(b)%dim(2),                 &

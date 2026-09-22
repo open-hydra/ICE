@@ -27,18 +27,42 @@ cd my_case
 /path/to/bin/ICE
 ```
 
-With MPI:
-
-```bash
-mpirun -np 4 /path/to/bin/ICE
-```
-
 With OpenMP:
 
 ```bash
 export OMP_NUM_THREADS=8
 /path/to/bin/ICE
 ```
+
+With MPI (the build must use `--use-mpi`), optionally combined with OpenMP threads in
+each rank:
+
+```bash
+export OMP_NUM_THREADS=4
+mpirun -np 2 /path/to/bin/ICE
+```
+
+The `ICE.sh` script in each test case does the same with `./ICE.sh -m 2 -p 4 solve`.
+
+### How MPI divides the work
+
+ICE distributes **whole blocks** over the ranks, largest first, each to the rank with the
+least work so far. At startup it prints how even the split is:
+
+```
+  MPI partition: 4 blocks over 2 ranks, balance 100.0% of ideal
+  MPI halo: 400 cells exchanged per ghost fill
+```
+
+- A block is never split, so ranks beyond the number of blocks sit idle. To use more
+  ranks, split the mesh into more blocks.
+- Every rank reads the whole mesh and solution, and updates only its own blocks. Before
+  each ghost-cell fill, the interior cells that a connection (`101`/`201`) or chimera
+  (`102`) face reads from a block owned by another rank are sent to it.
+- Rank 0 collects the blocks and writes the output files.
+
+The result does not depend on the number of ranks: the solution is bit-for-bit the same as
+a serial run.
 
 ## Restarting
 

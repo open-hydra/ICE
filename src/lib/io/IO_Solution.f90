@@ -30,7 +30,7 @@ module ICE_IO_Solution
     use Lib_ORION_data
     use ICE_Advanced_Types_m
     implicit none
-    type(ICE_domain_type), intent(in)           :: grid
+    type(ICE_domain_type), intent(inout)        :: grid
     type(orion_data),      intent(inout)        :: IOfield
     character(len=*),      intent(in)           :: file
     character(len=*),      intent(in), optional :: format(2)
@@ -153,45 +153,56 @@ contains
     use Lib_Tecplot
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m, only: obj_io
+    use ICE_Mod_MPI,           only: mpi_is_root
+    use ICE_Mod_GhostExchange, only: gather_prim_to_root, mpi_io_barrier
     implicit none
-    type(ICE_domain_type), intent(in)           :: grid
+    type(ICE_domain_type), intent(inout)        :: grid
     type(orion_data),      intent(inout)        :: IOfield
     character(len=*),      intent(in)           :: file
     character(len=*),      intent(in), optional :: format(2)
     character(len=llen) :: path, localpath_vtk
     integer(kind=I4)    :: b, p, nstart, nend, E_IO
 
-    path = 'OUTPUT/'
+    !> Collect the blocks owned by other ranks on root, which writes the file
+    call gather_prim_to_root(grid)
 
-    do b = 1, size(IOfield%block)
-      IOfield%block(b)%name = 'Block'//trim(str(.true.,b))
-      nend = 0
-      do p = 1, ngroups
-        nstart = nend + 1 ; nend = nend + ncond(p)
-        IOfield%block(b)%vars(nstart:nend, &
-                               1:IOfield%block(b)%Ni, &
-                               1:IOfield%block(b)%Nj, &
-                               1:IOfield%block(b)%Nk) = &
-          grid%blk(b)%cond_phase(p)%prim(1:ncond(p), &
-                                          1:grid%blk(b)%dim(1), &
-                                          1:grid%blk(b)%dim(2), &
-                                          1:grid%blk(b)%dim(3))
+    if (mpi_is_root) then
+
+      path = 'OUTPUT/'
+
+      do b = 1, size(IOfield%block)
+        IOfield%block(b)%name = 'Block'//trim(str(.true.,b))
+        nend = 0
+        do p = 1, ngroups
+          nstart = nend + 1 ; nend = nend + ncond(p)
+          IOfield%block(b)%vars(nstart:nend, &
+                                 1:IOfield%block(b)%Ni, &
+                                 1:IOfield%block(b)%Nj, &
+                                 1:IOfield%block(b)%Nk) = &
+            grid%blk(b)%cond_phase(p)%prim(1:ncond(p), &
+                                            1:grid%blk(b)%dim(1), &
+                                            1:grid%blk(b)%dim(2), &
+                                            1:grid%blk(b)%dim(3))
+        end do
       end do
-    end do
 
-    select case (format(1))
-    case ('vtk')
-      IOfield%vtk%format = format(2)
-      localpath_vtk = trim(path)//'vtk/'
-      call execute_command_line('mkdir -p '//trim(localpath_vtk))
-      E_IO = vtk_write_structured_multiblock(orion=IOfield, &
-               vtspath=trim(localpath_vtk)//trim(file), &
-               vtmpath=trim(path)//trim(file), varnames=obj_io%Ovarnames, time=grid%time)
-    case ('tecplot')
-      IOfield%tec%format = format(2)
-      E_IO = tec_write_structured_multiblock(orion=IOfield, varnames=obj_io%Ovarnames, &
-               filename=trim(path)//trim(file)//'.tec')
-    end select
+      select case (format(1))
+      case ('vtk')
+        IOfield%vtk%format = format(2)
+        localpath_vtk = trim(path)//'vtk/'
+        call execute_command_line('mkdir -p '//trim(localpath_vtk))
+        E_IO = vtk_write_structured_multiblock(orion=IOfield, &
+                 vtspath=trim(localpath_vtk)//trim(file), &
+                 vtmpath=trim(path)//trim(file), varnames=obj_io%Ovarnames, time=grid%time)
+      case ('tecplot')
+        IOfield%tec%format = format(2)
+        E_IO = tec_write_structured_multiblock(orion=IOfield, varnames=obj_io%Ovarnames, &
+                 filename=trim(path)//trim(file)//'.tec')
+      end select
+
+    end if
+
+    call mpi_io_barrier()
 
   end subroutine write_vtk_tec
 

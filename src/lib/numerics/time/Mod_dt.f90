@@ -1,5 +1,6 @@
 module ICE_Mod_dt
   use iso_fortran_env, only: I4 => int32, R8 => real64
+  use ICE_Mod_MPI, only: is_local_block
 
   implicit none
   private
@@ -16,8 +17,14 @@ contains
     integer(kind=I4), intent(in)  :: cfl_rampa_iter
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4) :: b, i, j, k
+    real(kind=R8)    :: dtmin
 
-    do b = 1, grid%nb 
+    !> Per-thread minimum, merged once below: updating grid%dtglobal inside the
+    !> worksharing loop would race between threads.
+    dtmin = grid%dtglobal
+
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
 
       !$omp do collapse(3)
       do k = 1, grid%blk(b)%dim(3)
@@ -37,13 +44,18 @@ contains
           grid%blk(b)%cond_phase(p)%dt(i,j,k) = grid%blk(b)%cond_phase(p)%dt(i,j,k) * grid%iter / cfl_rampa_iter
         endif
 
-        grid%dtglobal = min (grid%dtglobal,grid%blk(b)%cond_phase(p)%dt(i,j,k))
+        dtmin = min (dtmin, grid%blk(b)%cond_phase(p)%dt(i,j,k))
 
       enddo ; enddo ; enddo
       !$omp end do
-      
+
     enddo
-  
+
+    !$omp critical (ice_dtglobal)
+    grid%dtglobal = min (grid%dtglobal, dtmin)
+    !$omp end critical (ice_dtglobal)
+    !$omp barrier
+
   end subroutine compute_dt    
   
   
@@ -81,6 +93,7 @@ contains
     integer(kind=I4) :: b, p, i, j, k
   
     do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
       do p = 1, ngroups
 
         !$omp do collapse(3)

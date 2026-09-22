@@ -22,14 +22,16 @@ contains
     use ICE_Mod_BC_Fluxes
     use ICE_Mod_Phase
     use ICE_Mod_Multigrid,  only: Setup_Multigrid
+    use ICE_Mod_MPI,        only: mpi_is_root, partition_blocks
+    use ICE_Mod_GhostExchange, only: build_ghost_schedule
     implicit none
     type(ICE_simulation_type), intent(inout)  :: sim
     type(orion_data), intent(inout), optional :: IOgas
     logical :: coupled
-    integer :: ios
+    integer :: ios, b
 
     ! Print header
-    call Print_Header()
+    if (mpi_is_root) call Print_Header()
 
     ! Read and validate input.ini
     call Read_Inifile()
@@ -70,10 +72,16 @@ contains
     call setup_metrics(sim%domain(1), sim%ODP(1))
 
     ! Print simulation info onto the logfile/shell
-    call print_simulation_info()
+    if (mpi_is_root) call print_simulation_info()
 
     ! Setup boundaries (fine level only)
     call Setup_BC(sim%domain(1))
+
+    ! Distribute the blocks over the MPI ranks (every rank keeps the whole domain but
+    ! updates only its own blocks) and build the halo exchange for the ghost fill
+    call partition_blocks(sim%domain(1)%nb, &
+                          [(product(sim%domain(1)%blk(b)%dim), b = 1, sim%domain(1)%nb)])
+    call build_ghost_schedule(sim%domain(1))
 
     ! Setup gaseous phase (fine level only)
     if (coupled) call setup_gas(sim%domain(1), sim%OCP)
@@ -100,17 +108,20 @@ contains
     ! Setup probes (no-op if nprobes == 0)
     call Setup_Probes(sim%domain(1))
 
-    ! Open residuals file
-    open(newunit=obj_io%unitRES, &
-         file='OUTPUT/'//trim(ICE_phase_prefix)//'residual-history.dat', &
-         status='unknown', form='formatted')
+    ! Open residuals file (written by root only)
+    if (mpi_is_root) &
+      open(newunit=obj_io%unitRES, &
+           file='OUTPUT/'//trim(ICE_phase_prefix)//'residual-history.dat', &
+           status='unknown', form='formatted')
 
     if (.not. obj_sim_param%newrun) then
-      ios = 0
-      do while (ios == 0)
-        read(obj_io%unitRES, *, iostat=ios)
-      end do
-      backspace(obj_io%unitRES)
+      if (mpi_is_root) then
+        ios = 0
+        do while (ios == 0)
+          read(obj_io%unitRES, *, iostat=ios)
+        end do
+        backspace(obj_io%unitRES)
+      end if
 
       if (obj_time_scheme%time_accurate) then
         sim%domain(1)%time           = sim%ODP(1)%solutiontime

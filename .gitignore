@@ -1,6 +1,7 @@
 # Building file
 CMakePresets.json
 build
+build-*
 
 # Fortran module files
 mod

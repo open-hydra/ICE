@@ -1,8 +1,12 @@
-!>@brief Ghost cell MPI communication for inter-block boundaries in ICE.
-!> Builds a communication schedule from the BC connectivity array (type=101/201)
-!> and provides persistent non-blocking exchange routines for the condensed-phase
-!> primitive-variable field (prim). Messages are aggregated per remote rank.
-!> In serial mode (USE_MPI not defined), all routines are no-ops.
+!>@brief Inter-rank halo exchange for the condensed-phase primitive field of ICE.
+!> Every rank holds the whole domain but updates only the blocks it owns. The ghost
+!> cells of an owned block are filled from interior cells of other blocks: the two
+!> source cells of a connection (101/201) and the donor cells of a chimera face (102).
+!> When such a cell lies in a block owned by another rank, that rank sends it before
+!> each ghost fill and it is written into the local copy of the remote block; the
+!> ghost routines then read it exactly as in a serial run. This is how MOSE moves
+!> chimera donor cells, applied here to connections as well.
+!> In serial mode (USE_MPI not defined, or one rank), all routines are no-ops.
 module ICE_Mod_GhostExchange
   use iso_fortran_env, only: R8 => real64, I4 => int32
   use ICE_Mod_MPI
@@ -11,50 +15,34 @@ module ICE_Mod_GhostExchange
   implicit none
   private
 
-  !> Single ghost cell exchange entry (one BC face-cell, one particle group).
-  type :: ghost_entry_type
-    integer :: bc_idx         !< Index into grid%bc(:)
-    integer :: local_block    !< Block on this rank
-    integer :: remote_block   !< Block on the remote rank
-    integer :: remote_rank    !< MPI rank of the remote block
-    integer :: src_i, src_j, src_k    !< Source cell in remote block
-    integer :: dst_i, dst_j, dst_k, dst_f  !< Dest cell and face in local block
-    integer :: grp            !< Particle group index (bc%p)
-    integer :: nvar           !< ncond(grp) — number of variables for this entry
-  end type ghost_entry_type
+  !> One interior cell that crosses a rank boundary (one particle group).
+  type :: halo_cell_type
+    integer :: b, p, i, j, k  !< Block, particle group and cell
+    integer :: off = 0        !< Offset of its first value in the send/recv buffer
+  end type halo_cell_type
 
-  !> Per-rank aggregation: contiguous run of entries sharing the same remote rank.
+  !> Contiguous run of cells exchanged with one remote rank (one message).
   type :: rank_group_type
-    integer :: rank   = -1  !< Remote MPI rank
-    integer :: offset =  0  !< First entry index in send/recv list (1-based)
-    integer :: count  =  0  !< Number of entries for this rank
+    integer :: rank  = -1  !< Remote MPI rank
+    integer :: first =  0  !< First cell in the send/recv list
+    integer :: count =  0  !< Number of cells
+    integer :: off   =  0  !< Buffer offset of the message
+    integer :: len   =  0  !< Message length (reals)
   end type rank_group_type
 
-  !> Communication schedule.
+  !> Communication schedule for the fine-grid BC list.
   type :: ghost_schedule_type
     integer :: n_send = 0, n_recv = 0
-    type(ghost_entry_type), allocatable :: send_list(:)
-    type(ghost_entry_type), allocatable :: recv_list(:)
-    logical :: built = .false.
-
-    ! Per-rank aggregation
+    type(halo_cell_type), allocatable :: send_list(:), recv_list(:)
     integer :: n_send_ranks = 0, n_recv_ranks = 0
-    type(rank_group_type), allocatable :: send_groups(:)
-    type(rank_group_type), allocatable :: recv_groups(:)
-
-    ! Pre-allocated MPI buffers (one contiguous flat buffer, ncond_max values per entry)
-    integer  :: entry_size = 0  !< maxval(ncond(1:ngroups))
-    real(R8), allocatable :: send_buf(:)  !< (entry_size * n_send)
-    real(R8), allocatable :: recv_buf(:)  !< (entry_size * n_recv)
-    integer,  allocatable :: send_req(:)  !< (n_send_ranks)
-    integer,  allocatable :: recv_req(:)  !< (n_recv_ranks)
-    integer,  allocatable :: mpi_stat(:,:)!< (MPI_STATUS_SIZE, max(n_send_ranks,n_recv_ranks))
-
-    ! Persistent MPI requests for prim exchange (initialized once, started each step)
-    integer, allocatable :: prim_send_req_pers(:)  !< (n_send_ranks)
-    integer, allocatable :: prim_recv_req_pers(:)  !< (n_recv_ranks)
+    type(rank_group_type), allocatable :: send_groups(:), recv_groups(:)
+    real(R8), allocatable :: send_buf(:), recv_buf(:)
+    integer,  allocatable :: send_req(:), recv_req(:)  !< Persistent requests
     logical :: persistent_init = .false.
+    logical :: built = .false.
   end type ghost_schedule_type
+
+  integer, parameter :: halo_tag = 7101
 
   type(ghost_schedule_type), public :: ghost_sched
 
@@ -69,14 +57,16 @@ module ICE_Mod_GhostExchange
 contains
 
 
-  !> Build the communication schedule by scanning all BC entries of type 101/201 (connection).
-  !> Entries are sorted by remote rank for aggregated MPI messaging.
-  !> Must be called after partition_blocks and grid allocation.
+  !> Build the halo schedule from the BC list. Every rank scans the same list in the
+  !> same order, so the cells a rank sends to a neighbour are listed in the order the
+  !> neighbour expects them. Must be called after partition_blocks and Setup_BC.
   subroutine build_ghost_schedule(grid)
     use ICE_Advanced_Types_m
     implicit none
     type(ICE_domain_type), intent(in) :: grid
-    integer :: i, ns, nr, bm, bs, pm
+#ifdef USE_MPI
+    integer, allocatable :: send_per_rank(:), recv_per_rank(:), send_pos(:), recv_pos(:)
+#endif
 
     if (mpi_size_ <= 1) then
       ghost_sched%built = .true.
@@ -84,105 +74,106 @@ contains
     end if
 
 #ifdef USE_MPI
-    ghost_sched%entry_size = maxval(ncond(1:ngroups))
+    block
+      use mpi
+      integer :: pass, n, c, fs, r, ierr
+      integer :: ns, nbad
+      integer, allocatable :: expect(:)
 
-    ! Count send and recv entries
-    ns = 0; nr = 0
-    do i = 1, size(grid%bc)
-      if (grid%bc(i)%type /= 101 .and. grid%bc(i)%type /= 201) cycle
-      bm = grid%bc(i)%b
-      bs = grid%bc(i)%bs
-      if (.not. allocated(block_owner)) cycle
-      if (is_local_block(bm) .and. (.not. is_local_block(bs))) nr = nr + 1
-      if (is_local_block(bs) .and. (.not. is_local_block(bm))) ns = ns + 1
-    end do
+      allocate(send_per_rank(0:mpi_size_-1), recv_per_rank(0:mpi_size_-1), expect(0:mpi_size_-1))
+      allocate(send_pos(0:mpi_size_-1), recv_pos(0:mpi_size_-1))
 
-    ghost_sched%n_send = ns
-    ghost_sched%n_recv = nr
-    if (allocated(ghost_sched%send_list)) deallocate(ghost_sched%send_list)
-    if (allocated(ghost_sched%recv_list)) deallocate(ghost_sched%recv_list)
-    allocate(ghost_sched%send_list(ns))
-    allocate(ghost_sched%recv_list(nr))
+      ! Pass 1 counts cells per remote rank, pass 2 places them grouped by rank,
+      ! keeping BC order inside each group.
+      do pass = 1, 2
+        send_per_rank = 0 ; recv_per_rank = 0
+        do n = 1, size(grid%bc)
+          select case (grid%bc(n)%type)
+          case (101, 201)
+            fs = grid%bc(n)%fs
+            call add_cell(pass, grid%bc(n), grid%bc(n)%bs, grid%bc(n)%is, grid%bc(n)%js, grid%bc(n)%ks)
+            call add_cell(pass, grid%bc(n), grid%bc(n)%bs, grid%bc(n)%is + guide(fs,1), &
+                          grid%bc(n)%js + guide(fs,2), grid%bc(n)%ks + guide(fs,3))
+          case (102)
+            do c = 1, sum(grid%bc(n)%ni)
+              call add_cell(pass, grid%bc(n), grid%bc(n)%donorID(c,1), grid%bc(n)%donorID(c,2), &
+                            grid%bc(n)%donorID(c,3), grid%bc(n)%donorID(c,4))
+            end do
+          end select
+        end do
 
-    ! Fill send and recv lists
-    ns = 0; nr = 0
-    do i = 1, size(grid%bc)
-      if (grid%bc(i)%type /= 101 .and. grid%bc(i)%type /= 201) cycle
-      bm = grid%bc(i)%b
-      bs = grid%bc(i)%bs
-      pm = grid%bc(i)%p
+        if (pass == 1) then
+          ghost_sched%n_send = sum(send_per_rank)
+          ghost_sched%n_recv = sum(recv_per_rank)
+          allocate(ghost_sched%send_list(ghost_sched%n_send), ghost_sched%recv_list(ghost_sched%n_recv))
+          send_pos(0) = 0 ; recv_pos(0) = 0
+          do r = 1, mpi_size_-1
+            send_pos(r) = send_pos(r-1) + send_per_rank(r-1)
+            recv_pos(r) = recv_pos(r-1) + recv_per_rank(r-1)
+          end do
+        end if
+      end do
 
-      if (is_local_block(bm) .and. (.not. is_local_block(bs))) then
-        nr = nr + 1
-        ghost_sched%recv_list(nr)%bc_idx       = i
-        ghost_sched%recv_list(nr)%local_block  = bm
-        ghost_sched%recv_list(nr)%remote_block = bs
-        ghost_sched%recv_list(nr)%remote_rank  = block_owner(bs)
-        ghost_sched%recv_list(nr)%src_i        = grid%bc(i)%is
-        ghost_sched%recv_list(nr)%src_j        = grid%bc(i)%js
-        ghost_sched%recv_list(nr)%src_k        = grid%bc(i)%ks
-        ghost_sched%recv_list(nr)%dst_i        = grid%bc(i)%i
-        ghost_sched%recv_list(nr)%dst_j        = grid%bc(i)%j
-        ghost_sched%recv_list(nr)%dst_k        = grid%bc(i)%k
-        ghost_sched%recv_list(nr)%dst_f        = grid%bc(i)%f
-        ghost_sched%recv_list(nr)%grp          = pm
-        ghost_sched%recv_list(nr)%nvar         = ncond(pm)
-      end if
+      ! Each rank must receive exactly what its neighbours send it
+      call MPI_ALLTOALL(send_per_rank, 1, MPI_INTEGER, expect, 1, MPI_INTEGER, MPI_COMM_WORLD, ierr)
+      call check_mpi_error(ierr)
+      nbad = count(expect /= recv_per_rank)
+      if (nbad > 0) call mpi_abort_all('build_ghost_schedule: send and receive lists disagree')
 
-      if (is_local_block(bs) .and. (.not. is_local_block(bm))) then
-        ns = ns + 1
-        ghost_sched%send_list(ns)%bc_idx       = i
-        ghost_sched%send_list(ns)%local_block  = bs
-        ghost_sched%send_list(ns)%remote_block = bm
-        ghost_sched%send_list(ns)%remote_rank  = block_owner(bm)
-        ghost_sched%send_list(ns)%src_i        = grid%bc(i)%is
-        ghost_sched%send_list(ns)%src_j        = grid%bc(i)%js
-        ghost_sched%send_list(ns)%src_k        = grid%bc(i)%ks
-        ghost_sched%send_list(ns)%dst_i        = grid%bc(i)%i
-        ghost_sched%send_list(ns)%dst_j        = grid%bc(i)%j
-        ghost_sched%send_list(ns)%dst_k        = grid%bc(i)%k
-        ghost_sched%send_list(ns)%dst_f        = grid%bc(i)%f
-        ghost_sched%send_list(ns)%grp          = pm
-        ghost_sched%send_list(ns)%nvar         = ncond(pm)
-      end if
-    end do
+      call build_rank_groups(ghost_sched%send_list, ghost_sched%n_send, send_per_rank, &
+                             ghost_sched%send_groups, ghost_sched%n_send_ranks)
+      call build_rank_groups(ghost_sched%recv_list, ghost_sched%n_recv, recv_per_rank, &
+                             ghost_sched%recv_groups, ghost_sched%n_recv_ranks)
 
-    ! Sort by remote rank and build aggregation groups
-    call sort_entries_by_rank(ghost_sched%send_list, ghost_sched%n_send)
-    call sort_entries_by_rank(ghost_sched%recv_list, ghost_sched%n_recv)
-    call build_rank_groups(ghost_sched%send_list, ghost_sched%n_send, &
-                           ghost_sched%send_groups, ghost_sched%n_send_ranks)
-    call build_rank_groups(ghost_sched%recv_list, ghost_sched%n_recv, &
-                           ghost_sched%recv_groups, ghost_sched%n_recv_ranks)
+      allocate(ghost_sched%send_buf(max(1, sum(ghost_sched%send_groups(:)%len))))
+      allocate(ghost_sched%recv_buf(max(1, sum(ghost_sched%recv_groups(:)%len))))
 
-    ! Pre-allocate flat MPI buffers (reused every RK stage)
-    if (ghost_sched%n_send > 0 .or. ghost_sched%n_recv > 0) then
-      block
-        use mpi, only: MPI_STATUS_SIZE
-        integer :: es, max_ranks
-        es        = ghost_sched%entry_size
-        max_ranks = max(ghost_sched%n_send_ranks, ghost_sched%n_recv_ranks, 1)
-        allocate(ghost_sched%send_buf (es * max(ghost_sched%n_send, 1)))
-        allocate(ghost_sched%recv_buf (es * max(ghost_sched%n_recv, 1)))
-        allocate(ghost_sched%send_req (max(ghost_sched%n_send_ranks, 1)))
-        allocate(ghost_sched%recv_req (max(ghost_sched%n_recv_ranks, 1)))
-        allocate(ghost_sched%mpi_stat (MPI_STATUS_SIZE, max_ranks))
-      end block
-    end if
+      call init_persistent_requests()
 
-    call init_persistent_requests()
+      ns = ghost_sched%n_send
+      call MPI_ALLREDUCE(MPI_IN_PLACE, ns, 1, MPI_INTEGER, MPI_SUM, MPI_COMM_WORLD, ierr)
+      if (mpi_is_root) write(*,'(A,I0,A)') '  MPI halo: ', ns, ' cells exchanged per ghost fill'
 
-    if (mpi_is_root) then
-      write(*,'(A,I0,A,I0,A)') ' ICE ghost schedule: ', ghost_sched%n_send_ranks, &
-        ' send ranks, ', ghost_sched%n_recv_ranks, ' recv ranks'
-    end if
+      deallocate(send_per_rank, recv_per_rank, expect, send_pos, recv_pos)
+    end block
 #endif
 
     ghost_sched%built = .true.
+
+#ifdef USE_MPI
+  contains
+
+    !> Cell (b,i,j,k) is read by BC record bc. If its block and the ghost's block have
+    !> different owners, the owner of b sends it to the owner of bc%b.
+    subroutine add_cell(pass, bc, b, i, j, k)
+      integer,           intent(in) :: pass, b, i, j, k
+      type(ICE_bc_type), intent(in) :: bc
+      integer :: owner_g, owner_s, pos
+
+      owner_g = block_owner(bc%b)
+      owner_s = block_owner(b)
+      if (owner_g == owner_s) return
+
+      if (owner_g == mpi_rank_) then
+        recv_per_rank(owner_s) = recv_per_rank(owner_s) + 1
+        if (pass == 2) then
+          pos = recv_pos(owner_s) + recv_per_rank(owner_s)
+          ghost_sched%recv_list(pos) = halo_cell_type(b, bc%p, i, j, k)
+        end if
+      else if (owner_s == mpi_rank_) then
+        send_per_rank(owner_g) = send_per_rank(owner_g) + 1
+        if (pass == 2) then
+          pos = send_pos(owner_g) + send_per_rank(owner_g)
+          ghost_sched%send_list(pos) = halo_cell_type(b, bc%p, i, j, k)
+        end if
+      end if
+    end subroutine add_cell
+#endif
+
   end subroutine build_ghost_schedule
 
 
-  !> Free persistent MPI requests and deallocate schedule arrays.
+  !> Free persistent MPI requests.
   subroutine cleanup_ghost_schedule()
     implicit none
 #ifdef USE_MPI
@@ -191,17 +182,58 @@ contains
   end subroutine cleanup_ghost_schedule
 
 
-  !> Blocking exchange of the condensed-phase prim field across MPI ranks.
-  !> Covers all particle groups. Call once per ghost-cell update (each RK stage).
+  !> Bring the remote interior cells read by the ghost fill up to date. Call on every
+  !> rank before compute_ghost. The coarse multigrid levels carry no BCs, so there is
+  !> nothing to exchange on them.
   subroutine exchange_ghost_prim(grid)
     use ICE_Advanced_Types_m
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
 
     if (mpi_size_ <= 1) return
+    if (size(grid%bc) == 0) return
 #ifdef USE_MPI
-    call exchange_prim_begin(grid)
-    call exchange_prim_end(grid)
+    block
+      use mpi
+      integer :: n, nv, off, ierr
+      integer, allocatable :: stats(:,:)
+
+      if (ghost_sched%n_recv_ranks > 0) then
+        call MPI_STARTALL(ghost_sched%n_recv_ranks, ghost_sched%recv_req, ierr)
+        call check_mpi_error(ierr)
+      end if
+
+      do n = 1, ghost_sched%n_send
+        associate (c => ghost_sched%send_list(n))
+          nv = ncond(c%p) ; off = c%off
+          ghost_sched%send_buf(off+1:off+nv) = grid%blk(c%b)%cond_phase(c%p)%prim(1:nv, c%i, c%j, c%k)
+        end associate
+      end do
+
+      if (ghost_sched%n_send_ranks > 0) then
+        call MPI_STARTALL(ghost_sched%n_send_ranks, ghost_sched%send_req, ierr)
+        call check_mpi_error(ierr)
+      end if
+
+      allocate(stats(MPI_STATUS_SIZE, max(1, ghost_sched%n_send_ranks, ghost_sched%n_recv_ranks)))
+
+      if (ghost_sched%n_recv_ranks > 0) then
+        call MPI_WAITALL(ghost_sched%n_recv_ranks, ghost_sched%recv_req, stats, ierr)
+        call check_mpi_error(ierr)
+      end if
+
+      do n = 1, ghost_sched%n_recv
+        associate (c => ghost_sched%recv_list(n))
+          nv = ncond(c%p) ; off = c%off
+          grid%blk(c%b)%cond_phase(c%p)%prim(1:nv, c%i, c%j, c%k) = ghost_sched%recv_buf(off+1:off+nv)
+        end associate
+      end do
+
+      if (ghost_sched%n_send_ranks > 0) then
+        call MPI_WAITALL(ghost_sched%n_send_ranks, ghost_sched%send_req, stats, ierr)
+        call check_mpi_error(ierr)
+      end if
+    end block
 #endif
   end subroutine exchange_ghost_prim
 
@@ -550,40 +582,29 @@ contains
 
 
 #ifdef USE_MPI
-  !> Initialize persistent MPI requests for prim exchange.
+  !> Initialize one persistent receive and one persistent send per neighbour rank.
   subroutine init_persistent_requests()
     use mpi
     implicit none
-    integer :: r, ierr, tag, buf_pos, es
+    integer :: r, ierr
 
-    es = ghost_sched%entry_size
-    if (ghost_sched%n_send == 0 .and. ghost_sched%n_recv == 0) return
+    allocate(ghost_sched%recv_req(max(ghost_sched%n_recv_ranks, 1)))
+    allocate(ghost_sched%send_req(max(ghost_sched%n_send_ranks, 1)))
 
-    allocate(ghost_sched%prim_recv_req_pers(max(ghost_sched%n_recv_ranks, 1)))
-    allocate(ghost_sched%prim_send_req_pers(max(ghost_sched%n_send_ranks, 1)))
-
-    ! Persistent receives
     do r = 1, ghost_sched%n_recv_ranks
-      buf_pos = (ghost_sched%recv_groups(r)%offset - 1) * es + 1
-      tag = ghost_sched%recv_groups(r)%rank
-      call MPI_RECV_INIT(ghost_sched%recv_buf(buf_pos), &
-                         ghost_sched%recv_groups(r)%count * es, &
-                         MPI_DOUBLE_PRECISION, &
-                         ghost_sched%recv_groups(r)%rank, tag, &
-                         MPI_COMM_WORLD, ghost_sched%prim_recv_req_pers(r), ierr)
-      call check_mpi_error(ierr)
+      associate (g => ghost_sched%recv_groups(r))
+        call MPI_RECV_INIT(ghost_sched%recv_buf(g%off+1), g%len, MPI_DOUBLE_PRECISION, &
+                           g%rank, halo_tag, MPI_COMM_WORLD, ghost_sched%recv_req(r), ierr)
+        call check_mpi_error(ierr)
+      end associate
     end do
 
-    ! Persistent sends
     do r = 1, ghost_sched%n_send_ranks
-      buf_pos = (ghost_sched%send_groups(r)%offset - 1) * es + 1
-      tag = mpi_rank_
-      call MPI_SEND_INIT(ghost_sched%send_buf(buf_pos), &
-                         ghost_sched%send_groups(r)%count * es, &
-                         MPI_DOUBLE_PRECISION, &
-                         ghost_sched%send_groups(r)%rank, tag, &
-                         MPI_COMM_WORLD, ghost_sched%prim_send_req_pers(r), ierr)
-      call check_mpi_error(ierr)
+      associate (g => ghost_sched%send_groups(r))
+        call MPI_SEND_INIT(ghost_sched%send_buf(g%off+1), g%len, MPI_DOUBLE_PRECISION, &
+                           g%rank, halo_tag, MPI_COMM_WORLD, ghost_sched%send_req(r), ierr)
+        call check_mpi_error(ierr)
+      end associate
     end do
 
     ghost_sched%persistent_init = .true.
@@ -598,157 +619,43 @@ contains
 
     if (.not. ghost_sched%persistent_init) return
     do r = 1, ghost_sched%n_send_ranks
-      call MPI_REQUEST_FREE(ghost_sched%prim_send_req_pers(r), ierr)
+      call MPI_REQUEST_FREE(ghost_sched%send_req(r), ierr)
     end do
     do r = 1, ghost_sched%n_recv_ranks
-      call MPI_REQUEST_FREE(ghost_sched%prim_recv_req_pers(r), ierr)
+      call MPI_REQUEST_FREE(ghost_sched%recv_req(r), ierr)
     end do
     ghost_sched%persistent_init = .false.
   end subroutine cleanup_persistent_requests
 
 
-  !> Post receives, pack and send prim field.
-  subroutine exchange_prim_begin(grid)
-    use ICE_Advanced_Types_m
-    use mpi
+  !> Split a rank-grouped cell list into one message per remote rank and assign each
+  !> cell its buffer offset (cells carry ncond(p) values, which differs between groups).
+  subroutine build_rank_groups(list, n, per_rank, groups, n_groups)
     implicit none
-    type(ICE_domain_type), intent(in) :: grid
-    integer :: i, r, ierr, buf_pos, es
-    integer :: bs, Is, Js, Ks, pm, nv
-
-    es = ghost_sched%entry_size
-
-    if (ghost_sched%n_send == 0 .and. ghost_sched%n_recv == 0) return
-
-    ! Start persistent receives
-    if (ghost_sched%n_recv_ranks > 0) then
-      call MPI_STARTALL(ghost_sched%n_recv_ranks, ghost_sched%prim_recv_req_pers, ierr)
-      call check_mpi_error(ierr)
-    end if
-
-    ! Pack send buffer: for each send entry copy prim(:, is, js, ks) from local source block
-    do i = 1, ghost_sched%n_send
-      bs  = ghost_sched%send_list(i)%local_block
-      Is  = ghost_sched%send_list(i)%src_i
-      Js  = ghost_sched%send_list(i)%src_j
-      Ks  = ghost_sched%send_list(i)%src_k
-      pm  = ghost_sched%send_list(i)%grp
-      nv  = ghost_sched%send_list(i)%nvar
-      buf_pos = (i - 1) * es
-      ghost_sched%send_buf(buf_pos+1 : buf_pos+nv) = &
-        grid%blk(bs)%cond_phase(pm)%prim(1:nv, Is, Js, Ks)
-    end do
-
-    ! Start persistent sends
-    if (ghost_sched%n_send_ranks > 0) then
-      call MPI_STARTALL(ghost_sched%n_send_ranks, ghost_sched%prim_send_req_pers, ierr)
-      call check_mpi_error(ierr)
-    end if
-  end subroutine exchange_prim_begin
-
-
-  !> Wait for receives and unpack prim into ghost cells; then wait for sends.
-  subroutine exchange_prim_end(grid)
-    use ICE_Advanced_Types_m
-    use mpi
-    implicit none
-    type(ICE_domain_type), intent(inout) :: grid
-    integer :: i, ierr, buf_pos, es
-    integer :: bm, Im, Jm, Km, Fm, Ig, Jg, Kg, pm, nv
-
-    es = ghost_sched%entry_size
-
-    if (ghost_sched%n_send == 0 .and. ghost_sched%n_recv == 0) return
-
-    ! Wait for all receives
-    if (ghost_sched%n_recv_ranks > 0) then
-      call MPI_WAITALL(ghost_sched%n_recv_ranks, ghost_sched%prim_recv_req_pers, &
-                       ghost_sched%mpi_stat(:,1:ghost_sched%n_recv_ranks), ierr)
-      call check_mpi_error(ierr)
-    end if
-
-    ! Unpack recv buffer into ghost cells
-    do i = 1, ghost_sched%n_recv
-      bm  = ghost_sched%recv_list(i)%local_block
-      Im  = ghost_sched%recv_list(i)%dst_i
-      Jm  = ghost_sched%recv_list(i)%dst_j
-      Km  = ghost_sched%recv_list(i)%dst_k
-      Fm  = ghost_sched%recv_list(i)%dst_f
-      pm  = ghost_sched%recv_list(i)%grp
-      nv  = ghost_sched%recv_list(i)%nvar
-      ! Ghost cell is one step inward from the boundary face
-      Ig  = Im - guide(Fm, 1)
-      Jg  = Jm - guide(Fm, 2)
-      Kg  = Km - guide(Fm, 3)
-      buf_pos = (i - 1) * es
-      grid%blk(bm)%cond_phase(pm)%prim(1:nv, Ig, Jg, Kg) = &
-        ghost_sched%recv_buf(buf_pos+1 : buf_pos+nv)
-    end do
-
-    ! Wait for sends to complete
-    if (ghost_sched%n_send_ranks > 0) then
-      call MPI_WAITALL(ghost_sched%n_send_ranks, ghost_sched%prim_send_req_pers, &
-                       ghost_sched%mpi_stat(:,1:ghost_sched%n_send_ranks), ierr)
-      call check_mpi_error(ierr)
-    end if
-  end subroutine exchange_prim_end
-
-
-  !> Sort ghost entries by remote_rank using insertion sort (lists are short).
-  subroutine sort_entries_by_rank(list, n)
-    implicit none
-    type(ghost_entry_type), intent(inout) :: list(:)
+    type(halo_cell_type), intent(inout) :: list(:)
     integer, intent(in) :: n
-    integer :: i, j
-    type(ghost_entry_type) :: tmp
-
-    do i = 2, n
-      tmp = list(i)
-      j = i - 1
-      do while (j >= 1 .and. list(j)%remote_rank > tmp%remote_rank)
-        list(j+1) = list(j)
-        j = j - 1
-      end do
-      list(j+1) = tmp
-    end do
-  end subroutine sort_entries_by_rank
-
-
-  !> Build rank groups from a sorted entry list.
-  subroutine build_rank_groups(list, n, groups, n_groups)
-    implicit none
-    type(ghost_entry_type), intent(in) :: list(:)
-    integer, intent(in) :: n
+    integer, intent(in) :: per_rank(0:)
     type(rank_group_type), allocatable, intent(out) :: groups(:)
     integer, intent(out) :: n_groups
-    integer :: i, ng
+    integer :: r, g, c, first, off
 
-    if (n == 0) then
-      n_groups = 0
-      allocate(groups(0))
-      return
-    end if
+    n_groups = count(per_rank > 0)
+    allocate(groups(n_groups))
 
-    ng = 1
-    do i = 2, n
-      if (list(i)%remote_rank /= list(i-1)%remote_rank) ng = ng + 1
-    end do
-    n_groups = ng
-
-    allocate(groups(ng))
-    ng = 1
-    groups(1)%rank   = list(1)%remote_rank
-    groups(1)%offset = 1
-    groups(1)%count  = 1
-    do i = 2, n
-      if (list(i)%remote_rank /= list(i-1)%remote_rank) then
-        ng = ng + 1
-        groups(ng)%rank   = list(i)%remote_rank
-        groups(ng)%offset = i
-        groups(ng)%count  = 1
-      else
-        groups(ng)%count = groups(ng)%count + 1
-      end if
+    g = 0 ; first = 1 ; off = 0
+    do r = 0, size(per_rank)-1
+      if (per_rank(r) == 0) cycle
+      g = g + 1
+      groups(g)%rank  = r
+      groups(g)%first = first
+      groups(g)%count = per_rank(r)
+      groups(g)%off   = off
+      do c = first, first + per_rank(r) - 1
+        list(c)%off = off
+        off = off + ncond(list(c)%p)
+      end do
+      groups(g)%len = off - groups(g)%off
+      first = first + per_rank(r)
     end do
   end subroutine build_rank_groups
 #endif

@@ -1,5 +1,6 @@
 module ICE_Mod_Sources
   use iso_fortran_env, only: I4 => int32, R8 => real64
+  use ICE_Mod_MPI, only: is_local_block
 
   implicit none
   private
@@ -17,6 +18,7 @@ contains
 
     !$OMP PARALLEL
     do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
   
       !$OMP DO COLLAPSE(3)
       do k = 1, grid%blk(b)%dim(3)

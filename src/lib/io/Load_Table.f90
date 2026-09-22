@@ -20,6 +20,7 @@ contains
   subroutine Load_Table()
     use ICE_Config_Types_m, only: obj_condensed
     use ICE_Global_m,       only: ICE_phase_prefix
+    use ICE_Mod_MPI,        only: mpi_is_root
     implicit none
     integer  :: ios, unitFile, npts, i, iT
     real(R8) :: T, cp, rho, h
@@ -30,7 +31,7 @@ contains
 
     open(newunit=unitFile, file=trim(tablefile), status='old', iostat=ios)
     if (ios /= 0) then
-      write(*,'(A)') ' [ICE] condensed properties: no '//trim(tablefile)// &
+      if (mpi_is_root) write(*,'(A)') ' [ICE] condensed properties: no '//trim(tablefile)// &
                      ' -- using the constant [ICE-Physics] rho/cs'
       return
     endif
@@ -46,7 +47,7 @@ contains
     call extract_integer_after(line, 'I=', npts)
     if (npts <= 0) then
       close(unitFile)
-      write(*,'(A)') ' [ICE] condensed properties: '//trim(tablefile)// &
+      if (mpi_is_root) write(*,'(A)') ' [ICE] condensed properties: '//trim(tablefile)// &
                      ' has no readable "I=<n>" point count -- using the constant [ICE-Physics] rho/cs'
       return
     end if
@@ -70,7 +71,7 @@ contains
     obj_condensed%use_table   = .true.
     obj_condensed%description = 'Table-based rho_al(T) and cs_al(T) from '//trim(tablefile)
 
-    write(*,'(A,I0,A)') ' [ICE] condensed properties: table from '//trim(tablefile)//' (', npts, &
+    if (mpi_is_root) write(*,'(A,I0,A)') ' [ICE] condensed properties: table from '//trim(tablefile)//' (', npts, &
                         ' points, indexed by integer T)'
 
   end subroutine Load_Table
