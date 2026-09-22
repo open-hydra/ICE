@@ -47,7 +47,7 @@ contains
     !$OMP DO SCHEDULE (DYNAMIC)
     do n = 1, size(grid%bc)
 
-      if (grid%bc(n)%type == 0 .or. grid%bc(n)%type == 2) cycle
+      if (grid%bc(n)%type == 0 .or. grid%bc(n)%type == 200) cycle
 
       b = grid%bc(n)%b
       i = grid%bc(n)%i ; j = grid%bc(n)%j ; k = grid%bc(n)%k

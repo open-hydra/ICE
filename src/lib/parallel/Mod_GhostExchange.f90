@@ -1,5 +1,5 @@
 !>@brief Ghost cell MPI communication for inter-block boundaries in ICE.
-!> Builds a communication schedule from the BC connectivity array (type=1)
+!> Builds a communication schedule from the BC connectivity array (type=101/201)
 !> and provides persistent non-blocking exchange routines for the condensed-phase
 !> primitive-variable field (prim). Messages are aggregated per remote rank.
 !> In serial mode (USE_MPI not defined), all routines are no-ops.
@@ -69,7 +69,7 @@ module ICE_Mod_GhostExchange
 contains
 
 
-  !> Build the communication schedule by scanning all BC entries of type 1 (connection).
+  !> Build the communication schedule by scanning all BC entries of type 101/201 (connection).
   !> Entries are sorted by remote rank for aggregated MPI messaging.
   !> Must be called after partition_blocks and grid allocation.
   subroutine build_ghost_schedule(grid)
@@ -89,7 +89,7 @@ contains
     ! Count send and recv entries
     ns = 0; nr = 0
     do i = 1, size(grid%bc)
-      if (grid%bc(i)%type /= 1) cycle
+      if (grid%bc(i)%type /= 101 .and. grid%bc(i)%type /= 201) cycle
       bm = grid%bc(i)%b
       bs = grid%bc(i)%bs
       if (.not. allocated(block_owner)) cycle
@@ -107,7 +107,7 @@ contains
     ! Fill send and recv lists
     ns = 0; nr = 0
     do i = 1, size(grid%bc)
-      if (grid%bc(i)%type /= 1) cycle
+      if (grid%bc(i)%type /= 101 .and. grid%bc(i)%type /= 201) cycle
       bm = grid%bc(i)%b
       bs = grid%bc(i)%bs
       pm = grid%bc(i)%p

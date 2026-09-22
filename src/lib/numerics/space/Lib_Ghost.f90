@@ -45,7 +45,7 @@ contains
 
       select case ( grid%bc(i)%type )
 
-        case (1) !> connection
+        case (101, 201) !> connection / periodic
           bs = grid%bc(i)%bs
           is = grid%bc(i)%is
           js = grid%bc(i)%js
@@ -54,8 +54,8 @@ contains
           grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bs)%cond_phase(pm)%prim(1:ncond(pm),is,js,ks)
 
 
-        case (3, 5, 6) !> wall - Use extrapolation when the particles are moving towards the wall. Otherwise, symmetry
-                       !>        Symmetry is enforced on face 3 which is usually the symmetry axis
+        case (300) !> symmetry - Use extrapolation when the particles are moving towards the wall. Otherwise, symmetry
+                   !>             Symmetry is enforced on face 3 which is usually the symmetry axis
           if (fm <= 2) then
             ic = im - mod(fm,2)
             normal = grid%blk(bm)%dir(1)%f(ic,jm,km)%N
@@ -78,7 +78,7 @@ contains
           grid%blk(bm)%cond_phase(pm)%prim(2:4,ig,jg,kg) = velocity(1:3)
 
 
-        case (4,14) !> inflow
+        case (401:403) !> inflow
           if (fm <= 2) then
             ic = im - mod(fm,2)
             normal = grid%blk(bm)%dir(1)%f(ic,jm,km)%N
@@ -123,7 +123,7 @@ contains
             endif
 
             !> Assigned gaseous carrier phase
-            if (grid%bc(i)%injtype == 0) then
+            if (grid%bc(i)%type == 401) then
               veln = dot_product(grid%blk(bm)%gas_phase%prim(2:4,im,jm,km),normal)
               !> Velocity
               prim(2,ig,jg,kg) = grid%bc(i)%velocity * veln * cos(grid%bc(i)%beta) * cos(grid%bc(i)%alpha)
@@ -135,7 +135,7 @@ contains
               prim(ncond(pm)-1,ig,jg,kg) = grid%bc(i)%temperature * grid%blk(bm)%gas_phase%prim(5,im,jm,km)
 
             !> Direct assignement of massflux, velocity, and temperature.
-            elseif (grid%bc(i)%injtype == 1) then
+            elseif (grid%bc(i)%type == 402) then
               !> Velocity
               prim(2,ig,jg,kg) = grid%bc(i)%velocity * cos(grid%bc(i)%beta) * cos(grid%bc(i)%alpha)
               prim(3,ig,jg,kg) = grid%bc(i)%velocity * cos(grid%bc(i)%beta) * sin(grid%bc(i)%alpha)
@@ -147,7 +147,7 @@ contains
               prim(ncond(pm)-1,ig,jg,kg) = grid%bc(i)%temperature
 
             !> Direct assignement of massflux and temperature. Velocity is computed from the gas phase
-            elseif (grid%bc(i)%injtype == 2) then
+            elseif (grid%bc(i)%type == 403) then
               !> Velocity
               veln = norm2(grid%blk(bm)%gas_phase%prim(2:4,im,jm,km))
               prim(2,ig,jg,kg) = grid%bc(i)%velocity * veln * cos(grid%bc(i)%beta) * cos(grid%bc(i)%alpha)
@@ -179,7 +179,7 @@ contains
           endif
 
 
-        case (11) !> extrapolation
+        case (400) !> extrapolation
           grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),im,jm,km)
 
 
@@ -212,7 +212,7 @@ contains
     !$OMP DO SCHEDULE(dynamic)
     do i = 1, size(grid%bc)
 
-      if (grid%bc(i)%type == 0 .or. grid%bc(i)%type == 2) cycle
+      if (grid%bc(i)%type == 0 .or. grid%bc(i)%type == 200) cycle
 
       bm = grid%bc(i)%b
       im = grid%bc(i)%i ; jm = grid%bc(i)%j ; km = grid%bc(i)%k
@@ -223,7 +223,7 @@ contains
 
       select case (grid%bc(i)%type)
 
-        case (1) !> connection: copy second interior cell of source block
+        case (101, 201) !> connection: copy second interior cell of source block
           bs = grid%bc(i)%bs ; fs = grid%bc(i)%fs
           is = grid%bc(i)%is + guide(fs,1)
           js = grid%bc(i)%js + guide(fs,2)

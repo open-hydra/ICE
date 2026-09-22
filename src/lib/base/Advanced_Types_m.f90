@@ -21,7 +21,7 @@ module ICE_Advanced_Types_m
 
   type :: bc_type
     integer  :: i, j, k, b, f                          ! Location in grid
-    integer  :: type                                    ! BC type
+    integer  :: type                                    ! BC type: ATLAS code (see ICE_IO_BC)
     integer  :: bs, is, js, ks, fs, d11, d12, d21, d22 ! Connection specs
     integer               :: ni(2) = 0                 ! Chimera: donors per ghost layer
     integer,  allocatable :: donorID(:,:)               ! Chimera: (donor, [b i j k]), layer 1 then 2
@@ -55,8 +55,6 @@ module ICE_Advanced_Types_m
 
   type, extends(bc_type) :: ICE_bc_type
     integer  :: p                                       ! Particle group index
-    integer  :: mat                                     ! Material ID
-    integer  :: injtype                                 ! Injection type
     real(R8) :: massflux, velocity, temperature
     real(R8) :: alpha, beta, radius
     type(time_series_type) :: BCtime
