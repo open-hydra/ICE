@@ -52,7 +52,7 @@ required; everything else has a default.
 |---|---|
 | `[ICE-Parameters]` | Restart flag and the three stopping thresholds |
 | `[ICE-Numerics]` | Time scheme, CFL number and step ceiling, reconstruction, limiter, shock detector, Riemann solver, residual smoothing |
-| `[ICE-Physics]` | Drag and heat-transfer models, and the condensed-material properties |
+| `[ICE-Physics]` | Drag, heat-transfer and evaporation models, and the condensed-material and vapour properties |
 | `[ICE-IO]` | Input and output formats and frequencies, gas-file directory |
 | `[ICE-Multigrid]` | Number of grid levels and the iteration budget of each |
 | `[ICE-Probes]` | Names the section that configures each probe |
@@ -79,12 +79,28 @@ Each carries its own state; they share the mesh, the gas field and the numerical
 scheme, and do not interact. `closure` is required — a file with no family section
 stops the run.
 
-### Choosing the drag and heat correlations
+### Choosing the exchange models
 
-`drag` and `heat-transfer` are set once in `[ICE-Physics]` and apply to every family.
-They are only consulted when the run is coupled (that is, when `INPUT/gas.tec` exists);
-an uncoupled run ignores them, and leaving them at `none` in a coupled run stops the
-solver with the list of valid names.
+`drag`, `heat-transfer` and `evaporation` are set once in `[ICE-Physics]` and apply to
+every family. They are only consulted when the run is coupled (that is, when
+`INPUT/gas.tec` exists); an uncoupled run ignores them, and a name none of them
+recognises stops the solver with the list of valid ones.
+
+`evaporation` defaults to `none`, and while it is `none` the vapour keys beside it are
+never read. Selecting a model makes `latent-heat`, `vapour-molar-mass` and
+`boiling-temperature` matter — those three set the saturation curve, and their defaults
+describe aluminium. `evaporation-interface` and `evaporation-blowing` are refinements of
+the selected model rather than models of their own:
+
+```ini
+[ICE-Physics]
+evaporation           = CEM
+evaporation-interface = LK
+evaporation-blowing   = LK
+latent-heat           = 2.26e6
+vapour-molar-mass     = 18.015
+boiling-temperature   = 373.15
+```
 
 ### Grid levels
 

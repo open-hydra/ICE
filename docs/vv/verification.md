@@ -58,7 +58,7 @@ not `cfl * dt-max`:
 ## B. Thermal relaxation
 
 The same idea for the energy equation. The particles travel with the gas, so there is
-no slip, no drag force and no drag work; with `heat = Stokes` the Nusselt number is
+no slip, no drag force and no drag work; with `heat-transfer = Stokes` the Nusselt number is
 exactly 2 and the convective exchange is again a linear relaxation:
 
 $$
@@ -162,12 +162,82 @@ finite $Ma/Re$ ratio there, so they are excluded from that check and covered onl
 the finite-slip comparison. At $Re = 67$ all seven agree with the reference to
 $1.7\times10^{-6}$ of the initial temperature gap.
 
+## F. Evaporation
+
+A uniform cloud of droplets at rest in a uniform, hotter gas at rest. There is no
+slip, so $Re = 0$ and every correlation collapses onto its stagnant-film value.
+The droplets are water, 100 µm across, at 300 K in air at 800 K and one atmosphere.
+
+**The $d^2$ law.** ICE transports $\rho_p$ and $n$; $n$ has no source term, so the
+diameter comes back out of the state as $d = 2\,[0.75\rho_p/(n\pi\rho_l)]^{1/3}$.
+Every model here gives $\dot m \propto d$, so
+
+$$
+\frac{\mathrm d (d^2)}{\mathrm d t} = \frac{4\dot m}{\pi d \rho_l} = -K,
+\qquad K \ \text{constant},
+$$
+
+and $d^2(t) = d_0^2 - Kt$ exactly — provided the droplet temperature holds. The first
+part of the case forces that with an enormous specific heat, which is the idealisation
+the law is derived under, and compares $K$ against the published correlations evaluated
+independently in Python:
+
+| `evaporation` | $K$ [m²/s] | Relative error | $d^2/d_0^2$ left after 0.04 s |
+|---|---|---|---|
+| `d2-law` | $4.15539205\times10^{-8}$ | $7\times10^{-10}$ | 0.834 |
+| `CEM`    | $5.40199730\times10^{-9}$ | $1.6\times10^{-8}$ | 0.978 |
+| `CEM-B`  | $3.70421443\times10^{-9}$ | $1.6\times10^{-8}$ | 0.985 |
+| `ASM`    | $5.40199730\times10^{-9}$ | $1.5\times10^{-8}$ | 0.978 |
+| `TC`     | $7.81868682\times10^{-9}$ | $1.4\times10^{-8}$ | 0.969 |
+
+`ASM` and `CEM` agree to round-off here, and must: the Frössling $Sh_0$ is 2 at
+$Re = 0$, so the Abramzon-Sirignano film correction $Sh^\star = 2 + (Sh_0-2)/F(B_M)$
+has nothing to correct. The case asserts that identity rather than treating the
+coincidence as luck. It also checks that `evaporation = none` leaves the bulk density
+untouched to round-off, that the field stays uniform, and that the number density does
+not move — droplets shrink, they are never destroyed.
+
+**The non-equilibrium interface.** `evaporation-interface = LK` depresses the surface
+mole fraction by a Knudsen-layer term, and the initial slope drops 0.313 % below the
+equilibrium one. It is *not* a $d^2$ law: the layer thickness goes as $1/d$ while the
+rate driving it does not, so the depression deepens as the droplet shrinks. The
+reference is the integrated ODE instead, and ICE matches it to $4\times10^{-13}$ of the
+initial bulk density.
+
+**The energy equation.** Freezing the temperature says nothing about the latent sink,
+so the second part releases it — real specific heat, $\tau_T = 0.134$ s — and compares
+against an RK4 integration of the coupled $(\rho_p, T_p)$ system. This is the part that
+reaches the gas-side heat `ASM` and `TC` compute for themselves in place of the Nusselt
+one. After 0.05 s:
+
+| `evaporation` | $T_p$ [K] (ICE) | $T_p$ [K] (RK4) | $\rho_p$ error |
+|---|---|---|---|
+| `d2-law` | 319.519825 | 319.519825 | $2.4\times10^{-11}$ |
+| `ASM`    | 337.352129 | 337.352129 | $6.5\times10^{-12}$ |
+| `TC`     | 331.380563 | 331.380563 | $3.1\times10^{-12}$ |
+
+**An exact check with nothing frozen.** Putting the $d^2$ law together with $Nu = 2$
+and the Miller-Harstad-Bellan blowing factor makes the Stefan number collapse:
+$b = -\tfrac32 Pr\,\tau_p\dot m/m_p$ reduces to $\ln(1+B_T)$ identically, every
+property cancelling, so $f_2 = \ln(1+B_T)/B_T$ and the blown convective heat equals the
+latent sink term for term. That combination is rigorously isothermal, for any gas, any
+material and any droplet temperature. ICE holds $T_p$ to $8\times10^{-12}$ K over ten
+thousand steps with a physical specific heat, and reproduces the $d^2$ slope to
+$5\times10^{-11}$ — where the same run without the blowing factor heats by 19.5 K.
+
+!!! note "What this check can and cannot catch"
+    As with D and E, a correlation written wrongly in the same way in both ICE and the
+    reference would pass. What is not vulnerable to that is the $\dot m \propto d$
+    scaling, the `ASM`–`CEM` identity at $Re = 0$ and the isothermal identity above:
+    those follow from the published forms and would break under any transcription
+    error.
+
 ## Running them
 
 ```bash
 ctest --test-dir build -L verification --output-on-failure
 ```
 
-A, B and C also carry the `fast` label, so the pre-push hook runs them. D and E take
+A, B and C also carry the `fast` label, so the pre-push hook runs them. D, E and F take
 longer, because each correlation is a separate run of the solver, and are in the
 default tier only.

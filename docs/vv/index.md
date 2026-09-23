@@ -26,17 +26,19 @@ then keep a stored reference so a change is caught.
 | [Chimera Overset](chimera.md) | 2D | IG | Overset interpolation between overlapping non-matching blocks | The same case on a single block, plus a matched-resolution control | `Doisneau/IG-chimera` |
 | [Multi-block and MPI](multiblock-mpi.md) | 2D | IG | Block connections and the rank decomposition | The single block; and 1 to 4 ranks against each other | `Doisneau/IG-split4` |
 | [Berthon Riemann Problems](berthon.md) | 1D | AG | Shocks, contacts and rarefactions of the Gaussian system | Analytical wave patterns | `Berthon/SCS`, `Berthon/RCS`, `Berthon/RCR` |
-| [Code Verification](verification.md) | 1D | MK | Drag and heat relaxation, periodic advection, every drag and Nusselt correlation | Closed forms and independent RK4 integrations | `verification/A` … `verification/E` |
+| [Code Verification](verification.md) | 1D | MK | Drag and heat relaxation, periodic advection, every drag and Nusselt correlation, every evaporation model | Closed forms and independent RK4 integrations | `verification/A` … `verification/F` |
 
-Read together they cover: every closure, both source terms and all nineteen of their
-correlations, the transport operator and its order of accuracy, the time integrator and
-its order, and every way a block can talk to another one.
+Read together they cover: every closure, all three source terms and every one of
+their correlations — twelve drag laws, seven Nusselt laws and five evaporation models —
+the transport operator and its order of accuracy, the time integrator and its order,
+and every way a block can talk to another one.
 
 ### What is not covered
 
 Restart, probes, grid sequencing and implicit residual smoothing have no case. Nor does
 any three-dimensional configuration — every case here is 1-D or 2-D — or any run with
-more than one family.
+more than one family. Evaporation is covered only at zero slip, where the Sherwood and
+Nusselt corrections are inactive; the convective branch of each model is not verified.
 
 ## Running them
 

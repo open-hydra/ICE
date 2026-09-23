@@ -77,14 +77,19 @@ the master is newer, so a case always runs against the current build.
  ICE numerical scheme:
  - Space   --> MUSCL with MC flux limiter
  - Time    --> Explicit Runge-Kutta 2
+ - Drag    --> Stokes
+ - Heat    --> Ranz-Marshall
+ - Evap    --> CEM
 
  Boundary Conditions:
    Extrapolation                  2
 ```
 
-Worth checking before a long run: the closure count matches the families you meant to
-declare, the scheme line says `MUSCL` rather than `I order` if you asked for it, and
-every boundary type you expect appears with the right count. A type that is absent
+The exchange models appear only in a coupled run, and the interface and blowing lines
+only when an evaporation model is selected. Worth checking before a long run: the
+closure count matches the families you meant to declare, the scheme line says `MUSCL`
+rather than `I order` if you asked for it, and every boundary type you expect appears
+with the right count. A type that is absent
 from the list has no faces carrying it.
 
 ### How MPI divides the work

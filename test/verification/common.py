@@ -154,19 +154,23 @@ class Case(object):
 
     def ini(self, t_end=None, iters=1000000000, cfl=0.8, rk='RK2', drag='Stokes',
             heat='Stokes', reconstruction='MUSCL', limiter='vanleer', rho_al=1000.0,
-            cs=900.0, dt_max=None):
+            cs=900.0, dt_max=None, physics=None):
         numerics = {'time-scheme': rk, 'cfl': cfl, 'time-accurate': True,
                     'space-reconstruction': reconstruction, 'flux-limiter': limiter}
         if dt_max is not None:
             numerics['dt-max'] = dt_max
+        # `physics` adds to or overrides the [ICE-Physics] defaults, which is how the
+        # evaporation case reaches the vapour keys without every other case carrying them
+        phys = {'drag': drag, 'heat-transfer': heat,
+                'density': rho_al, 'specific-heat': cs, 'emissivity': 0.0}
+        phys.update(physics or {})
         write_ini(self.dir / 'input.ini', {
             'ICE-Parameters': {'iter-threshold': iters,
                                'time-threshold': t_end if t_end is not None else 1e30,
                                'res-threshold': 0.0},
             'ICE-Numerics': numerics,
             'ICE-Family1': {'closure': 'MK'},
-            'ICE-Physics': {'drag': drag, 'heat-transfer': heat,
-                            'density': rho_al, 'specific-heat': cs, 'emissivity': 0.0},
+            'ICE-Physics': phys,
             'ICE-IO': {'ic-format': 'tecplot ascii', 'sol-format': 'tecplot ascii',
                        'shell-diter': 1000000000, 'sol-diter': 1000000000,
                        'res-diter': 1000000000},

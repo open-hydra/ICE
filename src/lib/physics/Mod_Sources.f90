@@ -49,6 +49,7 @@ contains
     use ICE_Lib_Model
     use ICE_Lib_Drag
     use ICE_Lib_Heat
+    use ICE_Lib_Evaporation, only: evaporation, blowingFactor
     use ICE_Load_Table,     only: get_rho_al
     implicit none
     real(kind=R8), dimension(:), intent(in)    :: cond_prim, gas_prim
@@ -58,15 +59,20 @@ contains
 
     integer(kind=I4) :: n, ng
     real(kind=R8)    :: Rp, Re, Ma, Pr, Tr
-    real(kind=R8)    :: B, Cd, Nu
+    real(kind=R8)    :: Cd, Nu
+    real(kind=R8)    :: rho_mat, mdot, Qconv, Qevap
+    logical          :: override_Qdot
     real(kind=R8)    :: force(6)
 
     !> Condensed variable number
     n = size(cond_prim)
     ng = size(gas_prim)
 
+    !> Condensed-material density at the particle temperature
+    rho_mat = get_rho_al(cond_prim(n-1))
+
     !> Particles radius 
-    Rp = (0.75_R8*cond_prim(1) / (cond_prim(n)*pi*get_rho_al(cond_prim(n-1))))**(1._R8/3._R8)
+    Rp = (0.75_R8*cond_prim(1) / (cond_prim(n)*pi*rho_mat))**(1._R8/3._R8)
 
     !> Reynolds number
     Re = 2._R8*gas_prim(1)*Rp*norm2(gas_prim(2:4)-cond_prim(2:4))/gas_mu
@@ -87,23 +93,38 @@ contains
     !> Slip velocity
     force(2:4) = gas_prim(2:4) - cond_prim(2:4)
 
-    !> Mass and convective heat exchange
-    !> No combustion
+    !> Convective heat exchange of a single particle [W]
     Nu = heat(Re,Pr,Ma,obj_time_scheme%heatSelect)
-    force(1) = 0._R8
-    force(5) = 2._R8*Nu*gas_k*pi*Rp*(gas_prim(ng)-cond_prim(n-1))*cond_prim(n)
+    Qconv = 2._R8*Nu*gas_k*pi*Rp*(gas_prim(ng)-cond_prim(n-1))
 
-    !> Combustion  
-    !> B = (gas_gam/(gas_gam-1)*gas_R*(gas_prim(ng)-cond_prim(n-1))+obj_condensed%q_al)/obj_condensed%lv_al
-    !> force(1) = 2._R8*pi*gas_mu/Pr * cond_prim(n)*Rp*log(1._R8+B) * &
-    !>            2._R8*(1._R8+0.3_R8*Re**0.5_R8*Pr**0.333_R8)
-    !> force(5) = force(1)*obj_condensed%lv_al                     
+    !> Mass exchange of a single particle [kg/s], negative while the particle
+    !  evaporates. Qevap comes back in W; the latent sink is not included here,
+    !  every closure's source_make adds it as -force(1)*lv_al.
+    call evaporation(gas_prim(1), gas_prim(ng), gas_gam, gas_R, gas_mu, gas_k,  &
+                     cond_prim(n-1), 2._R8*Rp, Re,                              &
+                     obj_time_scheme%evapSelect, obj_time_scheme%intfSelect,    &
+                     obj_condensed%ep, mdot, Qevap, override_Qdot)
+
+    if (override_Qdot) then
+      !> ASM and TC resolve the gas-side heat inside their own film, Stefan flow
+      !  included, so their value replaces the Nusselt one rather than correcting it
+      Qconv = Qevap
+    elseif (obj_time_scheme%blowSelect == 1) then
+      !> Outgoing vapour thickens the thermal film and cuts the convective heat
+      Qconv = Qconv * blowingFactor(gas_gam, gas_R, gas_mu, gas_k, rho_mat, &
+                                    2._R8*Rp, 4._R8/3._R8*pi*Rp**3*rho_mat, mdot)
+    endif
+
+    !> force(1) is the mass leaving the condensed phase per unit volume and time,
+    !  force(5) the heat entering it
+    force(1) = - mdot*cond_prim(n)
+    force(5) = Qconv*cond_prim(n)                  
       
     !> Radiative heat exchange
     force(5) = force(5) + obj_condensed%emiss*sigma_SB * 2._R8*pi*Rp*Rp*cond_prim(n)*(gas_prim(ng)**4._I4-cond_prim(n-1)**4._I4)
 
     !> Particles relaxation time
-    cond_tau = 8._R8*get_rho_al(cond_prim(n-1))*Rp / (3._R8*gas_prim(1)*Cd*norm2(gas_prim(2:4)-cond_prim(2:4)) + 1e-20)
+    cond_tau = 8._R8*rho_mat*Rp / (3._R8*gas_prim(1)*Cd*norm2(gas_prim(2:4)-cond_prim(2:4)) + 1e-20)
     !> Use only for Vie validation test
     !> cond_tau = 5.0_R8
     force(6) = cond_tau

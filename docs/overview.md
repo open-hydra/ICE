@@ -79,11 +79,10 @@ with no exchange at all.
 | Drag | Momentum and the matching kinetic-energy exchange with the gas, through a relaxation time built from $C_d$. Twelve correlations. |
 | Convective heat | Energy exchange through a Nusselt number. Seven correlations. |
 | Radiation | Grey-body exchange with the local gas temperature, at emissivity `emissivity`. |
+| Evaporation | Mass transfer to the gas, with the enthalpy and latent heat that go with it. Five models, plus a non-equilibrium interface and a Stefan-blowing correction. |
 
 The correlations and their expressions are listed under
-[Particle Physics](theory/physics.md). Mass transfer between the phases
-(vaporisation, combustion) is present in the equations as a term but is not evaluated:
-the closures carry it, the source routine sets it to zero.
+[Particle Physics](theory/physics.md). Combustion is not implemented.
 
 The material density and specific heat can be constants from `[ICE-Physics]` or
 tabulated against temperature in `INPUT/part-properties.dat`; the table wins when it is

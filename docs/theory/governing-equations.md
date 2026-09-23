@@ -112,9 +112,11 @@ $\mathbf{S}$ collects, for every closure,
   $\tau_p$, together with the work it does on the energy;
 - **convective heat exchange** with the gas, through a Nusselt number;
 - **radiative exchange** with the gas, as a grey body;
-- **mass transfer** between the phases. The term is present in every closure, and the
-  latent heat `latent-heat` is applied to it, but the source routine sets the rate to zero, so
-  vaporisation and combustion are inactive.
+- **mass transfer** between the phases, from the selected evaporation model. The
+  leaving mass carries its own enthalpy and momentum out of the condensed phase, and
+  the latent heat `latent-heat` is applied to it in the energy equation. The number
+  density is not a source of anything, so the droplets shrink rather than vanish.
+  Combustion is not implemented.
 
 The expressions are in [Particle Physics](physics.md). All of them vanish when no gas
 field is present, which is the 0-way coupled mode.

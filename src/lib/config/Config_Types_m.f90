@@ -1,6 +1,7 @@
 module ICE_Config_Types_m
   use iso_fortran_env, only: I4 => int32, R8 => real64
   use ICE_Parameters_m
+  use ICE_Lib_Evaporation, only: nep
 
   implicit none
   private
@@ -101,6 +102,12 @@ module ICE_Config_Types_m
     character(len=llen) :: heat          ! Heat transfer model (global, same for all families)
     character(len=llen) :: riemann       ! Riemann solver; empty = chosen from the closure
     integer  :: heatSelect     ! Heat model as the selector Lib_Heat dispatches on
+    character(len=llen) :: evaporation   ! Evaporation model (global, same for all families)
+    integer  :: evapSelect = 0 ! Evaporation model as the selector Lib_Evaporation dispatches on
+    character(len=llen) :: interface_model ! Vapour-liquid interface: 'VLE' or 'LK'
+    integer  :: intfSelect = 0 ! Interface treatment as the Lib_Evaporation selector
+    character(len=llen) :: blowing       ! Stefan-blowing correction of the Nusselt heat
+    integer  :: blowSelect = 0 ! Blowing correction as the Lib_Evaporation selector
     ! Per-family (only model type differs across families)
     character(len=llen), allocatable :: model(:)
   end type time_scheme_t
@@ -186,8 +193,16 @@ module ICE_Config_Types_m
     real(R8) :: rho_al = 2700._R8    ! Particle density            [kg/m^3]
     real(R8) :: cs_al  = 1598._R8    ! Particle specific heat      [J/(kg K)]
     real(R8) :: lv_al  = 10.8e6_R8   ! Particle latent heat        [J/kg]
-    real(R8) :: q_al   = 9.53e6_R8   ! Particle combustion energy  [J/kg]
     real(R8) :: emiss  = 1._R8       ! Surface emissivity          [-]
+    ! Vapour properties: only consulted when an evaporation model is selected
+    real(R8) :: Mv     = 26.98_R8    ! Vapour molar mass           [kg/kmol]
+    real(R8) :: cpv    = 0._R8       ! Vapour specific heat        [J/(kg K)]; 0 = use the gas cp
+    real(R8) :: Le     = 1._R8       ! Lewis number                [-]
+    real(R8) :: Yinf   = 0._R8       ! Far-field vapour mass fraction [-]
+    real(R8) :: Tboil  = 2792._R8    ! Boiling temperature at 1 atm [K]
+    real(R8) :: alphaE = 1._R8       ! Evaporation (accommodation) coefficient [-]
+    ! Packed form of the above, built by Assign_Setup and handed to Lib_Evaporation
+    real(R8) :: ep(nep) = 0._R8
     ! Table-based properties rho(T) and cs(T) (optional, loaded by Load_Table)
     logical                   :: use_table = .false.
     integer                   :: T_min = 0, T_max = 0

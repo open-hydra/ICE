@@ -73,11 +73,19 @@ Required column says otherwise, and omitting one selects the default.
 |-----------|---------|---------|----------|-------------|
 | `drag` | none | Newton, Stokes, Schlichting, Schiller-Naumann, Wen-Yu, Putnam, Clift-Gauvin, Morsi-Alexander, Carlson-Hoglund, Henderson, Crowe, Hermsen, none |  no | Drag model, global for all families |
 | `heat-transfer` | none | Stokes, JAXA1, JAXA2, JAXA3, Chang, Ranz-Marshall, Kavanau-Drake, none |  no | Convective heat transfer model, global for all families |
+| `evaporation` | none | d2-law, CEM, CEM-B, ASM, TC, none |  no | Evaporation model, global for all families |
+| `evaporation-interface` | VLE | VLE, LK |  no | Vapour-liquid interface: VLE equilibrium, or LK Langmuir-Knudsen non-equilibrium; ignored when evaporation is none |
+| `evaporation-blowing` | none | LK, none |  no | Stefan-blowing reduction of the convective heat; LK applies Miller-Harstad-Bellan f2. Ignored under ASM and TC, which carry their own gas-side heat |
 | `density` | 2700.0 | > 0 |  no | Condensed-material density [kg/m^3], used when no property table is given |
 | `specific-heat` | 1598.0 | > 0 |  no | Condensed-material specific heat [J/(kg K)], used when no property table is given |
-| `latent-heat` | 1.08e7 | > 0 |  no | Latent heat of vaporisation [J/kg]; only acts through the mass-transfer term |
-| `combustion-energy` | 9.53e6 | > 0 |  no | Heat of combustion [J/kg]; only acts through the mass-transfer term |
+| `latent-heat` | 1.08e7 | > 0 |  no | Latent heat of vaporisation [J/kg]; the evaporation models use it both as the energy sink and as the anchor of the saturation curve |
 | `emissivity` | 1.0 | >= 0 |  no | Particle surface emissivity; 0 switches radiative exchange off |
+| `vapour-molar-mass` | 26.98 | > 0 |  no | Molar mass of the vapour [kg/kmol] |
+| `boiling-temperature` | 2792.0 | > 0 |  no | Boiling temperature at 1 atm [K], the anchor of the Clausius-Clapeyron saturation pressure |
+| `vapour-specific-heat` | 0.0 | >= 0 |  no | Specific heat of the vapour [J/(kg K)]; 0 falls back to the gas cp |
+| `lewis-number` | 1.0 | > 0 |  no | Lewis number of the vapour in the gas, Le = k/(rho cp D) |
+| `vapour-mass-fraction` | 0.0 | >= 0 |  no | Vapour mass fraction in the far-field gas; evaporation stops once the surface value falls to it |
+| `evaporation-coefficient` | 1.0 | > 0 |  no | Evaporation (accommodation) coefficient of the Langmuir-Knudsen interface; unused under VLE |
 
 ## [ICE-Family1]
 

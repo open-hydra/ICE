@@ -104,8 +104,9 @@ reaches the flux loop through the same path. The ghost fill is described under
 
 ## Source terms
 
-Drag, heat and radiation are evaluated **explicitly**, once per Runge-Kutta stage, from
-the current primitive state, and added to the residual before it is integrated. There
+Drag, convective and radiative heat, and evaporation are evaluated **explicitly**, once
+per Runge-Kutta stage, from the current primitive state, and added to the residual
+before it is integrated. There
 is no point-implicit or operator-split treatment, so a particle relaxation time much
 shorter than the convective step is *not* handled by the scheme: keeping
 $\Delta t \lesssim \tau_p$ is the user's responsibility, which is what the `dt-max`

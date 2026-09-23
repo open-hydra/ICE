@@ -25,7 +25,8 @@ test/
 │   ├── B-thermal-relaxation/  # Nu = 2 heat exchange against its closed form
 │   ├── C-advection-sine/      # Periodic transport + grid-refinement order study
 │   ├── D-drag-matrix/         # All 12 drag laws against an independent integration
-│   └── E-heat-matrix/         # All 7 Nusselt laws, likewise
+│   ├── E-heat-matrix/         # All 7 Nusselt laws, likewise
+│   └── F-evaporation/         # All 5 evaporation models against the d-squared law
 └── fast/                      # Short invariant checks, no stored references
     ├── common.sh              # Shared helpers (short run, compare byte for byte)
     ├── openmp-equiv/          # 1 vs 4 threads bit-identical

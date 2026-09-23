@@ -74,6 +74,7 @@ src/lib/
 │   ├── Lib_Model.f90           # Binds the model procedures to the active family
 │   ├── Lib_Drag.f90            # Twelve drag correlations
 │   ├── Lib_Heat.f90            # Seven Nusselt correlations
+│   ├── Lib_Evaporation.f90     # Five evaporation models and their interface options
 │   └── Mod_Sources.f90         # Assembles the source vector
 └── diagnostic/
     └── Mod_Diagnostic.f90      # Residual norms and their output
@@ -85,6 +86,7 @@ src/lib/
 |---|---|
 | An input parameter, its default or its validation | the matching `config/Register_*.f90`, then run `bin/DocGen` |
 | A drag or Nusselt correlation | `physics/Lib_Drag.f90` / `Lib_Heat.f90`, and the Python mirror in `test/verification/common.py` |
+| An evaporation model | `physics/Lib_Evaporation.f90`, and the Python mirror in `test/verification/F-evaporation/run.py` |
 | A closure | the three `physics/Lib_Model_*.f90` plus `ncond` in `config/Assign_Setup.f90` |
 | A boundary type | `io/IO_BC.f90` to parse it and `numerics/space/Lib_Ghost.f90` to apply it |
 | The time integrator | `numerics/time/explicit/Lib_RK.f90` |
@@ -108,8 +110,9 @@ picked up on the next configure without editing any `CMakeLists.txt`.
 
 Two patterns coexist.
 
-**Integer selectors.** `Lib_Drag` and `Lib_Heat` are collections of `pure` functions
-dispatched by an integer carried in the configuration (`dragSelect`, `heatSelect`).
+**Integer selectors.** `Lib_Drag`, `Lib_Heat` and `Lib_Evaporation` are collections of
+`pure` procedures dispatched by an integer carried in the configuration (`dragSelect`,
+`heatSelect`, `evapSelect`, `intfSelect`, `blowSelect`).
 Nothing mutable is shared, so the source loops are safe to thread and the functions can
 be called from a `pure` context.
 

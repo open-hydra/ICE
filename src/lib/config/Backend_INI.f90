@@ -26,8 +26,7 @@ contains
 
     inquire(file='input.ini', exist=exists)
     if (.not. exists) then
-      write(*,'(A)') '  [ICE] input.ini not found in the working directory.'
-      error stop 'ICE: no input.ini'
+      error stop '[ERROR ICE] input.ini not found in the working directory.'
     endif
 
     source = ''
@@ -125,7 +124,7 @@ contains
     if (nbad > 0) then
       write(*,'(A)') '  They would be ignored and their parameters left at the default.'
       write(*,'(A)') '  See docs/user/registry.md for the current names.'
-      error stop 'ICE: unknown input keys'
+      error stop '[ERROR ICE] unknown input keys'
     end if
 
   end subroutine Check_Unknown_Keys

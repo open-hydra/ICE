@@ -33,6 +33,18 @@ contains
                  'Convective heat transfer model, global for all families', &
                  'Stokes, JAXA1, JAXA2, JAXA3, Chang, Ranz-Marshall, Kavanau-Drake, none', &
                  .false.)
+    call reg%add(section, 'evaporation', obj_time_scheme%evaporation, 'none', &
+                 'Evaporation model, global for all families', &
+                 'd2-law, CEM, CEM-B, ASM, TC, none', .false.)
+    call reg%add(section, 'evaporation-interface', obj_time_scheme%interface_model, 'VLE', &
+                 'Vapour-liquid interface: VLE equilibrium, or LK Langmuir-Knudsen '// &
+                 'non-equilibrium; ignored when evaporation is none', &
+                 'VLE, LK', .false.)
+    call reg%add(section, 'evaporation-blowing', obj_time_scheme%blowing, 'none', &
+                 'Stefan-blowing reduction of the convective heat; LK applies '// &
+                 'Miller-Harstad-Bellan f2. Ignored under ASM and TC, which carry '// &
+                 'their own gas-side heat', &
+                 'LK, none', .false.)
 
     ! Condensed-material properties ----------------------
     call reg%add(section, 'density', obj_condensed%rho_al, '2700.0', &
@@ -42,14 +54,30 @@ contains
                  'Condensed-material specific heat [J/(kg K)], used when no property table is given', &
                  '> 0',  .false.)
     call reg%add(section, 'latent-heat', obj_condensed%lv_al, '1.08e7', &
-                 'Latent heat of vaporisation [J/kg]; only acts through the mass-transfer term', &
-                 '> 0',  .false.)
-    call reg%add(section, 'combustion-energy', obj_condensed%q_al, '9.53e6', &
-                 'Heat of combustion [J/kg]; only acts through the mass-transfer term', &
+                 'Latent heat of vaporisation [J/kg]; the evaporation models use it '// &
+                 'both as the energy sink and as the anchor of the saturation curve', &
                  '> 0',  .false.)
     call reg%add(section, 'emissivity', obj_condensed%emiss, '1.0', &
                  'Particle surface emissivity; 0 switches radiative exchange off', &
                  '>= 0', .false.)
+
+    ! Vapour properties (only read when an evaporation model is selected) --
+    call reg%add(section, 'vapour-molar-mass', obj_condensed%Mv, '26.98', &
+                 'Molar mass of the vapour [kg/kmol]', '> 0', .false.)
+    call reg%add(section, 'boiling-temperature', obj_condensed%Tboil, '2792.0', &
+                 'Boiling temperature at 1 atm [K], the anchor of the '// &
+                 'Clausius-Clapeyron saturation pressure', '> 0', .false.)
+    call reg%add(section, 'vapour-specific-heat', obj_condensed%cpv, '0.0', &
+                 'Specific heat of the vapour [J/(kg K)]; 0 falls back to the gas cp', &
+                 '>= 0', .false.)
+    call reg%add(section, 'lewis-number', obj_condensed%Le, '1.0', &
+                 'Lewis number of the vapour in the gas, Le = k/(rho cp D)', '> 0', .false.)
+    call reg%add(section, 'vapour-mass-fraction', obj_condensed%Yinf, '0.0', &
+                 'Vapour mass fraction in the far-field gas; evaporation stops once '// &
+                 'the surface value falls to it', '>= 0', .false.)
+    call reg%add(section, 'evaporation-coefficient', obj_condensed%alphaE, '1.0', &
+                 'Evaporation (accommodation) coefficient of the Langmuir-Knudsen '// &
+                 'interface; unused under VLE', '> 0', .false.)
 
   end subroutine Register_Physics
 

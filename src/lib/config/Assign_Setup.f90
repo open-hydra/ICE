@@ -13,6 +13,9 @@ contains
     use ICE_Lib_Limiters,  only: assign_limiter
     use ICE_Lib_Drag,      only: assign_drag
     use ICE_Lib_Heat,      only: assign_heat
+    use ICE_Lib_Evaporation, only: assign_evaporation, assign_interface, assign_blowing, &
+                                   Ru, iMv, iLv, icpv, iLe, iYinf, iLvMvOverRu,     &
+                                   iinvTboil, ialphaE
     implicit none
     integer :: p
     logical :: gas_present
@@ -43,11 +46,27 @@ contains
       call assign_limiter('IORD')
     end if
 
-    ! --- Assign global drag/heat (only used when coupled) ---
+    ! --- Assign the global exchange models (only consulted when coupled) ---
     if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) then
       call assign_drag(obj_time_scheme%drag, obj_time_scheme%dragSelect)
       call assign_heat(obj_time_scheme%heat, obj_time_scheme%heatSelect)
+      call assign_evaporation(obj_time_scheme%evaporation, obj_time_scheme%evapSelect)
+      call assign_interface(obj_time_scheme%interface_model, obj_time_scheme%intfSelect)
+      call assign_blowing(obj_time_scheme%blowing, obj_time_scheme%blowSelect)
     end if
+
+    ! --- Pack the vapour properties into the array Lib_Evaporation indexes ---
+    !  The two derived entries are what the saturation pressure is actually built
+    !  from, so they are formed once here rather than per cell and per stage.
+    obj_condensed%ep = 0._R8
+    obj_condensed%ep(iMv)         = obj_condensed%Mv
+    obj_condensed%ep(iLv)         = obj_condensed%lv_al
+    obj_condensed%ep(icpv)        = obj_condensed%cpv
+    obj_condensed%ep(iLe)         = obj_condensed%Le
+    obj_condensed%ep(iYinf)       = obj_condensed%Yinf
+    obj_condensed%ep(iLvMvOverRu) = obj_condensed%lv_al*obj_condensed%Mv/Ru
+    obj_condensed%ep(iinvTboil)   = 1._R8/obj_condensed%Tboil
+    obj_condensed%ep(ialphaE)     = obj_condensed%alphaE
 
     ! --- Validate models and compute ncond/npop ---
     allocate(npop(1:3)); npop = 0

@@ -210,6 +210,11 @@ contains
       if (coupled) then
         write(*,'(A)') " - Drag    --> "//trim(obj_time_scheme%drag)
         write(*,'(A)') " - Heat    --> "//trim(obj_time_scheme%heat)
+        write(*,'(A)') " - Evap    --> "//trim(obj_time_scheme%evaporation)
+        if (obj_time_scheme%evapSelect /= 0) then
+          write(*,'(A)') " - Interf  --> "//trim(obj_time_scheme%interface_model)
+          write(*,'(A)') " - Blowing --> "//trim(obj_time_scheme%blowing)
+        end if
       end if
 
     end subroutine print_simulation_info

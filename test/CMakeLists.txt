@@ -97,6 +97,11 @@ ice_add_verification(SineAdvection     C-advection-sine    "fast;verification;tr
 ice_add_verification(DragMatrix        D-drag-matrix       "verification;sources")
 ice_add_verification(HeatMatrix        E-heat-matrix       "verification;sources")
 
+# Every evaporation model against the d-squared law it reduces to at zero slip, then
+# the coupled mass-and-temperature system against an independent integration
+# (docs/vv/verification.md).
+ice_add_verification(Evaporation       F-evaporation       "verification;sources;phase-change")
+
 # Berthon's Riemann problems for the anisotropic Gaussian closure, against the
 # analytical wave patterns (docs/vv/berthon.md). These are full case directories
 # rather than self-building drivers, so they go through ice_add_case; they are the
