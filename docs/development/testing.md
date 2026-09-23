@@ -21,12 +21,16 @@ test/
 │   └── plot_vv.py             # Regenerates the V&V figures from the case outputs
 ├── verification/              # Exact-solution cases, inputs generated on the fly
 │   ├── common.py              # Case generation, reference correlations and ODE solver
+│   ├── plot_vv.py             # Regenerates the code-verification figures
 │   ├── A-drag-relaxation/     # Stokes drag against its closed form + RK order study
 │   ├── B-thermal-relaxation/  # Nu = 2 heat exchange against its closed form
 │   ├── C-advection-sine/      # Periodic transport + grid-refinement order study
 │   ├── D-drag-matrix/         # All 12 drag laws against an independent integration
 │   ├── E-heat-matrix/         # All 7 Nusselt laws, likewise
-│   └── F-evaporation/         # All 5 evaporation models against the d-squared law
+│   ├── F-evaporation/         # All 5 evaporation models against the d-squared law
+│   ├── G-cloud-translation/   # Transport + drag together, against exact translation
+│   ├── H-linear-strain/       # Straining gas, exact affine map + small-St asymptote
+│   └── I-vortex-cloud/        # 2D cloud in a prescribed vortex, exact conformal map
 └── fast/                      # Short invariant checks, no stored references
     ├── common.sh              # Shared helpers (short run, compare byte for byte)
     ├── openmp-equiv/          # 1 vs 4 threads bit-identical

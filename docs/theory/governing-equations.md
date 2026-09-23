@@ -19,12 +19,9 @@ $$
 R_p = \left(\frac{3}{4\pi}\,\frac{\rho_p}{n\,\rho_{al}(T_p)}\right)^{1/3},
 $$
 
-where $\rho_{al}$ is the density of the material itself, either the constant `density` from
-`[ICE-Physics]` or a tabulated $\rho_{al}(T_p)$.
+where $\rho_{al}$ is the density of the material itself, either a constant value or a temperature-dependent quantity.
 
-Both $\rho_p$ and $n$ are transported, and neither has a flux the other does not, so
-the local radius is free to vary in space. Nothing in ICE enforces a size distribution;
-separate sizes are represented by separate families.
+Both $\rho_p$ and $n$ are transported, and neither has a flux the other does not, so the local radius is free to vary in space. Nothing in ICE enforces a size distribution; separate sizes are represented by separate families.
 
 ## The closure problem
 
@@ -108,23 +105,14 @@ then one correction with $c_s$ evaluated at that estimate.
 
 $\mathbf{S}$ collects, for every closure,
 
-- **drag**, as a relaxation of the particle velocity towards the gas over a time
-  $\tau_p$, together with the work it does on the energy;
+- **drag**, as a relaxation of the particle velocity towards the gas over a time $\tau_p$, together with the work it does on the energy;
 - **convective heat exchange** with the gas, through a Nusselt number;
 - **radiative exchange** with the gas, as a grey body;
-- **mass transfer** between the phases, from the selected evaporation model. The
-  leaving mass carries its own enthalpy and momentum out of the condensed phase, and
-  the latent heat `latent-heat` is applied to it in the energy equation. The number
-  density is not a source of anything, so the droplets shrink rather than vanish.
-  Combustion is not implemented.
+- **mass transfer** between the phases, from the selected evaporation model. The leaving mass carries its own enthalpy and momentum out of the condensed phase, and the latent heat is applied to it in the energy equation. The number density is not a source of anything, so the droplets shrink rather than vanish.
 
 The expressions are in [Particle Physics](physics.md). All of them vanish when no gas
 field is present, which is the 0-way coupled mode.
 
 ## Several families
 
-Each `[ICE-FamilyN]` section adds one family with its own closure. The families are
-advanced one after another inside each time step, over the same mesh and against the
-same gas field. They do not exchange anything with each other, so $N$ families are $N$
-independent systems sharing a grid — the way a polydisperse cloud is represented is by
-giving each size its own family.
+Each family has its own closure. The families are advanced one after another inside each time step, over the same mesh and against the same gas field. They do not exchange anything with each other, so $N$ families are $N$ independent systems sharing a grid — the way a polydisperse cloud is represented is by giving each size its own family.

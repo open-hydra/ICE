@@ -35,32 +35,21 @@ $$
 \mathbf{P}_R = \mathbf{P}_{i+1} - \beta\,\phi(s_{i+1}, s_{i})\,\delta_R,
 $$
 
-where $s$ are the one-sided slopes on the non-uniform mesh, $\phi$ the limiter and
-$\beta$ the shock-detector weight described below. `space-reconstruction = MUSCL`
-enables it; `first-order` is the same code path with a zero slope.
-
-Two safeguards act inside the reconstruction:
-
-- where the density of any of the three cells falls below $10^{-6}$ the reconstruction
-  is skipped and the face takes the cell values, because a slope built on an almost
-  empty cell is meaningless;
-- if either reconstructed state fails the closure's positivity check, the slopes are
-  halved and the reconstruction is repeated until both pass. The limiter can therefore
-  be over-ruled locally, and always in the direction of more dissipation.
+where $s$ are the one-sided slopes on the non-uniform mesh, $\phi$ the limiter and $\beta$ the shock-detector weight described below.
 
 ### Limiters
 
-`flux-limiter` selects $\phi$ from ten:
+Several options are available to compute $\phi$:
 
-`minmod`, `vanalbada`, `vanleer`, `ospre`, `umist`, `osher`, `sweby`, `mc`, `koren`,
-`superbee`.
+- minmod
+- Van Albada
+- Van Leer
+- MC
+- Superbee
 
-Selecting `MUSCL` without a limiter is not an error: ICE warns and uses `vanleer`. The
-limiter is ignored under `first-order`, which uses a zero-slope limiter of its own.
+### Shock detector
 
-### Shock detector (`shock-detector = Jameson`)
-
-`shock-detector = Jameson` adds a sensor on density,
+The shock-detector adds a sensor on density,
 
 $$
 s = \max_{d}\ \left|\frac{\rho_{d+1} - 2\rho + \rho_{d-1}}{\rho_{d+1} + 2\rho + \rho_{d-1}}\right|,
@@ -76,38 +65,26 @@ $$
 \qquad \Delta = 20 .
 $$
 
-So $\beta = 1$ in smooth flow, where the scheme is the plain MUSCL one, and falls to 0
-at a shock, where it drops to first order. With `shock-detector = none`, the
-default, $\beta = 1$ everywhere.
+So $\beta = 1$ in smooth flow, where the scheme is the plain MUSCL one, and falls to 0 at a shock, where it drops to first order.
 
 ## Riemann solvers
 
-The face flux is a two-state flux. Leaving `riemann-solver` empty — the default — picks one
-per family from its closure:
+The face flux is a two-state flux solved via three possible schemes.
 
 | Name | Form | Applies to |
 |---|---|---|
-| `Saurel` | Sign of the mean normal velocity selects the donor state; there is no pressure and no sound speed to upwind against | MK only. It assembles the flux from the monokinetic variable layout, so ICE refuses it for IG and AG |
-| `Rusanov` | $\tfrac12(\mathbf F_L + \mathbf F_R) - \tfrac12 A\,(\mathbf U_R - \mathbf U_L)$, with $A$ the largest of $|u_n \pm a|$ on the two sides | Any closure; the default for IG and AG |
-| `HLLE` | Two-wave solver with Roe-averaged speed estimates, falling back to the upwind flux when both waves run the same way | Any closure with a sound speed |
+| **Saurel** | Sign of the mean normal velocity selects the donor state; there is no pressure and no sound speed to upwind against | MK only. It assembles the flux from the monokinetic variable layout, so ICE refuses it for IG and AG |
+| **Rusanov** | $\tfrac12(\mathbf F_L + \mathbf F_R) - \tfrac12 A\,(\mathbf U_R - \mathbf U_L)$, with $A$ the largest of $|u_n \pm a|$ on the two sides | Any closure; the default for IG and AG |
+| **HLLE** | Two-wave solver with Roe-averaged speed estimates, falling back to the upwind flux when both waves run the same way | Any closure with a sound speed |
 
-Setting `riemann-solver` explicitly overrides the per-closure choice for every family. HLLE is
-less dissipative than Rusanov on a contact and is worth trying when a contact is being
-smeared, at the cost of a Roe average per face.
+HLLE is less dissipative than Rusanov on a contact and is worth trying when a contact is being smeared, at the cost of a Roe average per face.
 
 ## Boundary faces
 
-Boundary fluxes are built from the ghost values that `compute_ghost` has already
-written, so every boundary type — connection, chimera, symmetry, extrapolation, inlet —
-reaches the flux loop through the same path. The ghost fill is described under
-[Boundary Conditions](../user/boundary-conditions.md).
+Boundary fluxes are built from the ghost values, so every boundary type — connection, chimera, symmetry, extrapolation, inlet —
+reaches the flux loop through the same path. The ghost fill is described under [Boundary Conditions](../user/boundary-conditions.md).
 
 ## Source terms
 
-Drag, convective and radiative heat, and evaporation are evaluated **explicitly**, once
-per Runge-Kutta stage, from the current primitive state, and added to the residual
-before it is integrated. There
-is no point-implicit or operator-split treatment, so a particle relaxation time much
-shorter than the convective step is *not* handled by the scheme: keeping
-$\Delta t \lesssim \tau_p$ is the user's responsibility, which is what the `dt-max`
-ceiling is there for.
+Drag, convective and radiative heat, and evaporation are evaluated **explicitly**, once per Runge-Kutta stage, from the current primitive state, and added to the residual before it is integrated. There
+is no point-implicit or operator-split treatment.

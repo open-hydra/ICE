@@ -4,7 +4,7 @@ Three one-dimensional Riemann problems for the anisotropic Gaussian (AG) closure
 compared against their analytical wave patterns. They are the only cases in the suite
 in which the AG system carries genuine waves: the [crossing jets](crossing-jets.md) are
 free streaming, and the [code-verification](verification.md) cases use the monokinetic
-closure on a uniform cloud. What they exercise is the hyperbolic core — the Rusanov
+closure, which carries no waves at all. What they exercise is the hyperbolic core — the Rusanov
 flux, the MUSCL reconstruction with the MC limiter, and the AG eigenstructure — on
 solutions with shocks, contacts and rarefactions.
 
