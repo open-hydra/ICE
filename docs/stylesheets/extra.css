@@ -379,10 +379,27 @@
   gap: 1.5rem;
   flex-wrap: wrap;
 }
+.ice-eco__flow--graph {
+  flex-wrap: nowrap;
+}
+.ice-eco__parallel,
+.ice-eco__branch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+.ice-eco__parallel {
+  gap: 1.25rem;
+}
 .ice-eco__arrow {
   font-size: 1.75rem;
   color: var(--md-default-fg-color--light, #888);
   flex-shrink: 0;
+}
+.ice-eco__arrow--diag {
+  line-height: 1;
 }
 .ice-eco__node {
   display: flex;
@@ -461,6 +478,12 @@
   .ice-eco__arrow {
     transform: rotate(90deg);
   }
+  .ice-eco__branch {
+    flex-direction: row;
+  }
+  .ice-eco__arrow--diag {
+    transform: none;
+  }
 }
 
 /* Recolor ONLY text */
@@ -472,4 +495,60 @@
 .md-content svg .matplotlib-axis path,
 .md-content svg .matplotlib-axis line {
   stroke: currentColor !important;
+}
+/* ── Ecosystem 2×3 matrix ───────────────────────────────────────────── */
+.ice-eco__flow--graph {
+  align-items: center;
+  gap: 1rem;
+}
+
+.ice-eco__matrix {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, auto);
+  column-gap: 2rem;
+  row-gap: 1.5rem;
+  align-items: stretch;
+  justify-content: center;
+  width: min(100%, 700px);
+  flex: 1 1 700px;
+  min-width: 0;
+}
+
+.ice-eco__matrix .ice-eco__node {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.ice-eco__flow--graph > .ice-eco__node {
+  flex: 0 1 190px;
+  min-width: 170px;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
+@media (max-width: 1100px) and (min-width: 769px) {
+  .ice-eco__flow--graph {
+    display: grid;
+    grid-template-columns: minmax(150px, 190px) auto minmax(0, 1fr) auto minmax(150px, 190px);
+    gap: 0.8rem;
+    align-items: center;
+  }
+
+  .ice-eco__matrix {
+    width: 100%;
+    flex: none;
+    column-gap: 1rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .ice-eco__matrix {
+    width: 100%;
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+    column-gap: 0;
+    row-gap: 1rem;
+  }
 }

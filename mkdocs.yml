@@ -13,7 +13,7 @@ theme:
     code: Fira Code
   palette:
     - scheme: default
-      primary: teal
+      primary: white
       accent: green
       toggle:
         icon: material/weather-night
