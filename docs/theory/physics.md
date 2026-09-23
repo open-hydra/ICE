@@ -20,12 +20,6 @@ $$
 $Re$ is built on the **diameter**. $T_r$ and $\gamma$ are used only by the
 compressible drag correlations.
 
-!!! warning "The Mach number is clipped at 1"
-    Before the correlations are called, $Ma$ is replaced by $\min(Ma, 1)$. Henderson's
-    supersonic branch and the bridge between its branches are therefore unreachable,
-    and the compressibility corrections of Carlson-Hoglund, Crowe and Hermsen saturate
-    at $Ma = 1$. A case with supersonic slip will run, but its drag above $Ma = 1$ is
-    the sonic value.
 
 ## Drag
 
@@ -59,13 +53,15 @@ Stokes value $\rho_{al}d_p^2/(18\mu_g)$, which is the identity
 | `Clift-Gauvin` | $\frac{24}{Re}\left(1+0.15Re^{0.687}+\frac{0.0175\,Re}{1+4.25\times10^{4}Re^{-1.16}}\right)$ | Valid through the drag crisis |
 | `Morsi-Alexander` | $a_1 + a_2/Re + a_3/Re^2$ | Piecewise over eight $Re$ ranges; the first is exactly Stokes |
 | `Carlson-Hoglund` | Wen-Yu times a rarefaction and compressibility factor in $Ma$ and $Re$ | |
-| `Henderson` | Separate subsonic and supersonic fits, linearly bridged over $1 < Ma < 1.75$ | Only the subsonic branch is reachable — see the clip above |
+| `Henderson` | Separate subsonic and supersonic fits, linearly bridged over $1 < Ma < 1.75$ | The bridge is continuous at both ends |
 | `Crowe` | Wen-Yu blended towards $C_d = 2$ by $Ma$, with a $\tanh(\log_{10} Re)$ function | |
 | `Hermsen` | Same structure as Crowe with a rational $Re$ function | |
 
 Each correlation is a pure function of $(Re, Ma, \gamma, T_r)$; the choice travels as an
 integer, so nothing mutable is shared between threads. Every one of them is checked
-against an independent integration in [case D](../vv/verification.md#d-every-drag-correlation).
+against an independent integration in
+[case D](../vv/verification.md#d-every-drag-correlation), including at transonic and
+supersonic slip for the four that have a compressible branch.
 
 !!! note "`Chang` is not a separate model"
     The Chang correlation, $\frac{24}{Re}(1+0.15Re^{0.687}) + \frac{0.42}{1+4.25\times10^4 Re^{-1.16}}$,

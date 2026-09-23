@@ -105,6 +105,10 @@ ice_add_case(NAME BerthonSCS DIR Berthon/SCS LABELS "fast;verification;AG;transp
 ice_add_case(NAME BerthonRCS DIR Berthon/RCS LABELS "fast;verification;AG;transport;1D")
 ice_add_case(NAME BerthonRCR DIR Berthon/RCR LABELS "fast;verification;AG;transport;1D")
 
+# The same problem through the HLLE flux, which the `riemann` key selects in place of
+# the solver the closure would pick. Nothing else exercises that path.
+ice_add_case(NAME BerthonHLLE DIR Berthon/SCS-hlle LABELS "verification;AG;transport;1D")
+
 # ===========================================================================
 #  FAST tier  (pre-push: ctest -L fast) - short runs, no stored references
 # ===========================================================================

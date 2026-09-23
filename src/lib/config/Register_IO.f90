@@ -22,10 +22,6 @@ contains
     call reg%add(section, 'sol-format',    obj_io%sol_format,    &
                  'tecplot ascii', 'Solution output format: "tecplot ascii", or "vtk" with '// &
                                   '"ascii", "binary" or "raw"', '', .false.)
-    call reg%add(section, 'bck-format',    obj_io%bck_format,    &
-                 'tecplot ascii',  'Restart-file format, which also selects the reader for '// &
-                                   'the initial condition: "tecplot ascii" or "vtk ascii" / '// &
-                                   '"vtk binary"', '', .false.)
 
     call reg%add(section, 'sol-diter',     obj_io%sol_diter,     &
                  '1000000000', 'Solution output iteration frequency', '> 0', .false.)
@@ -33,13 +29,6 @@ contains
                  '1e30',       'Solution output time frequency',      '> 0', .false.)
     call reg%add(section, 'sol-overwrite', obj_io%sol_overwrite, &
                  'true',       'Overwrite solution files',            'true, false', .false.)
-
-    call reg%add(section, 'bck-diter',     obj_io%bck_diter,     &
-                 '1000000000', 'Backup output iteration frequency', '> 0', .false.)
-    call reg%add(section, 'bck-dtime',     obj_io%bck_dtime,     &
-                 '1e30',       'Backup output time frequency',     '> 0', .false.)
-    call reg%add(section, 'bck-overwrite', obj_io%bck_overwrite, &
-                 'true',       'Overwrite backup files',           'true, false', .false.)
 
     call reg%add(section, 'shell-diter',   obj_io%shell_diter,   &
                  '10',         'Shell update iteration frequency',    '> 0', .false.)

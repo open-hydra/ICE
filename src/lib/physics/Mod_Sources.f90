@@ -74,8 +74,6 @@ contains
   
     !> Mach number
     Ma = norm2(gas_prim(2:4)-cond_prim(2:4)) / (gas_gam*gas_R*gas_prim(5))**0.5_R8
-    !Ma = max(Ma,1.e-15_R8)
-    Ma = min(Ma,1.e+00_R8)
 
     !> Prandtl number
     Pr = gas_gam/(gas_gam-1._R8)*gas_R*gas_mu/gas_k

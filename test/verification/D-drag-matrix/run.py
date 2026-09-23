@@ -13,6 +13,10 @@ twice:
     diverges, or whose integration in the solver goes wrong; it cannot catch a
     formula that is wrong in the same way in both places.
 
+Four sweeps are run: at vanishing slip, at Re = 67, above Re = 1000 where the branched
+laws switch formula, and at transonic and supersonic slip, which is where Henderson's
+second branch and the bridge between its two live.
+
 The particles start at the gas temperature, so T_p (and with it the temperature ratio
 the compressible laws use) stays fixed and only the momentum equation is exercised.
 """
@@ -83,7 +87,7 @@ def main():
     Re = 2.0 * fast.rho_g * fast.rp * fast.ug / fast.mu
     t_fast = 4.0e-3
     print('   High slip (Re = %.0f, Ma = %.2f at t = 0), u_p/u_g after %.4f s:'
-          % (Re, min(fast.ug / fast.sound, 1.0), t_fast))
+          % (Re, fast.ug / fast.sound, t_fast))
     for law in LAWS:
         sol = drag_case(fast, law, t_fast, 'highre-%s' % law, Lx=0.01, Ly=1.25e-3)
         u = sol['var'][U][0]
@@ -92,6 +96,39 @@ def main():
         print('     %-18s %-14.9f %-14.9f %.2e' % (law, u / fast.ug, ref / fast.ug, err))
         rep.check(err <= 1e-3, '%s matches the reference integration above Re 1000 (%.1e)'
                   % (law, err))
+
+    # --- Supersonic slip: the branches only the compressible laws have ------------
+    # Henderson switches formula at Ma = 1 and again at Ma = 1.75, with a linear
+    # bridge between; Carlson-Hoglund, Crowe and Hermsen keep varying with Ma without
+    # bound. None of this is reachable below Ma = 1, so it needs its own sweep.
+    COMPRESSIBLE = ('Carlson-Hoglund', 'Henderson', 'Crowe', 'Hermsen')
+    for ug, tag in ((450.0, 'transonic'), (900.0, 'supersonic')):
+        comp = Physics(ug=ug, vg=ug)
+        Re = 2.0 * comp.rho_g * comp.rp * comp.ug / comp.mu
+        t_s = 2.0e-3
+        print('   %s slip (Re = %.0f, Ma = %.2f at t = 0), u_p/u_g after %.4f s:'
+              % (tag.capitalize(), Re, comp.ug / comp.sound, t_s))
+        for law in COMPRESSIBLE:
+            sol = drag_case(comp, law, t_s, '%s-%s' % (tag, law), Lx=0.01, Ly=1.25e-3)
+            u = sol['var'][U][0]
+            ref, _ = comp.reference(sol['time'], drag=law, heat='Stokes')
+            err = abs(u - ref) / comp.ug
+            print('     %-18s %-14.9f %-14.9f %.2e' % (law, u / comp.ug, ref / comp.ug, err))
+            rep.check(err <= 1e-3, '%s matches the reference at %s slip (%.1e)'
+                      % (law, tag, err))
+
+    # Henderson's two branches must meet: the bridge is continuous at both ends.
+    from common import drag_coefficient                              # noqa: E402
+    ph = Physics()
+    for Re_h in (10.0, 1000.0):
+        lo = drag_coefficient('Henderson', Re_h, 1.0 - 1e-9, ph.gam, 1.0)
+        hi = drag_coefficient('Henderson', Re_h, 1.0 + 1e-9, ph.gam, 1.0)
+        rep.check(abs(hi - lo) <= 1e-6 * max(1.0, abs(lo)),
+                  'Henderson is continuous at Ma = 1, Re = %g (%.1e)' % (Re_h, abs(hi - lo)))
+        lo = drag_coefficient('Henderson', Re_h, 1.75 - 1e-9, ph.gam, 1.0)
+        hi = drag_coefficient('Henderson', Re_h, 1.75 + 1e-9, ph.gam, 1.0)
+        rep.check(abs(hi - lo) <= 1e-6 * max(1.0, abs(lo)),
+                  'Henderson is continuous at Ma = 1.75, Re = %g (%.1e)' % (Re_h, abs(hi - lo)))
 
     rep.close(WORK)
 

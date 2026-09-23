@@ -45,23 +45,19 @@ metric row and $a$ the closure's sound speed — zero for MK, so the MK step is 
 convection alone. The cell step is then
 
 $$
-\Delta t_i = \mathrm{CFL} \cdot \min\big(\texttt{dt-max},\ \Delta t_1,\ \Delta t_2,\ \Delta t_3\big).
+\Delta t_i = \min\Big(\texttt{dt-max},\ \ \mathrm{CFL} \cdot \min_d \Delta t_d\Big),
 $$
 
-!!! warning "`dt-max` is applied before the CFL factor"
-    The ceiling is taken inside the minimum, not after it, so the largest step ICE will
-    ever take is `cfl * dt-max`, not `dt-max`. At the defaults (`cfl = 0.5`,
-    `dt-max = 1e-4`) that is $5\times10^{-5}$ s. On a coarse mesh or a slow flow the
-    ceiling binds rather than the CFL condition, and the run takes more steps than the
-    stability limit requires — raising `dt-max` is then the fix, not raising `cfl`.
+so `dt-max` bounds the step that is actually taken. If `cfl-rise-threshold` is set to
+$N > 0$, the CFL factor is additionally scaled by $\min(1, \text{iteration}/N)$, ramping
+it linearly from zero over the first $N$ iterations; the ceiling is applied after that
+too.
 
 `dt-max` exists because the source terms are explicit: the drag relaxation time
 $\tau_p$ does not appear in the CFL condition at all, so nothing else stops the step
-from overshooting it.
-
-If `cfl-rise-threshold` is set to $N > 0$, the step is additionally scaled by
-$\min(1, \text{iteration}/N)$, ramping the CFL number linearly from zero over the first
-$N$ iterations.
+from overshooting it. It has a finite default for that reason, and on a coarse mesh or
+a slow flow it — rather than the CFL condition — is what sets the pace. Compare the
+reported `Delta t` against `dt-max` to see which is binding.
 
 ### Time-accurate mode
 

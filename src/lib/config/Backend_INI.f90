@@ -1,9 +1,49 @@
 module ICE_Backend_INI
   implicit none
   private
-  public :: Load_Ini, Scan_Ini
+  public :: Open_Ini, Load_Ini, Scan_Ini
 
 contains
+
+  !> Read input.ini and hand FiNeR the text with the full-line comments removed.
+  !
+  !  FiNeR's section sanitiser treats any line without the option separator as the
+  !  continuation of the option above it and appends it there. A comment line after
+  !  the last option of a section therefore ends up inside that option's value:
+  !  `shell-diter = 100` followed by `# note` is read as the value `100 # note`.
+  !  Only `;` escapes this, because it doubles as the inline-comment delimiter and is
+  !  trimmed off again afterwards. Stripping the comment lines here makes `!`, `;`
+  !  and `#` behave the same, and costs nothing else.
+  subroutine Open_Ini(fini)
+    use Finer, only: file_ini
+    implicit none
+    type(file_ini), intent(inout) :: fini
+    character(len=*), parameter   :: comments = '!;#'
+    character(len=:), allocatable :: source
+    character(len=1024)           :: line
+    integer :: unitfile, ios
+    logical :: exists
+
+    inquire(file='input.ini', exist=exists)
+    if (.not. exists) then
+      write(*,'(A)') '  [ICE] input.ini not found in the working directory.'
+      error stop 'ICE: no input.ini'
+    endif
+
+    source = ''
+    open(newunit=unitfile, file='input.ini', status='old', action='read')
+    do
+      read(unitfile, '(A)', iostat=ios) line
+      if (ios /= 0) exit
+      if (len_trim(line) == 0) cycle
+      if (scan(adjustl(line), comments) == 1) cycle
+      source = source//trim(line)//new_line('a')
+    end do
+    close(unitfile)
+
+    call fini%load(source=source)
+
+  end subroutine Open_Ini
 
   subroutine Load_Ini(fini)
     use ICE_Input_Registry, only: reg

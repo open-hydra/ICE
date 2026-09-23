@@ -48,6 +48,7 @@ contains
     use ICE_Advanced_Types_m
     use ICE_Global_m
     use ICE_Config_Types_m,     only: obj_io
+    use ICE_IO_Solution,        only: io_extension
     use ICE_Mod_MPI,            only: mpi_is_root
     use ICE_Mod_GhostExchange,  only: gather_diagnostic_to_root, mpi_io_barrier
     use strings,                only: parse
@@ -105,7 +106,7 @@ contains
         IOfield%tec%format = trim(format(2))
         E_IO = tec_write_structured_multiblock(orion=IOfield,            &
                  varnames=Dvarnames,                                     &
-                 filename=trim(path)//trim(file)//'.tec')
+                 filename=trim(path)//trim(file)//io_extension(format))
       end select
 
     end if

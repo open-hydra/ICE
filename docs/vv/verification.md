@@ -46,8 +46,9 @@ there would show up as spurious heating.
 **Time-step refinement.** Since the field stays uniform the space discretisation
 contributes nothing, and the error is purely the time integration of the source term.
 Halving the CFL number halves the step, and the observed order is the scheme's. The case
-also checks that `dt-max` bounds the step, by measuring how far past its end time a run
-with a tighter ceiling goes:
+also checks the `dt-max` ceiling, by giving a run a ceiling well below its CFL limit and
+confirming that its end time is an exact multiple of it — every step is `dt-max` itself,
+not `cfl * dt-max`:
 
 | CFL | 0.8 | 0.4 | 0.2 | Observed order |
 |---|---|---|---|---|
@@ -91,9 +92,8 @@ $$
 
 The comparison is against the exact *cell average*, so the measured order is not
 polluted by the difference between a cell average and a point value. The `dt-max`
-ceiling (default $10^{-4}$ s) holds $\Delta t$ at the same value on all four meshes, so
-the time error is common to them and what the refinement measures is the space
-discretisation.
+ceiling holds $\Delta t$ at the same value on all four meshes, so the time error is
+common to them and what the refinement measures is the space discretisation.
 
 | Cells | 25 | 50 | 100 | 200 | Observed order |
 |---|---|---|---|---|---|
@@ -109,7 +109,7 @@ pressureless cloud moving at one speed has nothing that could change it.
 ## D. Every drag correlation
 
 ICE offers twelve drag laws. Case A verifies one of them against a closed form; this
-case covers the rest, in two ways.
+case covers the rest, in three ways.
 
 **At vanishing slip** ($Re = 6.7\times10^{-3}$) the laws that are a Stokes law plus a
 correction must reproduce the exact Stokes exponential. This check is independent of
@@ -133,11 +133,13 @@ Python. Two sweeps are run, at $Re = 67$ and at $Re = 1333$, the second one to r
 the branches that only switch formula above $Re = 1000$. All twelve agree with the
 reference to between $5\times10^{-10}$ and $2\times10^{-6}$ of $u_g$.
 
-!!! warning "Henderson only ever runs subsonic"
-    `Mod_Sources` clips the Mach number at 1 before calling the correlation, so
-    Henderson's supersonic branch and the bridge between them cannot be reached from
-    the solver and nothing here covers them. The same clip saturates the compressibility
-    corrections of Carlson-Hoglund, Crowe and Hermsen at $Ma = 1$.
+**At transonic and supersonic slip** ($Ma = 1.30$ and $Ma = 2.59$) the four laws with a
+compressible branch — Carlson-Hoglund, Henderson, Crowe and Hermsen — are compared the
+same way, and agree to between $9\times10^{-8}$ and $2\times10^{-6}$ of $u_g$. This is
+the range in which Henderson leaves its subsonic fit, crosses the linear bridge and
+reaches its supersonic fit, so the case also checks that the two branches meet: the
+coefficient of the bridge is fixed by requiring continuity at $Ma = 1.75$, and both
+joins are continuous to $2\times10^{-9}$.
 
 !!! note "What this check can and cannot catch"
     It catches a law that is mis-wired, mis-selected, divergent, or integrated

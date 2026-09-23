@@ -24,6 +24,10 @@ Common to the three cases: a $[-0.5, 0.5]$ m tube of 500 cells, one cell across 
 $z$, no gas (0-way coupled), extrapolation at both ends and nothing at the other four
 faces. MUSCL with the MC limiter, RK2 in time, Rusanov, $\mathrm{CFL} = 0.5$.
 
+A fourth case, `SCS-hlle`, is the SCS problem through the HLLE flux instead — the only
+case that exercises the `riemann` key. HLLE is the less dissipative of the two and its
+density error is lower, $3.2\times10^{-3}$ against Rusanov's $4.3\times10^{-3}$.
+
 | | $\rho_p$ | $u_p$ | $v_p$ | $P_{11}$ | $P_{12}$ | $P_{22}$ | $t_{\text{end}}$ |
 |---|---|---|---|---|---|---|---|
 | **SCS** left  | 1 | 1 | 1 | 1 | 0 | 1 | 0.125 s |
@@ -111,7 +115,7 @@ on this scale — will.
 ctest --test-dir build -R Berthon --output-on-failure
 ```
 
-They also carry the `fast` label, so the pre-push hook runs them: they are the only
+The three Rusanov cases also carry the `fast` label, so the pre-push hook runs them: they are the only
 fast-tier cases that touch the AG closure. The figures on this page come from the same
 runs:
 

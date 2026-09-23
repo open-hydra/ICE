@@ -335,14 +335,14 @@ class Physics(object):
     def tau_drag(self, law, slip, Tp):
         """ICE's relaxation time: 8 rho_al Rp / (3 rho_g Cd |du|), as in Mod_Sources."""
         Re = 2.0 * self.rho_g * self.rp * abs(slip) / self.mu
-        Ma = min(abs(slip) / self.sound, 1.0)
+        Ma = abs(slip) / self.sound
         Cd = drag_coefficient(law, Re, Ma, self.gam, Tp / self.Tg)
         return 8.0 * self.rho_al * self.rp / (3.0 * self.rho_g * Cd * abs(slip) + 1.0e-20)
 
     def heat_rate(self, law, slip, Tp):
         """dT/dt from ICE's convective exchange term, 2 Nu k pi Rp n (Tg - Tp) / (rho_p cs)."""
         Re = 2.0 * self.rho_g * self.rp * abs(slip) / self.mu
-        Ma = min(abs(slip) / self.sound, 1.0)
+        Ma = abs(slip) / self.sound
         Nu = nusselt(law, Re, self.Pr, Ma)
         return 2.0 * Nu * self.kg * math.pi * self.rp * self.n * (self.Tg - Tp) \
             / (self.rho_p * self.cs)

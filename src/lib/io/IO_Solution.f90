@@ -41,6 +41,29 @@ module ICE_IO_Solution
 contains
 
 
+  !> File extension for a `<writer> <mode>` format pair. Tecplot binary must be
+  !  `.szplt`: TecIO refuses to write a binary file under any other name, and ORION
+  !  reads back `.szplt` but not `.plt`, so it is the only binary name that survives
+  !  a write-then-restart round trip.
+  pure function io_extension(fmt) result(ext)
+    implicit none
+    character(len=*), intent(in)  :: fmt(2)
+    character(len=:), allocatable :: ext
+
+    select case (trim(fmt(1)))
+    case ('vtk')
+      ext = '.vtm'
+    case default
+      if (trim(fmt(2)) == 'binary') then
+        ext = '.szplt'
+      else
+        ext = '.tec'
+      end if
+    end select
+
+  end function io_extension
+
+
   !> Initial setup: wires procedure pointers and resolves initial condition paths.
   subroutine input_solution_setup()
     use ICE_Config_Types_m, only: obj_io, obj_sim_param
@@ -50,7 +73,7 @@ contains
     character(5) :: n
     character(llen) :: try
 
-    select case (trim(obj_io%bck_fmt(1)))
+    select case (trim(obj_io%sol_fmt(1)))
     case ('vtk')
       read_bck  => read_vtk_tec
       write_bck => write_vtk_tec
@@ -197,7 +220,7 @@ contains
       case ('tecplot')
         IOfield%tec%format = format(2)
         E_IO = tec_write_structured_multiblock(orion=IOfield, varnames=obj_io%Ovarnames, &
-                 filename=trim(path)//trim(file)//'.tec')
+                 filename=trim(path)//trim(file)//io_extension(format))
       end select
 
     end if
@@ -216,24 +239,24 @@ contains
     type(orion_data), intent(inout), optional :: IOfield_gas
 
     if (present(IOfield_gas)) then
-      select case (trim(obj_io%bck_fmt(1)))
+      select case (trim(obj_io%sol_fmt(1)))
       case ('tecplot')
         IOfield_gas%tec%format = 'ascii'
         error = tec_read_structured_multiblock(orion=IOfield_gas, filename=trim(gasinit))
       case ('vtk')
-        IOfield_gas%tec%format = obj_io%bck_fmt(2)
+        IOfield_gas%tec%format = obj_io%sol_fmt(2)
         error = vtk_read_structured_multiblock(orion=IOfield_gas, &
                   vtmpath=gasinit(1:len(trim(gasinit))-4), &
                   vtspath='INPUT/vtk/field', time=IOtime)
       end select
     end if
 
-    select case (trim(obj_io%bck_fmt(1)))
+    select case (trim(obj_io%sol_fmt(1)))
     case ('tecplot')
       IOfield_cond%tec%format = 'ascii'
       error = tec_read_structured_multiblock(orion=IOfield_cond, filename=trim(condinit))
     case ('vtk')
-      IOfield_cond%tec%format = obj_io%bck_fmt(2)
+      IOfield_cond%tec%format = obj_io%sol_fmt(2)
       error = vtk_read_structured_multiblock(orion=IOfield_cond, &
                 vtmpath=condinit(1:len(trim(condinit))-4), &
                 vtspath='INPUT/vtk/field', time=IOtime)
@@ -243,10 +266,10 @@ contains
       !  segfaults far from here, with nothing in the log pointing back. Note the registered
       !  DEFAULT for bck-format is 'native binary', which lands here: a case that omits the key
       !  hits this path. Fail where the cause is still visible.
-      write(*,'(A)') '  [ICE::read_vtk_tec] cannot read the initial condition.'
-      write(*,'(A)') '  ICE-IO / bck-format is "'//trim(obj_io%bck_fmt(1))//'", which is neither'
-      write(*,'(A)') '  "tecplot" nor "vtk", so no reader was selected. Set bck-format explicitly,'
-      write(*,'(A)') '  e.g.  bck-format = tecplot ascii'
+      write(*,'(A)') '  [ERROR] ICE cannot read the initial condition.'
+      write(*,'(A)') '  ICE-IO / sol-format is "'//trim(obj_io%sol_fmt(1))//'", which is neither'
+      write(*,'(A)') '  "tecplot" nor "vtk", so no reader was selected. Set sol-format explicitly,'
+      write(*,'(A)') '  e.g.  sol-format = tecplot ascii'
       error stop
     end select
 

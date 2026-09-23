@@ -57,10 +57,22 @@ contains
     do p = 1, ngroups
 
       call assign_all(p)
-      select case (trim(obj_time_scheme%model(p)))
-      case ('MK');     call assign_riemann('Saurel')
-      case default;    call assign_riemann('Rusanov')
-      end select
+      if (len_trim(obj_time_scheme%riemann) == 0) then
+        select case (trim(obj_time_scheme%model(p)))
+        case ('MK');     call assign_riemann('Saurel')
+        case default;    call assign_riemann('Rusanov')
+        end select
+      else
+        !> Saurel upwinds on the mean normal velocity and assembles the flux from the
+        !  MK variable layout, so it is meaningless for the Gaussian closures.
+        if (trim(obj_time_scheme%riemann) == 'Saurel' .and. &
+            trim(obj_time_scheme%model(p)) /= 'MK') then
+          write(*,'(A)') '  [ICE] the Saurel solver is specific to the MK closure; '// &
+                         'use Rusanov or HLLE with IG and AG.'
+          error stop 'ICE: Saurel with a non-MK family'
+        endif
+        call assign_riemann(trim(obj_time_scheme%riemann))
+      endif
       read(obj_time_scheme%solver_type, *, iostat=ios) nrk
 
       do srk = 1, nrk
@@ -104,7 +116,6 @@ contains
     obj_sim_param%residuotot = sqrt(obj_sim_param%residuotot)
 
     iosim  = (mod(grid%iter, obj_io%sol_diter) == 0) &
-         .or. (mod(grid%iter, obj_io%bck_diter) == 0) &
          .or. (grid%time >= obj_sim_param%time_from_call + obj_io%sol_dtime)
 
     !> res-threshold = 0 means "never stop on the residual". Without it a transient

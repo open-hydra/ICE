@@ -20,6 +20,7 @@ contains
     obj_time_scheme%description     = 'none'
     obj_time_scheme%drag            = 'None'
     obj_time_scheme%heat            = 'None'
+    obj_time_scheme%riemann         = ''
     obj_time_scheme%solver_type     = '2'
 
     obj_space_scheme%warning_message     = 'none'
@@ -33,8 +34,9 @@ contains
     call reg%add(trim(section), 'cfl',                obj_time_scheme%cfl,            &
                  '0.5',    'CFL stability parameter',            '> 0', .false.)
     call reg%add(trim(section), 'dt-max',             obj_time_scheme%dt_max,         &
-                 '1e-4',   'Ceiling on the local time step [s], applied before the CFL '// &
-                           'factor: the step never exceeds cfl * dt-max', '> 0', .false.)
+                 '1e-4',   'Ceiling on the time step [s], applied after the CFL factor: '// &
+                           'it bounds the explicit source terms, whose relaxation times '// &
+                           'the CFL condition does not see', '> 0', .false.)
     call reg%add(trim(section), 'cfl-rise-threshold', obj_time_scheme%cfl_rampa_iter, &
                  '0',      'Ramp the CFL number linearly over this many iterations '// &
                            '(0 = no ramp)',                     '>= 0',.false.)
@@ -64,6 +66,10 @@ contains
     call reg%add(trim(section), 'heat',                  obj_time_scheme%heat,                 &
                  'None',  'Heat transfer model, global for all families: Stokes, JAXA1, '// &
                           'JAXA2, JAXA3, Chang, Ranz-Marshall, Kavanau-Drake',          '', .false.)
+
+    call reg%add(trim(section), 'riemann',                obj_time_scheme%riemann,              &
+                 '',      'Riemann solver: Saurel (MK only), Rusanov or HLLE. Empty picks '// &
+                          'Saurel for MK families and Rusanov for IG and AG',   '', .false.)
 
     call Register_Multigrid_Levels(nmgl)
 

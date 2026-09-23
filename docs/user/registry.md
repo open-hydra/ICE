@@ -13,7 +13,7 @@ Required column says otherwise, and omitting one selects the default.
 | `time-threshold` | 1e30 | > 0 |  no | Maximum simulation time |
 | `iter-threshold` | 1000000000 | > 0 |  no | Maximum number of iterations |
 | `cfl` | 0.5 | > 0 |  no | CFL stability parameter |
-| `dt-max` | 1e-4 | > 0 |  no | Ceiling on the local time step [s], applied before the CFL factor: the step never exceeds cfl * dt-max |
+| `dt-max` | 1e-4 | > 0 |  no | Ceiling on the time step [s], applied after the CFL factor: it bounds the explicit source terms, whose relaxation times the CFL condition does not see |
 | `cfl-rise-threshold` | 0 | >= 0 |  no | Ramp the CFL number linearly over this many iterations (0 = no ramp) |
 | `time-accurate` | .true. |  |  no | Advance every cell with the global minimum step (true) or with its own local step, for steady state (false) |
 | `irs` | .false. |  |  no | Enable implicit residual smoothing |
@@ -23,8 +23,8 @@ Required column says otherwise, and omitting one selects the default.
 
 | Parameter | Default | Allowed | Required | Description |
 |-----------|---------|---------|----------|-------------|
-| `sol-format` | tecplot ascii |  |  no | Solution output format: "tecplot ascii", "tecplot binary" (needs TecIO) or "vtk ascii" / "vtk binary" |
-| `bck-format` | native binary |  |  no | Restart-file format, which also selects the reader for the initial condition: same choices as sol-format |
+| `sol-format` | tecplot ascii |  |  no | Solution output format: "tecplot ascii", or "vtk" with "ascii", "binary" or "raw" |
+| `bck-format` | tecplot ascii |  |  no | Restart-file format, which also selects the reader for the initial condition: "tecplot ascii" or "vtk ascii" / "vtk binary" |
 | `sol-diter` | 1000000000 | > 0 |  no | Solution output iteration frequency |
 | `sol-dtime` | 1e30 | > 0 |  no | Solution output time frequency |
 | `sol-overwrite` | true | true, false |  no | Overwrite solution files |
@@ -61,6 +61,7 @@ Required column says otherwise, and omitting one selects the default.
 | `time` | 2 |  |  no | Time integrator: 1 = forward Euler, 2 = SSP-RK2, 3 = SSP-RK3 |
 | `drag` | None |  |  no | Drag model, global for all families: Newton, Stokes, Schlichting, Schiller-Naumann, Wen-Yu, Putnam, Clift-Gauvin, Morsi-Alexander, Carlson-Hoglund, Henderson, Crowe, Hermsen |
 | `heat` | None |  |  no | Heat transfer model, global for all families: Stokes, JAXA1, JAXA2, JAXA3, Chang, Ranz-Marshall, Kavanau-Drake |
+| `riemann` |  |  |  no | Riemann solver: Saurel (MK only), Rusanov or HLLE. Empty picks Saurel for MK families and Rusanov for IG and AG |
 
 ## [ICE-Multigrid]
 

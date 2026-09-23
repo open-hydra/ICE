@@ -5,10 +5,8 @@ directory. It is an INI file parsed by [FiNeR](https://github.com/szaghi/FiNeR):
 sections in square brackets, `key = value` inside them, and everything optional unless
 noted below.
 
-!!! warning "Comments must start with `;`"
-    Only a semicolon is recognised as a comment. A line starting with `#` or `!` is not
-    treated as a comment and will corrupt the section it sits in — usually surfacing as
-    a confusing complaint about an unrelated parameter.
+A comment line starts with `;`, `#` or `!`; `;` also works inline, trimming the rest of
+the value.
 
 Unknown sections and unknown keys are ignored in silence, so a misspelled key takes its
 default rather than raising an error. The startup report is what to check against: it

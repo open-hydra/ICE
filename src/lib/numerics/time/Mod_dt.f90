@@ -37,14 +37,19 @@ contains
         call compute_dt_ (grid%blk(b)%cond_phase(p)%prim(:,i,j,k), &
                           grid%blk(b)%dl(i,j,k)%c,                 &
                           grid%blk(b)%M(i,j,k)%c,                  &
-                          grid%blk(b)%cond_phase(p)%dt(i,j,k),     &
-                          dt_max)
+                          grid%blk(b)%cond_phase(p)%dt(i,j,k))
+
          
         grid%blk(b)%cond_phase(p)%dt(i,j,k) = grid%blk(b)%cond_phase(p)%dt(i,j,k) * cfl
 
         if (grid%iter <= cfl_rampa_iter) then
           grid%blk(b)%cond_phase(p)%dt(i,j,k) = grid%blk(b)%cond_phase(p)%dt(i,j,k) * grid%iter / cfl_rampa_iter
         endif
+
+        !> dt-max is a ceiling on the step actually taken, so it comes after the CFL
+        !  factor and after the ramp. Its job is to bound the explicit source terms,
+        !  whose relaxation times the CFL condition knows nothing about.
+        grid%blk(b)%cond_phase(p)%dt(i,j,k) = min(grid%blk(b)%cond_phase(p)%dt(i,j,k), dt_max)
 
         dtmin = min (dtmin, grid%blk(b)%cond_phase(p)%dt(i,j,k))
 
@@ -61,14 +66,13 @@ contains
   end subroutine compute_dt    
   
   
-  subroutine compute_dt_ (prim, length, tensor, dt, dt_max)
+  subroutine compute_dt_ (prim, length, tensor, dt)
     use ICE_Lib_Model
     implicit none
     real(kind=R8), dimension(:),   intent(in)    :: prim
     real(kind=R8), dimension(:),   intent(in)    :: length
     real(kind=R8), dimension(:,:), intent(in)    :: tensor
     real(kind=R8),                 intent(inout) :: dt
-    real(kind=R8),                 intent(in)    :: dt_max
     
     integer(kind=I4) :: d
     real(kind=R8)    :: versor(3)
@@ -81,7 +85,7 @@ contains
       speed  = abs( dot_product (prim(2:4), versor) )
       
       dtd = length(d) / (speed + sound)
-      dt = min (dt_max,dt,dtd)
+      dt = min (dt,dtd)
 
     enddo    
 

@@ -10,6 +10,7 @@ contains
     use ICE_Config_Types_m
     use ICE_Global_m,      only: ngroups, nrk, npop, ncond
     use strings,           only: parse
+    use ICE_IO_Solution,   only: io_extension
     use ICE_Lib_Limiters,  only: assign_limiter
     use ICE_Lib_Drag,      only: assign_drag
     use ICE_Lib_Heat,      only: assign_heat
@@ -23,15 +24,9 @@ contains
 
     ! --- Parse format strings into arrays ---
     call parse(obj_io%sol_format, ' ', obj_io%sol_fmt)
-    call parse(obj_io%bck_format, ' ', obj_io%bck_fmt)
 
-    ! --- Set file extension from backup format ---
-    select case (trim(obj_io%bck_fmt(1)))
-    case ('vtk')
-      obj_io%extension = '.vtm'
-    case default
-      obj_io%extension = '.tec'
-    end select
+    ! --- Set file extension from solution format ---
+    obj_io%extension = io_extension(obj_io%sol_fmt)
 
     ! --- Derive SD flag and handle missing limiter ---
     obj_space_scheme%SD = (index(obj_space_scheme%space_reconstruction, 'SD') > 0)

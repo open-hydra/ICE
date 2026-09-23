@@ -61,7 +61,7 @@ src/lib/
 │   ├── fluxes/
 │   │   ├── Mod_Fluxes.f90          # Interior faces, two-pass to avoid races
 │   │   ├── bc/Mod_BC_Fluxes.f90    # Boundary faces, from the ghost values
-│   │   └── riemann/Lib_Riemann.f90 # Upwind, Rusanov, HLLE
+│   │   └── riemann/Lib_Riemann.f90 # Saurel, Rusanov, HLLE
 │   ├── time/
 │   │   ├── Mod_dt.f90              # CFL step, local or global
 │   │   └── explicit/               # RK stages, residual, IRS, state update

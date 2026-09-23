@@ -72,16 +72,20 @@ def main():
 
     rep.check(worst <= 1e-5, 'velocity matches the exact solution to %.1e of u_g' % worst)
 
-    # --- dt-max really does bound the step ------------------------------------------
-    # The run stops at the first step past its end time, so the overshoot is smaller
-    # than one step: it shows the ceiling (times the CFL number) was applied.
-    cfl, dt_max, target = 0.8, 1.0e-5, 0.5 * tau
+    # --- dt-max really is the step, not the step before the CFL factor --------------
+    # dt_max here is well below the CFL-limited step, so every step should be exactly
+    # dt_max and the end time an exact multiple of it. Were the ceiling applied before
+    # the CFL factor, the step would be cfl * dt_max and the end time a multiple of
+    # that instead, which is what this distinguishes.
+    cfl, dt_max, target = 0.8, 2.0e-6, 0.5 * tau
     sol = relax_case(ph, target, cfl=cfl, dt_max=dt_max, name='dtmax')
     over = sol['time'] - target
-    print('   dt-max = %.0e s: overshoot %.2e s (one step is at most %.2e s)'
-          % (dt_max, over, cfl * dt_max))
-    rep.check(0.0 <= over <= 1.001 * cfl * dt_max,
-              'dt-max bounds the time step')
+    steps = sol['time'] / dt_max
+    print('   dt-max = %.0e s: end time %.9e s = %.4f steps, overshoot %.2e s'
+          % (dt_max, sol['time'], steps, over))
+    rep.check(0.0 <= over <= 1.001 * dt_max, 'dt-max bounds the time step')
+    rep.check(abs(steps - round(steps)) <= 1e-6,
+              'every step is exactly dt-max, so the ceiling is on the step itself')
     rep.check(abs(sol['var'][U][0] - exact(ph, sol['time'])) / ph.ug <= 1e-5,
               'the shorter step still matches the exact solution')
 

@@ -44,13 +44,11 @@ module ICE_Config_Types_m
     character(len=llen) :: error_message
     character(len=llen) :: description
     ! USER-DEFINED INPUTS
-    integer             :: sol_diter, bck_diter, shell_diter, ini_diter, res_diter
-    real(R8)            :: sol_dtime, bck_dtime
-    logical             :: sol_overwrite, bck_overwrite
+    integer             :: sol_diter, shell_diter, ini_diter, res_diter
+    real(R8)            :: sol_dtime
+    logical             :: sol_overwrite
     character(len=llen) :: sol_format        ! e.g. 'tecplot ascii'
-    character(len=llen) :: bck_format        ! e.g. 'native binary'
     character(len=clen) :: sol_fmt(2)        ! Parsed: (writer, mode), set by Assign_Setup
-    character(len=clen) :: bck_fmt(2)        ! Parsed: (writer, mode), set by Assign_Setup
     character(4)        :: extension
     character(len=hlen) :: gaspath           ! Gas-phase solution path (restart/coupling)
     integer             :: init              ! Initialisation flag
@@ -99,6 +97,7 @@ module ICE_Config_Types_m
     character(len=llen) :: drag          ! Drag model (global, same for all families)
     integer  :: dragSelect     ! Drag model as the selector Lib_Drag dispatches on
     character(len=llen) :: heat          ! Heat transfer model (global, same for all families)
+    character(len=llen) :: riemann       ! Riemann solver; empty = chosen from the closure
     integer  :: heatSelect     ! Heat model as the selector Lib_Heat dispatches on
     ! Per-family (only model type differs across families)
     character(len=llen), allocatable :: model(:)

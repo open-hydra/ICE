@@ -15,6 +15,7 @@ test/
 │   └── plot_vv.py             # Regenerates the V&V figures from the case outputs
 ├── Berthon/                   # 1D Riemann problems for the AG closure
 │   ├── SCS/  RCS/  RCR/       # Shock-contact-shock, rarefaction-contact-shock, ...
+│   ├── SCS-hlle/              # SCS again through the HLLE flux
 │   ├── Results/               # The analytical wave patterns each case is checked against
 │   ├── berthon.py             # Exact-solution reader and the L1 comparison
 │   └── plot_vv.py             # Regenerates the V&V figures from the case outputs
