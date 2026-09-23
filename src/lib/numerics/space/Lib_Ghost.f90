@@ -4,6 +4,11 @@ module ICE_Lib_Ghost
   use ICE_Advanced_Types_m
   use ICE_Config_Types_m, only: obj_condensed, obj_time_scheme
   use ICE_Mod_Metrics, only : delthe
+  use ICE_Lib_MK, only : prim_2_cons_MK, cons_2_prim_MK
+  use ICE_Lib_IG, only : prim_2_cons_IG, cons_2_prim_IG
+  use ICE_Lib_AG, only : prim_2_cons_AG, cons_2_prim_AG
+  use ICE_Mod_MPI, only : is_local_block
+  use ICE_Mod_GhostExchange, only : exchange_ghost_prim
 
   implicit none
   private
@@ -21,6 +26,9 @@ contains
     integer(kind=I4) :: ic, jc, kc
     real(kind=R8)    :: area, normal(1:3), velocity(1:3), veln
 
+    !> Remote cells read below (connection sources, chimera donors) from their owners
+    call exchange_ghost_prim(grid)
+
     !$OMP PARALLEL DEFAULT(NONE), &
     !$OMP SHARED(grid, ncond, obj_condensed, obj_time_scheme), &
     !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, area, normal, velocity, veln)
@@ -29,6 +37,7 @@ contains
 
       !> Preliminary assignments
       bm = grid%bc(i)%b
+      if (.not. is_local_block(bm)) cycle
       im = grid%bc(i)%i
       jm = grid%bc(i)%j
       km = grid%bc(i)%k
@@ -42,7 +51,7 @@ contains
 
       select case ( grid%bc(i)%type )
 
-        case (1) !> connection
+        case (101, 201) !> connection / periodic
           bs = grid%bc(i)%bs
           is = grid%bc(i)%is
           js = grid%bc(i)%js
@@ -51,8 +60,8 @@ contains
           grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bs)%cond_phase(pm)%prim(1:ncond(pm),is,js,ks)
 
 
-        case (3, 5, 6) !> wall - Use extrapolation when the particles are moving towards the wall. Otherwise, symmetry
-                       !>        Symmetry is enforced on face 3 which is usually the symmetry axis
+        case (300) !> symmetry - Use extrapolation when the particles are moving towards the wall. Otherwise, symmetry
+                   !>             Symmetry is enforced on face 3 which is usually the symmetry axis
           if (fm <= 2) then
             ic = im - mod(fm,2)
             normal = grid%blk(bm)%dir(1)%f(ic,jm,km)%N
@@ -75,7 +84,7 @@ contains
           grid%blk(bm)%cond_phase(pm)%prim(2:4,ig,jg,kg) = velocity(1:3)
 
 
-        case (4,14) !> inflow
+        case (401:403) !> inflow
           if (fm <= 2) then
             ic = im - mod(fm,2)
             normal = grid%blk(bm)%dir(1)%f(ic,jm,km)%N
@@ -120,7 +129,7 @@ contains
             endif
 
             !> Assigned gaseous carrier phase
-            if (grid%bc(i)%injtype == 0) then
+            if (grid%bc(i)%type == 401) then
               veln = dot_product(grid%blk(bm)%gas_phase%prim(2:4,im,jm,km),normal)
               !> Velocity
               prim(2,ig,jg,kg) = grid%bc(i)%velocity * veln * cos(grid%bc(i)%beta) * cos(grid%bc(i)%alpha)
@@ -132,7 +141,7 @@ contains
               prim(ncond(pm)-1,ig,jg,kg) = grid%bc(i)%temperature * grid%blk(bm)%gas_phase%prim(5,im,jm,km)
 
             !> Direct assignement of massflux, velocity, and temperature.
-            elseif (grid%bc(i)%injtype == 1) then
+            elseif (grid%bc(i)%type == 402) then
               !> Velocity
               prim(2,ig,jg,kg) = grid%bc(i)%velocity * cos(grid%bc(i)%beta) * cos(grid%bc(i)%alpha)
               prim(3,ig,jg,kg) = grid%bc(i)%velocity * cos(grid%bc(i)%beta) * sin(grid%bc(i)%alpha)
@@ -144,7 +153,7 @@ contains
               prim(ncond(pm)-1,ig,jg,kg) = grid%bc(i)%temperature
 
             !> Direct assignement of massflux and temperature. Velocity is computed from the gas phase
-            elseif (grid%bc(i)%injtype == 2) then
+            elseif (grid%bc(i)%type == 403) then
               !> Velocity
               veln = norm2(grid%blk(bm)%gas_phase%prim(2:4,im,jm,km))
               prim(2,ig,jg,kg) = grid%bc(i)%velocity * veln * cos(grid%bc(i)%beta) * cos(grid%bc(i)%alpha)
@@ -176,8 +185,12 @@ contains
           endif
 
 
-        case (11) !> extrapolation
+        case (400) !> extrapolation
           grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),im,jm,km)
+
+
+        case (102) !> chimera: first ghost layer from its donors
+          call ghost_chimera(grid%blk, grid%bc(i), 1)
 
 
       end select
@@ -205,9 +218,10 @@ contains
     !$OMP DO SCHEDULE(dynamic)
     do i = 1, size(grid%bc)
 
-      if (grid%bc(i)%type == 0 .or. grid%bc(i)%type == 2) cycle
+      if (grid%bc(i)%type == 0 .or. grid%bc(i)%type == 200) cycle
 
       bm = grid%bc(i)%b
+      if (.not. is_local_block(bm)) cycle
       im = grid%bc(i)%i ; jm = grid%bc(i)%j ; km = grid%bc(i)%k
       pm = grid%bc(i)%p ; fm = grid%bc(i)%f
 
@@ -216,13 +230,16 @@ contains
 
       select case (grid%bc(i)%type)
 
-        case (1) !> connection: copy second interior cell of source block
+        case (101, 201) !> connection: copy second interior cell of source block
           bs = grid%bc(i)%bs ; fs = grid%bc(i)%fs
           is = grid%bc(i)%is + guide(fs,1)
           js = grid%bc(i)%js + guide(fs,2)
           ks = grid%bc(i)%ks + guide(fs,3)
           grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig2,jg2,kg2) = &
             grid%blk(bs)%cond_phase(pm)%prim(1:ncond(pm),is,js,ks)
+
+        case (102) !> chimera: second ghost layer from its own donors
+          call ghost_chimera(grid%blk, grid%bc(i), 2)
 
         case default !> 2nd-order extrapolation: P(g2) = 3*P(g1) - 3*P(m) + P(m+1)
           ip = im + guide(fm,1) ; jp = jm + guide(fm,2) ; kp = km + guide(fm,3)
@@ -238,6 +255,71 @@ contains
     !$OMP END PARALLEL
 
   end subroutine fill_second_ghost
+
+
+  !> Chimera ghost cell of layer g: conservative blend of the donor cells found by
+  !> ATLAS BCB, cons(ghost) = sum_c w_c * cons(donor_c), as MOSE's Ghost_Chimera does.
+  !> Donors are interior cells, so this only reads interior data and is safe inside
+  !> the OMP loops over bc entries.
+  subroutine ghost_chimera(blk, bc, g)
+    implicit none
+    type(ICE_block_type), intent(inout) :: blk(:)
+    type(ICE_bc_type),    intent(in)    :: bc
+    integer(kind=I4),     intent(in)    :: g
+    integer(kind=I4) :: c, c1, c2, pm, nv, bs, is, js, ks, ig, jg, kg
+    real(kind=R8)    :: consg(12)
+
+    pm = bc%p
+    nv = ncond(pm)
+    if (g == 1) then
+      c1 = 1          ; c2 = bc%ni(1)
+    else
+      c1 = bc%ni(1)+1 ; c2 = sum(bc%ni)
+    endif
+
+    consg = 0._R8
+    do c = c1, c2
+      bs = bc%donorID(c,1) ; is = bc%donorID(c,2) ; js = bc%donorID(c,3) ; ks = bc%donorID(c,4)
+      consg(1:nv) = consg(1:nv) + bc%volume_fraction(c) * &
+                    model_prim_2_cons(pm, blk(bs)%cond_phase(pm)%prim(1:nv,is,js,ks))
+    enddo
+
+    ig = bc%i - g*guide(bc%f,1) ; jg = bc%j - g*guide(bc%f,2) ; kg = bc%k - g*guide(bc%f,3)
+    blk(bc%b)%cond_phase(pm)%prim(1:nv,ig,jg,kg) = model_cons_2_prim(pm, consg(1:nv))
+
+  end subroutine ghost_chimera
+
+
+  !> Group-specific conversions. The model procedure pointers in ICE_Lib_Model are bound to
+  !> one group at a time, while the ghost loops cover every group, so dispatch explicitly.
+  function model_prim_2_cons(p, prim) result(cons)
+    implicit none
+    integer(kind=I4), intent(in) :: p
+    real(kind=R8),    intent(in) :: prim(:)
+    real(kind=R8)                :: cons(size(prim))
+
+    select case (trim(obj_time_scheme%model(p)))
+    case ('MK'); cons = prim_2_cons_MK(prim)
+    case ('IG'); cons = prim_2_cons_IG(prim)
+    case ('AG'); cons = prim_2_cons_AG(prim)
+    end select
+
+  end function model_prim_2_cons
+
+
+  function model_cons_2_prim(p, cons) result(prim)
+    implicit none
+    integer(kind=I4), intent(in) :: p
+    real(kind=R8),    intent(in) :: cons(:)
+    real(kind=R8)                :: prim(size(cons))
+
+    select case (trim(obj_time_scheme%model(p)))
+    case ('MK'); prim = cons_2_prim_MK(cons)
+    case ('IG'); prim = cons_2_prim_IG(cons)
+    case ('AG'); prim = cons_2_prim_AG(cons)
+    end select
+
+  end function model_cons_2_prim
 
 
 end module ICE_Lib_Ghost

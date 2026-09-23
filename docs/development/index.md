@@ -12,7 +12,7 @@ Information for contributors and developers working on the ICE codebase.
 
     ---
 
-    Repository layout and module organisation
+    Repository layout, module organisation and where to change what
 
     [:octicons-arrow-right-24: Structure](structure.md)
 
@@ -36,7 +36,7 @@ Information for contributors and developers working on the ICE codebase.
 
     ---
 
-    Profiling tips and known bottlenecks
+    What dominates a step, and how OpenMP and MPI scale
 
     [:octicons-arrow-right-24: Performance](performance_notes.md)
 

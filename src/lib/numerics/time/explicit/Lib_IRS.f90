@@ -1,5 +1,6 @@
 module ICE_Lib_IRS
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+  use ICE_Mod_MPI, only: is_local_block
   use ICE_Global_m
   use ICE_Advanced_Types_m
 
@@ -7,8 +8,7 @@ module ICE_Lib_IRS
   private
   public :: residual_smoothing
 
-  integer(kind=I4), parameter, private :: njb      = 2
-  real(kind=R8),    parameter, private :: beta_irs = 0.5_R8
+  integer(kind=I4), parameter, private :: njb = 2
 
 contains
 
@@ -20,6 +20,7 @@ contains
 
     do d = 1, ndir
       do b = 1, grid%nb
+        if (.not. is_local_block(b)) cycle
         call residual_smoothing_(grid%blk(b)%cond_phase(p)%residual, &
                                  grid%blk(b)%dim(1),                 &
                                  grid%blk(b)%dim(2),                 &
@@ -31,12 +32,16 @@ contains
 
 
   subroutine residual_smoothing_(residual, Nx, Ny, Nz, d)
+    use ICE_Config_Types_m, only: obj_irs
     implicit none
     real(kind=R8), dimension(:,:,:,:), intent(inout) :: residual
     integer(kind=I4), intent(in) :: Nx, Ny, Nz, d
     real(kind=R8), allocatable   :: residual_star(:,:,:,:), residual_new(:,:,:,:)
     integer(kind=I4)             :: i, j, k, sjb
     integer(kind=I4)             :: i1, j1, k1, i2, j2, k2
+    real(kind=R8)                :: beta_irs
+
+    beta_irs = obj_irs%beta
 
     allocate(residual_star(size(residual,1), 0:Nx+1, 0:Ny+1, 0:Nz+1))
     allocate(residual_new (size(residual,1),   1:Nx,   1:Ny,   1:Nz))

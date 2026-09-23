@@ -44,7 +44,7 @@ subroutine assign_riemann(riemann_word)
       write(*,*) "- Rusanov "
       write(*,*) "- HLLE "
       write(*,*)
-      stop
+      error stop 'ICE: unknown Riemann solver'
   end select
 
 end subroutine assign_riemann

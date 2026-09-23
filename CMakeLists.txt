@@ -86,4 +86,8 @@ add_subdirectory(src/lib)
 # Build application (only if this file has not been called by another CMakeLists)
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   add_subdirectory(src/app)
+
+  # Test suite: ctest --test-dir <build> (see test/CMakeLists.txt)
+  enable_testing()
+  add_subdirectory(test)
 endif()

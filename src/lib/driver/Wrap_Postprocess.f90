@@ -79,7 +79,6 @@ contains
         write(*,*) '  Time of operation was', sim_time/60, 'min'
       end if
 
-      call Write_Bck(simulation%domain(1), simulation%ODP(1), bckfile, obj_io%bck_fmt)
       call Write_Solution(simulation%domain(1), simulation%ODP(1), solfile, obj_io%sol_fmt)
       if (.not. obj_time_scheme%time_accurate) &
         call Write_Diagnostic(simulation%domain(1), simulation%ODP(1), dgsfile)
@@ -91,7 +90,6 @@ contains
         id_stampa = id_stampa + 1
         if (.not.obj_io%sol_overwrite) solfile = trim(solfile)//trim(str(.true.,id_stampa))
         if (.not.obj_io%sol_overwrite) dgsfile = trim(dgsfile)//trim(str(.true.,id_stampa))
-        if (.not.obj_io%bck_overwrite) bckfile = trim(bckfile)//trim(str(.true.,id_stampa))
       end if
 
       ! Probes
@@ -136,11 +134,6 @@ contains
         call Write_Solution(simulation%domain(1), simulation%ODP(1), solfile, obj_io%sol_fmt)
         if (.not. obj_time_scheme%time_accurate) &
           call Write_Diagnostic(simulation%domain(1), simulation%ODP(1), dgsfile)
-      end if
-
-      if (mod(simulation%domain(level)%iter, obj_io%bck_diter) == 0d0) then
-        if (mpi_is_root) write(*,*) ' ... writing iter-based backup'
-        call Write_Bck(simulation%domain(1), simulation%ODP(1), bckfile, obj_io%bck_fmt)
       end if
 
       ! MG level switch: change_MG set by Wrap_Solve after coarse level completes

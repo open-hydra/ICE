@@ -1,6 +1,7 @@
 module ICE_Config_Types_m
   use iso_fortran_env, only: I4 => int32, R8 => real64
   use ICE_Parameters_m
+  use ICE_Lib_Evaporation, only: nep
 
   implicit none
   private
@@ -44,13 +45,13 @@ module ICE_Config_Types_m
     character(len=llen) :: error_message
     character(len=llen) :: description
     ! USER-DEFINED INPUTS
-    integer             :: sol_diter, bck_diter, shell_diter, ini_diter, res_diter
-    real(R8)            :: sol_dtime, bck_dtime
-    logical             :: sol_overwrite, bck_overwrite
+    integer             :: sol_diter, shell_diter, ini_diter, res_diter
+    real(R8)            :: sol_dtime
+    logical             :: sol_overwrite
+    character(len=llen) :: ini_format        ! Initial condition format, e.g. 'tecplot ascii'
+    character(len=clen) :: ini_fmt(2)        ! Parsed: (reader, mode), set by Assign_Setup
     character(len=llen) :: sol_format        ! e.g. 'tecplot ascii'
-    character(len=llen) :: bck_format        ! e.g. 'native binary'
     character(len=clen) :: sol_fmt(2)        ! Parsed: (writer, mode), set by Assign_Setup
-    character(len=clen) :: bck_fmt(2)        ! Parsed: (writer, mode), set by Assign_Setup
     character(4)        :: extension
     character(len=hlen) :: gaspath           ! Gas-phase solution path (restart/coupling)
     integer             :: init              ! Initialisation flag
@@ -92,11 +93,21 @@ module ICE_Config_Types_m
     character(len=llen) :: description
     ! USER-DEFINED INPUTS (global)
     real(R8) :: cfl            ! CFL stability parameter
+    real(R8) :: dt_max         ! Ceiling on the time step, before the CFL factor
     integer  :: cfl_rampa_iter ! Iteration at which CFL ramp starts
     logical  :: time_accurate  ! Time-accurate integration flag
     character(len=llen) :: solver_type   ! Time integrator: '1'=Euler, '2'=RK2, '3'=RK3
     character(len=llen) :: drag          ! Drag model (global, same for all families)
+    integer  :: dragSelect     ! Drag model as the selector Lib_Drag dispatches on
     character(len=llen) :: heat          ! Heat transfer model (global, same for all families)
+    character(len=llen) :: riemann       ! Riemann solver; empty = chosen from the closure
+    integer  :: heatSelect     ! Heat model as the selector Lib_Heat dispatches on
+    character(len=llen) :: evaporation   ! Evaporation model (global, same for all families)
+    integer  :: evapSelect = 0 ! Evaporation model as the selector Lib_Evaporation dispatches on
+    character(len=llen) :: interface_model ! Vapour-liquid interface: 'VLE' or 'LK'
+    integer  :: intfSelect = 0 ! Interface treatment as the Lib_Evaporation selector
+    character(len=llen) :: blowing       ! Stefan-blowing correction of the Nusselt heat
+    integer  :: blowSelect = 0 ! Blowing correction as the Lib_Evaporation selector
     ! Per-family (only model type differs across families)
     character(len=llen), allocatable :: model(:)
   end type time_scheme_t
@@ -126,8 +137,9 @@ module ICE_Config_Types_m
     character(len=llen) :: error_message
     character(len=llen) :: description
     ! USER-DEFINED INPUTS
-    character(len=llen) :: space_reconstruction  ! 'MUSCL', 'MUSCL-SD', or empty (1st order)
-    character(len=llen) :: flux_limiter          ! 'VANLEER', 'MINMOD', etc.
+    character(len=llen) :: space_reconstruction  ! 'MUSCL' or 'first-order'
+    character(len=llen) :: flux_limiter          ! 'vanleer', 'minmod', ...
+    character(len=llen) :: shock_detector        ! 'Jameson' or 'none'
     ! Useful variables
     logical :: SD = .false.
   end type space_scheme_t
@@ -181,8 +193,16 @@ module ICE_Config_Types_m
     real(R8) :: rho_al = 2700._R8    ! Particle density            [kg/m^3]
     real(R8) :: cs_al  = 1598._R8    ! Particle specific heat      [J/(kg K)]
     real(R8) :: lv_al  = 10.8e6_R8   ! Particle latent heat        [J/kg]
-    real(R8) :: q_al   = 9.53e6_R8   ! Particle combustion energy  [J/kg]
     real(R8) :: emiss  = 1._R8       ! Surface emissivity          [-]
+    ! Vapour properties: only consulted when an evaporation model is selected
+    real(R8) :: Mv     = 26.98_R8    ! Vapour molar mass           [kg/kmol]
+    real(R8) :: cpv    = 0._R8       ! Vapour specific heat        [J/(kg K)]; 0 = use the gas cp
+    real(R8) :: Le     = 1._R8       ! Lewis number                [-]
+    real(R8) :: Yinf   = 0._R8       ! Far-field vapour mass fraction [-]
+    real(R8) :: Tboil  = 2792._R8    ! Boiling temperature at 1 atm [K]
+    real(R8) :: alphaE = 1._R8       ! Evaporation (accommodation) coefficient [-]
+    ! Packed form of the above, built by Assign_Setup and handed to Lib_Evaporation
+    real(R8) :: ep(nep) = 0._R8
     ! Table-based properties rho(T) and cs(T) (optional, loaded by Load_Table)
     logical                   :: use_table = .false.
     integer                   :: T_min = 0, T_max = 0

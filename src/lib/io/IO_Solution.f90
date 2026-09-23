@@ -14,8 +14,8 @@ module ICE_IO_Solution
   character(llen)  :: condinit, gasinit
 
   !> Concrete procedure pointing to one of the subroutine realizations
-  procedure(r_solution_if), pointer, public :: read_bck
-  procedure(w_solution_if), pointer, public :: write_bck, write_solution
+  procedure(r_solution_if), pointer, public :: read_ic
+  procedure(w_solution_if), pointer, public :: write_solution
 
   !> Abstract interface relative to the finite-rate reactions source procedure
   abstract interface
@@ -30,7 +30,7 @@ module ICE_IO_Solution
     use Lib_ORION_data
     use ICE_Advanced_Types_m
     implicit none
-    type(ICE_domain_type), intent(in)           :: grid
+    type(ICE_domain_type), intent(inout)        :: grid
     type(orion_data),      intent(inout)        :: IOfield
     character(len=*),      intent(in)           :: file
     character(len=*),      intent(in), optional :: format(2)
@@ -39,6 +39,29 @@ module ICE_IO_Solution
 
 
 contains
+
+
+  !> File extension for a `<writer> <mode>` format pair. Tecplot binary must be
+  !  `.szplt`: TecIO refuses to write a binary file under any other name, and ORION
+  !  reads back `.szplt` but not `.plt`, so it is the only binary name that survives
+  !  a write-then-restart round trip.
+  pure function io_extension(fmt) result(ext)
+    implicit none
+    character(len=*), intent(in)  :: fmt(2)
+    character(len=:), allocatable :: ext
+
+    select case (trim(fmt(1)))
+    case ('vtk')
+      ext = '.vtm'
+    case default
+      if (trim(fmt(2)) == 'binary') then
+        ext = '.szplt'
+      else
+        ext = '.tec'
+      end if
+    end select
+
+  end function io_extension
 
 
   !> Initial setup: wires procedure pointers and resolves initial condition paths.
@@ -50,16 +73,14 @@ contains
     character(5) :: n
     character(llen) :: try
 
-    select case (trim(obj_io%bck_fmt(1)))
-    case ('vtk')
-      read_bck  => read_vtk_tec
-      write_bck => write_vtk_tec
-    case default
-      read_bck  => read_vtk_tec
-      write_bck => write_vtk_tec
-    end select
+    read_ic => read_vtk_tec
 
-    if (obj_sim_param%owcoupled) gasinit = 'INPUT/gas.tec'
+    !> A new run reads INPUT/part-ic.* in ic-format; a restart reads back a solution
+    !  ICE wrote itself, so it is sol-format that names it.
+    if (.not. obj_sim_param%newrun) obj_io%ini_fmt = obj_io%sol_fmt
+    obj_io%extension = io_extension(obj_io%ini_fmt)
+
+    if (obj_sim_param%owcoupled) gasinit = trim(obj_io%gaspath)//'gas.tec'
 
     if (obj_sim_param%newrun) then
       condinit = 'INPUT/'//trim(ICE_phase_prefix)//'ic'//trim(obj_io%extension)
@@ -153,45 +174,56 @@ contains
     use Lib_Tecplot
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m, only: obj_io
+    use ICE_Mod_MPI,           only: mpi_is_root
+    use ICE_Mod_GhostExchange, only: gather_prim_to_root, mpi_io_barrier
     implicit none
-    type(ICE_domain_type), intent(in)           :: grid
+    type(ICE_domain_type), intent(inout)        :: grid
     type(orion_data),      intent(inout)        :: IOfield
     character(len=*),      intent(in)           :: file
     character(len=*),      intent(in), optional :: format(2)
     character(len=llen) :: path, localpath_vtk
     integer(kind=I4)    :: b, p, nstart, nend, E_IO
 
-    path = 'OUTPUT/'
+    !> Collect the blocks owned by other ranks on root, which writes the file
+    call gather_prim_to_root(grid)
 
-    do b = 1, size(IOfield%block)
-      IOfield%block(b)%name = 'Block'//trim(str(.true.,b))
-      nend = 0
-      do p = 1, ngroups
-        nstart = nend + 1 ; nend = nend + ncond(p)
-        IOfield%block(b)%vars(nstart:nend, &
-                               1:IOfield%block(b)%Ni, &
-                               1:IOfield%block(b)%Nj, &
-                               1:IOfield%block(b)%Nk) = &
-          grid%blk(b)%cond_phase(p)%prim(1:ncond(p), &
-                                          1:grid%blk(b)%dim(1), &
-                                          1:grid%blk(b)%dim(2), &
-                                          1:grid%blk(b)%dim(3))
+    if (mpi_is_root) then
+
+      path = 'OUTPUT/'
+
+      do b = 1, size(IOfield%block)
+        IOfield%block(b)%name = 'Block'//trim(str(.true.,b))
+        nend = 0
+        do p = 1, ngroups
+          nstart = nend + 1 ; nend = nend + ncond(p)
+          IOfield%block(b)%vars(nstart:nend, &
+                                 1:IOfield%block(b)%Ni, &
+                                 1:IOfield%block(b)%Nj, &
+                                 1:IOfield%block(b)%Nk) = &
+            grid%blk(b)%cond_phase(p)%prim(1:ncond(p), &
+                                            1:grid%blk(b)%dim(1), &
+                                            1:grid%blk(b)%dim(2), &
+                                            1:grid%blk(b)%dim(3))
+        end do
       end do
-    end do
 
-    select case (format(1))
-    case ('vtk')
-      IOfield%vtk%format = format(2)
-      localpath_vtk = trim(path)//'vtk/'
-      call execute_command_line('mkdir -p '//trim(localpath_vtk))
-      E_IO = vtk_write_structured_multiblock(orion=IOfield, &
-               vtspath=trim(localpath_vtk)//trim(file), &
-               vtmpath=trim(path)//trim(file), varnames=obj_io%Ovarnames, time=grid%time)
-    case ('tecplot')
-      IOfield%tec%format = format(2)
-      E_IO = tec_write_structured_multiblock(orion=IOfield, varnames=obj_io%Ovarnames, &
-               filename=trim(path)//trim(file)//'.tec')
-    end select
+      select case (format(1))
+      case ('vtk')
+        IOfield%vtk%format = format(2)
+        localpath_vtk = trim(path)//'vtk/'
+        call execute_command_line('mkdir -p '//trim(localpath_vtk))
+        E_IO = vtk_write_structured_multiblock(orion=IOfield, &
+                 vtspath=trim(localpath_vtk)//trim(file), &
+                 vtmpath=trim(path)//trim(file), varnames=obj_io%Ovarnames, time=grid%time)
+      case ('tecplot')
+        IOfield%tec%format = format(2)
+        E_IO = tec_write_structured_multiblock(orion=IOfield, varnames=obj_io%Ovarnames, &
+                 filename=trim(path)//trim(file)//io_extension(format))
+      end select
+
+    end if
+
+    call mpi_io_barrier()
 
   end subroutine write_vtk_tec
 
@@ -205,27 +237,37 @@ contains
     type(orion_data), intent(inout), optional :: IOfield_gas
 
     if (present(IOfield_gas)) then
-      select case (trim(obj_io%bck_fmt(1)))
+      select case (trim(obj_io%ini_fmt(1)))
       case ('tecplot')
         IOfield_gas%tec%format = 'ascii'
         error = tec_read_structured_multiblock(orion=IOfield_gas, filename=trim(gasinit))
       case ('vtk')
-        IOfield_gas%tec%format = obj_io%bck_fmt(2)
+        IOfield_gas%tec%format = obj_io%ini_fmt(2)
         error = vtk_read_structured_multiblock(orion=IOfield_gas, &
                   vtmpath=gasinit(1:len(trim(gasinit))-4), &
                   vtspath='INPUT/vtk/field', time=IOtime)
       end select
     end if
 
-    select case (trim(obj_io%bck_fmt(1)))
+    select case (trim(obj_io%ini_fmt(1)))
     case ('tecplot')
       IOfield_cond%tec%format = 'ascii'
       error = tec_read_structured_multiblock(orion=IOfield_cond, filename=trim(condinit))
     case ('vtk')
-      IOfield_cond%tec%format = obj_io%bck_fmt(2)
+      IOfield_cond%tec%format = obj_io%ini_fmt(2)
       error = vtk_read_structured_multiblock(orion=IOfield_cond, &
                 vtmpath=condinit(1:len(trim(condinit))-4), &
                 vtspath='INPUT/vtk/field', time=IOtime)
+    case default
+      !> Neither reader matched, so the field would be left EMPTY and every later size()
+      !  silently returns zero -- allocate_data then makes a zero-length bc array and the run
+      !  segfaults far from here, with nothing in the log pointing back. Note the registered
+      !  hits this path. Fail where the cause is still visible.
+      write(*,'(A)') '  [ERROR] ICE cannot read the initial condition.'
+      write(*,'(A)') '  The format is "'//trim(obj_io%ini_fmt(1))//'", which is neither "tecplot"'
+      write(*,'(A)') '  nor "vtk", so no reader was selected. Set it explicitly, e.g.'
+      write(*,'(A)') '    ic-format = tecplot ascii'
+      error stop
     end select
 
   end subroutine read_vtk_tec

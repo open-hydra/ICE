@@ -1,5 +1,6 @@
 module ICE_Mod_Fluxes
   use iso_fortran_env, only: I4 => int32, R8 => real64
+  use ICE_Mod_MPI, only: is_local_block
   use ICE_Lib_Reconstruction, only: state_reconstruction
 
   implicit none
@@ -16,10 +17,11 @@ contains
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
-    integer(kind=I4) :: b, i, j, k
+    integer(kind=I4) :: b, i, j, k, pass
 
     !$OMP PARALLEL
     do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
 
       !> Shock detector: beta=1 (smooth) or beta=0 (shock)
       if (obj_space_scheme%SD) then
@@ -41,10 +43,14 @@ contains
         !$OMP END DO
       end if
 
+      !> Face i adds to cells i and i+1, so two faces sharing a cell must not run
+      !> concurrently: sweep odd faces, then even faces (the END DO barrier separates them).
+      do pass = 1, 2
+
       !$OMP DO COLLAPSE (3)
       do k = 1, grid%blk(b)%dim(3)
       do j = 1, grid%blk(b)%dim(2)
-      do i = 1, grid%blk(b)%dim(1)-1
+      do i = pass, grid%blk(b)%dim(1)-1, 2
 
         call compute_flux_ (grid%blk(b)%cond_phase(p)%prim(1:ncond(p),i-1:i+2,j,k),    &
                             [grid%blk(b)%dl(i-1,j,k)%c(1), grid%blk(b)%dl(i,j,k)%c(1), &
@@ -58,10 +64,14 @@ contains
       end do ; end do ; end do
       !$OMP END DO
 
+      enddo
+
+      do pass = 1, 2
+
       !$OMP DO COLLAPSE (3)
       do k = 1, grid%blk(b)%dim(3)
       do i = 1, grid%blk(b)%dim(1)
-      do j = 1, grid%blk(b)%dim(2)-1
+      do j = pass, grid%blk(b)%dim(2)-1, 2
 
         call compute_flux_ (grid%blk(b)%cond_phase(p)%prim(1:ncond(p),i,j-1:j+2,k),    &
                             [grid%blk(b)%dl(i,j-1,k)%c(2), grid%blk(b)%dl(i,j,k)%c(2), &
@@ -75,10 +85,14 @@ contains
       enddo ; enddo ; enddo
       !$OMP END DO
 
+      enddo
+
+      do pass = 1, 2
+
       !$OMP DO COLLAPSE (3)
       do j = 1, grid%blk(b)%dim(2)
       do i = 1, grid%blk(b)%dim(1)
-      do k = 1, grid%blk(b)%dim(3)-1
+      do k = pass, grid%blk(b)%dim(3)-1, 2
 
         call compute_flux_ (grid%blk(b)%cond_phase(p)%prim(1:ncond(p),i,j,k-1:k+2),    &
                             [grid%blk(b)%dl(i,j,k-1)%c(3), grid%blk(b)%dl(i,j,k)%c(3), &
@@ -91,6 +105,8 @@ contains
 
       enddo ; enddo ; enddo
       !$OMP END DO
+
+      enddo
 
     enddo
     !$OMP END PARALLEL

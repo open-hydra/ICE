@@ -1,5 +1,6 @@
 module ICE_Mod_Multigrid
   use iso_fortran_env, only: I4 => int32, R8 => real64
+  use ICE_Mod_MPI, only: is_local_block
 
   implicit none
   private
@@ -69,6 +70,7 @@ contains
     integer :: b, p
 
     do b = 1, Coarse%nb
+      if (.not. is_local_block(b)) cycle
       do p = 1, ngroups
         call fine2coarse_prim(p,                                      &
           Fine%blk(b)%cond_phase(p)%prim,                            &
@@ -90,6 +92,7 @@ contains
     integer :: b, p
 
     do b = 1, Coarse%nb
+      if (.not. is_local_block(b)) cycle
       do p = 1, ngroups
         call coarse2fine_prim(p,                                      &
           Fine%blk(b)%cond_phase(p)%prim,                            &

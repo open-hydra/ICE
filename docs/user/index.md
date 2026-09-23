@@ -12,7 +12,7 @@ Everything you need to configure and run ICE simulations.
 
     ---
 
-    Workflow, directory layout, and how to launch a simulation
+    Case layout, running in parallel, output and restarting
 
     [:octicons-arrow-right-24: Using ICE](using.md)
 
@@ -20,7 +20,7 @@ Everything you need to configure and run ICE simulations.
 
     ---
 
-    Structure and syntax of `input.ini`
+    Sections of `input.ini` and what each controls
 
     [:octicons-arrow-right-24: Input file](input.md)
 
@@ -28,7 +28,7 @@ Everything you need to configure and run ICE simulations.
 
     ---
 
-    Auto-generated reference for all input parameters
+    Every parameter, its default and its validation rule
 
     [:octicons-arrow-right-24: Parameter registry](registry.md)
 
@@ -36,7 +36,7 @@ Everything you need to configure and run ICE simulations.
 
     ---
 
-    Format of the initial-condition files
+    Format of the initial state, the mesh and the property table
 
     [:octicons-arrow-right-24: Initial conditions](initial-conditions.md)
 
@@ -44,7 +44,7 @@ Everything you need to configure and run ICE simulations.
 
     ---
 
-    Available boundary condition types and their parameters
+    The ATLAS boundary table and how ICE applies each code
 
     [:octicons-arrow-right-24: Boundary conditions](boundary-conditions.md)
 

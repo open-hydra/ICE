@@ -9,10 +9,10 @@ program ICE_docgen
     ! Build registry entries
     call Register_Sim_Param()
     call Register_IO_Fields()
-    call Register_Probes(1, 'probe-placeholder')
+    call Register_Probes(1, 'probe-section')
     call Register_Numerics(2)
-    call Register_Families(1)
     call Register_Physics()
+    call Register_Families(1)
 
     call reg%generate_markdown('docs/user/registry.md')
 

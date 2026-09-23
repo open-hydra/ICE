@@ -1,6 +1,10 @@
 # Building file
 CMakePresets.json
 build
+build-*
+
+# Docs output
+site
 
 # Fortran module files
 mod
@@ -14,3 +18,9 @@ bin
 log*
 error*
 OUTPUT
+test/fast/*/work
+test/verification/*/work
+test/verification/figure-work
+
+# Python bytecode from the test drivers
+__pycache__/

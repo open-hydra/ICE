@@ -12,7 +12,7 @@ Everything you need to get ICE installed and running your first simulation.
 
     ---
 
-    Prerequisites, build options, and step-by-step compilation
+    Prerequisites, build options and troubleshooting
 
     [:octicons-arrow-right-24: Installation guide](installation.md)
 
@@ -20,7 +20,7 @@ Everything you need to get ICE installed and running your first simulation.
 
     ---
 
-    Build and run your first simulation in minutes
+    Run one of the shipped cases and check its result
 
     [:octicons-arrow-right-24: Quick start](quick-start.md)
 

@@ -22,43 +22,66 @@ contains
     use ICE_Lib_Residual
     use ICE_Lib_IRS,        only: residual_smoothing
     use ICE_Mod_Diagnostic, only: Compute_Diagnostic
+    use ICE_Mod_MPI,        only: is_local_block, mpi_allreduce_min_r8, &
+                                  mpi_allreduce_sum_r8_array, mpi_bcast_integer
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
-    integer(kind=I4) :: b, p, srk, ios
-    real(R8)         :: average(5)
+    integer(kind=I4) :: b, p, srk
+    real(R8)         :: average(5), dtlocal
     logical          :: endsim, iosim
 
     grid%iter                    = grid%iter + 1
     obj_sim_param%iter_from_call = obj_sim_param%iter_from_call + 1
     obj_sim_param%iter_general   = obj_sim_param%iter_general + 1
 
-    !$omp parallel
-
     grid%dtglobal = 1e+5
+
+    !$omp parallel
     do p = 1, ngroups
       call assign_sound_make(p)
-      call compute_dt(p, obj_time_scheme%cfl, obj_time_scheme%cfl_rampa_iter, grid)
+      call compute_dt(p, obj_time_scheme%cfl, obj_time_scheme%cfl_rampa_iter, &
+                      obj_time_scheme%dt_max, grid)
     end do
+    !$omp end parallel
 
-    if (obj_time_scheme%time_accurate) then
-      call set_dt_global(grid)
-      !$omp master
-      grid%time = grid%time + grid%dtglobal
-      !$omp end master
-    end if
+    !> Global time step: smallest over all ranks
+    call mpi_allreduce_min_r8(grid%dtglobal, dtlocal)
+    grid%dtglobal = dtlocal
+    if (obj_time_scheme%time_accurate) grid%time = grid%time + grid%dtglobal
 
+    !$omp parallel
+    if (obj_time_scheme%time_accurate) call set_dt_global(grid)
     call state_copy(grid)
-
     !$omp end parallel
 
     do p = 1, ngroups
 
       call assign_all(p)
-      select case (trim(obj_time_scheme%model(p)))
-      case ('MK');     call assign_riemann('Saurel')
-      case default;    call assign_riemann('Rusanov')
+      if (len_trim(obj_time_scheme%riemann) == 0) then
+        select case (trim(obj_time_scheme%model(p)))
+        case ('MK');     call assign_riemann('Saurel')
+        case default;    call assign_riemann('Rusanov')
+        end select
+      else
+        !> Saurel upwinds on the mean normal velocity and assembles the flux from the
+        !  MK variable layout, so it is meaningless for the Gaussian closures.
+        if (trim(obj_time_scheme%riemann) == 'Saurel' .and. &
+            trim(obj_time_scheme%model(p)) /= 'MK') then
+          write(*,'(A)') '  [ICE] the Saurel solver is specific to the MK closure; '// &
+                         'use Rusanov or HLLE with IG and AG.'
+          error stop 'ICE: Saurel with a non-MK family'
+        endif
+        call assign_riemann(trim(obj_time_scheme%riemann))
+      endif
+      select case (trim(obj_time_scheme%solver_type))
+      case ('euler'); nrk = 1
+      case ('RK2');   nrk = 2
+      case ('RK3');   nrk = 3
+      case default
+        write(*,'(A)') '  [ERROR] unknown time-scheme "'//trim(obj_time_scheme%solver_type)// &
+                       '"; choose euler, RK2 or RK3.'
+        error stop 'ICE: unknown time-scheme'
       end select
-      read(obj_time_scheme%solver_type, *, iostat=ios) nrk
 
       do srk = 1, nrk
 
@@ -87,6 +110,7 @@ contains
     ! Compute global residual (L2 norm of prim - prim_old, over all blocks and groups)
     obj_sim_param%residuotot = 0._R8
     do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
       do p = 1, ngroups
         call Compute_Diagnostic(new=grid%blk(b)%cond_phase(p)%prim,     &
                               old=grid%blk(b)%cond_phase(p)%prim_old, &
@@ -96,14 +120,17 @@ contains
                               total=obj_sim_param%residuotot)
       end do
     end do
+    call mpi_allreduce_sum_r8_array(obj_sim_param%residuotot, nres)
     obj_sim_param%residuotot = sqrt(obj_sim_param%residuotot)
 
     iosim  = (mod(grid%iter, obj_io%sol_diter) == 0) &
-         .or. (mod(grid%iter, obj_io%bck_diter) == 0) &
          .or. (grid%time >= obj_sim_param%time_from_call + obj_io%sol_dtime)
 
+    !> res-threshold = 0 means "never stop on the residual". Without it a transient
+    !> whose density happens to be stationary -- a cloud relaxing in velocity only --
+    !> reports a zero density residual and is declared converged at the first iteration.
     endsim = (obj_sim_param%iter_from_call >= grid%itermax)                                        &
-         .or. (obj_multigrid%MG_level == 1 .and.                                                 &
+         .or. (obj_multigrid%MG_level == 1 .and. obj_sim_param%res_threshold > 0._R8 .and.       &
                obj_sim_param%residuotot(1) <= obj_sim_param%res_threshold)                       &
          .or. (grid%time >= obj_sim_param%time_threshold)
 
@@ -114,6 +141,10 @@ contains
     else
       obj_sim_param%TODO = 1
     end if
+
+    !> Every rank sees the same residual and time, but take the decision from root
+    !> so that all ranks leave the time loop together whatever the rounding.
+    call mpi_bcast_integer(obj_sim_param%TODO)
 
   end subroutine Explicit_Step
 

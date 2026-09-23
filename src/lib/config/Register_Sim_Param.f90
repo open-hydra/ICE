@@ -23,7 +23,7 @@ contains
                  'true',      'Start a new simulation (false = restart)',   &
                  'true, false', .false.)
     call reg%add(section, 'res-threshold',  obj_sim_param%res_threshold,   &
-                 '1e-10',     'Residual convergence threshold',             &
+                 '1e-10',     'Residual convergence threshold (0 = never stop on it)', &
                  '>= 0',       .false.)
     call reg%add(section, 'time-threshold', obj_sim_param%time_threshold,  &
                  '1e30',      'Maximum simulation time',                    &

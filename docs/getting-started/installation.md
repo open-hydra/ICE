@@ -1,32 +1,30 @@
 # Installation
 
-This document describes how to obtain and build **ICE**. The instructions cover the `install.sh` script, CMake configuration, and Git submodule layout.
-
-!!! note
-    ICE has a dual nature: it is both a library and an executable. The installation process produces both the static library `libICEL.a` and the main executable `bin/ICE`. If you are only interested in using ICE as a library, you can link against `libICEL.a` without caring about the executable.
+ICE builds into a static library `libICEL.a` and two executables: `bin/ICE`, the
+solver, and `bin/DocGen`, which regenerates the
+[parameter reference](../user/registry.md) from the input registry in the source.
 
 ## Prerequisites
 
-Before attempting to build ICE make sure your system provides the following external tools and compilers:
+| | |
+|---|---|
+| **CMake** | 3.23 or newer |
+| **Fortran compiler** | GNU `gfortran` or Intel oneAPI `ifx` |
+| **C / C++ compiler** | Required by ORION, and by TecIO if enabled |
+| **MPI** | Optional, for distributed-memory runs |
+| **OpenMP** | Optional, for shared-memory runs |
 
-- **CMake** – 3.23 or newer.
-- **Fortran compiler** – either the GNU toolchain (`gfortran`) or Intel/oneAPI (`ifort`/`ifx`) are supported.
-- **C / C++ compiler** – required by the ORION I/O library and the optional TecIO component.
-- **OpenMP** – needed for optional shared-memory parallelisation.
-- **MPI** – needed for optional distributed-memory parallelisation.
+Both parallel modes are off by default and can be combined.
 
-### Git submodules
+### Submodules
 
-ICE depends on two repositories included as Git submodules.
+ICE bundles two dependencies as Git submodules. `install.sh` initialises them, and so
+does CMake if they are missing.
 
-| Path | Repository URL | Purpose |
-|------|----------------|---------|
-| `lib/ORION` | `https://github.com/MarcoGrossi92/ORION.git` | I/O routines (TecIO, VTK) |
-| `lib/third_party/FiNeR` | `https://github.com/szaghi/FiNeR.git` | INI file parser |
-
-## Build methods
-
-First clone the repository with submodules:
+| Path | Repository | Purpose |
+|------|------------|---------|
+| `lib/ORION` | `github.com/MarcoGrossi92/ORION` | Mesh and solution I/O (Tecplot, VTK, optional TecIO) |
+| `lib/third_party/FiNeR` | `github.com/szaghi/FiNeR` | INI file parser |
 
 ```bash
 git clone https://github.com/open-hydra/ICE.git
@@ -34,84 +32,106 @@ cd ICE
 git submodule update --init --recursive
 ```
 
-### Build with `install.sh` (recommended)
-
-The script exposes three commands: `build`, `compile`, and `update`. It also maintains a `CMakePresets.json` file that records the configuration used for the most recent `build` invocation.
+## Building with `install.sh`
 
 ```bash
-./install.sh [GLOBAL_OPTIONS] COMMAND [COMMAND_OPTIONS]
-```
-
-**`build` command**
-
-```bash
-# minimal GNU build with OpenMP enabled
+# GNU build with OpenMP
 ./install.sh build --compilers=gnu --use-openmp
 
-# full configuration with MPI and all optional features
-./install.sh build --compilers=gnu --use-openmp --use-mpi --use-tecio
+# Intel build with MPI and binary Tecplot support
+./install.sh build --compilers=intel --use-mpi --use-tecio
 ```
 
-Options accepted by `build`:
+`build` configures from scratch — it removes `build/` first — compiles, and writes a
+`CMakePresets.json` recording what it used.
 
-* `--compilers=<gnu|intel>` – select the compiler family (default: `gnu`).
-* `--use-openmp` – enable OpenMP parallelisation.
-* `--use-mpi` – enable MPI parallelisation.
-* `--use-tecio` – enable TecIO support.
-* `--include-orion=PATH` – use an external ORION tree instead of the submodule.
-* `--include-finer=PATH` – same for FiNeR.
+| Option | Effect |
+|---|---|
+| `--compilers=gnu` | `gfortran` / `gcc` / `g++` |
+| `--compilers=intel` | `ifx` / `icx` / `icpx` |
+| `--use-openmp` | Thread parallelism |
+| `--use-mpi` | Rank parallelism; the compiler wrappers are found by CMake |
+| `--use-tecio` | Binary Tecplot support in ORION |
+| `--include-orion=PATH` | Use an existing ORION tree instead of the submodule |
+| `--include-finer=PATH` | The same for FiNeR |
 
-**`compile` command**
-
-Re-runs CMake using the previously generated preset. Useful during development when only source files have changed.
+Two further commands:
 
 ```bash
-./install.sh compile
+./install.sh compile          # rebuild from the recorded preset, after editing sources
+./install.sh update           # sync the submodules to their recorded commits
+./install.sh update --remote  # ... or to the newest remote commit
 ```
 
-**`update` command**
+`compile` is the one to use during development: it skips the configure step.
 
-Synchronises the Git submodules.
-
-```bash
-./install.sh update           # sync to recorded commit
-./install.sh update --remote  # update to newest remote commit
-```
-
-### Build with CMake
+## Building with CMake directly
 
 ```bash
-mkdir build && cd build
-cmake .. \
+cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_Fortran_COMPILER=gfortran \
     -DUSE_OPENMP=ON \
     -DUSE_MPI=OFF \
-    -DUSE_TECIO=ON
-cmake --build . --parallel
+    -DUSE_TECIO=OFF
+cmake --build build --parallel
 ```
 
-## CMake presets
+| Variable | Default | Meaning |
+|---|---|---|
+| `USE_OPENMP` | `OFF` | OpenMP |
+| `USE_MPI` | `OFF` | MPI; also defines `USE_MPI` for the preprocessor |
+| `USE_TECIO` | `OFF` | Passed to ORION for binary Tecplot |
+| `ORION_PATH` | `lib/ORION/` | ORION source tree |
+| `FINER_PATH` | `lib/third_party/FiNeR/` | FiNeR source tree |
 
-After a successful `build`, a `CMakePresets.json` is written in the source root. Subsequent builds can reuse it:
+Both executables land in `bin/` whatever the build directory, so two build directories
+— one serial, one MPI — will overwrite each other's `bin/ICE`. Keep them apart if you
+need both at once.
+
+Compiler flags come from `cmake/SetFortranFlags.cmake`, which probes the compiler for
+each flag rather than assuming it.
+
+## Building the test suite
+
+`enable_testing()` and the cases are added automatically when ICE is the top-level
+project, so any of the builds above gives a working `ctest`:
 
 ```bash
-cmake --preset default
-cmake --build build
+ctest --test-dir build -j 5 --output-on-failure
 ```
 
-## Library linking (advanced)
+The MPI-specific cases register only when `USE_MPI=ON`. See
+[Testing](../development/testing.md).
 
-To use ICE from an external CMake project:
+## Using ICE as a library
+
+The library target is `ICEL`, aliased `ICEL::ICEL`. ICE does not install an exported
+CMake package, so an external project consumes it by adding the source tree:
 
 ```cmake
-find_package(ICE REQUIRED)
-add_executable(myapp main.f90)
-target_link_libraries(myapp ICE::ICEL)
+add_subdirectory(path/to/ICE)
+target_link_libraries(myapp PRIVATE ICEL::ICEL)
 ```
+
+Everything ICE's top-level `CMakeLists.txt` does is guarded on being the top-level
+project, so as a subdirectory it builds only the library — no solver executable and no
+tests — and the parent project must already define the `ORION` and `FiNeR::FiNeR`
+targets it links against. This is how the Hydra suite embeds it.
+
+## Troubleshooting
+
+**`undefined reference` to C++ symbols when linking with TecIO.** TecIO is C++ and the
+executable is linked by the Fortran driver, which does not pull in the C++ runtime.
+Add it explicitly:
+
+```bash
+cmake -B build ... -DCMAKE_EXE_LINKER_FLAGS=-lstdc++
+```
+
+**`cannot find -ltecio::tecio`.** The ORION submodule is older than the ICE revision
+that expects it. `./install.sh update --remote` and rebuild.
 
 ## Next steps
 
-* **[Quick Start](quick-start.md)** – build and verify the installation.
-
----
+* **[Quick Start](quick-start.md)** — run a shipped case and check it.

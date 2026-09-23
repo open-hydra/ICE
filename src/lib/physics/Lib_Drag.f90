@@ -1,67 +1,61 @@
+!>@brief Drag-coefficient correlations Cd(Re, Ma, gamma, Tr) selected by keyword.
+!> Ported from IGLOO's Lib_Drag. The correlations are pure functions and the choice
+!> travels as an integer, so nothing mutable is shared between threads.
+!>
+!> The Chang correlation is deliberately absent: `24/Re (1 + 0.15 Re^0.687) +
+!> 0.42/(1 + 42500 Re^-1.16)` is the Clift-Gauvin correlation written differently
+!> (24 * 0.0175 = 0.42), so the two were the same function under two names.
 module ICE_Lib_Drag
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   implicit none
   private
+
   public :: assign_drag
+  public :: drag
 
-  !> Concrete "drag" procedure pointing to one of the function realizations
-  procedure(drag_if), pointer, public :: drag
-
-  !> Abstract interface relative to the "drag" procedure
-  abstract interface
-  function drag_if(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
-    implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
-    real(kind=R8) :: Cd
-  end function drag_if
-  end interface
-
-  real(kind=R8), parameter :: toll = 1.e-20_R8
-  
 contains
 
-  subroutine assign_drag(drag_word)
+  !> Maps the [ICE-Scheme] drag keyword to the selector used by drag().
+  subroutine assign_drag(drag_word, dragSelect)
     implicit none
-    character(len=*), intent(in) :: drag_word
+    character(len=*), intent(in)  :: drag_word
+    integer(kind=I4), intent(out) :: dragSelect
 
     select case (drag_word)
     case ('Newton')
-      drag => drag_Newton
+      dragSelect = 1
     case ('Stokes')
-      drag => drag_Stokes
+      dragSelect = 2
     case ('Schlichting')
-      drag => drag_Schlichting
+      dragSelect = 3
     case ('Schiller-Naumann')
-      drag => drag_Schiller_Naumann
-    case ('Chang')
-      drag => drag_Chang
+      dragSelect = 4
     case ('Wen-Yu')
-      drag => drag_Wen_Yu
+      dragSelect = 5
     case ('Putnam')
-      drag => drag_Putnam
+      dragSelect = 6
     case ('Clift-Gauvin')
-      drag => drag_Clift_Gauvin
+      dragSelect = 7
     case ('Morsi-Alexander')
-      drag => drag_Morsi_Alexander
+      dragSelect = 8
     case ('Carlson-Hoglund')
-      drag => drag_Carlson_Hoglund
+      dragSelect = 9
     case ('Henderson')
-      drag => drag_Henderson
+      dragSelect = 10
     case ('Crowe')
-      drag => drag_Crowe
+      dragSelect = 11
     case ('Hermsen')
-      drag => drag_Hermsen
+      dragSelect = 12
     case default
       write(*,*)
-      write(*,*)
       write(*,*) "Wrong drag input ---> "//drag_word
+      if (drag_word == 'Chang') &
+        write(*,*) "Chang is the Clift-Gauvin correlation written differently: use Clift-Gauvin."
       write(*,*) "Choose one of the following :"
       write(*,*) "- Newton "
       write(*,*) "- Stokes "
       write(*,*) "- Schlichting "
       write(*,*) "- Schiller-Naumann "
-      write(*,*) "- Chang "
       write(*,*) "- Wen-Yu "
       write(*,*) "- Putnam "
       write(*,*) "- Clift-Gauvin "
@@ -71,112 +65,231 @@ contains
       write(*,*) "- Crowe "
       write(*,*) "- Hermsen "
       write(*,*)
-      stop
+      error stop 'ICE: unknown drag model'
     end select
 
   end subroutine assign_drag
 
-  !> Newton Drag Model
-  function drag_Newton(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+
+  !> Dispatches to the selected drag correlation.
+  pure function drag(Re,Ma,G,Tr,dragSelect) result(Cd)
     implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
+    integer(kind=I4), intent(in) :: dragSelect
+    real(kind=R8),    intent(in) :: Re, Ma, G, Tr
     real(kind=R8) :: Cd
 
-    Cd = 0.45_R8
-    
-  end function drag_Newton
+    select case (dragSelect)
+    case (1) !> Newton Drag Model
+      Cd = 0.45_R8
+    case (2)
+      Cd = drag_Stokes(Re)
+    case (3)
+      Cd = drag_Schlichting(Re)
+    case (4)
+      Cd = drag_Schiller_Naumann(Re)
+    case (5)
+      Cd = drag_Wen_Yu(Re)
+    case (6)
+      Cd = drag_Putnam(Re)
+    case (7)
+      Cd = drag_Clift_Gauvin(Re)
+    case (8)
+      Cd = drag_Morsi_Alexander(Re)
+    case (9)
+      Cd = drag_Carlson_Hoglund(Re,Ma)
+    case (10)
+      Cd = drag_Henderson(Re,Ma,G,Tr)
+    case (11)
+      Cd = drag_Crowe(Re,Ma,G,Tr)
+    case (12)
+      Cd = drag_Hermsen(Re,Ma,G,Tr)
+    end select
+
+  end function drag
+
 
   !> Stokes Drag Model
-  function drag_Stokes(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+  pure function drag_Stokes(Re) result(Cd)
     implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
+    real(kind=R8), intent(in) :: Re
+    real(R8), parameter :: toll=1e-20
     real(kind=R8) :: Cd
 
     Cd = 24._R8/(Re+toll)
-    
+
   end function drag_Stokes
 
+
   !> Schlichting Drag Model
-  function drag_Schlichting(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+  pure function drag_Schlichting(Re) result(Cd)
     implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
+    real(kind=R8), intent(in) :: Re
+    real(R8), parameter :: toll=1e-20
     real(kind=R8) :: Cd
 
     Cd = 24._R8/(Re+toll) * (1._R8+3._R8*Re/16._R8)
-    
+
   end function drag_Schlichting
 
+
   !> Schiller Naumann Drag Model
-  function drag_Schiller_Naumann(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+  pure function drag_Schiller_Naumann(Re) result(Cd)
     implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
+    real(kind=R8), intent(in) :: Re
+    real(R8), parameter :: toll=1e-20
     real(kind=R8) :: Cd
 
     Cd = 24._R8/(Re+toll) * (1._R8+0.15_R8*Re**0.687_R8)
-    
+
   end function drag_Schiller_Naumann
 
-  !> Chang Drag Model
-  function drag_Chang(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
-    implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
-    real(kind=R8) :: Cd
-
-    Cd = 24._R8/(Re+toll) * (1._R8+0.15_R8*Re**0.687_R8) + 0.42_R8 / (1._R8+42500_R8*(Re+toll)**(-1.16_R8))
-    
-  end function drag_Chang
 
   !> Wen Yu Drag Model
-  function drag_Wen_Yu(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+  pure function drag_Wen_Yu(Re) result(Cd)
     implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
+    real(kind=R8), intent(in) :: Re
+    real(R8), parameter :: toll=1e-20
     real(kind=R8) :: Cd
-    
+
     if (Re <= 1000) then
       Cd = 24._R8/(Re+toll) * (1._R8+0.15_R8*Re**0.687_R8)
     else
-      Cd = 0.43_R8
+      Cd = 0.43_R8   ! plateau per Shimada2006 eq.16
     endif
 
   end function drag_Wen_Yu
 
+
   !> Putnam Drag Model
-  function drag_Putnam(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+  pure function drag_Putnam(Re) result(Cd)
     implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
+    real(kind=R8), intent(in) :: Re
+    real(R8), parameter :: toll=1e-20
     real(kind=R8) :: Cd
 
     if (Re < 1000) then
       Cd = 24._R8/(Re+toll) * (1._R8+Re**(2._R8/3._R8)/6._R8)
     else
-      Cd = 0.4392_R8
+      Cd = 0.4392_R8 ! plateau per Shimada2006 eq.17
     endif
-    
+
   end function drag_Putnam
 
+
   !> Clift Gauvin Drag Model
-  function drag_Clift_Gauvin(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+  pure function drag_Clift_Gauvin(Re) result(Cd)
     implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
+    real(kind=R8), intent(in) :: Re
+    real(R8), parameter :: toll=1e-20
     real(kind=R8) :: Cd
 
     Cd = 24._R8/(Re+toll) * (1._R8+0.15_R8*Re**0.687_R8+0.0175_R8*Re/(1._R8+4.25_R8*1e4*Re**(-1.16_R8)))
-    
-  end function drag_Clift_Gauvin  
 
-  !> Morsi Alexander Drag Model
-  function drag_Morsi_Alexander(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+  end function drag_Clift_Gauvin
+
+
+  !> Carlson Hoglund Drag Model
+  pure function drag_Carlson_Hoglund(Re,Ma) result(Cd)
     implicit none
-    real(kind=R8), intent(in) :: Re,Ma,G,Tr
+    real(kind=R8), intent(in) :: Re, Ma
+    real(R8), parameter :: toll=1e-20
+    real(kind=R8) :: Cd, Cd0
+
+    Cd0 = drag_Wen_Yu(Re)
+    Cd  = Cd0 * (1._R8 + exp(-0.427_R8/(Ma**4.63_R8+toll) - 3._R8/(Re**0.88_R8+toll))) / &
+                  (1._R8 + Ma/(Re+toll)*(3.82_R8+1.28_R8*exp(-1.25_R8*Re/(Ma+toll))))
+
+  end function drag_Carlson_Hoglund
+
+
+  !> Henderson drag model, subsonic branch (Ma <= 1).
+  pure function drag_Henderson_1(Re,Ma,G,Tr) result(Cd)
+    implicit none
+    real(kind=R8), intent(in) :: Re, Ma, G, Tr
+    real(R8), parameter :: toll=1e-20
+    real(R8) :: Cd
+
+    Cd = 24._R8 * (Re + Ma*(0.5_R8*G)**0.5_R8*(4.33_R8 + (3.65_R8-1.53_R8*Tr)/(1._R8+0.353_R8*Tr)*exp(-0.247_R8*Re/(Ma*(0.5_R8*G) &
+          **0.5_R8+toll)))+toll)**(-1._R8) + exp(-0.5_R8*Ma/(Re**0.5_R8+toll))*((4.5_R8+0.38_R8*(0.03_R8*Re+0.48_R8*Re**0.5_R8)) /&
+          (1._R8+0.03_R8*Re+0.48_R8*Re**0.5_R8) + 0.1_R8*Ma**2._R8 + 0.2_R8*Ma**8._R8) + 0.6_R8*Ma*(0.5_R8*G)**0.5_R8*(1._R8-exp  &
+          (-Ma/(Re+toll)))
+
+  end function drag_Henderson_1
+
+
+  !> Henderson drag model, supersonic branch (Ma >= 1.75).
+  pure function drag_Henderson_2(Re,Ma,G,Tr) result(Cd)
+    implicit none
+    real(kind=R8), intent(in) :: Re, Ma, G, Tr
+    real(R8), parameter :: toll=1e-20
+    real(R8) :: Cd
+
+    Cd = (0.9_R8 + 0.34_R8/(Ma**2._R8+toll) + 1.86_R8*(Ma/(Re+toll))**0.5_R8*(2._R8 + 2._R8/(Ma**2*0.5_R8*G+toll) + (1.058_R8/ &
+          (Ma*(0.5_R8*G)**0.5_R8+toll))*Tr**0.5_R8) - 1_R8/(Ma**4._R8*G**2._R8*0.25_R8+toll)) / (1._R8 + 1.86_R8*(Ma/(Re+toll))&
+          **0.5_R8)
+
+  end function drag_Henderson_2
+
+
+  !> Henderson drag model: subsonic and supersonic branches, linear bridge for 1 < Ma < 1.75.
+  pure function drag_Henderson(Re,Ma,G,Tr) result(Cd)
+    implicit none
+    real(kind=R8), intent(in) :: Re, Ma, G, Tr
+    real(kind=R8) :: Cd, Ma1, Ma2, Cd1, Cd2
+
+    if (Ma<=1) then
+      Cd = drag_Henderson_1(Re,Ma,G,Tr)
+    elseif (Ma>=1.75) then
+      Cd = drag_Henderson_2(Re,Ma,G,Tr)
+    else
+      Ma1 = 1.00
+      Ma2 = 1.75
+      Cd1 = drag_Henderson_1(Re,Ma1,G,Tr)
+      Cd2 = drag_Henderson_2(Re,Ma2,G,Tr)
+      Cd = Cd1 + 4._R8/3._R8*(Ma-1._R8)*(Cd2-Cd1)  ! 4/3 = 1/(1.75-1); Shimada eq.22 prints 3/4 (typo)
+    endif
+
+  end function drag_Henderson
+
+
+  !> Crowe drag model (Shimada2006 eq.23).
+  pure function drag_Crowe(Re,Ma,G,Tr) result(Cd)
+    implicit none
+    real(kind=R8), intent(in) :: Re, Ma, G, Tr
+    real(R8), parameter :: toll=1e-20
+    real(R8) :: Cd, Cd0, gfun, hfun
+
+    gfun = 1.25_R8 * (1._R8+dtanh(0.77_R8*dlog10(Re+toll)-1.92_R8))
+    gfun = 10**gfun
+    hfun = 2.3_R8 + 1.7_R8*Tr**0.5_R8 - 2.3_R8*dtanh(1.17_R8*dlog10(Ma+toll))
+
+    Cd0 = drag_Wen_Yu(Re)
+    Cd = 2._R8 + (Cd0-2._R8)*exp(-3.07_R8*G**0.5_R8*Ma*gfun/(Re+toll)) + hfun/(Ma*G**0.5_R8+toll)*exp(-Re/(2*Ma+toll))
+
+  end function drag_Crowe
+
+
+  !> Hermsen drag model (Shimada2006 eq.24).
+  pure function drag_Hermsen(Re,Ma,G,Tr) result(Cd)
+    implicit none
+    real(kind=R8), intent(in) :: Re, Ma, G, Tr
+    real(R8), parameter :: toll=1e-20
+    real(R8) :: Cd, Cd0, gfun, hfun
+
+    gfun = (1._R8 + Re*(12.278_R8+0.548_R8*Re)) / (1._R8+11.278_R8*Re)
+    hfun = 5.6_R8/(1._R8+Ma) + 1.7_R8*Tr**0.5_R8
+
+    Cd0 = drag_Wen_Yu(Re)
+    Cd = 2._R8 + (Cd0-2._R8)*exp(-3.07_R8*G**0.5_R8*Ma*gfun/(Re+toll)) + hfun/(Ma*G**0.5_R8+toll)*exp(-Re/(2*Ma+toll))
+
+  end function drag_Hermsen
+
+
+  !> Morsi-Alexander drag model: a1 + a2/Re + a3/Re^2, piecewise over eight Re ranges.
+  pure function drag_Morsi_Alexander(Re) result(Cd)
+    implicit none
+    real(kind=R8), intent(in) :: Re
+    real(R8), parameter :: toll=1e-20
     real(R8) :: Cd, a1, a2, a3
 
     if (Re <= 0.1_R8) then
@@ -199,95 +312,5 @@ contains
     Cd = a1+a2/(Re+toll)+a3/(Re*Re+toll)
 
   end function drag_Morsi_Alexander
-
-  !> Carlson Hoglund Drag Model
-  function drag_Carlson_Hoglund(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
-    implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
-    real(kind=R8) :: Cd, Cd0
-
-    Cd0 = drag_Wen_Yu(Re,Ma,G,Tr)
-    Cd  = Cd0 * (1._R8 + exp(-0.427_R8/(Ma**4.63_R8+toll) - 3._R8/(Re**0.88_R8+toll))) / &
-                  (1._R8 + Ma/(Re+toll)*(3.82_R8+1.28_R8*exp(-1.25_R8*Re/(Ma+toll))))    
-    
-  end function drag_Carlson_Hoglund
-
-  !> Henderson Drag Model
-  !> Subsonic Flow
-  function drag_Henderson_1(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
-    implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
-    real(R8) :: Cd
-
-    Cd = 24._R8 * (Re + Ma*(0.5_R8*G)**0.5_R8*(4.33_R8 + (3.65_R8-1.53_R8*Tr)/(1._R8+0.353_R8*Tr)*exp(-0.247_R8*Re/(Ma*(0.5_R8*G) &
-          **0.5_R8+toll)))+toll)**(-1._R8) + exp(-0.5_R8*Ma/(Re**0.5_R8+toll))*((4.5_R8+0.38_R8*(0.03_R8*Re+0.48_R8*Re**0.5_R8)) /&
-          (1._R8+0.03_R8*Re+0.48_R8*Re**0.5_R8) + 0.1_R8*Ma**2._R8 + 0.2_R8*Ma**8._R8) + 0.6_R8*Ma*(0.5_R8*G)**0.5_R8*(1._R8-exp  &
-          (-Ma/(Re+toll)))
-
-  end function drag_Henderson_1
-
-  !> High Supersonic Flow
-  function drag_Henderson_2(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
-    implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
-    real(R8) :: Cd
-
-    Cd = (0.9_R8 + 0.34_R8/(Ma**2._R8+toll) + 1.86_R8*(Ma/(Re+toll))**0.5_R8*(2._R8 + 2._R8/(Ma**2*0.5_R8*G+toll) + (1.058_R8/ &
-          (Ma*(0.5_R8*G)**0.5_R8+toll))*Tr**0.5_R8) - 1_R8/(Ma**4._R8*G**2._R8*0.25_R8+toll)) / (1._R8 + 1.86_R8*(Ma/(Re+toll))&
-          **0.5_R8)
-
-  end function drag_Henderson_2
-
-  function drag_Henderson(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
-    implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
-    real(kind=R8) :: Cd, Ma1, Ma2, Cd1, Cd2
-
-    if (Ma<=1) then
-      Cd = drag_Henderson_1(Re,Ma,G,Tr)
-    elseif (Ma>=1.75) then
-      Cd = drag_Henderson_2(Re,Ma,G,Tr)
-    else
-      Ma1 = 1.00
-      Ma2 = 1.75
-      Cd1 = drag_Henderson_1(Re,Ma1,G,Tr)
-      Cd2 = drag_Henderson_2(Re,Ma2,G,Tr)
-      Cd = Cd1 + 0.75_R8*(Ma-1._R8)*(Cd2-Cd1)
-    endif
-
-  end function drag_Henderson
-
-  function drag_Crowe(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
-    implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
-    real(R8) :: Cd, Cd0, gfun, hfun
-
-    gfun = 1.25_R8 * (1._R8+dtanh(0.77_R8*dlog10(Re)-1.92_R8))
-    gfun = 10**gfun
-    hfun = 2.3_R8 + 1.7_R8*Tr**0.5_R8 - 2.3_R8*dtanh(1.17_R8*dlog10(Ma))
-
-    Cd0 = drag_Wen_Yu(Re,Ma,G,Tr)
-    Cd = 2._R8 + (Cd0-2._R8)*exp(-3.07_R8*G**0.5_R8*Ma/(Re+toll)*gfun) + hfun/(Ma*G**0.5_R8+toll)*exp(-Re/(2*Ma+toll))
-
-  end function drag_Crowe
-
-  function drag_Hermsen(Re,Ma,G,Tr) result(Cd)
-    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
-    implicit none
-    real(kind=R8), intent(in) :: Re, Ma, G, Tr
-    real(R8) :: Cd, Cd0, gfun, hfun
-
-    gfun = (1._R8 + Re*(12.278_R8+0.548_R8*Re)) / (1._R8+11.278_R8*Re)
-    hfun = 5.6_R8/(1._R8+Ma) + 1.7_R8*Tr**0.5_R8
-
-    Cd0 = drag_Wen_Yu(Re,Ma,G,Tr)
-    Cd = 2._R8 + (Cd0-2._R8)*exp(-3.07_R8*G**0.5_R8*Ma/(Re+toll)*gfun) + hfun/(Ma*G**0.5_R8+toll)*exp(-Re/(2*Ma+toll))
-    
-  end function drag_Hermsen
 
 end module ICE_Lib_Drag

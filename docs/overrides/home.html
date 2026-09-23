@@ -23,8 +23,7 @@
       <p class="ice-hero__sub">Integration of a Condensed phase via an Eulerian method</p>
       <p class="ice-hero__body">
         Open-source Eulerian solver for dispersed condensed phases on multi-block structured grids —
-        from mono-disperse aluminium particles to multi-group polydisperse suspensions
-        with coupled heat transfer and phase change.
+        three kinetic closures, multiple models for evaporation, drag, and heat exchange.
       </p>
 
       <div class="ice-hero__btns">
@@ -37,10 +36,11 @@
       </div>
 
       <div class="ice-hero__pills">
-        <div class="ice-pill"><strong>Multi-group</strong>&nbsp;Polydisperse</div>
-        <div class="ice-pill"><strong>Monokinetic</strong>&nbsp;Closure</div>
-        <div class="ice-pill"><strong>OpenMP</strong>&nbsp;+ MPI</div>
-        <div class="ice-pill"><strong>Modern</strong>&nbsp;Fortran</div>
+        <div class="ice-pill">Modern Fortran</div>
+        <div class="ice-pill">Multi-group - Polydisperse</div>
+        <div class="ice-pill">Pressure Closure</div>
+        <div class="ice-pill">Evaporation + Drag + Heat exchange</div>
+        <div class="ice-pill">OpenMP + MPI</div>
       </div>
 
     </div>
@@ -64,8 +64,8 @@
               <circle cx="12" cy="4" r="2"/><circle cx="12" cy="20" r="2"/>
             </svg>
           </div>
-          <h3>Eulerian Condensed Phase</h3>
-          <p>Eulerian description of dispersed particles using the monokinetic (MK) closure. Supports mono- and poly-disperse size distributions organised in groups.</p>
+          <h3>Three Kinetic Closures</h3>
+          <p>Monokinetic, isotropic Gaussian and anisotropic Gaussian. The Gaussian closures carry a velocity dispersion, so crossing streams are represented.</p>
         </article>
 
         <article class="ice-card ice-card--green">
@@ -77,7 +77,7 @@
             </svg>
           </div>
           <h3>Cell-Centred Finite Volume</h3>
-          <p>Conservative finite-volume discretisation on multi-block structured hexahedral grids with high-order flux reconstruction.</p>
+          <p>Conservative discretisation on multi-block structured hexahedral grids, with MUSCL reconstruction. Block connections, periodicity and chimera overset.</p>
         </article>
 
         <article class="ice-card ice-card--emerald">
@@ -87,8 +87,8 @@
               <line x1="12" y1="9" x2="16" y2="9"/>
             </svg>
           </div>
-          <h3>Heat &amp; Mass Transfer</h3>
-          <p>Convective heat exchange between particle and gas phases via Nusselt correlations (Stokes, Ranz–Marshall). Latent heat and phase-change modelling.</p>
+          <h3>Evaporation &amp; Drag &amp; Heat Transfer</h3>
+          <p>Several models for evaporation, drag, and Nusselt correlations, from creeping flow to the compressible fits, plus grey-body radiation.</p>
         </article>
 
         <article class="ice-card ice-card--cyan">
@@ -98,7 +98,7 @@
             </svg>
           </div>
           <h3>Explicit Time Marching</h3>
-          <p>Multi-stage Runge–Kutta time integration with CFL-based time-step control. Local and global time stepping for steady-state and time-accurate runs.</p>
+          <p>Forward Euler, SSP-RK2 and SSP-RK3, with CFL-based step control. Global and local time-stepping, residual smoothing and grid sequencing for steady state.</p>
         </article>
 
         <article class="ice-card ice-card--indigo">
@@ -109,7 +109,7 @@
             </svg>
           </div>
           <h3>Parallel Execution</h3>
-          <p>Shared-memory parallelism via OpenMP and distributed-memory MPI with ghost-cell exchange across block boundaries on HPC clusters.</p>
+          <p>OpenMP over cells and MPI over blocks, separately or together.</p>
         </article>
 
         <article class="ice-card ice-card--violet">
@@ -121,7 +121,7 @@
             </svg>
           </div>
           <h3>Flexible I/O</h3>
-          <p>Tecplot (ASCII &amp; binary) and VTK output via ORION. Point probes for time histories and full restart capability.</p>
+          <p>Tecplot and VTK I/O, temperature-dependent material property tables, point probes for time histories, and restart from any written solution.</p>
         </article>
 
       </div>
@@ -134,7 +134,7 @@
 
       <div class="ice-qs__text">
         <h2>Up and running in minutes</h2>
-        <p>ICE ships with a single install script that handles all dependencies, compiles the Fortran core, and puts the binary on your PATH.</p>
+        <p>One install script fetches the submodules, configures CMake and compiles the Fortran core. The shipped test cases are complete and each checks its own result.</p>
         <div class="ice-qs__links">
           <a href="{{ 'getting-started/installation/' | url }}" class="ice-btn ice-btn--primary">
             Installation guide &rarr;
@@ -155,42 +155,79 @@
           </div>
           <pre class="ice-term__body"><code><span class="tc"># Clone and build</span>
 <span class="tp">$</span> git clone https://github.com/open-hydra/ICE.git
-<span class="tp">$</span> cd ICE &amp;&amp; ./install.sh build --compilers=gnu
+<span class="tp">$</span> cd ICE &amp;&amp; ./install.sh build --compilers=gnu --use-openmp
 
-<span class="tc"># Run a simulation</span>
-<span class="tp">$</span> cd test/mono-disperse
-<span class="tp">$</span> ./ICE.sh solve</code></pre>
+<span class="tc"># Run one of the shipped cases and check it</span>
+<span class="tp">$</span> cd test/Doisneau/IG
+<span class="tp">$</span> ./ICE.sh -p 4 solve &amp;&amp; python3 verify.py</code></pre>
         </div>
       </div>
 
     </div>
   </section>
 
-  <!-- ════════════════════════════════════════ ECOSYSTEM ════════════════════════════════════════ -->
+<!-- ════════════════════════════════════════ ECOSYSTEM ════════════════════════════════════════ -->
   <section class="ice-eco">
     <div class="ice-container">
       <div class="ice-section-hd">
         <h2>The Hydra CFD Suite</h2>
-        <p>ICE is the condensed-phase solver in an integrated multi-physics simulation suite</p>
+        <p>ICE is the condensed-phase solver in an integrated multi-physics simulation layer that feeds Hydra-ready data to the runtime solver stack</p>
       </div>
-      <div class="ice-eco__flow">
+      <div class="ice-eco__flow ice-eco__flow--graph">
         <a href="https://github.com/open-hydra/ATLAS" target="_blank" rel="noopener" class="ice-eco__node">
           <span class="ice-eco__node-name">ATLAS</span>
           <span class="ice-eco__node-role">Pre-processor</span>
-          <span class="ice-eco__node-desc">Initial &amp; boundary conditions, material property tables</span>
+          <span class="ice-eco__node-desc">Phase properties and BC/IC builders</span>
         </a>
-        <div class="ice-eco__arrow">&#8594;</div>
-        <div class="ice-eco__node ice-eco__node--active">
-          <span class="ice-eco__node-tag">You are here</span>
-          <span class="ice-eco__node-name">ICE</span>
-          <span class="ice-eco__node-role">Solver</span>
-          <span class="ice-eco__node-desc">Eulerian condensed-phase equations for dispersed particles</span>
+
+        <div class="ice-eco__branch" aria-hidden="true">
+          <span class="ice-eco__arrow ice-eco__arrow--diag">&#8599;</span>
+          <span class="ice-eco__arrow ice-eco__arrow--diag">&#8600;</span>
         </div>
-        <div class="ice-eco__arrow">&harr;</div>
-        <a href="https://github.com/open-hydra/MOSE" target="_blank" rel="noopener" class="ice-eco__node">
-          <span class="ice-eco__node-name">MOSE</span>
-          <span class="ice-eco__node-role">Gas-phase solver</span>
-          <span class="ice-eco__node-desc">Compressible Euler &amp; Navier-Stokes with finite-rate chemistry</span>
+
+        <div class="ice-eco__parallel ice-eco__matrix">
+          <a href="https://github.com/open-hydra/MOSE" target="_blank" rel="noopener" class="ice-eco__node">
+            <span class="ice-eco__node-name">MOSE</span>
+            <span class="ice-eco__node-role">Solver/Library</span>
+            <span class="ice-eco__node-desc">Compressible ideal-gas CFD solver</span>
+          </a>
+          <a href="https://github.com/open-hydra/GROOT" target="_blank" rel="noopener" class="ice-eco__node">
+            <span class="ice-eco__node-name">GROOT</span>
+            <span class="ice-eco__node-role">Solver/Library</span>
+            <span class="ice-eco__node-desc">Radiative transfer equation solver</span>
+          </a>
+          <a href="https://github.com/open-hydra/FUSS" target="_blank" rel="noopener" class="ice-eco__node">
+            <span class="ice-eco__node-name">FUSS</span>
+            <span class="ice-eco__node-role">Solver/Library</span>
+            <span class="ice-eco__node-desc">Solid heat conduction solver</span>
+          </a>
+
+          <a href="https://github.com/open-hydra/ARES" target="_blank" rel="noopener" class="ice-eco__node">
+            <span class="ice-eco__node-name">ARES</span>
+            <span class="ice-eco__node-role">Solver/Library</span>
+            <span class="ice-eco__node-desc">Real fluid CFD solver</span>
+          </a>
+          <a href="https://github.com/open-hydra/IGLOO" target="_blank" rel="noopener" class="ice-eco__node">
+            <span class="ice-eco__node-name">IGLOO</span>
+            <span class="ice-eco__node-role">Solver/Library</span>
+            <span class="ice-eco__node-desc">Lagrangian particle tracking solver</span>
+          </a>
+          <div class="ice-eco__node ice-eco__node--active">
+            <span class="ice-eco__node-name">ICE</span>
+            <span class="ice-eco__node-role">Solver/Library</span>
+            <span class="ice-eco__node-desc">Eulerian equations for dispersed particles</span>
+          </div>
+        </div>
+
+        <div class="ice-eco__branch" aria-hidden="true">
+          <span class="ice-eco__arrow ice-eco__arrow--diag">&#8600;</span>
+          <span class="ice-eco__arrow ice-eco__arrow--diag">&#8599;</span>
+        </div>
+
+        <a href="https://github.com/open-hydra" target="_blank" rel="noopener" class="ice-eco__node">
+          <span class="ice-eco__node-name">Hydra</span>
+          <span class="ice-eco__node-role">Solver</span>
+          <span class="ice-eco__node-desc">Integrated solver for fully-coupled simulations</span>
         </a>
       </div>
     </div>
