@@ -26,7 +26,7 @@ contains
                                   mpi_allreduce_sum_r8_array, mpi_bcast_integer
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
-    integer(kind=I4) :: b, p, srk, ios
+    integer(kind=I4) :: b, p, srk
     real(R8)         :: average(5), dtlocal
     logical          :: endsim, iosim
 
@@ -73,7 +73,15 @@ contains
         endif
         call assign_riemann(trim(obj_time_scheme%riemann))
       endif
-      read(obj_time_scheme%solver_type, *, iostat=ios) nrk
+      select case (trim(obj_time_scheme%solver_type))
+      case ('euler'); nrk = 1
+      case ('RK2');   nrk = 2
+      case ('RK3');   nrk = 3
+      case default
+        write(*,'(A)') '  [ERROR] unknown time-scheme "'//trim(obj_time_scheme%solver_type)// &
+                       '"; choose euler, RK2 or RK3.'
+        error stop 'ICE: unknown time-scheme'
+      end select
 
       do srk = 1, nrk
 

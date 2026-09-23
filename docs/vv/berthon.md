@@ -22,10 +22,10 @@ the last being the quantity the Gaussian closure carries across the contact.
 
 Common to the three cases: a $[-0.5, 0.5]$ m tube of 500 cells, one cell across $y$ and
 $z$, no gas (0-way coupled), extrapolation at both ends and nothing at the other four
-faces. MUSCL with the MC limiter, RK2 in time, Rusanov, $\mathrm{CFL} = 0.5$.
+faces. MUSCL with the `mc` limiter, `RK2` in time, Rusanov, $\mathrm{CFL} = 0.5$.
 
 A fourth case, `SCS-hlle`, is the SCS problem through the HLLE flux instead — the only
-case that exercises the `riemann` key. HLLE is the less dissipative of the two and its
+case that exercises the `riemann-solver` key. HLLE is the less dissipative of the two and its
 density error is lower, $3.2\times10^{-3}$ against Rusanov's $4.3\times10^{-3}$.
 
 | | $\rho_p$ | $u_p$ | $v_p$ | $P_{11}$ | $P_{12}$ | $P_{22}$ | $t_{\text{end}}$ |

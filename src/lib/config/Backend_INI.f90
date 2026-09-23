@@ -1,7 +1,7 @@
 module ICE_Backend_INI
   implicit none
   private
-  public :: Open_Ini, Load_Ini, Scan_Ini
+  public :: Open_Ini, Load_Ini, Scan_Ini, Check_Unknown_Keys
 
 contains
 
@@ -75,6 +75,62 @@ contains
   end subroutine Load_Ini
 
 
+  !> Report keys ICE does not know, inside sections it does.
+  !
+  !  An unrecognised key is not an error to FiNeR and not an error to the registry
+  !  either: it simply never reaches a parameter, which takes its default instead.
+  !  A renamed or mistyped key then changes nothing and says nothing, which is the
+  !  worst way for an input file to be wrong. Sections ICE does not own are left
+  !  alone, so a case may keep the mesh-generator sections that produced it.
+  subroutine Check_Unknown_Keys(fini)
+    use ICE_Input_Registry, only: reg
+    use Finer,              only: file_ini
+    implicit none
+    type(file_ini), intent(in) :: fini
+    character(len=:), allocatable :: sections(:)
+    character(len=:), allocatable :: pairs(:)
+    integer :: s, k, nbad
+    logical :: known
+
+    call fini%get_sections_list(sections)
+    if (.not. allocated(sections)) return
+
+    nbad = 0
+    do s = 1, size(sections)
+      !> Only sections the registry knows: anything else belongs to another tool.
+      known = .false.
+      do k = 1, reg%size
+        if (trim(reg%params(k)%section) == trim(sections(s))) then
+          known = .true. ; exit
+        end if
+      end do
+      if (.not. known) cycle
+
+      do while (fini%loop(section_name=trim(sections(s)), option_pairs=pairs))
+        known = .false.
+        do k = 1, reg%size
+          if (trim(reg%params(k)%section) == trim(sections(s)) .and. &
+              trim(reg%params(k)%name)    == trim(pairs(1))) then
+            known = .true. ; exit
+          end if
+        end do
+        if (.not. known) then
+          if (nbad == 0) write(*,'(A)') '  [ERROR] input.ini has keys ICE does not know:'
+          nbad = nbad + 1
+          write(*,'(A)') '    ['//trim(sections(s))//'] '//trim(pairs(1))
+        end if
+      end do
+    end do
+
+    if (nbad > 0) then
+      write(*,'(A)') '  They would be ignored and their parameters left at the default.'
+      write(*,'(A)') '  See docs/user/registry.md for the current names.'
+      error stop 'ICE: unknown input keys'
+    end if
+
+  end subroutine Check_Unknown_Keys
+
+
   subroutine Scan_Ini(fini, nprobes, probe_sections, nmgl, ngroups)
     use Finer,            only: file_ini
     use ICE_Parameters_m, only: codename, clen
@@ -98,7 +154,7 @@ contains
     do
       val = ''
       call fini%get(section_name=trim(codename)//'-Family'//trim(str(.true., ngroups+1)), &
-                    option_name='model', val=val, error=error)
+                    option_name='closure', val=val, error=error)
       if (error /= 0 .or. trim(val) == '') exit
       ngroups = ngroups + 1
     end do

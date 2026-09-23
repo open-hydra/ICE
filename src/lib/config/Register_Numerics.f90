@@ -15,62 +15,68 @@ contains
     integer, intent(in) :: nmgl
     character(len=256)  :: section
 
+    section = trim(codename)//'-Numerics'
+
+    !! ------------------------------------------------------
+    !! Time scheme ------------------------------------------
+    !! ------------------------------------------------------
     obj_time_scheme%warning_message = 'none'
     obj_time_scheme%error_message   = 'none'
     obj_time_scheme%description     = 'none'
-    obj_time_scheme%drag            = 'None'
-    obj_time_scheme%heat            = 'None'
-    obj_time_scheme%riemann         = ''
-    obj_time_scheme%solver_type     = '2'
+    obj_time_scheme%solver_type     = 'RK2'
 
-    obj_space_scheme%warning_message     = 'none'
-    obj_space_scheme%error_message       = 'none'
-    obj_space_scheme%description         = 'none'
-    obj_space_scheme%space_reconstruction = ''
-    obj_space_scheme%flux_limiter        = 'none'
+    call reg%add(trim(section), 'time-scheme', obj_time_scheme%solver_type,            &
+                 'RK2',    'Time integration solver', 'euler, RK2, RK3', .true.)
 
-    section = trim(codename)//'-Parameters'
+    ! Stability coefficients and related options
+    call reg%add(trim(section), 'cfl', obj_time_scheme%cfl,                            &
+                 '0.5',    'CFL number', '> 0', .true.)
+    call reg%add(trim(section), 'dt-max', obj_time_scheme%dt_max,                      &
+                 '1e-4',   'Ceiling on the time step [s], applied after the CFL factor', &
+                 '> 0', .false.)
+    call reg%add(trim(section), 'cfl-rise-threshold', obj_time_scheme%cfl_rampa_iter,  &
+                 '0',      'CFL rise threshold', '>= 0', .false.)
 
-    call reg%add(trim(section), 'cfl',                obj_time_scheme%cfl,            &
-                 '0.5',    'CFL stability parameter',            '> 0', .false.)
-    call reg%add(trim(section), 'dt-max',             obj_time_scheme%dt_max,         &
-                 '1e-4',   'Ceiling on the time step [s], applied after the CFL factor: '// &
-                           'it bounds the explicit source terms, whose relaxation times '// &
-                           'the CFL condition does not see', '> 0', .false.)
-    call reg%add(trim(section), 'cfl-rise-threshold', obj_time_scheme%cfl_rampa_iter, &
-                 '0',      'Ramp the CFL number linearly over this many iterations '// &
-                           '(0 = no ramp)',                     '>= 0',.false.)
-    call reg%add(trim(section), 'time-accurate',      obj_time_scheme%time_accurate,  &
-                 '.true.', 'Advance every cell with the global minimum step (true) or '// &
-                           'with its own local step, for steady state (false)', '', .false.)
-    call reg%add(trim(section), 'irs',      obj_irs%enabled,                         &
-                 '.false.', 'Enable implicit residual smoothing', '',   .false.)
-    call reg%add(trim(section), 'irs-beta', obj_irs%beta,                             &
-                 '0.5',     'IRS Jacobi smoothing coefficient',   '',   .false.)
+    ! Time-accurate switch
+    call reg%add(trim(section), 'time-accurate', obj_time_scheme%time_accurate,        &
+                 '.true.', 'Time accurate switch', 'logical', .true.)
 
-    section = trim(codename)//'-Scheme'
+    ! Implicit residual smoothing --------------------------
+    obj_irs%description     = 'none'
+    obj_irs%warning_message = 'none'
+    obj_irs%error_message   = 'none'
+    call reg%add(trim(section), 'irs', obj_irs%enabled,                                &
+                 '.false.', 'Implicit Residual Smoothing', 'logical', .false.)
+    call reg%add(trim(section), 'irs-beta', obj_irs%beta,                              &
+                 '0.5',     'IRS beta parameter', '>= 0', .false.)
+
+    !! ------------------------------------------------------
+    !! Space scheme -----------------------------------------
+    !! ------------------------------------------------------
+    obj_space_scheme%warning_message      = 'none'
+    obj_space_scheme%error_message        = 'none'
+    obj_space_scheme%description          = 'none'
+    obj_space_scheme%space_reconstruction = 'first-order'
+    obj_space_scheme%flux_limiter         = 'none'
+    obj_space_scheme%shock_detector       = 'none'
 
     call reg%add(trim(section), 'space-reconstruction', obj_space_scheme%space_reconstruction, &
-                 '',      'Space reconstruction: MUSCL, MUSCL-SD (MUSCL with the '// &
-                          'density shock detector), or empty for first order', '', .false.)
-    call reg%add(trim(section), 'flux-limiter',          obj_space_scheme%flux_limiter,        &
-                 'none',  'Flux limiter, used only with MUSCL: IORD, MINMOD, VANALBADA, '// &
-                          'VANLEER, OSPRE, UMIST, OSHER, SWEBY, MC, KOREN, SUPERBEE',  '', .false.)
-    call reg%add(trim(section), 'time',                  obj_time_scheme%solver_type,          &
-                 '2',     'Time integrator: 1 = forward Euler, 2 = SSP-RK2, 3 = SSP-RK3', &
-                 '', .false.)
-    call reg%add(trim(section), 'drag',                  obj_time_scheme%drag,                 &
-                 'None',  'Drag model, global for all families: Newton, Stokes, '// &
-                          'Schlichting, Schiller-Naumann, Wen-Yu, Putnam, Clift-Gauvin, '// &
-                          'Morsi-Alexander, Carlson-Hoglund, Henderson, Crowe, Hermsen', '', .false.)
-    call reg%add(trim(section), 'heat',                  obj_time_scheme%heat,                 &
-                 'None',  'Heat transfer model, global for all families: Stokes, JAXA1, '// &
-                          'JAXA2, JAXA3, Chang, Ranz-Marshall, Kavanau-Drake',          '', .false.)
+                 'first-order', 'Space reconstruction method', 'MUSCL, first-order', .true.)
+    call reg%add(trim(section), 'flux-limiter', obj_space_scheme%flux_limiter,          &
+                 'none',   'Flux limiter for space reconstruction',                     &
+                 'minmod, vanalbada, vanleer, ospre, umist, osher, sweby, mc, koren, '// &
+                 'superbee, none', .false.)
 
-    call reg%add(trim(section), 'riemann',                obj_time_scheme%riemann,              &
-                 '',      'Riemann solver: Saurel (MK only), Rusanov or HLLE. Empty picks '// &
-                          'Saurel for MK families and Rusanov for IG and AG',   '', .false.)
+    ! Shock detector ---------------------------------------
+    call reg%add(trim(section), 'shock-detector', obj_space_scheme%shock_detector,      &
+                 'none',   'Shock detector method', 'Jameson, none', .false.)
 
+    ! Riemann solver ---------------------------------------
+    call reg%add(trim(section), 'riemann-solver', obj_time_scheme%riemann,              &
+                 '',       'Riemann solver (empty: Saurel for MK, Rusanov for IG and AG)', &
+                 'Saurel, Rusanov, HLLE', .false.)
+
+    ! Multigrid levels -------------------------------------
     call Register_Multigrid_Levels(nmgl)
 
   end subroutine Register_Numerics
@@ -90,15 +96,14 @@ contains
     section = trim(codename)//'-Multigrid'
 
     call reg%add(trim(section), 'levels', obj_multigrid%MGL, &
-                 '1', 'Number of grid levels. Each coarse level halves every block '// &
-                      'dimension, so every block must be divisible by 2^(levels-1)', &
-                 '> 0', .false.)
+                 '1', 'Number of grid levels; every block dimension must be '// &
+                      'divisible by 2^(levels-1)', '> 0', .false.)
     obj_multigrid%MGL = nmgl
 
     do m = 1, nmgl
       call reg%add(trim(section), 'level'//trim(str(.true.,m))//'-iter', &
                    obj_multigrid%iter_threshold(m),                      &
-                   '1000000000', 'Max iterations at multigrid level '//trim(str(.true.,m)), &
+                   '1000000000', 'Iterations for multigrid level '//trim(str(.true.,m)), &
                    '> 0', .false.)
     end do
 
@@ -118,9 +123,8 @@ contains
 
     do p = 1, ngroups
       section = trim(codename)//'-Family'//trim(str(.true.,p))
-      call reg%add(trim(section), 'model', obj_time_scheme%model(p), &
-                   '', 'Closure for this family: MK (monokinetic, 6 variables), '// &
-                   'IG (isotropic Gaussian, 7) or AG (anisotropic Gaussian, 12)', '', .true.)
+      call reg%add(trim(section), 'closure', obj_time_scheme%model(p), &
+                   '', 'Kinetic closure for this family', 'MK, IG, AG', .true.)
     end do
 
   end subroutine Register_Families

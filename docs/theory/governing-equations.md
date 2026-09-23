@@ -19,7 +19,7 @@ $$
 R_p = \left(\frac{3}{4\pi}\,\frac{\rho_p}{n\,\rho_{al}(T_p)}\right)^{1/3},
 $$
 
-where $\rho_{al}$ is the density of the material itself, either the constant `rho` from
+where $\rho_{al}$ is the density of the material itself, either the constant `density` from
 `[ICE-Physics]` or a tabulated $\rho_{al}(T_p)$.
 
 Both $\rho_p$ and $n$ are transported, and neither has a flux the other does not, so
@@ -113,7 +113,7 @@ $\mathbf{S}$ collects, for every closure,
 - **convective heat exchange** with the gas, through a Nusselt number;
 - **radiative exchange** with the gas, as a grey body;
 - **mass transfer** between the phases. The term is present in every closure, and the
-  latent heat `lv` is applied to it, but the source routine sets the rate to zero, so
+  latent heat `latent-heat` is applied to it, but the source routine sets the rate to zero, so
   vaporisation and combustion are inactive.
 
 The expressions are in [Particle Physics](physics.md). All of them vanish when no gas

@@ -29,7 +29,7 @@ def exact(ph, t, up0=0.0):
     return ph.ug + (up0 - ph.ug) * math.exp(-t / ph.tau_stokes)
 
 
-def relax_case(ph, t_end, cfl=0.8, rk=2, nx=8, Lx=1.0, Ly=None, dt_max=None, name='relax'):
+def relax_case(ph, t_end, cfl=0.8, rk='RK2', nx=8, Lx=1.0, Ly=None, dt_max=None, name='relax'):
     """Uniform cloud, one-way coupled to a uniform gas, run to t_end."""
     case = Case(WORK / name, nx=nx, Lx=Lx, Ly=Ly)
     case.particles(rho=ph.rho_p, u=0.0, v=ph.vg, w=0.0, T=ph.Tg, n=ph.n)
@@ -97,20 +97,20 @@ def main():
     ph2 = Physics(vg=50.0)
     t_end, floor = 0.02, 1e-12
     cfls = (0.8, 0.4, 0.2)
-    for rk, expected in ((2, 2.0), (3, 3.0)):
+    for rk, expected in (('RK2', 2.0), ('RK3', 3.0)):
         errors = []
         for cfl in cfls:
             sol = relax_case(ph2, t_end, cfl=cfl, rk=rk, nx=10, Lx=0.01, Ly=5e-3,
-                             name='rk%d-cfl%s' % (rk, cfl))
+                             name='%s-cfl%s' % (rk.lower(), cfl))
             errors.append(abs(sol['var'][U][0] - exact(ph2, sol['time'])) / ph2.ug)
         orders = observed_order(errors, [1.0 / c for c in cfls])
         usable = [o for o, e in zip(orders, errors[1:]) if e > floor]
-        print('   RK%d   errors %s' % (rk, ' '.join('%.2e' % e for e in errors)))
+        print('   %-5s errors %s' % (rk, ' '.join('%.2e' % e for e in errors)))
         print('         orders %s' % ' '.join('%.2f' % o for o in orders))
-        if not rep.check(bool(usable), 'RK%d stays above the round-off floor' % rk):
+        if not rep.check(bool(usable), '%s stays above the round-off floor' % rk):
             continue
         rep.check(min(usable) >= expected - 0.35,
-                  'RK%d converges at order %.2f (expected %.0f)' % (rk, min(usable), expected))
+                  '%s converges at order %.2f (expected %.0f)' % (rk, min(usable), expected))
 
     rep.close(WORK)
 

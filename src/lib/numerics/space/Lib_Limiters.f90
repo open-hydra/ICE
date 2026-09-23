@@ -21,6 +21,8 @@ module ICE_Lib_Limiters
   
 contains
 
+  !> `IORD` returns a zero slope and is how the solver expresses a first-order
+  !  reconstruction. It is not offered as an input: `space-reconstruction` selects it.
   subroutine assign_limiter(limiter_word)
     implicit none
     character(len=*), intent(in) :: limiter_word
@@ -28,44 +30,45 @@ contains
     select case (limiter_word)
     case ('IORD')
       limiter => limiter_IORD
-    case ('MINMOD')
+    case ('minmod')
       limiter => limiter_MINMOD
-    case ('VANALBADA')
+    case ('vanalbada')
       limiter => limiter_VANALBADA
-    case ('VANLEER')
+    case ('vanleer')
       limiter => limiter_VANLEER
-    case ('OSPRE')
+    case ('ospre')
       limiter => limiter_OSPRE
-    case ('UMIST')
+    case ('umist')
       limiter => limiter_UMIST
-    case ('OSHER')
+    case ('osher')
       limiter => limiter_OSHER
-    case ('SWEBY')
+    case ('sweby')
       limiter => limiter_SWEBY
-    case ('MC')
+    case ('mc')
       limiter => limiter_MC
-    case ('KOREN')
+    case ('koren')
       limiter => limiter_KOREN
-    case ('SUPERBEE')
+    case ('superbee')
       limiter => limiter_SUPERBEE
     case default
      write(*,*)
      write(*,*)
      write(*,*) "Wrong limiter input ---> "//limiter_word
      write(*,*) "Choose one of the following :"
-     write(*,*) "- IORD "
-     write(*,*) "- MINMOD "
-     write(*,*) "- VANALBADA "
-     write(*,*) "- VANLEER "
-     write(*,*) "- OSPRE "
-     write(*,*) "- UMIST "
-     write(*,*) "- OSHER "
-     write(*,*) "- SWEBY "
-     write(*,*) "- MC "
-     write(*,*) "- KOREN "
-     write(*,*) "- SUPERBEE "
+     write(*,*) "- minmod "
+     write(*,*) "- vanalbada "
+     write(*,*) "- vanleer "
+     write(*,*) "- ospre "
+     write(*,*) "- umist "
+     write(*,*) "- osher "
+     write(*,*) "- sweby "
+     write(*,*) "- mc "
+     write(*,*) "- koren "
+     write(*,*) "- superbee "
      write(*,*)
-     stop
+     write(*,*) "For first order, set space-reconstruction = first-order."
+     write(*,*)
+     error stop 'ICE: unknown flux limiter'
     end select
 
   end subroutine assign_limiter

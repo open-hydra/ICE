@@ -5,8 +5,8 @@ ICE reads its initial state from a single file, `INPUT/part-ic.tec`, which carri
 the primitive variables of every family as cell-centred data. There is no separate mesh
 input, and no per-block or per-family file.
 
-The reader is chosen by `bck-format`, so the file is Tecplot ASCII by default and
-`INPUT/part-ic.vtm` (plus `INPUT/vtk/*.vts`) when `bck-format` names VTK.
+The reader is chosen by `ic-format`, so the file is Tecplot ASCII by default and
+`INPUT/part-ic.vtm` (plus `INPUT/vtk/*.vts`) when `ic-format` names VTK.
 
 ## Variable order
 
@@ -81,7 +81,7 @@ are identical — it is the same writer.
 condensed material. It is a Tecplot point file with four columns — temperature, $c_p$,
 density, enthalpy — indexed by **integer** temperature: row $i$ must be $T = i$, and
 the table covers $1 \le T \le N$, saturating outside. If it is absent, the constants
-`rho` and `cs` from `[ICE-Physics]` are used; ICE prints which of the two applies.
+`density` and `specific-heat` from `[ICE-Physics]` are used; ICE prints which of the two applies.
 
 ```
 TITLE = "Mass Thermodynamic Properties"

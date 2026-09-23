@@ -10,7 +10,7 @@ So the first-order levers are the ones that change how many flux sweeps happen:
 
 | Lever | Effect |
 |---|---|
-| `time` | Three stages cost about 1.5× two |
+| `time-scheme` | Three stages cost about 1.5× two |
 | Number of families | Linear: each is a full independent sweep |
 | `space-reconstruction` | First order skips the limiter but not the sweep; the saving is modest |
 | `dt-max` | Often the real cost driver. If the ceiling binds rather than the CFL condition, every step is smaller than it needs to be — see [Time Integration](../theory/time-integration.md#the-time-step) |

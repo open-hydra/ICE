@@ -2,8 +2,8 @@
 
 ## Runge-Kutta schemes
 
-`time` in `[ICE-Scheme]` selects the number of stages: `1`, `2` or `3`. Each stage is
-written in the low-storage form
+`time-scheme` in `[ICE-Numerics]` selects the integrator. Each stage is written in the
+low-storage form
 
 $$
 \mathbf{U}^{(k)} = \mathbf{U}^n + c_k\Big(\mathbf{U}^{(k-1)} - \mathbf{U}^n
@@ -13,11 +13,11 @@ $$
 
 with
 
-| `time` | Scheme | $c_1, c_2, c_3$ |
+| `time-scheme` | Scheme | $c_1, c_2, c_3$ |
 |---|---|---|
-| 1 | forward Euler | 1 |
-| 2 | SSP-RK2 (Heun) | 1, 1/2 |
-| 3 | SSP-RK3 (Shu-Osher) | 1, 1/4, 2/3 |
+| `euler` | forward Euler | 1 |
+| `RK2` | SSP-RK2 (Heun) | 1, 1/2 |
+| `RK3` | SSP-RK3 (Shu-Osher) | 1, 1/4, 2/3 |
 
 Expanding the last row recovers the familiar Shu-Osher form
 $\mathbf{U}^{(2)} = \tfrac34\mathbf{U}^n + \tfrac14(\mathbf{U}^{(1)} + \Delta t \mathcal R^{(1)})$,

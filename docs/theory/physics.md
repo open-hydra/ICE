@@ -40,7 +40,7 @@ in the energy equation. For $C_d = 24/Re$ the relaxation time reduces exactly to
 Stokes value $\rho_{al}d_p^2/(18\mu_g)$, which is the identity
 [case A](../vv/verification.md) verifies.
 
-`drag` in `[ICE-Scheme]` selects the correlation, globally for all families:
+`drag` in `[ICE-Numerics]` selects the correlation, globally for all families:
 
 | Name | $C_d$ | Notes |
 |---|---|---|
@@ -75,7 +75,7 @@ $$
 $$
 
 per unit volume, which is the familiar $h A \Delta T$ with $h = Nu\,k_g/d_p$ summed
-over the $n$ particles in the cell. `heat` in `[ICE-Scheme]` selects $Nu$:
+over the $n$ particles in the cell. `heat-transfer` in `[ICE-Physics]` selects $Nu$:
 
 | Name | $Nu$ | Limit as $Re \to 0$ |
 |---|---|---|
@@ -102,7 +102,7 @@ $$
 \dot q_{\text{rad}} = \varepsilon\,\sigma\,2\pi R_p^2\,n\,\big(T_g^4 - T_p^4\big),
 $$
 
-with $\sigma = 5.67\times10^{-8}$ W m⁻² K⁻⁴ and $\varepsilon$ from `emiss` in
+with $\sigma = 5.67\times10^{-8}$ W m⁻² K⁻⁴ and $\varepsilon$ from `emissivity` in
 `[ICE-Physics]`. The area factor is $2\pi R_p^2$, half the sphere surface. Radiation
 is exchanged with the local gas temperature, not with a wall or a far-field
 temperature, and `emiss = 0` switches it off.
@@ -111,14 +111,14 @@ temperature, and `emiss = 0` switches it off.
 
 $\rho_{al}$ and $c_s$ are needed at every conversion between conservative and primitive
 variables, so their temperature dependence matters even without any source term. They
-come either from `[ICE-Physics]` `rho` and `cs` as constants, or from a table in
+come either from `[ICE-Physics]` `density` and `specific-heat` as constants, or from a table in
 `INPUT/part-properties.dat` indexed by integer temperature. ICE prints which of the two
 it is using at startup — an absent table is a legitimate configuration, but a
 *silently* absent one is indistinguishable from a mis-named file.
 
 ## Mass transfer
 
-The closures carry a mass-transfer rate, and the latent heat `lv` multiplies it in the
+The closures carry a mass-transfer rate, and `latent-heat` multiplies it in the
 energy equation, but the source routine sets the rate to zero: vaporisation and
-combustion are not evaluated. `lv` and `q` in `[ICE-Physics]` consequently have no
+combustion are not evaluated. `latent-heat` and `combustion-energy` consequently have no
 effect on a run.

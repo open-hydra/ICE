@@ -14,8 +14,8 @@ module ICE_IO_Solution
   character(llen)  :: condinit, gasinit
 
   !> Concrete procedure pointing to one of the subroutine realizations
-  procedure(r_solution_if), pointer, public :: read_bck
-  procedure(w_solution_if), pointer, public :: write_bck, write_solution
+  procedure(r_solution_if), pointer, public :: read_ic
+  procedure(w_solution_if), pointer, public :: write_solution
 
   !> Abstract interface relative to the finite-rate reactions source procedure
   abstract interface
@@ -73,14 +73,12 @@ contains
     character(5) :: n
     character(llen) :: try
 
-    select case (trim(obj_io%sol_fmt(1)))
-    case ('vtk')
-      read_bck  => read_vtk_tec
-      write_bck => write_vtk_tec
-    case default
-      read_bck  => read_vtk_tec
-      write_bck => write_vtk_tec
-    end select
+    read_ic => read_vtk_tec
+
+    !> A new run reads INPUT/part-ic.* in ic-format; a restart reads back a solution
+    !  ICE wrote itself, so it is sol-format that names it.
+    if (.not. obj_sim_param%newrun) obj_io%ini_fmt = obj_io%sol_fmt
+    obj_io%extension = io_extension(obj_io%ini_fmt)
 
     if (obj_sim_param%owcoupled) gasinit = trim(obj_io%gaspath)//'gas.tec'
 
@@ -239,24 +237,24 @@ contains
     type(orion_data), intent(inout), optional :: IOfield_gas
 
     if (present(IOfield_gas)) then
-      select case (trim(obj_io%sol_fmt(1)))
+      select case (trim(obj_io%ini_fmt(1)))
       case ('tecplot')
         IOfield_gas%tec%format = 'ascii'
         error = tec_read_structured_multiblock(orion=IOfield_gas, filename=trim(gasinit))
       case ('vtk')
-        IOfield_gas%tec%format = obj_io%sol_fmt(2)
+        IOfield_gas%tec%format = obj_io%ini_fmt(2)
         error = vtk_read_structured_multiblock(orion=IOfield_gas, &
                   vtmpath=gasinit(1:len(trim(gasinit))-4), &
                   vtspath='INPUT/vtk/field', time=IOtime)
       end select
     end if
 
-    select case (trim(obj_io%sol_fmt(1)))
+    select case (trim(obj_io%ini_fmt(1)))
     case ('tecplot')
       IOfield_cond%tec%format = 'ascii'
       error = tec_read_structured_multiblock(orion=IOfield_cond, filename=trim(condinit))
     case ('vtk')
-      IOfield_cond%tec%format = obj_io%sol_fmt(2)
+      IOfield_cond%tec%format = obj_io%ini_fmt(2)
       error = vtk_read_structured_multiblock(orion=IOfield_cond, &
                 vtmpath=condinit(1:len(trim(condinit))-4), &
                 vtspath='INPUT/vtk/field', time=IOtime)
@@ -264,12 +262,11 @@ contains
       !> Neither reader matched, so the field would be left EMPTY and every later size()
       !  silently returns zero -- allocate_data then makes a zero-length bc array and the run
       !  segfaults far from here, with nothing in the log pointing back. Note the registered
-      !  DEFAULT for bck-format is 'native binary', which lands here: a case that omits the key
       !  hits this path. Fail where the cause is still visible.
       write(*,'(A)') '  [ERROR] ICE cannot read the initial condition.'
-      write(*,'(A)') '  ICE-IO / sol-format is "'//trim(obj_io%sol_fmt(1))//'", which is neither'
-      write(*,'(A)') '  "tecplot" nor "vtk", so no reader was selected. Set sol-format explicitly,'
-      write(*,'(A)') '  e.g.  sol-format = tecplot ascii'
+      write(*,'(A)') '  The format is "'//trim(obj_io%ini_fmt(1))//'", which is neither "tecplot"'
+      write(*,'(A)') '  nor "vtk", so no reader was selected. Set it explicitly, e.g.'
+      write(*,'(A)') '    ic-format = tecplot ascii'
       error stop
     end select
 

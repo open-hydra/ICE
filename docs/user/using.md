@@ -108,39 +108,39 @@ the least work so far. At startup it prints how even the split is:
 The result does not depend on the number of ranks: the solution is bit-for-bit the same
 as a serial run. See [Multi-block and MPI](../vv/multiblock-mpi.md).
 
-## Output
+## Input and output formats
 
-`sol-format` and `bck-format` take two words, a writer and a mode:
+Two keys, both a writer and a mode: `ic-format` names the format of
+`INPUT/part-ic.*`, and `sol-format` the format of `OUTPUT/part-field.*`. They are
+independent — a case may be given in Tecplot ASCII and written in VTK.
 
-| Value | Writes |
+| Value | File |
 |---|---|
-| `tecplot ascii` | `OUTPUT/part-field.tec` |
-| `tecplot binary` | the same, as a `.plt`; needs a TecIO-enabled build |
-| `vtk ascii` / `vtk binary` | `OUTPUT/part-field.vtm` plus one `.vts` per block under `OUTPUT/vtk/` |
+| `tecplot ascii` | `part-field.tec` |
+| `tecplot binary` | `part-field.szplt`; needs a TecIO-enabled build |
+| `vtk ascii` / `vtk binary` / `vtk raw` | `part-field.vtm` plus one `.vts` per block under `vtk/` |
 
 The file holds the node coordinates followed by the primitive variables of every
 family, cell-centred, named `rho_p1`, `u_p1`, … `n_p1`, `rho_p2`, … The solution time
 is recorded in the zone header; in steady-state mode it carries the iteration count
 instead, negated.
 
-Writing is controlled by four independent frequencies: `sol-diter` and `sol-dtime` for
-the solution, `bck-diter` and `bck-dtime` for the restart file. With `sol-overwrite =
-false` each write appends a counter to the name, giving a numbered series instead of
-one file that is repeatedly replaced.
+`sol-diter` and `sol-dtime` control how often the solution is written. With
+`sol-overwrite = false` each write appends a counter to the name, giving a numbered
+series instead of one file that is repeatedly replaced.
 
 `shell-diter` sets how often the progress line is printed and `res-diter` how often a
 row is appended to `OUTPUT/part-residual-history.dat`.
 
 ## Restarting
 
-Set `newrun = false`. ICE then reads the initial state from
-`OUTPUT/part-field<ext>` — the backup file, whose extension follows `bck-format` —
-instead of `INPUT/part-ic.tec`, picks up the simulation time from the zone header, and
-continues appending to the residual history.
+Set `newrun = false`. ICE then reads its initial state from `OUTPUT/part-field.*`
+instead of `INPUT/part-ic.*`, picks up the simulation time from the zone header, and
+continues appending to the residual history. The restart file is a solution ICE wrote
+itself, so it is `sol-format` — not `ic-format` — that names it.
 
-Because the backup and the solution are written under the same name, an ordinary
-tecplot-ascii run produces one file that is both. If you keep a numbered series with
-`bck-overwrite = false`, restarting from a particular one means renaming it back.
+With `sol-overwrite = false` the solutions form a numbered series; restarting from a
+particular one means renaming it back to `part-field`.
 
 ## Probes
 

@@ -78,7 +78,7 @@ with no exchange at all.
 |---|---|
 | Drag | Momentum and the matching kinetic-energy exchange with the gas, through a relaxation time built from $C_d$. Twelve correlations. |
 | Convective heat | Energy exchange through a Nusselt number. Seven correlations. |
-| Radiation | Grey-body exchange with the local gas temperature, at emissivity `emiss`. |
+| Radiation | Grey-body exchange with the local gas temperature, at emissivity `emissivity`. |
 
 The correlations and their expressions are listed under
 [Particle Physics](theory/physics.md). Mass transfer between the phases
@@ -96,8 +96,8 @@ present, and ICE says at startup which of the two it is using.
 | | Details |
 |-|---------|
 | Framework | Cell-centred finite volume on multi-block structured hexahedral grids, two ghost layers per face |
-| Reconstruction | First order, or MUSCL with a choice of eleven limiters; MUSCL-SD blends back towards first order near a shock through a Jameson-type density sensor |
-| Riemann solver | Chosen from the closure: an upwind flux for MK (pressureless), Rusanov for IG and AG |
+| Reconstruction | First order, or MUSCL with a choice of ten limiters; an optional Jameson density sensor blends back towards first order near a shock |
+| Riemann solver | Saurel (an upwind flux for the pressureless MK system), Rusanov or HLLE; chosen from the closure unless `riemann-solver` says otherwise |
 | Dimensionality | 1-D, 2-D or 3-D, inferred from the block dimensions |
 | Time integration | Explicit forward Euler, SSP-RK2 or SSP-RK3 |
 | Time step | Global minimum (time accurate) or per cell (steady state), from a CFL condition capped by `dt-max` |

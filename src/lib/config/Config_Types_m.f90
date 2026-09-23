@@ -47,6 +47,8 @@ module ICE_Config_Types_m
     integer             :: sol_diter, shell_diter, ini_diter, res_diter
     real(R8)            :: sol_dtime
     logical             :: sol_overwrite
+    character(len=llen) :: ini_format        ! Initial condition format, e.g. 'tecplot ascii'
+    character(len=clen) :: ini_fmt(2)        ! Parsed: (reader, mode), set by Assign_Setup
     character(len=llen) :: sol_format        ! e.g. 'tecplot ascii'
     character(len=clen) :: sol_fmt(2)        ! Parsed: (writer, mode), set by Assign_Setup
     character(4)        :: extension
@@ -128,8 +130,9 @@ module ICE_Config_Types_m
     character(len=llen) :: error_message
     character(len=llen) :: description
     ! USER-DEFINED INPUTS
-    character(len=llen) :: space_reconstruction  ! 'MUSCL', 'MUSCL-SD', or empty (1st order)
-    character(len=llen) :: flux_limiter          ! 'VANLEER', 'MINMOD', etc.
+    character(len=llen) :: space_reconstruction  ! 'MUSCL' or 'first-order'
+    character(len=llen) :: flux_limiter          ! 'vanleer', 'minmod', ...
+    character(len=llen) :: shock_detector        ! 'Jameson' or 'none'
     ! Useful variables
     logical :: SD = .false.
   end type space_scheme_t

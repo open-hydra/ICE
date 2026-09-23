@@ -9,7 +9,7 @@ contains
     use ICE_Read_IO,         only: Register_IO_Fields, Register_Probes
     use ICE_Read_Numerics,   only: Register_Numerics, Register_Families
     use ICE_Read_Physics,    only: Register_Physics
-    use ICE_Backend_INI,     only: Open_Ini, Load_Ini, Scan_Ini
+    use ICE_Backend_INI,     only: Open_Ini, Load_Ini, Scan_Ini, Check_Unknown_Keys
     use ICE_Input_Registry
     use ICE_Global_m,        only: ngroups
     use ICE_Parameters_m,    only: clen
@@ -25,11 +25,12 @@ contains
 
     call Register_Sim_Param()
     call Register_IO_Fields()
-    call Register_Numerics(nmgl)
-    call Register_Families(ngroups)
-    call Register_Physics()
     if (nprobes > 0) call Register_Probes(nprobes, probe_sections)
+    call Register_Numerics(nmgl)
+    call Register_Physics()
+    call Register_Families(ngroups)
 
+    call Check_Unknown_Keys(fini)
     call Load_Ini(fini)
 
     out = Validate_Registry()

@@ -39,7 +39,8 @@ exists.
  - IG particle families  -->    1
 
  ICE numerical scheme:
- - Space   --> MUSCL-SD with VANLEER flux limiter
+ - Space   --> MUSCL with vanleer flux limiter
+ - Shock   --> Jameson detector
  - Time    --> Explicit Runge-Kutta 2
 
  Boundary Conditions:

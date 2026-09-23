@@ -10,7 +10,6 @@ contains
     use ICE_Config_Types_m
     use ICE_Global_m,      only: ngroups, nrk, npop, ncond
     use strings,           only: parse
-    use ICE_IO_Solution,   only: io_extension
     use ICE_Lib_Limiters,  only: assign_limiter
     use ICE_Lib_Drag,      only: assign_drag
     use ICE_Lib_Heat,      only: assign_heat
@@ -23,25 +22,26 @@ contains
     obj_sim_param%owcoupled = gas_present
 
     ! --- Parse format strings into arrays ---
+    call parse(obj_io%ini_format, ' ', obj_io%ini_fmt)
     call parse(obj_io%sol_format, ' ', obj_io%sol_fmt)
 
-    ! --- Set file extension from solution format ---
-    obj_io%extension = io_extension(obj_io%sol_fmt)
+    ! --- Shock detector ---
+    obj_space_scheme%SD = (trim(obj_space_scheme%shock_detector) == 'Jameson')
 
-    ! --- Derive SD flag and handle missing limiter ---
-    obj_space_scheme%SD = (index(obj_space_scheme%space_reconstruction, 'SD') > 0)
-    if (index(obj_space_scheme%space_reconstruction, 'MUSCL') > 0) then
+    ! --- Space reconstruction and its limiter ---
+    if (trim(obj_space_scheme%space_reconstruction) == 'MUSCL') then
       if (trim(obj_space_scheme%flux_limiter) == 'none') then
-        obj_space_scheme%flux_limiter = 'VANLEER'
+        obj_space_scheme%flux_limiter = 'vanleer'
         write(*, '(A)') ' [WARNING] MUSCL without flux-limiter. Van Leer by default.'
       end if
+      call assign_limiter(obj_space_scheme%flux_limiter)
     else
-      !> Without MUSCL the reconstruction is first order, which IORD expresses as a
-      !  zero slope. state_reconstruction calls the limiter whatever the
-      !  reconstruction, so one must always be assigned.
-      obj_space_scheme%flux_limiter = 'IORD'
+      !> A first-order reconstruction is a zero slope, which the IORD limiter
+      !  expresses. state_reconstruction calls the limiter whatever the
+      !  reconstruction, so one must always be assigned. IORD is not an input: it is
+      !  what `space-reconstruction = first-order` means.
+      call assign_limiter('IORD')
     end if
-    call assign_limiter(obj_space_scheme%flux_limiter)
 
     ! --- Assign global drag/heat (only used when coupled) ---
     if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) then

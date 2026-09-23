@@ -12,7 +12,7 @@ uniform: a pressureless cloud moving at one speed has nothing to change it.
 Refining the mesh at a fixed time step (ICE's 1e-4 s ceiling holds dt constant across
 these grids, so the time error is the same for all of them) gives the order of the
 space discretisation. Two reconstructions are compared: MUSCL with the Van Leer
-limiter, and IORD, which is first order.
+limiter, and the first-order reconstruction.
 """
 import math
 import sys
@@ -55,12 +55,12 @@ def main():
     grids = (25, 50, 100, 200)
     results = {}
 
-    for reconstruction, limiter, tag in (('MUSCL', 'VANLEER', 'MUSCL/VanLeer'),
-                                         ('MUSCL', 'IORD', 'IORD (1st order)')):
+    for reconstruction, limiter, tag in (('MUSCL', 'vanleer', 'MUSCL/VanLeer'),
+                                         ('first-order', 'none', 'first order')):
         errors = []
         for nx in grids:
             sol = advect_case(ph, nx, reconstruction, limiter,
-                              '%s-n%d' % (limiter.lower(), nx))
+                              '%s-n%d' % (tag.split('/')[0].replace(' ', '-'), nx))
             dx = L / nx
             rho = sol['var'][RHO]
             ref = [cell_average(i * dx, (i + 1) * dx, sol['time']) for i in range(nx)]
@@ -77,11 +77,11 @@ def main():
         results[tag] = errors
         print('   %-18s errors %s' % (tag, ' '.join('%.3e' % e for e in errors)))
         print('   %-18s orders %s' % ('', ' '.join('%.2f' % o for o in orders)))
-        expected = 1.5 if limiter == 'VANLEER' else 0.85
+        expected = 1.5 if limiter == 'vanleer' else 0.85
         rep.check(min(orders) >= expected,
                   '%s converges at order %.2f (expected >= %.2f)' % (tag, min(orders), expected))
 
-    rep.check(all(a < b for a, b in zip(results['MUSCL/VanLeer'], results['IORD (1st order)'])),
+    rep.check(all(a < b for a, b in zip(results['MUSCL/VanLeer'], results['first order'])),
               'MUSCL is more accurate than first order on every grid')
     rep.close(WORK)
 

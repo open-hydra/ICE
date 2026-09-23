@@ -57,7 +57,7 @@ src/lib/
 │   │   ├── Lib_Ghost.f90           # Ghost fill for every boundary type
 │   │   ├── Lib_Reconstruction.f90  # Limited piecewise-linear states
 │   │   ├── Lib_Limiters.f90        # Eleven limiters
-│   │   └── Lib_Shock_Detector.f90  # The MUSCL-SD sensor
+│   │   └── Lib_Shock_Detector.f90  # The Jameson shock detector
 │   ├── fluxes/
 │   │   ├── Mod_Fluxes.f90          # Interior faces, two-pass to avoid races
 │   │   ├── bc/Mod_BC_Fluxes.f90    # Boundary faces, from the ghost values

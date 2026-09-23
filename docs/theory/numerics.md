@@ -36,9 +36,8 @@ $$
 $$
 
 where $s$ are the one-sided slopes on the non-uniform mesh, $\phi$ the limiter and
-$\beta$ the shock-detector weight described below. Setting `space-reconstruction` to
-`MUSCL` enables it; leaving it empty gives first order, which is the same code path
-with a zero slope.
+$\beta$ the shock-detector weight described below. `space-reconstruction = MUSCL`
+enables it; `first-order` is the same code path with a zero slope.
 
 Two safeguards act inside the reconstruction:
 
@@ -51,17 +50,17 @@ Two safeguards act inside the reconstruction:
 
 ### Limiters
 
-`flux-limiter` selects $\phi$ from eleven:
+`flux-limiter` selects $\phi$ from ten:
 
-`IORD`, `MINMOD`, `VANALBADA`, `VANLEER`, `OSPRE`, `UMIST`, `OSHER`, `SWEBY`, `MC`,
-`KOREN`, `SUPERBEE`.
+`minmod`, `vanalbada`, `vanleer`, `ospre`, `umist`, `osher`, `sweby`, `mc`, `koren`,
+`superbee`.
 
-`IORD` returns a zero slope and so reproduces first order. Selecting `MUSCL` without a
-limiter is not an error: ICE warns and uses `VANLEER`.
+Selecting `MUSCL` without a limiter is not an error: ICE warns and uses `vanleer`. The
+limiter is ignored under `first-order`, which uses a zero-slope limiter of its own.
 
-### Shock detector (`MUSCL-SD`)
+### Shock detector (`shock-detector = Jameson`)
 
-`space-reconstruction = MUSCL-SD` adds a Jameson-type sensor on density,
+`shock-detector = Jameson` adds a sensor on density,
 
 $$
 s = \max_{d}\ \left|\frac{\rho_{d+1} - 2\rho + \rho_{d-1}}{\rho_{d+1} + 2\rho + \rho_{d-1}}\right|,
@@ -78,11 +77,12 @@ $$
 $$
 
 So $\beta = 1$ in smooth flow, where the scheme is the plain MUSCL one, and falls to 0
-at a shock, where it drops to first order. Without `SD`, $\beta = 1$ everywhere.
+at a shock, where it drops to first order. With `shock-detector = none`, the
+default, $\beta = 1$ everywhere.
 
 ## Riemann solvers
 
-The face flux is a two-state flux. Leaving `riemann` empty — the default — picks one
+The face flux is a two-state flux. Leaving `riemann-solver` empty — the default — picks one
 per family from its closure:
 
 | Name | Form | Applies to |
@@ -91,7 +91,7 @@ per family from its closure:
 | `Rusanov` | $\tfrac12(\mathbf F_L + \mathbf F_R) - \tfrac12 A\,(\mathbf U_R - \mathbf U_L)$, with $A$ the largest of $|u_n \pm a|$ on the two sides | Any closure; the default for IG and AG |
 | `HLLE` | Two-wave solver with Roe-averaged speed estimates, falling back to the upwind flux when both waves run the same way | Any closure with a sound speed |
 
-Setting `riemann` explicitly overrides the per-closure choice for every family. HLLE is
+Setting `riemann-solver` explicitly overrides the per-closure choice for every family. HLLE is
 less dissipative than Rusanov on a contact and is worth trying when a contact is being
 smeared, at the cost of a Roe average per face.
 

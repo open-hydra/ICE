@@ -97,8 +97,8 @@ common to them and what the refinement measures is the space discretisation.
 
 | Cells | 25 | 50 | 100 | 200 | Observed order |
 |---|---|---|---|---|---|
-| MUSCL / Van Leer | $1.63\times10^{-2}$ | $4.25\times10^{-3}$ | $1.07\times10^{-3}$ | $2.61\times10^{-4}$ | 1.94 – 2.04 |
-| IORD (first order) | $1.12\times10^{-1}$ | $5.94\times10^{-2}$ | $3.06\times10^{-2}$ | $1.55\times10^{-2}$ | 0.92 – 0.98 |
+| MUSCL / `vanleer` | $1.63\times10^{-2}$ | $4.25\times10^{-3}$ | $1.07\times10^{-3}$ | $2.61\times10^{-4}$ | 1.94 – 2.04 |
+| `first-order` | $1.12\times10^{-1}$ | $5.94\times10^{-2}$ | $3.06\times10^{-2}$ | $1.55\times10^{-2}$ | 0.92 – 0.98 |
 
 Errors are the $L_1$ density error relative to the wave amplitude, at $t = 0.25$ s.
 MUSCL reaches its design order on this smooth profile, and the first-order

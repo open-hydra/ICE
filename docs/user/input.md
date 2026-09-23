@@ -8,44 +8,56 @@ noted below.
 A comment line starts with `;`, `#` or `!`; `;` also works inline, trimming the rest of
 the value.
 
-Unknown sections and unknown keys are ignored in silence, so a misspelled key takes its
-default rather than raising an error. The startup report is what to check against: it
-prints the closures, the scheme and the boundary types that were actually selected.
+A key ICE does not recognise, inside a section it does, stops the run and is named —
+a misspelled or renamed key would otherwise take its default and change nothing
+silently. Sections ICE does not own are left alone, so a case may carry the
+mesh-generator sections that produced it.
+
+The section names and most of the keys mirror
+[MOSE](https://github.com/open-hydra/MOSE), so a case set up for one solver reads the
+same way as a case set up for the other.
 
 ## A minimal file
 
 ```ini
 [ICE-Parameters]
-cfl            = 0.5
-time-accurate  = true
 time-threshold = 0.125
 
-[ICE-Scheme]
+[ICE-Numerics]
+time-scheme          = RK2
+cfl                  = 0.5
+time-accurate        = true
 space-reconstruction = MUSCL
-flux-limiter         = VANLEER
-time                 = 2
+flux-limiter         = vanleer
 
-[ICE-Family1]
-model = AG
+[ICE-Physics]
+drag          = Stokes
+heat-transfer = Ranz-Marshall
 
 [ICE-IO]
-bck-format  = tecplot ascii
+ic-format   = tecplot ascii
 sol-format  = tecplot ascii
 shell-diter = 100
+
+[ICE-Family1]
+closure = AG
 ```
+
+`time-scheme`, `cfl`, `time-accurate`, `space-reconstruction` and `closure` are
+required; everything else has a default.
 
 ## Sections
 
 | Section | Contents |
 |---|---|
-| `[ICE-Parameters]` | CFL number, time-step ceiling, time-accurate flag, residual smoothing, and the three stopping thresholds |
-| `[ICE-Scheme]` | Reconstruction, limiter, Runge-Kutta stages, drag and heat correlations |
-| `[ICE-FamilyN]` | One per particle family: its closure. **The only required key in the file** |
-| `[ICE-IO]` | Output formats and frequencies, restart flag, gas-file directory |
+| `[ICE-Parameters]` | Restart flag and the three stopping thresholds |
+| `[ICE-Numerics]` | Time scheme, CFL number and step ceiling, reconstruction, limiter, shock detector, Riemann solver, residual smoothing |
+| `[ICE-Physics]` | Drag and heat-transfer models, and the condensed-material properties |
+| `[ICE-IO]` | Input and output formats and frequencies, gas-file directory |
 | `[ICE-Multigrid]` | Number of grid levels and the iteration budget of each |
 | `[ICE-Probes]` | Names the section that configures each probe |
 | `[<probe name>]` | One per probe: location, variables, sampling frequency |
-| `[ICE-Physics]` | Condensed-material density, specific heat, emissivity |
+| `[ICE-FamilyN]` | One per particle family: its closure |
 
 Every parameter, with its default and its validation rule, is listed in the
 [parameter reference](registry.md), which is generated from the registry in the source.
@@ -57,21 +69,21 @@ upwards, stopping at the first gap. Two families:
 
 ```ini
 [ICE-Family1]
-model = MK
+closure = MK
 
 [ICE-Family2]
-model = AG
+closure = AG
 ```
 
 Each carries its own state; they share the mesh, the gas field and the numerical
-scheme, and do not interact. `model` is required — a file with no family section stops
-the run.
+scheme, and do not interact. `closure` is required — a file with no family section
+stops the run.
 
 ### Choosing the drag and heat correlations
 
-`drag` and `heat` are set once in `[ICE-Scheme]` and apply to every family. They are
-only consulted when the run is coupled (that is, when `INPUT/gas.tec` exists); an
-uncoupled run ignores them, and leaving them at `None` in a coupled run stops the
+`drag` and `heat-transfer` are set once in `[ICE-Physics]` and apply to every family.
+They are only consulted when the run is coupled (that is, when `INPUT/gas.tec` exists);
+an uncoupled run ignores them, and leaving them at `none` in a coupled run stops the
 solver with the list of valid names.
 
 ### Grid levels

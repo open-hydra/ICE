@@ -56,13 +56,13 @@ contains
     ! Read mesh and initial conditions into fine level
     if (coupled) then
       if (present(IOgas)) then
-        call read_bck(sim%ODP(1))
+        call read_ic(sim%ODP(1))
         call copyORION(IOgas, sim%OCP)
       else
-        call read_bck(sim%ODP(1), sim%OCP)
+        call read_ic(sim%ODP(1), sim%OCP)
       end if
     else
-      call read_bck(sim%ODP(1))
+      call read_ic(sim%ODP(1))
     end if
 
     ! Allocate data structure for fine level
@@ -195,17 +195,17 @@ contains
 
       write(*,*)
       write(*,'(A)') " ICE numerical scheme:"
-      if (index(obj_space_scheme%space_reconstruction, 'MUSCL') == 0) then
-        write(*,'(A)') " - Space   --> I order"
-      else if (obj_space_scheme%SD) then
-        write(*,'(A)') " - Space   --> MUSCL-SD with "//trim(obj_space_scheme%flux_limiter)//" flux limiter"
+      if (trim(obj_space_scheme%space_reconstruction) /= 'MUSCL') then
+        write(*,'(A)') " - Space   --> first order"
       else
         write(*,'(A)') " - Space   --> MUSCL with "//trim(obj_space_scheme%flux_limiter)//" flux limiter"
       end if
-      if (trim(obj_time_scheme%solver_type) == '1') then
+      if (obj_space_scheme%SD) &
+        write(*,'(A)') " - Shock   --> "//trim(obj_space_scheme%shock_detector)//" detector"
+      if (trim(obj_time_scheme%solver_type) == 'euler') then
         write(*,'(A)') " - Time    --> Explicit Euler"
       else
-        write(*,'(A)') " - Time    --> Explicit Runge-Kutta "//trim(obj_time_scheme%solver_type)
+        write(*,'(A)') " - Time    --> Explicit "//trim(obj_time_scheme%solver_type)
       end if
       if (coupled) then
         write(*,'(A)') " - Drag    --> "//trim(obj_time_scheme%drag)

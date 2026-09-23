@@ -80,7 +80,7 @@ differ in whether those are absolute or ratios to the local gas.
 `alpha` and `beta` are the injection angles about the $x$ axis; written as the literal
 `normal`, they are replaced by the angles of the face normal, which is the usual choice.
 The number density follows from the prescribed radius,
-$n = \rho_p / \big(\rho_{al}\tfrac43\pi r_p^3\big)$ — using the constant `rho` from
+$n = \rho_p / \big(\rho_{al}\tfrac43\pi r_p^3\big)$ — using the constant `density` from
 `[ICE-Physics]`, not the property table. For the Gaussian closures the dispersion in
 the ghost cell is set to $10^{-6}$, so an inlet injects an effectively monokinetic
 stream.

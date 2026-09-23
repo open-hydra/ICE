@@ -11,8 +11,8 @@ program ICE_docgen
     call Register_IO_Fields()
     call Register_Probes(1, 'probe-section')
     call Register_Numerics(2)
-    call Register_Families(1)
     call Register_Physics()
+    call Register_Families(1)
 
     call reg%generate_markdown('docs/user/registry.md')
 

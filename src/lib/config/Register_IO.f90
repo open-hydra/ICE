@@ -19,27 +19,29 @@ contains
     obj_io%error_message   = 'none'
     obj_io%description     = 'none'
 
+    call reg%add(section, 'ic-format',     obj_io%ini_format,    &
+                 'tecplot ascii', 'Initial condition (INPUT/part-ic.*) format', &
+                 'tecplot ascii, tecplot binary, vtk ascii, vtk binary, vtk raw', .false.)
     call reg%add(section, 'sol-format',    obj_io%sol_format,    &
-                 'tecplot ascii', 'Solution output format: "tecplot ascii", or "vtk" with '// &
-                                  '"ascii", "binary" or "raw"', '', .false.)
+                 'tecplot ascii', 'Solution (OUTPUT/part-field.*) format, also read back '// &
+                                  'on restart', &
+                 'tecplot ascii, tecplot binary, vtk ascii, vtk binary, vtk raw', .false.)
 
     call reg%add(section, 'sol-diter',     obj_io%sol_diter,     &
-                 '1000000000', 'Solution output iteration frequency', '> 0', .false.)
+                 '1000000000', 'Solution output iter frequency', '> 0', .false.)
     call reg%add(section, 'sol-dtime',     obj_io%sol_dtime,     &
                  '1e30',       'Solution output time frequency',      '> 0', .false.)
     call reg%add(section, 'sol-overwrite', obj_io%sol_overwrite, &
                  'true',       'Overwrite solution files',            'true, false', .false.)
 
     call reg%add(section, 'shell-diter',   obj_io%shell_diter,   &
-                 '10',         'Shell update iteration frequency',    '> 0', .false.)
+                 '10',         'Shell update iter frequency',    '> 0', .false.)
     call reg%add(section, 'res-diter',     obj_io%res_diter,     &
-                 '10',         'Residual history write frequency',    '> 0', .false.)
+                 '10',         'Residual history iter frequency',    '> 0', .false.)
     call reg%add(section, 'ini-diter',     obj_io%ini_diter,     &
-                 '1000000000', 'Re-read input.ini every n iterations, so a running '// &
-                               'simulation can be re-steered', '> 0', .false.)
+                 '1000000000', 'input.ini update iter frequency', '> 0', .false.)
     call reg%add(section, 'gas-path',      obj_io%gaspath,       &
-                 'INPUT/',     'Directory holding the one-way-coupling gas file gas.tec', &
-                 '',    .false.)
+                 'INPUT/',     'Directory holding the coupling gas file gas.tec', '', .false.)
 
   end subroutine Register_IO_Fields
 
