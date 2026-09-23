@@ -114,7 +114,7 @@ def write_ini(path, sections):
 class Case(object):
     """A generated ICE case in a scratch directory."""
 
-    def __init__(self, work, nx=8, ny=1, Lx=1.0, Ly=None, Lz=None):
+    def __init__(self, work, nx=8, ny=1, Lx=1.0, Ly=None, Lz=None, x0=0.0, y0=0.0):
         self.dir = Path(work)
         if self.dir.exists():
             shutil.rmtree(str(self.dir))
@@ -124,14 +124,27 @@ class Case(object):
         self.Lx = Lx
         self.Ly = Ly if Ly is not None else Lx / nx
         self.Lz = Lz if Lz is not None else self.Ly
-        self.xn = linspace(0.0, Lx, nx + 1)
-        self.yn = linspace(0.0, self.Ly, ny + 1)
+        self.xn = linspace(x0, x0 + Lx, nx + 1)
+        self.yn = linspace(y0, y0 + self.Ly, ny + 1)
         self.zn = [0.0, self.Lz]
         self.xc = [0.5 * (self.xn[i] + self.xn[i + 1]) for i in range(nx)]
+        self.yc = [0.5 * (self.yn[j] + self.yn[j + 1]) for j in range(ny)]
+
+    @property
+    def centres(self):
+        """(x, y) of every cell centre, in the order the solution arrays use."""
+        return [(x, y) for y in self.yc for x in self.xc]
 
     def cells(self, value):
-        """Cell-centred field from a constant or a function of the cell-centre x."""
+        """Cell-centred field from a constant, a function of x, or a function of (x, y).
+
+        The 2-D form is what the vortex case needs; a 1-D function is still broadcast
+        across j, so every case written before y existed keeps working unchanged.
+        """
         if callable(value):
+            code = getattr(value, '__code__', None)
+            if code is not None and code.co_argcount == 2:
+                return [value(x, y) for y in self.yc for x in self.xc]
             return [value(x) for _ in range(self.ny) for x in self.xc]
         return [value] * (self.nx * self.ny)
 

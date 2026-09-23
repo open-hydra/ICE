@@ -102,6 +102,19 @@ ice_add_verification(HeatMatrix        E-heat-matrix       "verification;sources
 # (docs/vv/verification.md).
 ice_add_verification(Evaporation       F-evaporation       "verification;sources;phase-change")
 
+# A cloud released into a frozen gas: transport and drag together, against the exact
+# rigid translation the two produce (docs/vv/verification.md).
+ice_add_verification(CloudTranslation  G-cloud-translation "verification;sources;transport")
+
+# The same cloud in a gas that strains it, against the exact affine solution, and its
+# slip against the small-Stokes asymptote u_p ~ u_g - tau Du_g/Dt.
+ice_add_verification(LinearStrain      H-linear-strain     "verification;sources;transport")
+
+# Two-dimensional: a cloud orbiting in a prescribed solid-body vortex, against the
+# exact conformal map, swept over four decades of Stokes number. The only verification
+# case that exercises the j-direction fluxes.
+ice_add_verification(VortexCloud       I-vortex-cloud      "verification;sources;transport;2D")
+
 # Berthon's Riemann problems for the anisotropic Gaussian closure, against the
 # analytical wave patterns (docs/vv/berthon.md). These are full case directories
 # rather than self-building drivers, so they go through ice_add_case; they are the

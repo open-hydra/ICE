@@ -3,6 +3,9 @@ CMakePresets.json
 build
 build-*
 
+# Docs output
+site
+
 # Fortran module files
 mod
 *.mod
@@ -17,9 +20,7 @@ error*
 OUTPUT
 test/fast/*/work
 test/verification/*/work
-
-# Compiled IC/BC builders shipped as source with the Berthon cases
-test/Berthon/*/IBCB
+test/verification/figure-work
 
 # Python bytecode from the test drivers
 __pycache__/
