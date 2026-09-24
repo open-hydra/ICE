@@ -19,6 +19,10 @@ contains
 
     section = trim(codename)//'-Parameters'
 
+    call reg%add(section, 'phase',          obj_sim_param%phase,           &
+                 '',          'ATLAS name of the condensed phase to read: INPUT/<phase>-{bc.txt,ic,'// &
+                 'properties.dat}. Absent = keep the prefix in force (standalone default part-)', &
+                 '',           .false.)
     call reg%add(section, 'newrun',         obj_sim_param%newrun,          &
                  'true',      'Start a new simulation (false = restart)',   &
                  'true, false', .false.)

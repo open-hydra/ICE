@@ -8,7 +8,7 @@ contains
 
   subroutine Assign_Setup()
     use ICE_Config_Types_m
-    use ICE_Global_m,      only: ngroups, nrk, npop, ncond
+    use ICE_Global_m,      only: ngroups, nrk, npop, ncond, ICE_phase_prefix
     use strings,           only: parse
     use ICE_Lib_Limiters,  only: assign_limiter
     use ICE_Lib_Drag,      only: assign_drag
@@ -19,6 +19,19 @@ contains
     implicit none
     integer :: p
     logical :: gas_present
+
+    ! --- Condensed phase to read: [ICE-Parameters] phase = <ATLAS phase name> ---
+    ! Sets the prefix of every INPUT/OUTPUT file this solver touches (IO_BC, Load_Table,
+    ! IO_Solution, Wrap_Postprocess). Absent keeps the prefix already in force: a parent app
+    ! (hydra-MI2) may have set it, and standalone runs keep the 'part-' default.
+    if (len_trim(adjustl(obj_sim_param%phase)) > 0) then
+      obj_sim_param%phase = adjustl(obj_sim_param%phase)
+      if (index(trim(obj_sim_param%phase), '-') > 0) then
+        write(*,'(A)') ' [ERROR] [ICE-Parameters] phase must not contain "-" (it is the ATLAS phase name)'
+        error stop 1
+      endif
+      ICE_phase_prefix = trim(obj_sim_param%phase)//'-'
+    endif
 
     ! --- Detect one-way coupling from gas file presence ---
     inquire(file='INPUT/gas.tec', exist=gas_present)

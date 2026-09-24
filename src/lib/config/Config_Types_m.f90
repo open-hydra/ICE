@@ -14,6 +14,7 @@ module ICE_Config_Types_m
     character(len=llen) :: error_message
     character(len=llen) :: description
     ! USER-DEFINED INPUTS
+    character(len=llen) :: phase ! ATLAS name of the condensed phase this solver reads ('' = keep prefix)
     logical   :: newrun          ! Restart flag (true = new run)
     real(R8)  :: res_threshold   ! Min residual to stop execution
     real(R8)  :: time_threshold  ! Max physical time to stop execution

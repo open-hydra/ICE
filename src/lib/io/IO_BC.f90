@@ -25,6 +25,8 @@ contains
   !      102      chimera
   !      200      axisymmetry            no ghost, no boundary flux
   !      300      symmetry
+  !      301      dispersed-phase wall   treated as 300: the symmetry ghost already absorbs
+  !                                      particles moving toward the face and mirrors receding ones
   !      400      extrapolation
   !      401-403  inlet (see Read payload below)
   subroutine Setup_BC(grid)
@@ -106,7 +108,7 @@ contains
         case (200)               ! axisymmetry, no payload
           continue
 
-        case (300)               ! symmetry, no payload
+        case (300, 301)          ! symmetry / dispersed-phase wall, no payload
           nsym = nsym + 1
 
         case (400)               ! extrapolation, no payload
@@ -180,9 +182,49 @@ contains
       error stop
     endif
 
-    if (mpi_is_root) call Print_BC_Summary()
+    if (mpi_is_root) then
+      call Print_BC_Summary()
+      call Check_Phase_Groups(ngroups)
+    endif
 
   end subroutine Setup_BC
+
+
+  !> ATLAS writes INPUT/<prefix>phase.txt for the condensed phase ICE solves: one line per material,
+  !  "<name> <groups> [key=value ...]" (the tokens are IGLOO's; the list-directed read below stops after
+  !  the first two items). ICE takes its group count from [ICE-Family*] and never opened this file, so a
+  !  mismatch went unnoticed -- and the bc.txt carries one block of records per (material, population),
+  !  of which Setup_BC consumes the first and fans it out over ngroups. Warn when the two disagree.
+  !  The file is optional (standalone ICE cases may not carry it): absent = silent.
+  subroutine Check_Phase_Groups(ngroups)
+    implicit none
+    integer(I4), intent(in) :: ngroups
+    integer(I4)         :: u, ios, ng, nsum, nmat
+    character(len=512)  :: line
+    character(len=64)   :: name
+
+    open(newunit=u, file='INPUT/'//trim(ICE_phase_prefix)//'phase.txt', status='old', action='read', iostat=ios)
+    if (ios /= 0) return
+    read(u, '(A)', iostat=ios) line          ! header: "<type word> [modeling=...]"
+    nsum = 0; nmat = 0
+    do
+      read(u, '(A)', iostat=ios) line
+      if (ios /= 0) exit
+      if (len_trim(line) == 0) cycle
+      read(line, *, iostat=ios) name, ng
+      if (ios /= 0) cycle
+      nmat = nmat + 1; nsum = nsum + ng
+    enddo
+    close(u)
+    if (nmat == 0) return
+    if (nsum /= ngroups) then
+      write(*,'(A,I0,A,I0,A)') '  [WARNING] INPUT/'//trim(ICE_phase_prefix)//'phase.txt declares ', nsum, &
+        ' population(s) over ', nmat, ' material(s), but [ICE-Family*] defines '
+      write(*,'(A,I0,A)') '            ', ngroups, ' group(s). The bc.txt carries one record block per (material,'// &
+        ' population); ICE reads the FIRST block and fans it out over its groups, so the two counts should agree.'
+    endif
+
+  end subroutine Check_Phase_Groups
 
 
   !> Direction token. ATLAS writes the literal `normal` when the injection direction is the

@@ -60,7 +60,8 @@ contains
           grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bs)%cond_phase(pm)%prim(1:ncond(pm),is,js,ks)
 
 
-        case (300) !> symmetry - Use extrapolation when the particles are moving towards the wall. Otherwise, symmetry
+        case (300, 301) !> symmetry, and the dispersed-phase wall ATLAS tags 301 - Use extrapolation when the
+                        !>  particles are moving towards the wall. Otherwise, symmetry
                    !>             Symmetry is enforced on face 3 which is usually the symmetry axis
           if (fm <= 2) then
             ic = im - mod(fm,2)
