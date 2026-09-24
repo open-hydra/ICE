@@ -8,6 +8,7 @@ Required column says otherwise, and omitting one selects the default.
 
 | Parameter | Default | Allowed | Required | Description |
 |-----------|---------|---------|----------|-------------|
+| `phase` |  |  |  no | ATLAS name of the condensed phase to read: INPUT/<phase>-{bc.txt,ic,properties.dat}. Absent = keep the prefix in force (standalone default part-) |
 | `newrun` | true | true, false |  no | Start a new simulation (false = restart) |
 | `res-threshold` | 1e-10 | >= 0 |  no | Residual convergence threshold (0 = never stop on it) |
 | `time-threshold` | 1e30 | > 0 |  no | Maximum simulation time |
@@ -71,8 +72,8 @@ Required column says otherwise, and omitting one selects the default.
 
 | Parameter | Default | Allowed | Required | Description |
 |-----------|---------|---------|----------|-------------|
-| `drag` | none | Newton, Stokes, Schlichting, Schiller-Naumann, Wen-Yu, Putnam, Clift-Gauvin, Morsi-Alexander, Carlson-Hoglund, Henderson, Crowe, Hermsen, none |  no | Drag model, global for all families |
-| `heat-transfer` | none | Stokes, JAXA1, JAXA2, JAXA3, Chang, Ranz-Marshall, Kavanau-Drake, none |  no | Convective heat transfer model, global for all families |
+| `drag` | none | Newton, Stokes, Schlichting, Schiller-Naumann, Wen-Yu, Putnam, Clift-Gauvin, Morsi-Alexander, Carlson-Hoglund, Henderson, Crowe, Hermsen, none |  no | Drag model, global for all families; required for a coupled run (none = not set) |
+| `heat-transfer` | none | Stokes, JAXA1, JAXA2, JAXA3, Chang, Ranz-Marshall, Kavanau-Drake, none |  no | Convective heat transfer model, global for all families; required for a coupled run (none = not set) |
 | `evaporation` | none | d2-law, CEM, CEM-B, ASM, TC, none |  no | Evaporation model, global for all families |
 | `evaporation-interface` | VLE | VLE, LK |  no | Vapour-liquid interface: VLE equilibrium, or LK Langmuir-Knudsen non-equilibrium; ignored when evaporation is none |
 | `evaporation-blowing` | none | LK, none |  no | Stefan-blowing reduction of the convective heat; LK applies Miller-Harstad-Bellan f2. Ignored under ASM and TC, which carry their own gas-side heat |

@@ -36,7 +36,12 @@ contains
       heatSelect = 7
     case default
       write(*,*)
-      write(*,*) "Wrong heat input ---> "//heat_word
+      if (heat_word == 'none') then
+        write(*,'(A)') ' [ERROR] [ICE::assign_heat] heat-transfer is not set: '// &
+                       '[ICE-Physics] heat-transfer is required for a coupled run'
+      else
+        write(*,*) "Wrong heat input ---> "//heat_word
+      endif
       write(*,*) "Choose one of the following :"
       write(*,*) "- Stokes "
       write(*,*) "- JAXA1 "
@@ -46,6 +51,7 @@ contains
       write(*,*) "- Ranz-Marshall "
       write(*,*) "- Kavanau-Drake "
       write(*,*)
+      if (heat_word == 'none') error stop 1
       error stop 'ICE: unknown heat model'
     end select
 

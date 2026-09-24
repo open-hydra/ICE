@@ -37,9 +37,10 @@ contains
     integer(kind=I4), intent(in)  :: p
     integer(kind=I4), intent(in)  :: srk
     integer(kind=I4) :: b, i, j, k
-    logical :: prim_status
+    logical :: prim_status, bad_state
 
-    !$OMP PARALLEL DEFAULT(NONE) PRIVATE(b,i,j,k,prim_status) SHARED(grid,p,srk)
+    bad_state = .false.
+    !$OMP PARALLEL DEFAULT(NONE) PRIVATE(b,i,j,k,prim_status) SHARED(grid,p,srk,bad_state)
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
 
@@ -54,18 +55,26 @@ contains
                            srk, prim_status)
 
         if (.not. prim_status) then
-          write(*,'(A,I4,A,3I4,A,I4)') " Error in block ", b, " cell ", i, j, k, " phase ", p
-          write(*,*) grid%blk(b)%cond_phase(p)%prim_old(:,i,j,k)
-          write(*,*) grid%blk(b)%cond_phase(p)%prim(:,i,j,k)
-          write(*,*) grid%blk(b)%cond_phase(p)%residual(:,i,j,k)
-          write(*,*) grid%blk(b)%cond_phase(p)%source(:,i,j,k)
-          stop
+          !$OMP CRITICAL (ICE_state_report)
+          if (.not. bad_state) then                     !> dump the first failing cell only
+            write(*,'(A,I4,A,3I4,A,I4)') " Error in block ", b, " cell ", i, j, k, " phase ", p
+            write(*,*) grid%blk(b)%cond_phase(p)%prim_old(:,i,j,k)
+            write(*,*) grid%blk(b)%cond_phase(p)%prim(:,i,j,k)
+            write(*,*) grid%blk(b)%cond_phase(p)%residual(:,i,j,k)
+            write(*,*) grid%blk(b)%cond_phase(p)%source(:,i,j,k)
+          endif
+          bad_state = .true.
+          !$OMP END CRITICAL (ICE_state_report)
         endif
 
       end do ; end do ; end do
       !$OMP END DO
     enddo
     !$OMP END PARALLEL
+    if (bad_state) then
+      write(*,'(A)') ' [ERROR] [ICE::state_update] invalid state after the update (negative density or NaN)'
+      error stop 1
+    endif
 
   end subroutine state_update
 

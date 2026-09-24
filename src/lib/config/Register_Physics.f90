@@ -25,12 +25,13 @@ contains
 
     ! Interphase exchange models -------------------------
     call reg%add(section, 'drag', obj_time_scheme%drag, 'none', &
-                 'Drag model, global for all families', &
+                 'Drag model, global for all families; required for a coupled run (none = not set)', &
                  'Newton, Stokes, Schlichting, Schiller-Naumann, Wen-Yu, Putnam, '// &
                  'Clift-Gauvin, Morsi-Alexander, Carlson-Hoglund, Henderson, Crowe, '// &
                  'Hermsen, none', .false.)
     call reg%add(section, 'heat-transfer', obj_time_scheme%heat, 'none', &
-                 'Convective heat transfer model, global for all families', &
+                 'Convective heat transfer model, global for all families; required for a coupled run '// &
+                 '(none = not set)', &
                  'Stokes, JAXA1, JAXA2, JAXA3, Chang, Ranz-Marshall, Kavanau-Drake, none', &
                  .false.)
     call reg%add(section, 'evaporation', obj_time_scheme%evaporation, 'none', &

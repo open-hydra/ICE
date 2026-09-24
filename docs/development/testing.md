@@ -34,6 +34,7 @@ test/
 └── fast/                      # Short invariant checks, no stored references
     ├── common.sh              # Shared helpers (short run, compare byte for byte)
     ├── openmp-equiv/          # 1 vs 4 threads bit-identical
+    ├── refusals/              # Broken inputs and a diverging run must exit non-zero
     └── mpi-equiv/             # 1 vs 2 ranks bit-identical (connection and chimera)
 ```
 

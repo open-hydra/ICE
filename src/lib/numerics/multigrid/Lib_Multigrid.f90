@@ -27,8 +27,8 @@ contains
         end if
       end do
       if (check < 3) then
-        write(*,'(A)') ' [ERROR] Check_Multigrid: block '//trim(str(.true.,b))//' not divisible by 2^(MGL-1)'
-        stop
+        write(*,'(A)') ' [ERROR] [ICE::Check_Multigrid] block '//trim(str(.true.,b))//' not divisible by 2^(MGL-1)'
+        error stop 1
       end if
     end do
 

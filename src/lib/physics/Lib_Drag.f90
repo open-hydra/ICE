@@ -48,7 +48,11 @@ contains
       dragSelect = 12
     case default
       write(*,*)
-      write(*,*) "Wrong drag input ---> "//drag_word
+      if (drag_word == 'none') then
+        write(*,'(A)') ' [ERROR] [ICE::assign_drag] drag is not set: [ICE-Physics] drag is required for a coupled run'
+      else
+        write(*,*) "Wrong drag input ---> "//drag_word
+      endif
       if (drag_word == 'Chang') &
         write(*,*) "Chang is the Clift-Gauvin correlation written differently: use Clift-Gauvin."
       write(*,*) "Choose one of the following :"
@@ -65,6 +69,7 @@ contains
       write(*,*) "- Crowe "
       write(*,*) "- Hermsen "
       write(*,*)
+      if (drag_word == 'none') error stop 1
       error stop 'ICE: unknown drag model'
     end select
 

@@ -134,6 +134,10 @@ ice_add_case(NAME BerthonHLLE DIR Berthon/SCS-hlle LABELS "verification;AG;trans
 # Thread count must not change the answer: 1 vs 4 threads, bit-identical
 ice_add_fast_script(OpenMPEquiv fast/openmp-equiv "fast;implementation")
 
+# A run that cannot proceed must stop with a non-zero status (broken inputs, a
+# required model left unset in a coupled run, a NaN after the update).
+ice_add_fast_script(Refusals fast/refusals "fast;implementation;refusal")
+
 # Rank count must not change the answer either. Needs an MPI build, so it is
 # registered only when there is one.
 if(USE_MPI)
