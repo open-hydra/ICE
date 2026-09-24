@@ -50,6 +50,7 @@ Stokes value $\rho_{al}d_p^2/(18\mu_g)$, which is the identity
 | `Henderson` | Separate subsonic and supersonic fits, linearly bridged over $1 < Ma < 1.75$ | The bridge is continuous at both ends |
 | `Crowe` | Wen-Yu blended towards $C_d = 2$ by $Ma$, with a $\tanh(\log_{10} Re)$ function | |
 | `Hermsen` | Same structure as Crowe with a rational $Re$ function | |
+| `NoDrag` | $0$ | No momentum exchange; the relaxation time is infinite |
 
 Each correlation is a pure function of $(Re, Ma, \gamma, T_r)$; the choice travels as an
 integer, so nothing mutable is shared between threads. Every one of them is checked
@@ -74,6 +75,7 @@ per unit volume, which is the familiar $h A \Delta T$ with $h = Nu\,k_g/d_p$ sum
 | `Chang` | $2 + 0.459\,Re^{0.55}Pr^{1/3}$ | 2 |
 | `Ranz-Marshall` | $2 + 0.6\,Re^{1/2}Pr^{1/3}$ | 2 |
 | `Kavanau-Drake` | $\dfrac{N}{1 + 3.42\,Ma\,N/(Re\,Pr)}$, $N = 2+0.459\,Re^{0.55}Pr^{0.33}$ | rarefaction-dependent |
+| `NoHeat` | $0$ | 0 (no convective exchange) |
 
 ## Radiation
 

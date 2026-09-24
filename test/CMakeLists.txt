@@ -115,6 +115,10 @@ ice_add_verification(LinearStrain      H-linear-strain     "verification;sources
 # case that exercises the j-direction fluxes.
 ice_add_verification(VortexCloud       I-vortex-cloud      "verification;sources;transport;2D")
 
+# A coupled slab with drag = NoDrag and heat-transfer = NoHeat: the particles must keep
+# their initial state bit for bit although the gas moves and is hotter.
+ice_add_case(NAME NoExchangeMK DIR NoExchange/MK LABELS "fast;verification;MK;sources;2D")
+
 # Berthon's Riemann problems for the anisotropic Gaussian closure, against the
 # analytical wave patterns (docs/vv/berthon.md). These are full case directories
 # rather than self-building drivers, so they go through ice_add_case; they are the

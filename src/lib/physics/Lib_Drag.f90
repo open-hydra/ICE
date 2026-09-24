@@ -46,6 +46,8 @@ contains
       dragSelect = 11
     case ('Hermsen')
       dragSelect = 12
+    case ('NoDrag')
+      dragSelect = 13
     case default
       write(*,*)
       if (drag_word == 'none') then
@@ -68,6 +70,7 @@ contains
       write(*,*) "- Henderson "
       write(*,*) "- Crowe "
       write(*,*) "- Hermsen "
+      write(*,*) "- NoDrag "
       write(*,*)
       if (drag_word == 'none') error stop 1
       error stop 'ICE: unknown drag model'
@@ -108,6 +111,8 @@ contains
       Cd = drag_Crowe(Re,Ma,G,Tr)
     case (12)
       Cd = drag_Hermsen(Re,Ma,G,Tr)
+    case (13) !> NoDrag: no momentum exchange
+      Cd = 0._R8
     end select
 
   end function drag

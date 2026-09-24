@@ -34,6 +34,8 @@ contains
       heatSelect = 6
     case ('Kavanau-Drake')
       heatSelect = 7
+    case ('NoHeat')
+      heatSelect = 8
     case default
       write(*,*)
       if (heat_word == 'none') then
@@ -50,6 +52,7 @@ contains
       write(*,*) "- Chang "
       write(*,*) "- Ranz-Marshall "
       write(*,*) "- Kavanau-Drake "
+      write(*,*) "- NoHeat "
       write(*,*)
       if (heat_word == 'none') error stop 1
       error stop 'ICE: unknown heat model'
@@ -80,6 +83,8 @@ contains
       Nu = heat_Ranz_Marshall(Re,Pr)
     case (7)
       Nu = heat_Kavanau_Drake(Re,Pr,Ma)
+    case (8) !> NoHeat: no convective heat exchange
+      Nu = 0._R8
     end select
 
   end function heat

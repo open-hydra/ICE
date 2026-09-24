@@ -13,6 +13,7 @@ test/
 │   ├── IG-chimera/            # Two overlapping non-matching blocks (ATLAS 102)
 │   ├── IG-split4/             # Four blocks joined by connections (ATLAS 101)
 │   └── plot_vv.py             # Regenerates the V&V figures from the case outputs
+├── NoExchange/MK/             # Coupled slab with drag = NoDrag, heat-transfer = NoHeat: state kept bit for bit
 ├── Berthon/                   # 1D Riemann problems for the AG closure
 │   ├── SCS/  RCS/  RCR/       # Shock-contact-shock, rarefaction-contact-shock, ...
 │   ├── SCS-hlle/              # SCS again through the HLLE flux

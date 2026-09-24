@@ -1,5 +1,6 @@
 module ICE_Mod_Sources
   use iso_fortran_env, only: I4 => int32, R8 => real64
+  use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_positive_inf
   use ICE_Mod_MPI, only: is_local_block
 
   implicit none
@@ -123,8 +124,12 @@ contains
     !> Radiative heat exchange
     force(5) = force(5) + obj_condensed%emiss*sigma_SB * 2._R8*pi*Rp*Rp*cond_prim(n)*(gas_prim(ng)**4._I4-cond_prim(n-1)**4._I4)
 
-    !> Particles relaxation time
-    cond_tau = 8._R8*rho_mat*Rp / (3._R8*gas_prim(1)*Cd*norm2(gas_prim(2:4)-cond_prim(2:4)) + 1e-20)
+    !> Particles relaxation time (infinite without drag, so every relaxation term vanishes exactly)
+    if (Cd == 0._R8) then
+      cond_tau = ieee_value(1._R8, ieee_positive_inf)
+    else
+      cond_tau = 8._R8*rho_mat*Rp / (3._R8*gas_prim(1)*Cd*norm2(gas_prim(2:4)-cond_prim(2:4)) + 1e-20)
+    endif
     !> Use only for Vie validation test
     !> cond_tau = 5.0_R8
     force(6) = cond_tau

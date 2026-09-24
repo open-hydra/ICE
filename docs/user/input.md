@@ -84,7 +84,10 @@ stops the run.
 `drag`, `heat-transfer` and `evaporation` are set once in `[ICE-Physics]` and apply to
 every family. They are only consulted when the run is coupled (that is, when
 `INPUT/gas.tec` exists); an uncoupled run ignores them, and a name none of them
-recognises stops the solver with the list of valid ones.
+recognises stops the solver with the list of valid ones. In a coupled run `drag` and
+`heat-transfer` are required: leaving either at its default `none` stops the solver with
+that list. `drag = NoDrag` and `heat-transfer = NoHeat` switch the momentum and the
+convective heat exchange off explicitly; radiation stays under `emissivity`.
 
 `evaporation` defaults to `none`, and while it is `none` the vapour keys beside it are
 never read. Selecting a model makes `latent-heat`, `vapour-molar-mass` and
