@@ -132,6 +132,7 @@ contains
 
   !> Load_Table on tables written here, one per prefix.
   subroutine test_load()
+    use ICE_Lib_Properties, only: mat_rho, mat_cp
 
     call execute_command_line('mkdir -p INPUT')
 
@@ -141,8 +142,8 @@ contains
                'load: Tmin = 280, Tmax = 400 from the rows')
     call check(lbound(obj_condensed%rho_tab, 1) == 280 .and. ubound(obj_condensed%rho_tab, 1) == 400, &
                'load: the tables are indexed by temperature')
-    call check(get_rho_al(250._R8) == 1500._R8 .and. get_rho_al(300.4_R8) == 1500._R8 .and. &
-               get_cs_al(450._R8) == 2000._R8, 'load: constant properties inside and outside the range')
+    call check(mat_rho(obj_condensed, 250._R8) == 1500._R8 .and. mat_rho(obj_condensed, 300.4_R8) == 1500._R8 .and. &
+               mat_cp(obj_condensed, 450._R8) == 2000._R8, 'load: constant properties inside and outside the range')
     call check(obj_condensed%h_datum == 'relative' .and. obj_condensed%h_off == 0._R8 .and. &
                .not. obj_condensed%rho_varies .and. .not. obj_condensed%cs_varies, 'load: relative datum, hOff = 0')
 
@@ -151,7 +152,8 @@ contains
     call check(obj_condensed%rho_tab(300) == 1700._R8 .and. obj_condensed%rho_tab(301) == 1699._R8 .and. &
                all(obj_condensed%cs_tab == 2000._R8) .and. obj_condensed%rho_varies, &
                'load: permuted columns give the right density and cp')
-    call check(abs(get_rho_al(300.4_R8) - 1699.6_R8) <= 1.e-12_R8*1699.6_R8 .and. get_rho_al(100._R8) == 1720._R8, &
+    call check(abs(mat_rho(obj_condensed, 300.4_R8) - 1699.6_R8) <= 1.e-12_R8*1699.6_R8 .and. &
+               mat_rho(obj_condensed, 100._R8) == 1720._R8, &
                'load: linear inside, end value outside')
 
     call write_table('u3-', '"Temperature", "Cp", "Density", "Enthalpy_abs"', 1, 50, 3)

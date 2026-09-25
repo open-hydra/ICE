@@ -12,6 +12,7 @@ contains
   subroutine compute_source (grid, p)
     use ICE_Global_m
     use ICE_Advanced_Types_m
+    use ICE_Config_Types_m, only: obj_condensed
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
@@ -33,7 +34,8 @@ contains
                               grid%blk(b)%gas_phase%gam(i,j,k),          &
                               grid%blk(b)%gas_phase%k(i,j,k),            &
                               grid%blk(b)%gas_phase%mu(i,j,k),           &
-                              grid%blk(b)%cond_phase(p)%source(:,i,j,k)  )
+                              grid%blk(b)%cond_phase(p)%source(:,i,j,k), &
+                              obj_condensed                              )
   
       enddo ; enddo ; enddo
       !$OMP END DO
@@ -44,20 +46,20 @@ contains
   end subroutine compute_source
           
   
-  subroutine compute_source_ (cond_prim, cond_tau, gas_prim, gas_R, gas_gam, gas_k, gas_mu, source)
+  subroutine compute_source_ (cond_prim, cond_tau, gas_prim, gas_R, gas_gam, gas_k, gas_mu, source, mat)
     use ICE_Parameters_m, only: pi, sigma_SB, I4
-    use ICE_Config_Types_m, only: obj_condensed, obj_time_scheme
+    use ICE_Config_Types_m, only: condensed_phase_t, obj_time_scheme
     use ICE_Lib_Model
     use ICE_Lib_Drag
     use ICE_Lib_Heat
     use ICE_Lib_Evaporation, only: evaporation, blowingFactor
-    use ICE_Load_Table,     only: get_rho_al
-    use ICE_Lib_Properties, only: mat_psat
+    use ICE_Lib_Properties, only: mat_rho, mat_psat
     implicit none
     real(kind=R8), dimension(:), intent(in)    :: cond_prim, gas_prim
     real(kind=R8),               intent(inout) :: cond_tau
     real(kind=R8),               intent(in)    :: gas_R, gas_gam, gas_k, gas_mu
     real(kind=R8), dimension(:), intent(inout) :: source
+    type(condensed_phase_t),     intent(in)    :: mat
 
     integer(kind=I4) :: n, ng
     real(kind=R8)    :: Rp, Re, Ma, Pr, Tr
@@ -71,7 +73,7 @@ contains
     ng = size(gas_prim)
 
     !> Condensed-material density at the particle temperature
-    rho_mat = get_rho_al(cond_prim(n-1))
+    rho_mat = mat_rho(mat, cond_prim(n-1))
 
     !> Particles radius 
     Rp = (0.75_R8*cond_prim(1) / (cond_prim(n)*pi*rho_mat))**(1._R8/3._R8)
@@ -103,17 +105,17 @@ contains
     !  evaporates. Qevap comes back in W; the latent sink is not included here,
     !  every closure's source_make adds it as -force(1)*lv_al. A Psat column in the
     !  property table replaces the Clausius-Clapeyron curve.
-    if (obj_condensed%use_psat) then
+    if (mat%use_psat) then
       call evaporation(gas_prim(1), gas_prim(ng), gas_gam, gas_R, gas_mu, gas_k,  &
                        cond_prim(n-1), 2._R8*Rp, Re,                              &
                        obj_time_scheme%evapSelect, obj_time_scheme%intfSelect,    &
-                       obj_condensed%ep, mdot, Qevap, override_Qdot,              &
-                       psatExt=mat_psat(obj_condensed, cond_prim(n-1)))
+                       mat%ep, mdot, Qevap, override_Qdot,              &
+                       psatExt=mat_psat(mat, cond_prim(n-1)))
     else
       call evaporation(gas_prim(1), gas_prim(ng), gas_gam, gas_R, gas_mu, gas_k,  &
                        cond_prim(n-1), 2._R8*Rp, Re,                              &
                        obj_time_scheme%evapSelect, obj_time_scheme%intfSelect,    &
-                       obj_condensed%ep, mdot, Qevap, override_Qdot)
+                       mat%ep, mdot, Qevap, override_Qdot)
     endif
 
     if (override_Qdot) then
@@ -132,7 +134,7 @@ contains
     force(5) = Qconv*cond_prim(n)                  
       
     !> Radiative heat exchange
-    force(5) = force(5) + obj_condensed%emiss*sigma_SB * 2._R8*pi*Rp*Rp*cond_prim(n)*(gas_prim(ng)**4._I4-cond_prim(n-1)**4._I4)
+    force(5) = force(5) + mat%emiss*sigma_SB * 2._R8*pi*Rp*Rp*cond_prim(n)*(gas_prim(ng)**4._I4-cond_prim(n-1)**4._I4)
 
     !> Particles relaxation time (infinite without drag, so every relaxation term vanishes exactly)
     if (Cd == 0._R8) then
@@ -145,7 +147,7 @@ contains
     force(6) = cond_tau
 
     !> Source terms
-    source = source_make(cond_prim,force)
+    source = source_make(cond_prim,force,mat)
 
   end subroutine compute_source_
     

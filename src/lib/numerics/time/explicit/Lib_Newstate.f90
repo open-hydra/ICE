@@ -32,6 +32,7 @@ contains
 
 
   subroutine state_update(grid, p, srk)
+    use ICE_Config_Types_m, only: obj_condensed
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
@@ -40,7 +41,7 @@ contains
     logical :: prim_status, bad_state
 
     bad_state = .false.
-    !$OMP PARALLEL DEFAULT(NONE) PRIVATE(b,i,j,k,prim_status) SHARED(grid,p,srk,bad_state)
+    !$OMP PARALLEL DEFAULT(NONE) PRIVATE(b,i,j,k,prim_status) SHARED(grid,p,srk,bad_state,obj_condensed)
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
 
@@ -52,7 +53,7 @@ contains
         call state_update_(grid%blk(b)%cond_phase(p)%prim(:,i,j,k),     &
                            grid%blk(b)%cond_phase(p)%prim_old(:,i,j,k), &
                            grid%blk(b)%cond_phase(p)%residual(:,i,j,k), &
-                           srk, prim_status)
+                           srk, prim_status, obj_condensed)
 
         if (.not. prim_status) then
           !$OMP CRITICAL (ICE_state_report)
@@ -79,21 +80,23 @@ contains
   end subroutine state_update
 
 
-  subroutine state_update_(prim, prim_old, residual, srk, prim_status)
+  subroutine state_update_(prim, prim_old, residual, srk, prim_status, mat)
     use ICE_Lib_RK,    only: RK_stage
     use ICE_Lib_Model
+    use ICE_Config_Types_m, only: condensed_phase_t
     implicit none
     real(kind=R8), dimension(:), intent(inout) :: prim
     real(kind=R8), dimension(:), intent(in)    :: prim_old, residual
     integer(kind=I4),            intent(in)    :: srk
     logical,                     intent(out)   :: prim_status
+    type(condensed_phase_t),     intent(in)    :: mat
 
     real(kind=R8), dimension(size(prim)) :: cons, cons_old
 
-    cons_old    = prim_2_cons(prim_old)
-    cons        = prim_2_cons(prim)
+    cons_old    = prim_2_cons(prim_old, mat)
+    cons        = prim_2_cons(prim, mat)
     cons        = RK_stage(srk, nrk, cons, cons_old, residual)
-    prim        = cons_2_prim(cons)
+    prim        = cons_2_prim(cons, mat)
     prim_status = check_prim(prim)
 
   end subroutine state_update_

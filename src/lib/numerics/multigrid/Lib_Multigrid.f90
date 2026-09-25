@@ -40,6 +40,7 @@ contains
   subroutine fine2coarse_prim(p, fPrim, cPrim, fVol, cVol, fDim, cDim)
     use ICE_Global_m,    only: ncond
     use ICE_Lib_Model,   only: prim_2_cons, cons_2_prim, assign_prim_2_cons, assign_cons_2_prim
+    use ICE_Config_Types_m, only: obj_condensed
     implicit none
     integer(I4), intent(in) :: p
     integer(I4), intent(in) :: fDim(3), cDim(3)
@@ -59,7 +60,7 @@ contains
     do k = 1, fDim(3)
     do j = 1, fDim(2)
     do i = 1, fDim(1)
-      fCons(:,i,j,k) = prim_2_cons(fPrim(:,i,j,k))
+      fCons(:,i,j,k) = prim_2_cons(fPrim(:,i,j,k), obj_condensed)
     end do ; end do ; end do
 
     !$omp do collapse(2)
@@ -91,7 +92,7 @@ contains
     do j = 1, cDim(2)
     do i = 1, cDim(1)
       cCons(:,i,j,k) = cCons(:,i,j,k) / cVol(i,j,k)
-      cPrim(:,i,j,k) = cons_2_prim(cCons(:,i,j,k))
+      cPrim(:,i,j,k) = cons_2_prim(cCons(:,i,j,k), obj_condensed)
     end do ; end do ; end do
 
   end subroutine fine2coarse_prim

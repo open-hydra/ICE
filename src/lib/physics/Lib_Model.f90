@@ -5,7 +5,7 @@ module ICE_Lib_Model
   use ICE_Lib_AG
   use ICE_Lib_Drag
   use ICE_Lib_Heat
-  use ICE_Config_Types_m, only: obj_time_scheme
+  use ICE_Config_Types_m, only: obj_time_scheme, condensed_phase_t
   implicit none
   private
   public :: assign_prim_2_cons
@@ -30,17 +30,21 @@ module ICE_Lib_Model
 
   !> Abstract interface relative to the "model" procedure
   abstract interface
-  function prim_2_cons_if(prim) result(cons)
+  function prim_2_cons_if(prim, mat) result(cons)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+    import :: condensed_phase_t
     implicit none
     real(kind=R8), intent(in) :: prim(:)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: cons(size(prim))
   end function prim_2_cons_if
 
-  function cons_2_prim_if(cons) result(prim)
+  function cons_2_prim_if(cons, mat) result(prim)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+    import :: condensed_phase_t
     implicit none
     real(kind=R8), intent(in) :: cons(:)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: prim(size(cons))
   end function cons_2_prim_if
 
@@ -72,17 +76,21 @@ module ICE_Lib_Model
     real(kind=R8)             :: speed
   end function wavespeed_make_if
 
-  function flux_make_if(prim, normal) result(flux)
+  function flux_make_if(prim, normal, mat) result(flux)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+    import :: condensed_phase_t
     implicit none
     real(kind=R8), intent(in) :: prim(:), normal(3)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: flux(size(prim))
   end function flux_make_if
 
-  function source_make_if(prim,force) result(source)
+  function source_make_if(prim,force,mat) result(source)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+    import :: condensed_phase_t
     implicit none
     real(kind=R8), intent(in) :: prim(:), force(6)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: source(size(prim))
   end function source_make_if
   end interface

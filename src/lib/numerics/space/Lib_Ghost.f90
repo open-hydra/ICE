@@ -2,8 +2,8 @@ module ICE_Lib_Ghost
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   use ICE_Global_m
   use ICE_Advanced_Types_m
-  use ICE_Config_Types_m, only: obj_time_scheme
-  use ICE_Load_Table, only : get_rho_al
+  use ICE_Config_Types_m, only: obj_time_scheme, obj_condensed, condensed_phase_t
+  use ICE_Lib_Properties, only : mat_rho
   use ICE_Mod_Metrics, only : delthe
   use ICE_Lib_MK, only : prim_2_cons_MK, cons_2_prim_MK
   use ICE_Lib_IG, only : prim_2_cons_IG, cons_2_prim_IG
@@ -31,7 +31,7 @@ contains
     call exchange_ghost_prim(grid)
 
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ncond, obj_time_scheme), &
+    !$OMP SHARED(grid, ncond, obj_time_scheme, obj_condensed), &
     !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, area, normal, velocity, veln)
     !$OMP DO SCHEDULE (dynamic)
     do i = 1, size(grid%bc)
@@ -178,7 +178,7 @@ contains
             endif
 
             !> N particles, with the condensed density at the inlet temperature
-            prim(ncond(pm),ig,jg,kg) =  prim(1,ig,jg,kg) / get_rho_al(prim(ncond(pm)-1,ig,jg,kg)) / &
+            prim(ncond(pm),ig,jg,kg) =  prim(1,ig,jg,kg) / mat_rho(obj_condensed, prim(ncond(pm)-1,ig,jg,kg)) / &
                                         (4._R8/3._R8*pi*grid%bc(i)%radius**3._I4)
 
             !> Pseudo pressure
@@ -201,7 +201,7 @@ contains
 
 
         case (102) !> chimera: first ghost layer from its donors
-          call ghost_chimera(grid%blk, grid%bc(i), 1)
+          call ghost_chimera(grid%blk, grid%bc(i), 1, obj_condensed)
 
 
       end select
@@ -226,7 +226,7 @@ contains
     real(kind=R8)    :: normal(1:3), velocity(1:3)
 
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ncond), &
+    !$OMP SHARED(grid, ncond, obj_condensed), &
     !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, bs, is, js, ks, fs, &
     !$OMP         ic, jc, kc, normal, velocity)
     !$OMP DO SCHEDULE(dynamic)
@@ -253,7 +253,7 @@ contains
             grid%blk(bs)%cond_phase(pm)%prim(1:ncond(pm),is,js,ks)
 
         case (102) !> chimera: second ghost layer from its own donors
-          call ghost_chimera(grid%blk, grid%bc(i), 2)
+          call ghost_chimera(grid%blk, grid%bc(i), 2, obj_condensed)
 
         case (200) !> wedge side face: the second ghost mirrors the second interior cell
           ip = im + guide(fm,1) ; jp = jm + guide(fm,2) ; kp = km + guide(fm,3)
@@ -293,11 +293,12 @@ contains
   !> ATLAS BCB, cons(ghost) = sum_c w_c * cons(donor_c), as MOSE's Ghost_Chimera does.
   !> Donors are interior cells, so this only reads interior data and is safe inside
   !> the OMP loops over bc entries.
-  subroutine ghost_chimera(blk, bc, g)
+  subroutine ghost_chimera(blk, bc, g, mat)
     implicit none
     type(ICE_block_type), intent(inout) :: blk(:)
     type(ICE_bc_type),    intent(in)    :: bc
     integer(kind=I4),     intent(in)    :: g
+    type(condensed_phase_t), intent(in) :: mat
     integer(kind=I4) :: c, c1, c2, pm, nv, bs, is, js, ks, ig, jg, kg
     real(kind=R8)    :: consg(12)
 
@@ -313,42 +314,44 @@ contains
     do c = c1, c2
       bs = bc%donorID(c,1) ; is = bc%donorID(c,2) ; js = bc%donorID(c,3) ; ks = bc%donorID(c,4)
       consg(1:nv) = consg(1:nv) + bc%volume_fraction(c) * &
-                    model_prim_2_cons(pm, blk(bs)%cond_phase(pm)%prim(1:nv,is,js,ks))
+                    model_prim_2_cons(pm, blk(bs)%cond_phase(pm)%prim(1:nv,is,js,ks), mat)
     enddo
 
     ig = bc%i - g*guide(bc%f,1) ; jg = bc%j - g*guide(bc%f,2) ; kg = bc%k - g*guide(bc%f,3)
-    blk(bc%b)%cond_phase(pm)%prim(1:nv,ig,jg,kg) = model_cons_2_prim(pm, consg(1:nv))
+    blk(bc%b)%cond_phase(pm)%prim(1:nv,ig,jg,kg) = model_cons_2_prim(pm, consg(1:nv), mat)
 
   end subroutine ghost_chimera
 
 
   !> Group-specific conversions. The model procedure pointers in ICE_Lib_Model are bound to
   !> one group at a time, while the ghost loops cover every group, so dispatch explicitly.
-  function model_prim_2_cons(p, prim) result(cons)
+  function model_prim_2_cons(p, prim, mat) result(cons)
     implicit none
     integer(kind=I4), intent(in) :: p
     real(kind=R8),    intent(in) :: prim(:)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)                :: cons(size(prim))
 
     select case (trim(obj_time_scheme%model(p)))
-    case ('MK'); cons = prim_2_cons_MK(prim)
-    case ('IG'); cons = prim_2_cons_IG(prim)
-    case ('AG'); cons = prim_2_cons_AG(prim)
+    case ('MK'); cons = prim_2_cons_MK(prim, mat)
+    case ('IG'); cons = prim_2_cons_IG(prim, mat)
+    case ('AG'); cons = prim_2_cons_AG(prim, mat)
     end select
 
   end function model_prim_2_cons
 
 
-  function model_cons_2_prim(p, cons) result(prim)
+  function model_cons_2_prim(p, cons, mat) result(prim)
     implicit none
     integer(kind=I4), intent(in) :: p
     real(kind=R8),    intent(in) :: cons(:)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)                :: prim(size(cons))
 
     select case (trim(obj_time_scheme%model(p)))
-    case ('MK'); prim = cons_2_prim_MK(cons)
-    case ('IG'); prim = cons_2_prim_IG(cons)
-    case ('AG'); prim = cons_2_prim_AG(cons)
+    case ('MK'); prim = cons_2_prim_MK(cons, mat)
+    case ('IG'); prim = cons_2_prim_IG(cons, mat)
+    case ('AG'); prim = cons_2_prim_AG(cons, mat)
     end select
 
   end function model_cons_2_prim

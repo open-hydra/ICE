@@ -7,7 +7,7 @@ module ICE_Load_Table
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
   implicit none
   private
-  public :: Load_Table, get_rho_al, get_cs_al
+  public :: Load_Table
   public :: classify_table_tokens, check_table_nodes, check_table_columns, table_h_offset, table_reason
   public :: validate_psat_column, psat_reason
 
@@ -328,26 +328,6 @@ contains
     case default;              txt = 'unknown table error'
     end select
   end function table_reason
-
-
-  function get_rho_al(Tp) result(rho)
-    use ICE_Config_Types_m, only: obj_condensed
-    use ICE_Lib_Properties, only: mat_rho
-    implicit none
-    real(R8), intent(in) :: Tp
-    real(R8)             :: rho
-    rho = mat_rho(obj_condensed, Tp)
-  end function get_rho_al
-
-
-  function get_cs_al(Tp) result(cs)
-    use ICE_Config_Types_m, only: obj_condensed
-    use ICE_Lib_Properties, only: mat_cp
-    implicit none
-    real(R8), intent(in) :: Tp
-    real(R8)             :: cs
-    cs = mat_cp(obj_condensed, Tp)
-  end function get_cs_al
 
 
   !> The quoted names of the first line that contains VARIABLES.

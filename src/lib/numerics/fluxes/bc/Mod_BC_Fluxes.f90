@@ -14,7 +14,7 @@ contains
     use ICE_Advanced_Types_m
     use ICE_Lib_Riemann
     use ICE_Mod_Fluxes, only: state_reconstruction, bad_recon
-    use ICE_Config_Types_m, only: obj_time_scheme
+    use ICE_Config_Types_m, only: obj_time_scheme, obj_condensed
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4) :: n, b, f, p, i, j, k
@@ -28,7 +28,7 @@ contains
 
     bad_recon = .false.
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ngroups, ncond, riemann, obj_time_scheme), &
+    !$OMP SHARED(grid, ngroups, ncond, riemann, obj_time_scheme, obj_condensed), &
     !$OMP PRIVATE(n, b, f, p, i, j, k, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, &
     !$OMP         dir, normal, area, dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th, &
     !$OMP         beta_val, priml, primr, flux, v)
@@ -89,7 +89,7 @@ contains
                                   dl0, dl1, dl2, dll, dlr,                                 &
                                   priml(1:ncond(p)), primr(1:ncond(p)), beta_val)
 
-        flux(1:ncond(p)) = riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal) * area
+        flux(1:ncond(p)) = riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal, obj_condensed) * area
 
         case (2,4,6)
         !> Even faces: stencil (m-1, m, g1, g2) → priml=interior side, primr=ghost side
@@ -109,7 +109,7 @@ contains
                                   dl0, dl1, dl2, dll, dlr,                                 &
                                   priml(1:ncond(p)), primr(1:ncond(p)), beta_val)
 
-        flux(1:ncond(p)) = - riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal) * area
+        flux(1:ncond(p)) = - riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal, obj_condensed) * area
 
       end select
 

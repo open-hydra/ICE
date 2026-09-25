@@ -1,8 +1,8 @@
 module ICE_Lib_Riemann
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   use ICE_Lib_Model
-  use ICE_Config_Types_m, only: obj_condensed
-  use ICE_Load_Table,     only: get_cs_al
+  use ICE_Config_Types_m, only: condensed_phase_t
+  use ICE_Lib_Properties, only: mat_cp
   implicit none
   private
   public :: assign_riemann
@@ -12,12 +12,14 @@ module ICE_Lib_Riemann
 
   !> Abstract interface relative to the "limiter" procedure
   abstract interface
-  function riemann_if(prim_1,prim_4,normal) result(flux)
+  function riemann_if(prim_1,prim_4,normal,mat) result(flux)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+    import :: condensed_phase_t
     implicit none
     real(kind=R8), intent(in) :: prim_1(:)
     real(kind=R8), intent(in) :: prim_4(:)
     real(kind=R8), intent(in) :: normal(3)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: flux(size(prim_1))
   end function riemann_if
   end interface
@@ -51,12 +53,13 @@ end subroutine assign_riemann
 
 
   !> Saurel Riemann Solver - EX CPM
-  function riemann_Saurel(prim_1,prim_4,normal) result(flux)
+  function riemann_Saurel(prim_1,prim_4,normal,mat) result(flux)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
     real(kind=R8), intent(in) :: prim_1(:)
     real(kind=R8), intent(in) :: prim_4(:)
     real(kind=R8), intent(in) :: normal(3)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: flux(size(prim_1))
 
     real(kind=R8) :: ut_1, vt_1, wt_1, uu_1, vv_1, ww_1
@@ -75,7 +78,7 @@ end subroutine assign_riemann
       flux(2) = uu_1*flux(1)
       flux(3) = vv_1*flux(1)
       flux(4) = ww_1*flux(1)
-      flux(5) = flux(1)*(0.5_R8*(uu_1*uu_1+vv_1*vv_1+ww_1*ww_1)+get_cs_al(prim_1(5))*prim_1(5))
+      flux(5) = flux(1)*(0.5_R8*(uu_1*uu_1+vv_1*vv_1+ww_1*ww_1)+mat_cp(mat, prim_1(5))*prim_1(5))
       flux(6) = prim_1(6)*veln
     elseif (veln < 0._R8) then
       ut_4 = (prim_4(2)-veln_4*normal(1)); vt_4 = (prim_4(3)-veln_4*normal(2)); wt_4 = (prim_4(4)-veln_4*normal(3))
@@ -84,7 +87,7 @@ end subroutine assign_riemann
       flux(2) = uu_4*flux(1)
       flux(3) = vv_4*flux(1)
       flux(4) = ww_4*flux(1)
-      flux(5) = flux(1)*(0.5_R8*(uu_4*uu_4+vv_4*vv_4+ww_4*ww_4)+get_cs_al(prim_4(5))*prim_4(5))
+      flux(5) = flux(1)*(0.5_R8*(uu_4*uu_4+vv_4*vv_4+ww_4*ww_4)+mat_cp(mat, prim_4(5))*prim_4(5))
       flux(6) = prim_4(6)*veln
     else 
       flux = 0._R8
@@ -94,12 +97,13 @@ end subroutine assign_riemann
 
 
   !> Rusanov Riemann Solver
-  function riemann_Rusanov(prim_1,prim_4,normal) result(flux)
+  function riemann_Rusanov(prim_1,prim_4,normal,mat) result(flux)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
     real(kind=R8), intent(in) :: prim_1(:)
     real(kind=R8), intent(in) :: prim_4(:)
     real(kind=R8), intent(in) :: normal(3)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: flux(size(prim_1))
 
     real(kind=R8) :: veln_1, veln_4
@@ -116,11 +120,11 @@ end subroutine assign_riemann
     sound_1 = wavespeed_make(prim_1,normal)
     sound_4 = wavespeed_make(prim_4,normal)
     
-    cons_1 = prim_2_cons(prim_1)
-    cons_4 = prim_2_cons(prim_4)
+    cons_1 = prim_2_cons(prim_1, mat)
+    cons_4 = prim_2_cons(prim_4, mat)
     
-    flux_1 = flux_make(prim_1,normal)
-    flux_4 = flux_make(prim_4,normal)
+    flux_1 = flux_make(prim_1,normal,mat)
+    flux_4 = flux_make(prim_4,normal,mat)
 
     A = MAX(ABS(veln_1-sound_1),ABS(veln_4-sound_4),ABS(veln_1+sound_1),ABS(veln_4+sound_4))
 
@@ -130,12 +134,13 @@ end subroutine assign_riemann
 
 
   !> HLLE Riemann Solver
-  function riemann_HLLE(prim_1,prim_4,normal) result(flux)
+  function riemann_HLLE(prim_1,prim_4,normal,mat) result(flux)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
     real(kind=R8), intent(in) :: prim_1(:)
     real(kind=R8), intent(in) :: prim_4(:)
     real(kind=R8), intent(in) :: normal(3)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: flux(size(prim_1))
 
     real(kind=R8) :: veln_1, veln_4    
@@ -169,15 +174,15 @@ end subroutine assign_riemann
 
     select case(minloc([-S1,S1*S4,S4],dim=1))
     case(1)
-      flux = flux_make(prim_1,normal)
+      flux = flux_make(prim_1,normal,mat)
     case(2)
-      flux_1 = flux_make(prim_1,normal)
-      flux_4 = flux_make(prim_4,normal)
-      cons_1 = prim_2_cons(prim_1)
-      cons_4 = prim_2_cons(prim_4)
+      flux_1 = flux_make(prim_1,normal,mat)
+      flux_4 = flux_make(prim_4,normal,mat)
+      cons_1 = prim_2_cons(prim_1, mat)
+      cons_4 = prim_2_cons(prim_4, mat)
       flux   = (S4*flux_1 - S1*flux_4 + S1*S4*(cons_4-cons_1)) / (S4-S1)
     case(3)
-      flux = flux_make(prim_4,normal)
+      flux = flux_make(prim_4,normal,mat)
     endselect
 
   end function riemann_HLLE
