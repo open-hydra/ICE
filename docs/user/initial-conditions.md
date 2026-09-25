@@ -81,8 +81,9 @@ are identical — it is the same writer.
 condensed material. It is a Tecplot point file whose first `VARIABLES` line names the
 columns: `Temperature` first, then `Cp`, `Density` and one enthalpy column, in any order.
 The enthalpy is either `Enthalpy` (relative: $c_p T$ for a constant $c_p$) or
-`Enthalpy_abs` (absolute: its offset is kept as the material's datum); other names are
-ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least two
+`Enthalpy_abs` (absolute: its offset is kept as the material's datum). An optional `Psat`
+column (Pa) replaces the Clausius-Clapeyron saturation curve of the evaporation models;
+other names are ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least two
 of them. Between the nodes the density and $c_p$ are linear in $T$, and outside
 $[T_{min}, T_{max}]$ they keep the end values.
 
@@ -94,7 +95,10 @@ not positive, whose enthalpy does not increase or disagrees with $c_p$, or whose
 `Enthalpy` has an offset. A constant $c_p$ must give $h = c_p T + h_{off}$ on every row,
 and a varying one must match the trapezoidal integral of $c_p$ within 0.1 % per step, or
 within $10^{-6}\,|h|$ when that is larger, the rounding of an absolute enthalpy printed
-to seven digits.
+to seven digits. When an evaporation model is selected it also refuses a `Psat` column
+that is not finite, is negative, decreases with $T$ or is constant, or does not give 0.5 to
+2 atm at `boiling-temperature`, which must lie in $[T_{min}, T_{max}-1]$; a column of zeros
+counts as absent, and a run that does not evaporate does not use the column.
 
 With a table, `density` and `specific-heat` of `[ICE-Physics]` may be left out; if one is
 given it must equal its constant column, and it may not be given against a column that

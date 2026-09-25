@@ -9,6 +9,7 @@ module ICE_Load_Table
   private
   public :: Load_Table, get_rho_al, get_cs_al
   public :: classify_table_tokens, check_table_nodes, check_table_columns, table_h_offset, table_reason
+  public :: validate_psat_column, psat_reason
 
   integer, parameter :: ntok_max = 32, tok_len = 64
 
@@ -18,6 +19,11 @@ module ICE_Load_Table
                                 TAB_FEW_ROWS = 7, TAB_OFF_NODE = 8, TAB_NONFINITE = 9, &
                                 TAB_RHO_NONPOSITIVE = 10, TAB_CP_NONPOSITIVE = 11, TAB_H_NONMONOTONE = 12, &
                                 TAB_H_CP_MISMATCH = 13, TAB_DATUM_MISMATCH = 14, TAB_NEGATIVE_T = 15
+
+  !> Codes of the Psat column checks (IGLOO's order); psat_reason gives the text.
+  integer, parameter, public :: PSAT_OK = 0, PSAT_ABSENT = 1, PSAT_NONFINITE = 2, PSAT_NEGATIVE = 3, &
+                                PSAT_NONMONOTONE = 4, PSAT_CONSTANT = 5, PSAT_TBOIL_RANGE = 6, &
+                                PSAT_TBOIL_MISMATCH = 7
 
   character(len=*), parameter :: grammar = &
     'expected: VARIABLES = "Temperature", "Cp", "Density", "Enthalpy" (or "Enthalpy_abs")[, "Psat"], '// &
@@ -30,9 +36,11 @@ contains
   subroutine Load_Table()
     use Lib_ORION_data,     only: orion_data
     use Lib_Tecplot,        only: tec_read_points_multivars
-    use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Config_Types_m, only: obj_condensed, obj_time_scheme
     use ICE_Global_m,       only: ICE_phase_prefix
     use ICE_Mod_MPI,        only: mpi_is_root
+    use ICE_Lib_Evaporation, only: Patm
+    use ICE_Lib_Properties, only: mat_psat
     use ICE_Parameters_m,   only: codename
     implicit none
     type(orion_data)        :: orion
@@ -106,8 +114,31 @@ contains
       write(*,'(A)') '   material 1: density '//trim(range_text(rho))//', cp '//trim(range_text(cp))// &
         ', enthalpy '//trim(obj_condensed%h_datum)//' (hOff = '//trim(rtoa(obj_condensed%h_off))//' J/kg)'
     endif
+    if (ips > 0) call load_psat(orion%block(1)%vars(ips,1:Ni,1,1))
 
   contains
+
+    !> The Psat column serves the evaporation models only: without one it is not read, a column of
+    !  zeros is absent, and otherwise it must pass validate_psat_column.
+    subroutine load_psat(ps)
+      real(R8), intent(in) :: ps(:)
+      integer :: pcode
+      if (obj_time_scheme%evapSelect == 0) then
+        if (mpi_is_root) write(*,'(A)') '   Psat column not used: this run does not evaporate'
+        return
+      endif
+      pcode = validate_psat_column(ps, Tmin, Tmin+Ni-1, obj_condensed%Tboil, Patm)
+      if (pcode == PSAT_ABSENT) then
+        if (mpi_is_root) write(*,'(A)') '   Psat column all zero: Clausius-Clapeyron is used'
+        return
+      endif
+      if (pcode /= PSAT_OK) call refuse(tablefile, 'Psat column: '//psat_reason(pcode))
+      allocate(obj_condensed%psat_tab(Tmin:Tmin+Ni-1), source=ps)
+      obj_condensed%use_psat = .true.
+      if (mpi_is_root) write(*,'(A)') '   Psat from the table, psat(boiling-temperature) = '// &
+        trim(rtoa(mat_psat(obj_condensed, obj_condensed%Tboil)/Patm))//' atm'
+    end subroutine load_psat
+
 
     !> With a table, a set INI value must equal a constant column; against a varying one it is refused.
     subroutine check_ini_value(file, key, ini, col)
@@ -231,6 +262,48 @@ contains
       hOff = h(1) - T(1)*(h(2) - h(1))
     endif
   end function table_h_offset
+
+
+  !> Finite; all zero means absent; non-negative; non-decreasing; not constant; the boiling
+  !  temperature inside [Tmin, Tmax-1] and psat there within a factor 2 of one atmosphere.
+  pure function validate_psat_column(tab, lo, hi, Tboil, Patm) result(code)
+    integer,  intent(in) :: lo, hi
+    real(R8), intent(in) :: tab(lo:hi), Tboil, Patm
+    integer  :: code, i
+    real(R8) :: ratio
+    code = PSAT_NONFINITE
+    if (.not. all(ieee_is_finite(tab))) return
+    code = PSAT_ABSENT
+    if (all(tab == 0._R8)) return
+    code = PSAT_NEGATIVE
+    if (any(tab < 0._R8)) return
+    code = PSAT_NONMONOTONE
+    if (any(tab(lo+1:hi) < tab(lo:hi-1))) return
+    code = PSAT_CONSTANT
+    if (all(tab == tab(lo))) return
+    code = PSAT_TBOIL_RANGE
+    if (.not. (Tboil >= real(lo, R8) .and. Tboil <= real(hi-1, R8))) return
+    i = int(Tboil)
+    ratio = (tab(i) + (tab(i+1) - tab(i))*(Tboil - real(i, R8)))/Patm
+    code = PSAT_TBOIL_MISMATCH
+    if (ratio < 0.5_R8 .or. ratio > 2._R8) return
+    code = PSAT_OK
+  end function validate_psat_column
+
+
+  pure function psat_reason(code) result(txt)
+    integer, intent(in) :: code
+    character(len=:), allocatable :: txt
+    select case (code)
+    case (PSAT_NONFINITE);      txt = 'a value that is not finite'
+    case (PSAT_NEGATIVE);       txt = 'a negative pressure'
+    case (PSAT_NONMONOTONE);    txt = 'a pressure that decreases with T'
+    case (PSAT_CONSTANT);       txt = 'a constant pressure'
+    case (PSAT_TBOIL_RANGE);    txt = 'boiling-temperature outside [Tmin, Tmax-1] of the table'
+    case (PSAT_TBOIL_MISMATCH); txt = 'psat(boiling-temperature) is not within a factor 2 of one atmosphere'
+    case default;               txt = 'unknown Psat error'
+    end select
+  end function psat_reason
 
 
   pure function table_reason(code) result(txt)

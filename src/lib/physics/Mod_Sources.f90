@@ -52,6 +52,7 @@ contains
     use ICE_Lib_Heat
     use ICE_Lib_Evaporation, only: evaporation, blowingFactor
     use ICE_Load_Table,     only: get_rho_al
+    use ICE_Lib_Properties, only: mat_psat
     implicit none
     real(kind=R8), dimension(:), intent(in)    :: cond_prim, gas_prim
     real(kind=R8),               intent(inout) :: cond_tau
@@ -100,11 +101,20 @@ contains
 
     !> Mass exchange of a single particle [kg/s], negative while the particle
     !  evaporates. Qevap comes back in W; the latent sink is not included here,
-    !  every closure's source_make adds it as -force(1)*lv_al.
-    call evaporation(gas_prim(1), gas_prim(ng), gas_gam, gas_R, gas_mu, gas_k,  &
-                     cond_prim(n-1), 2._R8*Rp, Re,                              &
-                     obj_time_scheme%evapSelect, obj_time_scheme%intfSelect,    &
-                     obj_condensed%ep, mdot, Qevap, override_Qdot)
+    !  every closure's source_make adds it as -force(1)*lv_al. A Psat column in the
+    !  property table replaces the Clausius-Clapeyron curve.
+    if (obj_condensed%use_psat) then
+      call evaporation(gas_prim(1), gas_prim(ng), gas_gam, gas_R, gas_mu, gas_k,  &
+                       cond_prim(n-1), 2._R8*Rp, Re,                              &
+                       obj_time_scheme%evapSelect, obj_time_scheme%intfSelect,    &
+                       obj_condensed%ep, mdot, Qevap, override_Qdot,              &
+                       psatExt=mat_psat(obj_condensed, cond_prim(n-1)))
+    else
+      call evaporation(gas_prim(1), gas_prim(ng), gas_gam, gas_R, gas_mu, gas_k,  &
+                       cond_prim(n-1), 2._R8*Rp, Re,                              &
+                       obj_time_scheme%evapSelect, obj_time_scheme%intfSelect,    &
+                       obj_condensed%ep, mdot, Qevap, override_Qdot)
+    endif
 
     if (override_Qdot) then
       !> ASM and TC resolve the gas-side heat inside their own film, Stefan flow

@@ -21,7 +21,7 @@ is measured.
 | **B** | [Thermal relaxation](#b-thermal-relaxation) | The energy source at $Nu = 2$ | Closed form |
 | **D** | [Every drag correlation](#d-every-drag-correlation) | All twelve drag laws, to $Ma = 2.6$ | Independent RK4 |
 | **E** | [Every Nusselt correlation](#e-every-nusselt-correlation) | All seven heat laws, velocity and temperature relaxing together | Independent RK4 and closed form |
-| **F** | [Evaporation](#f-evaporation) | All five evaporation models, the latent sink, two exact identities, the boiling clamp | Closed form and RK4 |
+| **F** | [Evaporation](#f-evaporation) | All five evaporation models, the latent sink, two exact identities, the boiling clamp, the table's `Psat` | Closed form and RK4 |
 | **K** | [The property table](#k-the-property-table-at-a-fixed-temperature) | Linear interpolation between the table's rows, a table that starts above 1 K, saturation past its ends | Closed form |
 | **C** | [Sinusoidal advection](#c-sinusoidal-advection-on-a-periodic-mesh) | Transport alone, and the order of the space scheme | Closed form |
 | **G** | [Cloud in a uniform gas](#g-a-cloud-released-into-a-uniform-gas) | Transport and drag together | Closed form |
@@ -266,6 +266,17 @@ has lost 10 % of its mass ($1.2\times10^{-4}$ s). Every model reproduces its $d^
 to $4\times10^{-10}$, and `CEM` with the `LK` interface, which takes $X_s$ off the clamp
 to 0.98, matches the integrated ODE to $10^{-13}$. The tolerance on the slope is
 $10^{-5}$: one ulp of $Y_s$ at the clamp moves the rate by $2.5\times10^{-6}$.
+
+**The saturation pressure from the property table.** The last part writes the droplet
+material as a [property table](../user/initial-conditions.md#property-table) on 250 to
+450 K with a `Psat` column, which replaces Clausius-Clapeyron. A specific heat of
+$10^{16}$ holds $T_p$ on the 300 K row to $6\times10^{-11}$ K, so the interpolation
+between rows never enters, and the reference is the integrated `CEM` ODE with $p_{sat}$
+read from the table as written. A column 1.2 times the curve raises the rate by a factor
+1.207, and ICE matches its reference to $5\times10^{-13}$ of the initial bulk density;
+a column equal to the curve is the control, and gives what the curve gives, to
+$3\times10^{-13}$. The tolerance is $10^{-8}$, that of the other integrated references;
+reading the curve instead of the 1.2 column misses it by $6.6\times10^{-3}$.
 
 !!! note "What this check can and cannot catch"
     As with D and E, a correlation written wrongly in the same way in both ICE and the

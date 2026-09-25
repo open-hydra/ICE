@@ -96,8 +96,10 @@ enthalpy that mass carries away and the latent heat $L_v$ needed to vaporise it,
 
 ### The surface state
 
-All five models share one surface condition. The saturation pressure is
-Clausius-Clapeyron, anchored at the boiling point rather than at a tabulated curve:
+All five models share one surface condition. The saturation pressure is the `Psat` column
+of the [property table](../user/initial-conditions.md#property-table) when it has a non-zero one, linear
+between the nodes and constant beyond its ends, and otherwise Clausius-Clapeyron, anchored at
+the boiling point:
 
 $$
 p_{sat}(T_p) = p_{atm}\,\exp\left[-\frac{L_v M_v}{\mathcal{R}}

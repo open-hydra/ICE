@@ -75,7 +75,7 @@ src/lib/
 │   ├── Lib_Drag.f90            # Twelve drag correlations
 │   ├── Lib_Heat.f90            # Seven Nusselt correlations
 │   ├── Lib_Evaporation.f90     # Five evaporation models and their interface options
-│   ├── Lib_Properties.f90      # Density, cp and energy of the material as functions of T
+│   ├── Lib_Properties.f90      # Density, cp, energy and saturation pressure of the material vs T
 │   └── Mod_Sources.f90         # Assembles the source vector
 └── diagnostic/
     └── Mod_Diagnostic.f90      # Residual norms and their output

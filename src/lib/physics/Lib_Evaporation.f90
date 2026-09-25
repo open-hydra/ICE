@@ -16,7 +16,7 @@ module ICE_Lib_Evaporation
 
     real(R8), parameter :: pi   = acos(-1._R8)
     real(R8), parameter, public :: Ru = 8314.46_R8  ! universal gas constant [J/(kmol K)]
-    real(R8), parameter :: Patm = 101325._R8  ! atmospheric pressure [Pa]
+    real(R8), parameter, public :: Patm = 101325._R8  ! atmospheric pressure [Pa]
     !> The boiling clamp holds Xs this far below 1, so BM = (Ys-Yinf)/(1-Ys) stays finite.
     real(R8), parameter, public :: xsCap = 1.e-12_R8
 
@@ -110,7 +110,7 @@ contains
 
     pure subroutine evaporation(rhog, Tg, gamma, Rg, mug, kg, &
                                  Tp, dp, Re, evapSelect, intfSelect, ep, &
-                                 mdot, Qdot_evap, override_Qdot)
+                                 mdot, Qdot_evap, override_Qdot, psatExt)
         implicit none
         real(R8), intent(in)  :: rhog, Tg, gamma, Rg, mug, kg
         real(R8), intent(in)  :: Tp, dp, Re
@@ -118,6 +118,7 @@ contains
         real(R8), intent(in)  :: ep(nep)
         real(R8), intent(out) :: mdot, Qdot_evap
         logical,  intent(out) :: override_Qdot
+        real(R8), intent(in), optional :: psatExt   ! saturation pressure from the property table [Pa]
         real(R8) :: cpg, p, Mg, Pr, Sc, Re05, psat, Xs, Ys, BM
 
         mdot = 0._R8
@@ -131,8 +132,12 @@ contains
         p    = rhog * Rg * Tg
         Mg   = Ru / Rg
 
-        !> Saturation pressure (Clausius-Clapeyron)
-        psat = psat_CC(Tp, ep(iLvMvOverRu), ep(iinvTboil))
+        !> Saturation pressure: the property table's Psat when given, else Clausius-Clapeyron
+        if (present(psatExt)) then
+            psat = psatExt
+        else
+            psat = psat_CC(Tp, ep(iLvMvOverRu), ep(iinvTboil))
+        endif
 
         !> Surface vapor fraction
         if (psat >= p) then

@@ -39,7 +39,7 @@ test/
 │   ├── refusals/              # Broken inputs and a diverging run must exit non-zero
 │   └── mpi-equiv/             # 1 vs 2 ranks bit-identical (connection and chimera)
 └── unit/                      # Programs linked against the library, no solver run
-    └── test_properties.f90    # Property table: grammar, checks, loading, lookup and energy inversion
+    └── test_properties.f90    # Property table: grammar, checks, loading, lookup, energy, Psat
 ```
 
 Each case under `Doisneau/` is self-contained: `input.ini`, `INPUT/` (initial and

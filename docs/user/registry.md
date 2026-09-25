@@ -79,10 +79,10 @@ Required column says otherwise, and omitting one selects the default.
 | `evaporation-blowing` | none | LK, none |  no | Stefan-blowing reduction of the convective heat; LK applies Miller-Harstad-Bellan f2. Ignored under ASM and TC, which carry their own gas-side heat |
 | `density` | 2700.0 | > 0 |  no | Condensed-material density [kg/m^3], used when no property table is given; with a table it may be left out, and if given it must equal the table's constant density |
 | `specific-heat` | 1598.0 | > 0 |  no | Condensed-material specific heat [J/(kg K)], used when no property table is given; with a table it may be left out, and if given it must equal the table's constant cp |
-| `latent-heat` | 1.08e7 | > 0 |  no | Latent heat of vaporisation [J/kg]; the evaporation models use it both as the energy sink and as the anchor of the saturation curve |
+| `latent-heat` | 1.08e7 | > 0 |  no | Latent heat of vaporisation [J/kg]; the evaporation models use it both as the energy sink and as the anchor of the Clausius-Clapeyron saturation curve, which a Psat column in the property table replaces |
 | `emissivity` | 1.0 | >= 0 |  no | Particle surface emissivity; 0 switches radiative exchange off |
 | `vapour-molar-mass` | 26.98 | > 0 |  no | Molar mass of the vapour [kg/kmol] |
-| `boiling-temperature` | 2792.0 | > 0 |  no | Boiling temperature at 1 atm [K], the anchor of the Clausius-Clapeyron saturation pressure |
+| `boiling-temperature` | 2792.0 | > 0 |  no | Boiling temperature at 1 atm [K], the anchor of the Clausius-Clapeyron saturation pressure; with a Psat column in the property table it must lie in [Tmin, Tmax-1] of the table, where the column must give 0.5 to 2 atm |
 | `vapour-specific-heat` | 0.0 | >= 0 |  no | Specific heat of the vapour [J/(kg K)]; 0 falls back to the gas cp |
 | `lewis-number` | 1.0 | > 0 |  no | Lewis number of the vapour in the gas, Le = k/(rho cp D) |
 | `vapour-mass-fraction` | 0.0 | >= 0 |  no | Vapour mass fraction in the far-field gas; evaporation stops once the surface value falls to it |

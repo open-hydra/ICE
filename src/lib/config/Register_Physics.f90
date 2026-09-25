@@ -60,7 +60,8 @@ contains
                  '> 0',  .false.)
     call reg%add(section, 'latent-heat', obj_condensed%lv_al, '1.08e7', &
                  'Latent heat of vaporisation [J/kg]; the evaporation models use it '// &
-                 'both as the energy sink and as the anchor of the saturation curve', &
+                 'both as the energy sink and as the anchor of the Clausius-Clapeyron saturation curve, '// &
+                 'which a Psat column in the property table replaces', &
                  '> 0',  .false.)
     call reg%add(section, 'emissivity', obj_condensed%emiss, '1.0', &
                  'Particle surface emissivity; 0 switches radiative exchange off', &
@@ -71,7 +72,8 @@ contains
                  'Molar mass of the vapour [kg/kmol]', '> 0', .false.)
     call reg%add(section, 'boiling-temperature', obj_condensed%Tboil, '2792.0', &
                  'Boiling temperature at 1 atm [K], the anchor of the '// &
-                 'Clausius-Clapeyron saturation pressure', '> 0', .false.)
+                 'Clausius-Clapeyron saturation pressure; with a Psat column in the property table '// &
+                 'it must lie in [Tmin, Tmax-1] of the table, where the column must give 0.5 to 2 atm', '> 0', .false.)
     call reg%add(section, 'vapour-specific-heat', obj_condensed%cpv, '0.0', &
                  'Specific heat of the vapour [J/(kg K)]; 0 falls back to the gas cp', &
                  '>= 0', .false.)

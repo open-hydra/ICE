@@ -2,13 +2,14 @@
 !> A constant property returns its value with no arithmetic; a tabulated one is linear
 !> between the integer-kelvin nodes and takes the end value outside them. The energy
 !> e = h - hOff is extended linearly beyond both ends (through e(0) = 0 below), and T(e)
-!> inverts it by bisection over the nodes. The tables must be allocated (use_table).
+!> inverts it by bisection over the nodes. The saturation pressure follows the density's rule.
+!> The tables must be allocated (use_table, use_psat).
 module ICE_Lib_Properties
   use, intrinsic :: iso_fortran_env, only: R8 => real64
   use ICE_Config_Types_m, only: condensed_phase_t
   implicit none
   private
-  public :: mat_rho, mat_cp, mat_e, mat_T_from_e
+  public :: mat_rho, mat_cp, mat_e, mat_T_from_e, mat_psat
 
 contains
 
@@ -38,6 +39,15 @@ contains
       cp = table_value(mat%cs_tab, mat%T_min, mat%T_max, T)
     endif
   end function mat_cp
+
+
+  !> Saturation pressure [Pa] from the table's Psat column.
+  pure function mat_psat(mat, T) result(psat)
+    type(condensed_phase_t), intent(in) :: mat
+    real(R8),                intent(in) :: T
+    real(R8) :: psat
+    psat = table_value(mat%psat_tab, mat%T_min, mat%T_max, T)
+  end function mat_psat
 
 
   !> Energy e = h - hOff [J/kg]: the table between the nodes, the line from e(0) = 0 to

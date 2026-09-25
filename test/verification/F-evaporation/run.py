@@ -41,13 +41,16 @@ pressure exceeds the gas pressure and the surface sits on the boiling clamp
 X_s = 1 - xsCap. B_M is then about 6e11 but finite, and at frozen temperature each
 model follows its d-squared slope; with the Langmuir-Knudsen interface the reference is
 the integrated ODE, as in the first part.
+
+The fifth part takes the saturation pressure from a Psat column of the property table
+instead of the Clausius-Clapeyron curve, with the droplet held on one row of the table.
 """
 import math
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from common import Case, Report                                     # noqa: E402
+from common import Case, Report, table_lookup                       # noqa: E402
 
 WORK = Path(__file__).resolve().parent / 'work'
 RHO, U, V, W, T, N = range(6)
@@ -74,6 +77,9 @@ NDENS = RHO_P0 / (RHO_L * (4.0 / 3.0) * math.pi * (0.5 * D0) ** 3)
 # A specific heat this large freezes the droplet temperature: the net heating is
 # order 1e6 W/m^3, so T_p moves by under 1e-4 K over the whole of the first part.
 CS_FROZEN = 1.0e12
+# Part 5 freezes it harder: T_p moves by round-off only, so it stays on the 300 K row
+# of the property table and the interpolation between rows never enters.
+CS_PSAT = 1.0e16
 
 MODELS = ('d2-law', 'CEM', 'CEM-B', 'ASM', 'TC')
 
@@ -86,9 +92,14 @@ VAPOUR = {'latent-heat': LV, 'vapour-molar-mass': MV, 'boiling-temperature': TBO
 #  An independent implementation of Lib_Evaporation at Re = 0
 # ---------------------------------------------------------------------------
 
-def surface_state(Tp):
-    """Clausius-Clapeyron saturation, the boiling clamp, and the Spalding number."""
-    psat = PATM * math.exp(-(LV * MV / RU) * (1.0 / Tp - 1.0 / TBOIL))
+def psat_cc(Tp):
+    """Clausius-Clapeyron through one atmosphere at the boiling temperature."""
+    return PATM * math.exp(-(LV * MV / RU) * (1.0 / Tp - 1.0 / TBOIL))
+
+
+def surface_state(Tp, psat=psat_cc):
+    """The saturation pressure (a curve of T), the boiling clamp, and the Spalding number."""
+    psat = psat(Tp)
     p = RHO_G * RGAS * TG
     Xs = min(psat / p, 1.0 - XS_CAP)
     Ys = molar2mass(Xs)
@@ -200,11 +211,11 @@ def _tc_solve(rhs0, Tts, Lev):
     return mhat
 
 
-def evaporate(model, d, Tp, interface='VLE'):
+def evaporate(model, d, Tp, interface='VLE', psat=psat_cc):
     """The whole of Lib_Evaporation's `evaporation` at Re = 0."""
     if model == 'none':
         return 0.0, 0.0, False
-    p, Xs, Ys, BM = surface_state(Tp)
+    p, Xs, Ys, BM = surface_state(Tp, psat)
     if Ys <= YINF or BM <= 0.0:
         return 0.0, 0.0, False
     mdot, Qdot, ovr = gas_side_rate(model, d, Tp, Ys, BM)
@@ -267,7 +278,8 @@ def diameter(rho_p):
     return 2.0 * (0.75 * rho_p / (NDENS * math.pi * RHO_L)) ** (1.0 / 3.0)
 
 
-def coupled(model, t_end, cs, blowing='none', interface='VLE', steps=40000, tp0=TP0):
+def coupled(model, t_end, cs, blowing='none', interface='VLE', steps=40000, tp0=TP0,
+            psat=psat_cc):
     """RK4 on (rho_p, T_p) with the temperature released.
 
     rho_p' = n mdot and, after the enthalpy the leaving mass carries cancels,
@@ -277,7 +289,7 @@ def coupled(model, t_end, cs, blowing='none', interface='VLE', steps=40000, tp0=
 
     def rhs(rho_p, Tp):
         d = diameter(rho_p)
-        mdot, Qevap, ovr = evaporate(model, d, Tp, interface)
+        mdot, Qevap, ovr = evaporate(model, d, Tp, interface, psat)
         if ovr:
             Qconv = Qevap
         else:
@@ -302,8 +314,10 @@ def coupled(model, t_end, cs, blowing='none', interface='VLE', steps=40000, tp0=
 #  Running ICE
 # ---------------------------------------------------------------------------
 
-def run(name, model, t_end, dt_max, cs, blowing='none', interface='VLE', tp0=TP0):
+def run(name, model, t_end, dt_max, cs, blowing='none', interface='VLE', tp0=TP0, table=None):
+    """One ICE run; with table, the property table is written first and returned as sol['table']."""
     case = Case(WORK / name, nx=8, Lx=1.0)
+    written = case.properties(**table) if table else None
     case.particles(rho=RHO_P0, u=0.0, v=0.0, w=0.0, T=tp0, n=NDENS)
     case.gas(rho=RHO_G, u=0.0, v=0.0, w=0.0, T=TG,
              R=RGAS, gam=GAM, k=KG, mu=MU)
@@ -313,7 +327,9 @@ def run(name, model, t_end, dt_max, cs, blowing='none', interface='VLE', tp0=TP0
     phys['evaporation-blowing'] = blowing
     case.ini(t_end=t_end, cfl=0.8, rk='RK2', drag='Stokes', heat='Stokes',
              rho_al=RHO_L, cs=cs, dt_max=dt_max, physics=phys)
-    return case.run()
+    sol = case.run()
+    sol['table'] = written
+    return sol
 
 
 def try_run(rep, *args, **kw):
@@ -421,8 +437,7 @@ def main():
     t_end = (1.0 - 0.9 ** (2.0 / 3.0)) * D0 ** 2 / slope('CEM', Tp=tp_boil)
     dt_max = t_end / 1000.0
     print('   boiling: T_p = %.0f K, psat/p = %.3f, B_M = %.3e, t_end = %.4e s'
-          % (tp_boil, PATM * math.exp(-(LV * MV / RU) * (1.0 / tp_boil - 1.0 / TBOIL)) / p,
-             BM, t_end))
+          % (tp_boil, psat_cc(tp_boil) / p, BM, t_end))
     print('   model      K (ICE)        K (reference)   rel. error')
     for model in MODELS:
         sol = try_run(rep, 'boil-%s' % model, model, t_end, dt_max, CS_FROZEN, tp0=tp_boil)
@@ -442,6 +457,30 @@ def main():
         err = abs(sol['var'][RHO][0] - rho_ref) / RHO_P0
         print('   CEM + LK boiling: rho_p %.10e vs %.10e (%.2e)' % (sol['var'][RHO][0], rho_ref, err))
         rep.check(err <= 1.0e-8, 'CEM + LK boiling: bulk density to %.1e' % err)
+
+    # --- Part 5: the saturation pressure from the property table ------------------
+    # The table's Psat column replaces Clausius-Clapeyron. CS_PSAT holds the droplet on
+    # the 300 K row, so the reference is the part-1 ODE with psat read from the table as
+    # written. A column 1.2 times the curve raises CEM's rate by 1.207; the column equal
+    # to the curve is the control, and must give what the curve gives.
+    t_end, dt_max = 0.04, 2.0e-5
+    print('   Psat column (table on 250..450 K, T_p held at %.0f K)' % TP0)
+    print('   column          rho_p (ICE)         rho_p (reference)   rel. error   T_p drift')
+    for label, factor in (('1.2 x curve', 1.2), ('the curve', 1.0)):
+        table = dict(Tmin=250, Tmax=450, cp=CS_PSAT, rho=RHO_L,
+                     psat=lambda T, f=factor: f * psat_cc(T))
+        sol = try_run(rep, 'psat-%g' % factor, 'CEM', t_end, dt_max, CS_PSAT, table=table)
+        if sol is None:
+            continue
+        col = sol['table']
+        rho_ref, _ = coupled('CEM', sol['time'], CS_PSAT,
+                             psat=lambda T: table_lookup(col, 'psat', T))
+        err = abs(sol['var'][RHO][0] - rho_ref) / RHO_P0
+        drift = max(abs(x - TP0) for x in sol['var'][T])
+        print('   %-14s  %.12e  %.12e  %9.2e  %8.1e K'
+              % (label, sol['var'][RHO][0], rho_ref, err, drift))
+        rep.check(err <= 1.0e-8, 'Psat column, %s: bulk density to %.1e' % (label, err))
+        rep.check(drift <= 1.0e-8, 'Psat column, %s: T_p held to %.1e K' % (label, drift))
 
     rep.close(WORK)
 

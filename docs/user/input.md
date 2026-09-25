@@ -91,8 +91,8 @@ convective heat exchange off explicitly; radiation stays under `emissivity`.
 
 `evaporation` defaults to `none`, and while it is `none` the vapour keys beside it are
 never read. Selecting a model makes `latent-heat`, `vapour-molar-mass` and
-`boiling-temperature` matter — those three set the saturation curve, and their defaults
-describe aluminium. `evaporation-interface` and `evaporation-blowing` are refinements of
+`boiling-temperature` matter — those three set the saturation curve unless the property
+table carries a `Psat` column, and their defaults describe aluminium. `evaporation-interface` and `evaporation-blowing` are refinements of
 the selected model rather than models of their own:
 
 ```ini

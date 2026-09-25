@@ -1,12 +1,12 @@
 !> Unit test of the property-table reader (ICE_Load_Table): the header grammar, the node and
 !> column checks, Load_Table on small tables written here (Tmin > 1, permuted columns, both
-!> datums), and the lookup and energy inversion of ICE_Lib_Properties. Prints every assertion
-!> and exits non-zero if any failed.
+!> datums), the lookup and energy inversion of ICE_Lib_Properties, and the Psat column. Prints
+!> every assertion and exits non-zero if any failed.
 program test_properties
   use, intrinsic :: iso_fortran_env, only: R8 => real64
   use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
   use ICE_Load_Table
-  use ICE_Config_Types_m, only: obj_condensed, condensed_phase_t
+  use ICE_Config_Types_m, only: obj_condensed, condensed_phase_t, obj_time_scheme
   use ICE_Global_m,       only: ICE_phase_prefix
   implicit none
   integer :: nfail = 0
@@ -16,6 +16,7 @@ program test_properties
   call test_columns()
   call test_load()
   call test_lookup()
+  call test_psat()
 
   if (nfail > 0) then
     write(*,'(A,I0,A)') 'test_properties: ', nfail, ' FAILED'
@@ -228,20 +229,86 @@ contains
   end subroutine test_lookup
 
 
+  !> P3: the Psat checks in IGLOO's order, the lookup, and Load_Table with and without evaporation.
+  subroutine test_psat()
+    use ICE_Lib_Properties, only: mat_psat
+    real(R8), parameter :: P0 = 101325._R8
+    real(R8) :: ps(300:400), bad(300:400)
+    type(condensed_phase_t) :: m
+    integer  :: i
+
+    ps = [(psat_curve(real(i, R8)), i = 300, 400)]
+    call check(validate_psat_column(ps, 300, 400, 373.15_R8, P0) == PSAT_OK, 'psat: a Clausius-Clapeyron column passes')
+    bad = ps; bad(350) = ieee_value(1._R8, ieee_quiet_nan)
+    call check(validate_psat_column(bad, 300, 400, 373.15_R8, P0) == PSAT_NONFINITE, 'psat: a NaN is refused')
+    bad = 0._R8
+    call check(validate_psat_column(bad, 300, 400, 373.15_R8, P0) == PSAT_ABSENT, 'psat: all zero counts as absent')
+    bad = ps; bad(300) = -1._R8
+    call check(validate_psat_column(bad, 300, 400, 373.15_R8, P0) == PSAT_NEGATIVE, 'psat: a negative value is refused')
+    bad = ps(400:300:-1)
+    call check(validate_psat_column(bad, 300, 400, 373.15_R8, P0) == PSAT_NONMONOTONE, 'psat: a decreasing column is refused')
+    bad(300) = -1._R8
+    call check(validate_psat_column(bad, 300, 400, 373.15_R8, P0) == PSAT_NEGATIVE, 'psat: negative is reported before decreasing')
+    bad = 1000._R8
+    call check(validate_psat_column(bad, 300, 400, 373.15_R8, P0) == PSAT_CONSTANT, 'psat: a constant column is refused')
+    call check(validate_psat_column(ps, 300, 400, 400._R8, P0) == PSAT_TBOIL_RANGE .and. &
+               validate_psat_column(ps, 300, 400, 299.9_R8, P0) == PSAT_TBOIL_RANGE .and. &
+               validate_psat_column(ps, 300, 400, ieee_value(1._R8, ieee_quiet_nan), P0) == PSAT_TBOIL_RANGE .and. &
+               validate_psat_column(0.5_R8*ps, 300, 400, 399._R8, P0) == PSAT_OK .and. &
+               validate_psat_column(ps, 300, 400, 300._R8, P0) /= PSAT_TBOIL_RANGE, &
+               'psat: the boiling temperature must lie in [Tmin, Tmax-1]')
+    call check(validate_psat_column(0.49_R8*ps, 300, 400, 373.15_R8, P0) == PSAT_TBOIL_MISMATCH .and. &
+               validate_psat_column(2.01_R8*ps, 300, 400, 373.15_R8, P0) == PSAT_TBOIL_MISMATCH .and. &
+               validate_psat_column(0.51_R8*ps, 300, 400, 373.15_R8, P0) == PSAT_OK .and. &
+               validate_psat_column(1.99_R8*ps, 300, 400, 373.15_R8, P0) == PSAT_OK, &
+               'psat: 0.5 to 2 atm at the boiling temperature')
+
+    m%T_min = 300; m%T_max = 400
+    allocate(m%psat_tab(300:400), source=ps)
+    call check(abs(mat_psat(m, 350.25_R8) - (0.75_R8*ps(350) + 0.25_R8*ps(351))) <= 1.e-12_R8*ps(351) .and. &
+               mat_psat(m, 250._R8) == ps(300) .and. mat_psat(m, 450._R8) == ps(400) .and. mat_psat(m, 373._R8) == ps(373), &
+               'psat: linear between the nodes, exact on them, end values outside')
+
+    call write_table('u5-', '"Temperature", "Cp", "Density", "Enthalpy", "Psat"', 300, 400, 5)
+    obj_condensed%Tboil = 373.15_R8
+    obj_time_scheme%evapSelect = 0
+    call load('u5-')
+    call check(.not. obj_condensed%use_psat .and. .not. allocated(obj_condensed%psat_tab), &
+               'psat: without evaporation the column is not read')
+    obj_time_scheme%evapSelect = 2
+    call load('u5-')
+    call check(obj_condensed%use_psat .and. lbound(obj_condensed%psat_tab, 1) == 300 .and. &
+               obj_condensed%psat_tab(373) == psat_curve(373._R8) .and. obj_condensed%psat_tab(400) == psat_curve(400._R8), &
+               'psat: with evaporation the column is stored, indexed by temperature')
+    obj_time_scheme%evapSelect = 0
+  end subroutine test_psat
+
+
+  !> A Clausius-Clapeyron curve through one atmosphere at 373.15 K (water-like).
+  pure function psat_curve(T) result(p)
+    real(R8), intent(in) :: T
+    real(R8) :: p
+    p = 101325._R8*exp(-4896.8_R8*(1._R8/T - 1._R8/373.15_R8))
+  end function psat_curve
+
+
   subroutine load(prefix)
     character(len=*), intent(in) :: prefix
     if (allocated(obj_condensed%rho_tab)) deallocate(obj_condensed%rho_tab)
     if (allocated(obj_condensed%cs_tab))  deallocate(obj_condensed%cs_tab)
     if (allocated(obj_condensed%h_tab))   deallocate(obj_condensed%h_tab)
     if (allocated(obj_condensed%e_tab))   deallocate(obj_condensed%e_tab)
+    if (allocated(obj_condensed%psat_tab)) deallocate(obj_condensed%psat_tab)
     obj_condensed%use_table = .false.
+    obj_condensed%use_psat  = .false.
     ICE_phase_prefix = prefix
     call Load_Table()
   end subroutine load
 
 
   !> kind 1: constant cp 2000, rho 1500, h = cp*T; kind 2: the same in the order T, h, rho, cp with
-  !  rho = 2000 - T; kind 3: h = cp*T - 1.5e7 (absolute); kind 4: kind 1 with an unknown column before h.
+  !  rho = 2000 - T; kind 3: h = cp*T - 1.5e7 (absolute); kind 4: kind 1 with an unknown column before h;
+  !  kind 5: kind 1 with a Psat column, psat_curve(T).
   subroutine write_table(prefix, header, Tmin, Tmax, kind)
     character(len=*), intent(in) :: prefix, header
     integer,          intent(in) :: Tmin, Tmax, kind
@@ -263,6 +330,9 @@ contains
         h = h - 1.5e7_R8
       case (4)
         write(unit,'(F8.1,4(1X,ES24.16))') real(T, R8), cp, rho, 3.3e5_R8, h
+        cycle
+      case (5)
+        write(unit,'(F8.1,4(1X,ES24.16))') real(T, R8), cp, rho, h, psat_curve(real(T, R8))
         cycle
       end select
       write(unit,'(F8.1,3(1X,ES24.16))') real(T, R8), cp, rho, h

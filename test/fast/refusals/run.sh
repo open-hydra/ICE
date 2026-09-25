@@ -6,7 +6,8 @@
 #  must terminate with exit status != 0 and print the texts listed for it. The
 #  first rows are refused while the input is read (a value outside its allowed
 #  list, a required model left unset in a coupled run, the heat name Chang, whose
-#  formula is JAXA3, a property table that is malformed or contradicts the INI);
+#  formula is JAXA3, a property table that is malformed or contradicts the INI,
+#  a Psat column an evaporation model cannot use);
 #  the last one diverges at run time (a NaN source in one cell) and must be
 #  caught after the update. A solver that reports success on
 #  any of these would let a harness read a broken run as a pass. One row goes the
@@ -114,6 +115,22 @@ refuse Doisneau/MK "table: a value that is not a number" "sed -i '1000s/ [^ ]*\$
 accept Doisneau/MK "table: INI density equal to the constant column" \
        "sed -i '/^heat-transfer/a density = 2000' input.ini && sed -i 's/^iter-threshold .*/iter-threshold = 20/' input.ini" \
        "material 1: density 2.00000E+03 (constant)"
+# Refuse/MK is coupled, so its evaporation model is read. psat_table writes its material (cp 1000,
+# density 2000, as its INI sets) as a table with a Psat column: 1e6 - T Pa ("decreasing") or
+# T Pa ("linear", 0.03 atm at the default boiling temperature, 2792 K)
+psat_table() {
+  awk -v mode="$1" 'BEGIN {
+    print "TITLE = \"Mass Thermodynamic Properties\""
+    print "VARIABLES = \"Temperature\", \"Cp\", \"Density\", \"Enthalpy\", \"Psat\""
+    print "ZONE T=\"A\""; print "I=5000, F=POINT"
+    for (T = 1; T <= 5000; T++) printf "%.1f 1000.0 2000.0 %.1f %.6e\n", T, 1000*T, (mode == "decreasing" ? 1e6 - T : T)
+  }' > INPUT/part-properties.dat
+}
+evap_on="sed -i '/^heat-transfer/a evaporation = CEM' input.ini"
+refuse Refuse/MK   "Psat: decreasing, with evaporation" "psat_table decreasing && $evap_on" \
+       "Psat column: a pressure that decreases with T"
+refuse Refuse/MK   "Psat: far from 1 atm at the boiling temperature" "psat_table linear && $evap_on" \
+       "Psat column: psat(boiling-temperature) is not within a factor 2 of one atmosphere"
 refuse Refuse/MK   "divergence caught after the update" ":" \
        "invalid state after the update"
 
