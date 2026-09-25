@@ -87,7 +87,9 @@ enthalpy is either `Enthalpy` (relative: $c_p T$ for a constant $c_p$) or `Entha
 replaces the Clausius-Clapeyron saturation curve of the evaporation models; other names
 are ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least
 two of them. Between the nodes the density and $c_p$ are linear in $T$, and outside
-$[T_{min}, T_{max}]$ they keep the end values.
+$[T_{min}, T_{max}]$ they keep the end values. When $c_p$ varies, the particle energy is
+the enthalpy column itself, less its value extrapolated to 0 K, so its datum does not
+matter ([Energy and temperature](../theory/governing-equations.md#energy-and-temperature)).
 
 ICE refuses a table that is missing a column, names a column twice or names two
 enthalpies; that has a zone count other than the number of materials, zones on different

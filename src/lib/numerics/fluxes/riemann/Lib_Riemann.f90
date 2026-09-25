@@ -2,7 +2,7 @@ module ICE_Lib_Riemann
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   use ICE_Lib_Model
   use ICE_Config_Types_m, only: condensed_phase_t
-  use ICE_Lib_Properties, only: mat_cp
+  use ICE_Lib_Properties, only: mat_cp_const, mat_e
   implicit none
   private
   public :: assign_riemann
@@ -78,7 +78,11 @@ end subroutine assign_riemann
       flux(2) = uu_1*flux(1)
       flux(3) = vv_1*flux(1)
       flux(4) = ww_1*flux(1)
-      flux(5) = flux(1)*(0.5_R8*(uu_1*uu_1+vv_1*vv_1+ww_1*ww_1)+mat_cp(mat, prim_1(5))*prim_1(5))
+      if (mat%cs_varies) then
+        flux(5) = flux(1)*(0.5_R8*(uu_1*uu_1+vv_1*vv_1+ww_1*ww_1)+mat_e(mat, prim_1(5)))
+      else
+        flux(5) = flux(1)*(0.5_R8*(uu_1*uu_1+vv_1*vv_1+ww_1*ww_1)+mat_cp_const(mat)*prim_1(5))
+      endif
       flux(6) = prim_1(6)*veln
     elseif (veln < 0._R8) then
       ut_4 = (prim_4(2)-veln_4*normal(1)); vt_4 = (prim_4(3)-veln_4*normal(2)); wt_4 = (prim_4(4)-veln_4*normal(3))
@@ -87,7 +91,11 @@ end subroutine assign_riemann
       flux(2) = uu_4*flux(1)
       flux(3) = vv_4*flux(1)
       flux(4) = ww_4*flux(1)
-      flux(5) = flux(1)*(0.5_R8*(uu_4*uu_4+vv_4*vv_4+ww_4*ww_4)+mat_cp(mat, prim_4(5))*prim_4(5))
+      if (mat%cs_varies) then
+        flux(5) = flux(1)*(0.5_R8*(uu_4*uu_4+vv_4*vv_4+ww_4*ww_4)+mat_e(mat, prim_4(5)))
+      else
+        flux(5) = flux(1)*(0.5_R8*(uu_4*uu_4+vv_4*vv_4+ww_4*ww_4)+mat_cp_const(mat)*prim_4(5))
+      endif
       flux(6) = prim_4(6)*veln
     else 
       flux = 0._R8

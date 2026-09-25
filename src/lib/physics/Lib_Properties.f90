@@ -3,13 +3,13 @@
 !> between the integer-kelvin nodes and takes the end value outside them. The energy
 !> e = h - hOff is extended linearly beyond both ends (through e(0) = 0 below), and T(e)
 !> inverts it by bisection over the nodes. The saturation pressure follows the density's rule.
-!> The tables must be allocated (use_table, use_psat).
+!> The tables must be allocated (use_table, use_psat; cs_varies for the energy).
 module ICE_Lib_Properties
   use, intrinsic :: iso_fortran_env, only: R8 => real64
   use ICE_Config_Types_m, only: condensed_phase_t
   implicit none
   private
-  public :: mat_rho, mat_cp, mat_e, mat_T_from_e, mat_psat
+  public :: mat_rho, mat_cp, mat_cp_const, mat_e, mat_T_from_e, mat_T_from_rhoe, mat_psat
 
 contains
 
@@ -31,14 +31,24 @@ contains
     type(condensed_phase_t), intent(in) :: mat
     real(R8),                intent(in) :: T
     real(R8) :: cp
-    if (.not. mat%use_table) then
-      cp = mat%cs_al
-    elseif (.not. mat%cs_varies) then
-      cp = mat%cs_tab(mat%T_min)
-    else
+    if (mat%cs_varies) then
       cp = table_value(mat%cs_tab, mat%T_min, mat%T_max, T)
+    else
+      cp = mat_cp_const(mat)
     endif
   end function mat_cp
+
+
+  !> The cp of a material whose cp does not vary: the INI value, or the table's constant column.
+  pure function mat_cp_const(mat) result(cp)
+    type(condensed_phase_t), intent(in) :: mat
+    real(R8) :: cp
+    if (mat%use_table) then
+      cp = mat%cs_tab(mat%T_min)
+    else
+      cp = mat%cs_al
+    endif
+  end function mat_cp_const
 
 
   !> Saturation pressure [Pa] from the table's Psat column.
@@ -108,6 +118,17 @@ contains
       endif
     end associate
   end function mat_T_from_e
+
+
+  !> Temperature from the internal energy per unit volume rhoe and the density: T(e) at
+  !  e = rhoe/(rho + eps/cp0), cp0 the first segment's slope, so that an empty cell gets the
+  !  T that rhoe/(cp*rho + eps) gives it at a constant cp.
+  pure function mat_T_from_rhoe(mat, rhoe, rho, eps) result(T)
+    type(condensed_phase_t), intent(in) :: mat
+    real(R8),                intent(in) :: rhoe, rho, eps
+    real(R8) :: T
+    T = mat_T_from_e(mat, rhoe/(rho + eps/(mat%e_tab(mat%T_min+1) - mat%e_tab(mat%T_min))))
+  end function mat_T_from_rhoe
 
 
   !> Linear between the nodes, the end value outside; a NaN temperature returns NaN.

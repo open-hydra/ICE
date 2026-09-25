@@ -3,7 +3,7 @@ module ICE_Lib_MK
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   use ICE_Global_m
   use ICE_Config_Types_m, only: condensed_phase_t
-  use ICE_Lib_Properties, only: mat_cp
+  use ICE_Lib_Properties, only: mat_cp_const, mat_e, mat_T_from_rhoe
   implicit none
 
 contains
@@ -24,7 +24,11 @@ contains
     cons(3) = prim(1)*prim(3)
     cons(4) = prim(1)*prim(4)
 
-    cons(5) = prim(1)*mat_cp(mat, prim(5))*prim(5) + 0.5_R8*prim(1)*norm2V
+    if (mat%cs_varies) then
+      cons(5) = prim(1)*mat_e(mat, prim(5)) + 0.5_R8*prim(1)*norm2V
+    else
+      cons(5) = prim(1)*mat_cp_const(mat)*prim(5) + 0.5_R8*prim(1)*norm2V
+    endif
 
     cons(6) = prim(6)
   
@@ -49,8 +53,11 @@ contains
 
     norm2V  = prim(2)*prim(2) + prim(3)*prim(3) + prim(4)*prim(4)
 
-    prim(5) = (cons(5) - 0.5_R8*prim(1)*norm2V) / (mat%cs_al*prim(1)+eps)  ! initial estimate
-    prim(5) = (cons(5) - 0.5_R8*prim(1)*norm2V) / (mat_cp(mat, prim(5))*prim(1)+eps)   ! table correction
+    if (mat%cs_varies) then
+      prim(5) = mat_T_from_rhoe(mat, cons(5) - 0.5_R8*prim(1)*norm2V, prim(1), eps)
+    else
+      prim(5) = (cons(5) - 0.5_R8*prim(1)*norm2V) / (mat_cp_const(mat)*prim(1)+eps)
+    endif
 
     prim(6) = cons(6)
 
@@ -134,7 +141,11 @@ contains
     flux(3) = flux(1)*prim(3)
     flux(4) = flux(1)*prim(4)
 
-    flux(5) = flux(1)*(0.5_R8*norm2V + mat_cp(mat, prim(5))*prim(5))
+    if (mat%cs_varies) then
+      flux(5) = flux(1)*(0.5_R8*norm2V + mat_e(mat, prim(5)))
+    else
+      flux(5) = flux(1)*(0.5_R8*norm2V + mat_cp_const(mat)*prim(5))
+    endif
 
     flux(6) = prim(6)*un
 
@@ -159,8 +170,13 @@ contains
     source(3) = - force(1)*prim(3) + prim(1)*force(3)/(force(6)+eps)
     source(4) = - force(1)*prim(4) + prim(1)*force(4)/(force(6)+eps)
 
-    source(5) = - force(1)*(0.5_R8*norm2V + mat_cp(mat, prim(5))*prim(5)) - force(1)*mat%lv_al + force(5) + &
-                  prim(1)*(force(2)*prim(2)+force(3)*prim(3)+force(4)*prim(4))/(force(6)+eps)
+    if (mat%cs_varies) then
+      source(5) = - force(1)*(0.5_R8*norm2V + mat_e(mat, prim(5))) - force(1)*mat%lv_al + force(5) + &
+                    prim(1)*(force(2)*prim(2)+force(3)*prim(3)+force(4)*prim(4))/(force(6)+eps)
+    else
+      source(5) = - force(1)*(0.5_R8*norm2V + mat_cp_const(mat)*prim(5)) - force(1)*mat%lv_al + force(5) + &
+                    prim(1)*(force(2)*prim(2)+force(3)*prim(3)+force(4)*prim(4))/(force(6)+eps)
+    endif
 
     source(6) = 0._R8
 

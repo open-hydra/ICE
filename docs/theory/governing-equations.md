@@ -38,7 +38,7 @@ Six variables,
 $$
 \mathbf{P} = (\rho_p,\ u,\ v,\ w,\ T_p,\ n), \qquad
 \mathbf{U} = \Big(\rho_p,\ \rho_p u,\ \rho_p v,\ \rho_p w,\
-                  \rho_p\big[c_s T_p + \tfrac12 |\mathbf{u}|^2\big],\ n\Big).
+                  \rho_p\big[e(T_p) + \tfrac12 |\mathbf{u}|^2\big],\ n\Big).
 $$
 
 The flux carries each quantity at the local velocity and nothing else:
@@ -71,7 +71,7 @@ $$
      \rho_p u_n|\mathbf{u}|^2 + 5Pu_n,\ \ \dots,\ n u_n\Big).
 $$
 
-The total energy $\rho_p c_s T_p + \tfrac12 E$ is carried with $u_n\,\rho_p\big(c_s T_p +
+The total energy $\rho_p e(T_p) + \tfrac12 E$ is carried with $u_n\,\rho_p\big(e(T_p) +
 \tfrac12|\mathbf{u}|^2\big) + \tfrac52 P u_n$: the pressure work is half the $5Pu_n$ of $E$.
 The system is strictly hyperbolic, with sound speed
 
@@ -92,7 +92,7 @@ whose conservative form is $\rho_p u_i u_j + P_{ij}$ for the six tensor componen
 off-diagonal terms are what let the closure carry a shear: two streams crossing at an
 angle show up as a $P_{12}$ that the transport equation then carries along, which is
 the quantity the [Berthon Riemann problems](../vv/berthon.md) check. The total energy
-$\rho_p c_s T_p + \tfrac12(\rho_p|\mathbf{u}|^2 + P_{11} + P_{22} + P_{33})$ is carried at
+$\rho_p e(T_p) + \tfrac12(\rho_p|\mathbf{u}|^2 + P_{11} + P_{22} + P_{33})$ is carried at
 $u_n$ plus the pressure work $\mathbf{u}\cdot(\mathsf{P}\hat{\mathbf n})$. Across a face of
 normal $\hat{\mathbf n}$ the waves travel at $u_n$ and $u_n \pm a_n$, with
 
@@ -104,11 +104,23 @@ so a dispersion that differs by direction gives a signal speed that does too.
 
 ## Energy and temperature
 
-In all three closures the particle temperature enters through the internal energy
-$c_s(T_p)\,T_p$, with $c_s$ the specific heat of the condensed material — a constant or
-a table lookup. Inverting the energy variable for $T_p$ is therefore implicit when the
-table is used, and ICE does it in two passes: a first estimate with the constant $c_s$,
-then one correction with $c_s$ evaluated at that estimate.
+In all three closures the particle temperature enters through the internal energy per
+unit mass $e(T_p)$ of the condensed material. With a constant specific heat $c_s$, the
+`specific-heat` of `[ICE-Physics]` or a constant `Cp` column of the
+[property table](../user/initial-conditions.md#property-table), it is $e = c_s T_p$, and
+$T_p$ follows from the energy variable in one division. With a `Cp` column that varies, it
+is the table's enthalpy less the value its first segment extrapolates to at 0 K,
+
+$$
+e(T) = h(T) - h_{off}, \qquad
+h_{off} = h(T_{min}) - T_{min}\,\big[h(T_{min}+1) - h(T_{min})\big],
+$$
+
+linear between the rows, continued down to $e(0) = 0$ along the first segment and above
+$T_{max}$ along the last one. $T_p$ is recovered by inverting that line, which increases
+with $T$, with a bisection on the rows. $e$ is then the integral of the tabulated $c_s$:
+it does not depend on the datum of the enthalpy column, and an empty cell keeps a
+temperature near zero, as it does with a constant $c_s$.
 
 ## Source terms
 

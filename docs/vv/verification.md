@@ -23,7 +23,7 @@ is measured. L runs two or three families side by side in one case, each on its 
 | **D** | [Every drag correlation](#d-every-drag-correlation) | All twelve drag laws, to $Ma = 2.6$ | Independent RK4 |
 | **E** | [Every Nusselt correlation](#e-every-nusselt-correlation) | All seven heat laws, velocity and temperature relaxing together | Independent RK4 and closed form |
 | **F** | [Evaporation](#f-evaporation) | All five evaporation models, the latent sink, two exact identities, the boiling clamp, the table's `Psat` | Closed form and RK4 |
-| **K** | [The property table](#k-the-property-table-at-a-fixed-temperature) | Linear interpolation between the table's rows, a table that starts above 1 K, saturation past its ends | Closed form |
+| **K** | [The property table](#k-the-property-table) | Linear interpolation between the table's rows, a table that starts above 1 K, saturation past its ends, the energy of a varying specific heat | Closed form and RK4 |
 | **L** | [Several materials](#l-several-materials) | Each family on its own material: its table zone, its model tokens, its inlet records, its inlet density | Closed form and case F's |
 | **C** | [Sinusoidal advection](#c-sinusoidal-advection-on-a-periodic-mesh) | Transport alone, and the order of the space scheme | Closed form |
 | **G** | [Cloud in a uniform gas](#g-a-cloud-released-into-a-uniform-gas) | Transport and drag together | Closed form |
@@ -344,9 +344,9 @@ reading the curve instead of the 1.2 column misses it by $6.6\times10^{-3}$.
 
 ## Material properties
 
-### K. The property table at a fixed temperature
+### K. The property table
 
-Case A's cloud with its density taken from `INPUT/part-properties.dat` instead of the
+**At a fixed temperature.** Case A's cloud with its density taken from `INPUT/part-properties.dat` instead of the
 INI. With `heat-transfer = NoHeat` and no radiation nothing heats the particles, and the
 drag work cancels the kinetic energy it produces, so $T_p$ keeps its initial value and
 the table is read at one temperature for the whole run. The velocity is case A's
@@ -369,6 +369,34 @@ extrapolation below $T_{min}$ would put K7 2.0 % high, and the row at $T_{max}$ 
 K1c is K1's control, the same run with nothing to interpolate. $T_p$ must stay within
 $10^{-4}$ K of its initial value, well under the 0.1 K that would change the nearest row;
 it moves by round-off.
+
+**A specific heat that varies.** The energy of a material whose `Cp` column varies is
+$\rho_p e(T_p)$ with $e = h - h_{off}$
+([Energy and temperature](../theory/governing-equations.md#energy-and-temperature)). The
+tables below have $c_s = 1000 + 2T$ on the rows 1 to 5000 K, $h$ its exact integral, whose
+values are integers so that every subtraction is exact, and a density of 1000 kg/m³.
+
+| Leg | Setup | Check | Measured |
+|---|---|---|---|
+| K2 | No gas; a uniform cloud at 10 m/s and 500.37 K, 200 RK2 steps | $\lvert T_p - T_{p0}\rvert \le 10^{-9}$ K | 0 |
+| K2c | K2 with $c_s$ = 2000 on every row | the same | 0 |
+| K3 | The cloud moving with a gas at 800 K, $T_{p0}$ = 300 K, $Nu = 2$, no drag, to $t = \tau_T$ | $T_p$ within $10^{-6}$ of the 500 K gap of the oracle | $4.7\times10^{-8}$ |
+| K3c | K3 with $c_s$ = 2000 on every row | the same | $6.1\times10^{-8}$ |
+| K4 | K3's table as `Enthalpy_abs`, $h - 1.5\times10^7$ J/kg | `part-field.tec` bit for bit K3's | identical |
+| K5 | K3's table with its columns in the order `Temperature`, `Enthalpy`, `Density`, `Cp` | the same | identical |
+
+The oracle of K3 integrates $\rho_p\,de/dt = 4\pi k_g R_p\,n\,(T_g - T(e))$ with RK4 in $e$,
+$T(e)$ the inverse of the table's line, and $\tau_T = \rho_{al} c_s d_p^2/(12 k_g)$ with
+$c_s$ = 2000. An energy $\rho_p c_s(T_p)\,T_p$ is what these legs detect: its inversion is
+not a round trip, so K2's cloud drifts 201 K towards 299 K in 200 steps, and K3's never
+heats (error 0.64 of the gap). K2c and K3c are the controls with nothing to vary.
+
+K2's tolerance: a round trip $T \to e \to T$ returns $T$ to a few ulp, $10^{-13}$ K at
+500 K, and the 400 of the run stay below $10^{-10}$ K; the output holds 15 digits, so the
+check resolves $10^{-12}$ K. K3's: RK2 at $\Delta t = \tau_T/1000$ leaves
+$e^{-1}(\Delta t/\tau_T)^2/6 = 6\times10^{-8}$ of the gap at $t = \tau_T$, which the
+constant-$c_s$ control measures too; the kinks of $e$ at the rows add at most
+$10^{-9}$ each over the 300 rows crossed. $10^{-6}$ sits a decade above both.
 
 ### L. Several materials
 

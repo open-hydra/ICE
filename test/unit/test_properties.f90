@@ -1,7 +1,8 @@
 !> Unit test of the property-table reader (ICE_Load_Table): the header grammar, the node and
 !> column checks, Load_Table on small tables written here (Tmin > 1, permuted columns, both
-!> datums), the lookup and energy inversion of ICE_Lib_Properties, and the Psat column. Prints
-!> every assertion and exits non-zero if any failed.
+!> datums), the lookup and energy inversion of ICE_Lib_Properties, the Psat column, and the
+!> energy the MK, IG and AG closures store and recover. Prints every assertion and exits
+!> non-zero if any failed.
 program test_properties
   use, intrinsic :: iso_fortran_env, only: R8 => real64
   use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
@@ -19,6 +20,7 @@ program test_properties
   call test_load()
   call test_lookup()
   call test_psat()
+  call test_closures()
 
   if (nfail > 0) then
     write(*,'(A,I0,A)') 'test_properties: ', nfail, ' FAILED'
@@ -286,6 +288,116 @@ contains
                'psat: with evaporation the column is stored, indexed by temperature')
     obj_condensed(1)%evapSelect = 0
   end subroutine test_psat
+
+
+  !> P6: a tabulated cp stores rho*e(T), e = h - hOff, and recovers T to round-off, in the
+  !  conserved energy, the flux and the source of every closure; an empty cell recovers the T a
+  !  constant cp gives it; a constant cp gives the same bits with or without a table.
+  subroutine test_closures()
+    use ICE_Lib_MK, only: prim_2_cons_MK, cons_2_prim_MK, flux_make_MK, source_make_MK
+    use ICE_Lib_IG, only: prim_2_cons_IG, cons_2_prim_IG, flux_make_IG, source_make_IG
+    use ICE_Lib_AG, only: prim_2_cons_AG, cons_2_prim_AG, flux_make_AG, source_make_AG
+    use ICE_Lib_Properties, only: mat_e
+    type(condensed_phase_t) :: m, c, t
+    real(R8), parameter :: Ts(6) = [1.e-3_R8, 150._R8, 280._R8, 333.3_R8, 400._R8, 520._R8]
+    real(R8), parameter :: nrm(3) = [0.6_R8, 0.8_R8, 0._R8], lv = 2.3e6_R8
+    real(R8) :: pk(6), pi7(7), pa(12), q(12), b(12), f(12), s(12), force(6), e, ke, un, tr, Tv(2)
+    real(R8) :: wr, wc, wf, ws
+    integer  :: i, k
+
+    ! cp = 1000 + 2T on 280..400 K, h its exact integral, anchored at 0 K along the first segment
+    m%use_table = .true.; m%cs_varies = .true.; m%T_min = 280; m%T_max = 400; m%lv_al = lv
+    allocate(m%rho_tab(280:400), source=1500._R8)
+    allocate(m%cs_tab(280:400), m%h_tab(280:400))
+    m%cs_tab = [(1000._R8 + 2._R8*i, i = 280, 400)]
+    m%h_tab  = [(1000._R8*i + real(i, R8)**2, i = 280, 400)]
+    m%h_off  = m%h_tab(280) - 280._R8*(m%h_tab(281) - m%h_tab(280))
+    allocate(m%e_tab(280:400), source=m%h_tab - m%h_off)
+    force = [2.e-3_R8, 0._R8, 0._R8, 0._R8, 0._R8, 1._R8]
+
+    wr = 0._R8; wc = 0._R8; wf = 0._R8; ws = 0._R8
+    do k = 1, size(Ts)
+      e = mat_e(m, Ts(k))
+      ! MK: rho, u, v, w, T, n
+      pk = [1.2_R8, 10._R8, -3._R8, 0.5_R8, Ts(k), 1.e9_R8]
+      ke = 0.5_R8*pk(1)*(pk(2)**2 + pk(3)**2 + pk(4)**2); un = pk(2)*nrm(1) + pk(3)*nrm(2)
+      q(1:6) = prim_2_cons_MK(pk, m)
+      b(1:6) = cons_2_prim_MK(q(1:6), m)
+      wc = max(wc, abs(q(5) - ke - pk(1)*e)/(pk(1)*e + ke))
+      wr = max(wr, maxval(abs(b(1:6) - pk)/abs(pk)))
+      f(1:6) = flux_make_MK(pk, nrm, m)
+      wf = max(wf, abs(f(5) - f(1)*(ke/pk(1) + e))/abs(f(1)*(ke/pk(1) + e)))
+      s(1:6) = source_make_MK(pk, force, m)
+      ws = max(ws, abs(s(5) + force(1)*(ke/pk(1) + e + lv))/(force(1)*(ke/pk(1) + e + lv)))
+      ! IG: rho, u, v, w, P, T, n
+      pi7 = [1.2_R8, 10._R8, -3._R8, 0.5_R8, 40._R8, Ts(k), 1.e9_R8]
+      q(1:7) = prim_2_cons_IG(pi7, m)
+      b(1:7) = cons_2_prim_IG(q(1:7), m)
+      wc = max(wc, abs(q(6) - 0.5_R8*q(5) - pi7(1)*e)/(pi7(1)*e + 0.5_R8*q(5)))
+      wr = max(wr, maxval(abs(b(1:7) - pi7)/abs(pi7)))
+      f(1:7) = flux_make_IG(pi7, nrm, m)
+      wf = max(wf, abs(f(6) - 2.5_R8*pi7(5)*un - f(1)*(ke/pi7(1) + e))/abs(f(1)*(ke/pi7(1) + e)))
+      s(1:7) = source_make_IG(pi7, force, m)
+      ws = max(ws, abs(s(6) - 0.5_R8*s(5) + force(1)*(e + lv))/(force(1)*(e + lv)))
+      ! AG: rho, u, v, w, P11, P12, P13, P22, P23, P33, T, n
+      pa = [1.2_R8, 10._R8, -3._R8, 0.5_R8, 40._R8, 3._R8, -2._R8, 30._R8, 1._R8, 20._R8, Ts(k), 1.e9_R8]
+      tr = 0.5_R8*(pa(5) + pa(8) + pa(10))
+      q(1:12) = prim_2_cons_AG(pa, m)
+      b(1:12) = cons_2_prim_AG(q(1:12), m)
+      wc = max(wc, abs(q(11) - 0.5_R8*(q(5) + q(8) + q(10)) - pa(1)*e)/(pa(1)*e + ke + tr))
+      wr = max(wr, maxval(abs(b(1:12) - pa)/abs(pa)))
+      f(1:12) = flux_make_AG(pa, nrm, m)
+      wf = max(wf, abs(f(11) - (pa(2)*(pa(5)*nrm(1) + pa(6)*nrm(2)) + pa(3)*(pa(6)*nrm(1) + pa(8)*nrm(2)) &
+                                + pa(4)*(pa(7)*nrm(1) + pa(9)*nrm(2))) - f(1)*(ke/pa(1) + tr/pa(1) + e)) &
+                   /abs(f(1)*(ke/pa(1) + tr/pa(1) + e)))
+      s(1:12) = source_make_AG(pa, force, m)
+      ws = max(ws, abs(s(11) - 0.5_R8*(s(5) + s(8) + s(10)) + force(1)*(e + lv))/(force(1)*(e + lv)))
+    enddo
+    call check(wc <= 1.e-14_R8, 'closures: a tabulated cp stores rho*e(T), MK/IG/AG, below, inside and above the table')
+    call check(wr <= 1.e-13_R8, 'closures: the state comes back to round-off, MK/IG/AG, T from 1 mK to 520 K')
+    call check(wf <= 1.e-14_R8, 'closures: the energy flux carries e(T), MK/IG/AG')
+    call check(ws <= 1.e-14_R8, 'closures: the evaporated mass takes e(T) + lv away, MK/IG/AG')
+
+    ! an empty cell (rho = 1e-20): a constant cp equal to the first segment's slope gives the same T
+    c%cs_al = m%e_tab(281) - m%e_tab(280); c%lv_al = lv
+    Tv = [150._R8, 1.e-20_R8]
+    wr = 0._R8
+    do k = 1, 2
+      pk = [1.e-20_R8, 1.e-20_R8, 1.e-20_R8, 1.e-20_R8, Tv(k), 1.e-20_R8]
+      b(1:6) = cons_2_prim_MK(prim_2_cons_MK(pk, m), m)
+      f(1:6) = cons_2_prim_MK(prim_2_cons_MK(pk, c), c)
+      wr = max(wr, abs(b(5) - f(5))/f(5))
+    enddo
+    call check(wr <= 1.e-12_R8, 'closures: an empty cell recovers the T a constant cp gives it')
+
+    ! a constant cp: the INI value and a constant column give the same bits
+    t%use_table = .true.; t%T_min = 280; t%T_max = 400; t%lv_al = lv
+    allocate(t%rho_tab(280:400), source=1500._R8)
+    allocate(t%cs_tab(280:400), source=2000._R8)
+    allocate(t%h_tab(280:400)); t%h_tab = [(2000._R8*i, i = 280, 400)]
+    allocate(t%e_tab(280:400), source=t%h_tab)
+    c%cs_al = 2000._R8
+    pk = [1.2_R8, 10._R8, -3._R8, 0.5_R8, 333.3_R8, 1.e9_R8]
+    pi7 = [1.2_R8, 10._R8, -3._R8, 0.5_R8, 40._R8, 333.3_R8, 1.e9_R8]
+    pa = [1.2_R8, 10._R8, -3._R8, 0.5_R8, 40._R8, 3._R8, -2._R8, 30._R8, 1._R8, 20._R8, 333.3_R8, 1.e9_R8]
+    call check(all(prim_2_cons_MK(pk, t) == prim_2_cons_MK(pk, c)) .and. &
+               all(cons_2_prim_MK(prim_2_cons_MK(pk, t), t) == cons_2_prim_MK(prim_2_cons_MK(pk, c), c)) .and. &
+               all(flux_make_MK(pk, nrm, t) == flux_make_MK(pk, nrm, c)) .and. &
+               all(source_make_MK(pk, force, t) == source_make_MK(pk, force, c)) .and. &
+               all(prim_2_cons_IG(pi7, t) == prim_2_cons_IG(pi7, c)) .and. &
+               all(cons_2_prim_IG(prim_2_cons_IG(pi7, t), t) == cons_2_prim_IG(prim_2_cons_IG(pi7, c), c)) .and. &
+               all(flux_make_IG(pi7, nrm, t) == flux_make_IG(pi7, nrm, c)) .and. &
+               all(prim_2_cons_AG(pa, t) == prim_2_cons_AG(pa, c)) .and. &
+               all(cons_2_prim_AG(prim_2_cons_AG(pa, t), t) == cons_2_prim_AG(prim_2_cons_AG(pa, c), c)) .and. &
+               all(flux_make_AG(pa, nrm, t) == flux_make_AG(pa, nrm, c)), &
+               'closures: a constant cp gives the same bits from the INI and from a constant column')
+    q(1:6) = prim_2_cons_MK(pk, c)
+    b(1:6) = cons_2_prim_MK(q(1:6), c)
+    ke = 0.5_R8*pk(1)*(pk(2)**2 + pk(3)**2 + pk(4)**2)
+    call check(abs(q(5) - (pk(1)*2000._R8*pk(5) + ke)) <= 4._R8*epsilon(1._R8)*q(5) .and. &
+               all(abs(b(1:6) - pk) <= 4._R8*epsilon(1._R8)*abs(pk)), &
+               'closures: a constant cp stores rho*cp*T and recovers T in one pass')
+  end subroutine test_closures
 
 
   !> A Clausius-Clapeyron curve through one atmosphere at 373.15 K (water-like).

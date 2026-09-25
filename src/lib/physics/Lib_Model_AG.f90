@@ -3,7 +3,7 @@ module ICE_Lib_AG
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   use ICE_Global_m
   use ICE_Config_Types_m, only: condensed_phase_t
-  use ICE_Lib_Properties, only: mat_cp
+  use ICE_Lib_Properties, only: mat_cp_const, mat_e, mat_T_from_rhoe
   implicit none
 
 contains
@@ -31,7 +31,11 @@ contains
     cons(9)  = prim(1)*prim(3)*prim(4) + prim(9)
     cons(10) = prim(1)*prim(4)*prim(4) + prim(10)
 
-    cons(11) = prim(1)*mat_cp(mat, prim(11))*prim(11) + 0.5_R8*(cons(5)+cons(8)+cons(10))
+    if (mat%cs_varies) then
+      cons(11) = prim(1)*mat_e(mat, prim(11)) + 0.5_R8*(cons(5)+cons(8)+cons(10))
+    else
+      cons(11) = prim(1)*mat_cp_const(mat)*prim(11) + 0.5_R8*(cons(5)+cons(8)+cons(10))
+    endif
 
     cons(12) = prim(12)
   
@@ -63,8 +67,11 @@ contains
     prim(9)  = cons(9)  - prim(1)*prim(3)*prim(4)
     prim(10) = cons(10) - prim(1)*prim(4)*prim(4)
 
-    prim(11) = (cons(11) - 0.5_R8*(cons(5)+cons(8)+cons(10))) / (mat%cs_al*prim(1)+eps)   ! initial estimate
-    prim(11) = (cons(11) - 0.5_R8*(cons(5)+cons(8)+cons(10))) / (mat_cp(mat, prim(11))*prim(1)+eps)  ! table correction
+    if (mat%cs_varies) then
+      prim(11) = mat_T_from_rhoe(mat, cons(11) - 0.5_R8*(cons(5)+cons(8)+cons(10)), prim(1), eps)
+    else
+      prim(11) = (cons(11) - 0.5_R8*(cons(5)+cons(8)+cons(10))) / (mat_cp_const(mat)*prim(1)+eps)
+    endif
 
     prim(12) = cons(12)
 
@@ -218,8 +225,13 @@ contains
     flux(9)  = flux(1)*prim(3)*prim(4) + un*prim(9) + prim(3)*p3n + prim(4)*p2n
     flux(10) = flux(1)*prim(4)*prim(4) + un*prim(10) + prim(4)*p3n + prim(4)*p3n
 
-    flux(11) = flux(1)*(0.5_R8*norm2V + 0.5_R8*(prim(5)+prim(8)+prim(10))/(prim(1)+eps) + mat_cp(mat, prim(11))*prim(11)) &
-             + prim(2)*p1n + prim(3)*p2n + prim(4)*p3n
+    if (mat%cs_varies) then
+      flux(11) = flux(1)*(0.5_R8*norm2V + 0.5_R8*(prim(5)+prim(8)+prim(10))/(prim(1)+eps) + mat_e(mat, prim(11))) &
+               + prim(2)*p1n + prim(3)*p2n + prim(4)*p3n
+    else
+      flux(11) = flux(1)*(0.5_R8*norm2V + 0.5_R8*(prim(5)+prim(8)+prim(10))/(prim(1)+eps) + mat_cp_const(mat)*prim(11)) &
+               + prim(2)*p1n + prim(3)*p2n + prim(4)*p3n
+    endif
 
     flux(12) = prim(12)*un
 
@@ -264,7 +276,13 @@ contains
                    prim(1)*(force(4)*prim(4)+force(4)*prim(4))/(force(6)+eps) - &
                    2._R8*prim(10)/(force(6)+eps)
 
-    source(11) = - force(1)*mat_cp(mat, prim(11))*prim(11) - force(1)*mat%lv_al + force(5) + 0.5_R8*source(5) + 0.5_R8*source(8) + 0.5_R8*source(10)
+    if (mat%cs_varies) then
+      source(11) = - force(1)*mat_e(mat, prim(11)) - force(1)*mat%lv_al + force(5) &
+                   + 0.5_R8*source(5) + 0.5_R8*source(8) + 0.5_R8*source(10)
+    else
+      source(11) = - force(1)*mat_cp_const(mat)*prim(11) - force(1)*mat%lv_al + force(5) &
+                   + 0.5_R8*source(5) + 0.5_R8*source(8) + 0.5_R8*source(10)
+    endif
 
     source(12) = 0._R8
 
