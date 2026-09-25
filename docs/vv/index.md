@@ -26,6 +26,7 @@ then keep a stored reference so a change is caught.
 | [Chimera Overset](chimera.md) | 2D | IG | Overset interpolation between overlapping non-matching blocks | The same case on a single block, plus a matched-resolution control | `Doisneau/IG-chimera` |
 | [Multi-block and MPI](multiblock-mpi.md) | 2D | IG | Block connections and the rank decomposition | The single block; and 1 to 4 ranks against each other | `Doisneau/IG-split4` |
 | [Berthon Riemann Problems](berthon.md) | 1D | AG | Shocks, contacts and rarefactions of the Gaussian system | Analytical wave patterns | `Berthon/SCS`, `Berthon/RCS`, `Berthon/RCR` |
+| [Axisymmetric Wedge](axisymmetry.md) | 2D-axi | MK, IG, AG | The wedge side faces and the axis face of an axisymmetric mesh, and the hoop pressure | Exact stationary states | `Axis/MK`, `Axis/IG`, `Axis/AG` |
 | [Code Verification](verification.md) | 1D, 2D | MK | Drag and heat relaxation, periodic advection, every drag and Nusselt correlation, every evaporation model, the property table, and clouds transported through uniform, straining and rotating carrier fields | Closed forms and independent RK4 integrations | `verification/A` … `verification/I`, `verification/K` |
 
 Read together they cover: every closure, all three source terms and every one of

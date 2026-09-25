@@ -1,11 +1,11 @@
 module ICE_Mod_Fluxes
   use iso_fortran_env, only: I4 => int32, R8 => real64
   use ICE_Mod_MPI, only: is_local_block
-  use ICE_Lib_Reconstruction, only: state_reconstruction
+  use ICE_Lib_Reconstruction, only: state_reconstruction, bad_recon
 
   implicit none
   private
-  public :: compute_flux, state_reconstruction
+  public :: compute_flux, state_reconstruction, bad_recon
 
 contains
 
@@ -19,6 +19,7 @@ contains
     integer(kind=I4), intent(in)  :: p
     integer(kind=I4) :: b, i, j, k, pass
 
+    bad_recon = .false.
     !$OMP PARALLEL
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
@@ -110,6 +111,10 @@ contains
 
     enddo
     !$OMP END PARALLEL
+    if (bad_recon) then
+      write(*,'(A)') ' [ERROR] [ICE::compute_flux] unphysical state at first order on an interior face'
+      error stop 1
+    endif
 
   end subroutine compute_flux
             

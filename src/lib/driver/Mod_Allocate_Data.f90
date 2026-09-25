@@ -52,6 +52,7 @@ contains
 
 
   subroutine Allocate_Block(blk, nijk)
+    use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m, only: obj_irs
@@ -79,6 +80,10 @@ contains
       allocate( blk%cond_phase(p)%prim_old (1:ncond(p), 1-gc:ni+gc, 1-gc:nj+gc, 1-gc:nk+gc) )
       allocate( blk%cond_phase(p)%source   (1:ncond(p), 1:ni, 1:nj, 1:nk) )
       allocate( blk%cond_phase(p)%residual (1:ncond(p), 1:ni, 1:nj, 1:nk) )
+      !> Ghosts that no BC fills must never be read: a NaN makes such a read loud
+      blk%cond_phase(p)%prim     = ieee_value(1._R8, ieee_quiet_nan)
+      blk%cond_phase(p)%prim_old = ieee_value(1._R8, ieee_quiet_nan)
+      blk%cond_phase(p)%source   = 0._R8
       if (obj_irs%enabled) then
         allocate( blk%cond_phase(p)%RS1 (1:ncond(p), 0:ni+1, 0:nj+1, 0:nk+1) )
         allocate( blk%cond_phase(p)%RS2 (1:ncond(p), 0:ni+1, 0:nj+1, 0:nk+1) )

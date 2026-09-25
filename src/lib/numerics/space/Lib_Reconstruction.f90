@@ -5,6 +5,10 @@ module ICE_Lib_Reconstruction
   private
   public :: state_reconstruction
 
+  !> Set when a stencil is unphysical even at first order; each caller clears it before its
+  !  parallel region and stops after it.
+  logical, public :: bad_recon = .false.
+
 contains
 
   subroutine state_reconstruction(prev, local, next, next2, dl0, dl1, dl2, dll, dlr, priml, primr, beta)
@@ -42,9 +46,31 @@ contains
         prim_status_l = check_prim(priml)
         prim_status_r = check_prim(primr)
         limval = 0.5_R8*limval
+        if (limval < 1.e-18_R8 .and. .not. (prim_status_l .and. prim_status_r)) then
+          priml = local
+          primr = next
+          if (.not. (check_prim(priml) .and. check_prim(primr))) call report_stencil(prev, local, next, next2)
+          exit
+        endif
       end do
     endif
 
   end subroutine state_reconstruction
+
+
+  !> The first unphysical stencil is printed; the flag stops the run after the parallel region.
+  subroutine report_stencil(prev, local, next, next2)
+    real(R8), dimension(:), intent(in) :: prev, local, next, next2
+    !$OMP CRITICAL (ICE_recon_report)
+    if (.not. bad_recon) then
+      write(*,'(A)') ' [ERROR] [ICE::state_reconstruction] unphysical state at first order; stencil:'
+      write(*,'(A,*(1X,ES13.5))') '   prev ', prev
+      write(*,'(A,*(1X,ES13.5))') '   local', local
+      write(*,'(A,*(1X,ES13.5))') '   next ', next
+      write(*,'(A,*(1X,ES13.5))') '   next2', next2
+    endif
+    bad_recon = .true.
+    !$OMP END CRITICAL (ICE_recon_report)
+  end subroutine report_stencil
 
 end module ICE_Lib_Reconstruction

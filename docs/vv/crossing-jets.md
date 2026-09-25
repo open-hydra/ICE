@@ -47,17 +47,24 @@ diamond centred at $(0.25, 0)$, where the density is 0.2 kg/m³.
 | Model | Peak density [kg/m³] | Behaviour at the crossing |
 |---|---|---|
 | Exact | 0.200 | Jets pass through each other |
-| MK | 2.00 | Jets merge into a single jet along $y = 0$; mass concentrates in the axis cells (delta shock) |
-| IG | 0.131 | Jets merge into a single spreading jet |
-| AG | 0.100 | Jets cross and continue as two separate, diffused jets |
+| MK | 1.98 | Jets merge into a single jet along $y = 0$; mass concentrates in the axis cells (delta shock) |
+| IG | 0.283 | Jets merge where they meet, then spread as a single jet |
+| AG | 0.159 | Jets cross and continue as two separate, diffused jets |
 
-- **MK** carries exactly the nominal inlet mass flux (0.1414 kg/(m s) through every
-  vertical line before the jets reach the outer boundaries). Its merged jet, a delta shock,
-  is the expected monokinetic answer to crossing streams.
-- **IG** cannot hold two velocities at the same point either, but its dispersion spreads
-  the merged jet instead of concentrating it.
+- **MK** merges the jets into one along $y = 0$ and piles their mass into the axis cells.
+  This delta shock is the expected monokinetic answer to crossing streams.
+- **IG** cannot hold two velocities at the same point either. The jets merge where they
+  meet, with a peak above the exact diamond's, and its dispersion then spreads the merged
+  jet instead of concentrating it.
 - **AG** is the only closure that lets the jets cross. Downstream they are much wider and
   weaker than the exact bands.
+
+With the shock detector on, the iterations do not settle into a steady state: after
+about 1750 iterations the density residual levels off at $2 \times 10^{-3}$ (MK) to
+$4 \times 10^{-3}$ (IG, AG), because cells at the jet edges switch between first and
+second order from one iteration to the next. The fields above, and the stored references,
+are those at iteration 5000. With `shock-detector = none` the same cases converge (IG: a
+residual of $3 \times 10^{-6}$ at 5000 iterations).
 
 The cases are also part of the regression suite (`Doisneau/MK`, `Doisneau/IG`,
 `Doisneau/AG`), which checks the density and number-density fields against a stored reference.

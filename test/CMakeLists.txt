@@ -123,6 +123,13 @@ ice_add_verification(VortexCloud       I-vortex-cloud      "verification;sources
 # their initial state bit for bit although the gas moves and is hotter.
 ice_add_case(NAME NoExchangeMK DIR NoExchange/MK LABELS "fast;verification;MK;sources;2D")
 
+# A one-degree wedge about the x axis: the ghosts of the wedge side faces (code 200) are
+# mirrored, and for IG/AG the pressure on those faces balances the radial faces, so a
+# cloud at rest stays at rest.
+ice_add_case(NAME AxisMK DIR Axis/MK LABELS "fast;verification;MK;2D")
+ice_add_case(NAME AxisIG DIR Axis/IG LABELS "fast;verification;IG;2D")
+ice_add_case(NAME AxisAG DIR Axis/AG LABELS "fast;verification;AG;2D")
+
 # Berthon's Riemann problems for the anisotropic Gaussian closure, against the
 # analytical wave patterns (docs/vv/berthon.md). These are full case directories
 # rather than self-building drivers, so they go through ice_add_case; they are the

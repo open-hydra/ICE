@@ -13,7 +13,8 @@ contains
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Lib_Riemann
-    use ICE_Mod_Fluxes, only: state_reconstruction
+    use ICE_Mod_Fluxes, only: state_reconstruction, bad_recon
+    use ICE_Config_Types_m, only: obj_time_scheme
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4) :: n, b, f, p, i, j, k
@@ -25,8 +26,9 @@ contains
     real(kind=R8)    :: priml(12), primr(12), flux(12)
     integer(kind=I4) :: v
 
+    bad_recon = .false.
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ngroups, ncond, riemann), &
+    !$OMP SHARED(grid, ngroups, ncond, riemann, obj_time_scheme), &
     !$OMP PRIVATE(n, b, f, p, i, j, k, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, &
     !$OMP         dir, normal, area, dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th, &
     !$OMP         beta_val, priml, primr, flux, v)
@@ -49,12 +51,15 @@ contains
     !$OMP DO SCHEDULE (DYNAMIC)
     do n = 1, size(grid%bc)
 
-      if (grid%bc(n)%type == 0 .or. grid%bc(n)%type == 200) cycle
+      if (grid%bc(n)%type == 0) cycle
 
       b = grid%bc(n)%b
       if (.not. is_local_block(b)) cycle
       i = grid%bc(n)%i ; j = grid%bc(n)%j ; k = grid%bc(n)%k
       p = grid%bc(n)%p ; f = grid%bc(n)%f
+
+      !> Nothing crosses a symmetry face of a pressureless cloud
+      if (grid%bc(n)%type == 200 .and. trim(obj_time_scheme%model(p)) == 'MK') cycle
 
       !> Ghost and interior neighbor coordinates
       ig  = i -   guide(f,1) ; jg  = j -   guide(f,2) ; kg  = k -   guide(f,3)
@@ -117,6 +122,10 @@ contains
 
     enddo
     !$OMP END PARALLEL
+    if (bad_recon) then
+      write(*,'(A)') ' [ERROR] [ICE::compute_bound] unphysical state at first order on a boundary face'
+      error stop 1
+    endif
 
   end subroutine compute_bound
 

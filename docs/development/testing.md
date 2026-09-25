@@ -14,6 +14,9 @@ test/
 │   ├── IG-split4/             # Four blocks joined by connections (ATLAS 101)
 │   └── plot_vv.py             # Regenerates the V&V figures from the case outputs
 ├── NoExchange/MK/             # Coupled slab with drag = NoDrag, heat-transfer = NoHeat: state kept bit for bit
+├── Axis/                      # One-degree wedge about x: side faces 200, axis face 300
+│   ├── MK/                    # Pressureless cloud along x: stationary field, boundary census
+│   └── IG/  AG/               # Uniform cloud at rest in a closed wedge: stays at rest (hoop pressure)
 ├── Berthon/                   # 1D Riemann problems for the AG closure
 │   ├── SCS/  RCS/  RCR/       # Shock-contact-shock, rarefaction-contact-shock, ...
 │   ├── SCS-hlle/              # SCS again through the HLLE flux
@@ -54,6 +57,11 @@ own: its `verify.py` compares six fields against the analytical wave pattern in
 `Berthon/Results/` (L1 norm over the domain), and `IBCB.f90` is the small program that
 wrote its initial and boundary conditions. See
 [Berthon Riemann Problems](../vv/berthon.md).
+
+The cases under `Axis/` and `NoExchange/` carry no stored reference: each keeps the
+generator of its inputs (`make_case.py`) and a `verify.py` that checks an exact property
+of the run. The `Axis/` run scripts keep the solver's log in `logfile`, which their
+`verify.py` reads.
 
 The fast tests own no data: they copy one of the `Doisneau` cases, shorten it to 200
 iterations, and run it twice under different parallel settings.

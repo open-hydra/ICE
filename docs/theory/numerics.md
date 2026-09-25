@@ -18,7 +18,10 @@ once at setup from the node coordinates and stored.
 Each block carries **two ghost layers** on every face. The dimensionality is inferred
 from the first block: a mesh with one cell in $k$ is 2-D, one cell in both $j$ and $k$
 is 1-D. Nothing has to be declared — the flux loops over a direction with a single
-cell simply do no work.
+cell simply do no work. A 2-D mesh whose two node planes make the same angle about the $x$
+axis at both ends of its first node line is an axisymmetric wedge of that angle: the ghost
+nodes beyond its side faces are then rotated by the angle, not extrapolated in a straight
+line.
 
 The interior faces of a block are swept in two passes, odd faces then even, so that two
 faces sharing a cell never accumulate into it at the same time. This is what makes the
@@ -83,6 +86,11 @@ HLLE is less dissipative than Rusanov on a contact and is worth trying when a co
 
 Boundary fluxes are built from the ghost values, so every boundary type — connection, chimera, symmetry, extrapolation, inlet —
 reaches the flux loop through the same path. The ghost fill is described under [Boundary Conditions](../user/boundary-conditions.md).
+On the side faces of an axisymmetric wedge the ghost is the cell's mirror image, so the flux carries no mass, and for IG and
+AG the pressure on those faces is the hoop term of the radial momentum; MK has no flux there.
+
+A reconstructed state that is unphysical has its slopes halved until it is not. If it is still unphysical at first order —
+a ghost that nothing filled, a NaN in the stencil — ICE prints the stencil and stops with a non-zero status.
 
 ## Source terms
 

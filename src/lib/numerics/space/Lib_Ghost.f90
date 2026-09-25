@@ -61,9 +61,9 @@ contains
           grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bs)%cond_phase(pm)%prim(1:ncond(pm),is,js,ks)
 
 
-        case (300, 301) !> symmetry, and the dispersed-phase wall ATLAS tags 301 - Use extrapolation when the
-                        !>  particles are moving towards the wall. Otherwise, symmetry
-                   !>             Symmetry is enforced on face 3 which is usually the symmetry axis
+        case (200, 300, 301) !> symmetry (300), the dispersed-phase wall ATLAS tags 301 and the wedge side
+                             !>  face (200): a 300/301 face extrapolates particles moving towards it and
+                             !>  mirrors the others; 200 and face 3, usually the axis, always mirror
           if (fm <= 2) then
             ic = im - mod(fm,2)
             normal = grid%blk(bm)%dir(1)%f(ic,jm,km)%N
@@ -79,11 +79,15 @@ contains
 
           velocity = grid%blk(bm)%cond_phase(pm)%prim(2:4,im,jm,km)
           veln     = dot_product(velocity,normal)
-          if (veln*real(1-2*mod(fm,2))<=0._R8 .or. fm==3) then
+          if (grid%bc(i)%type == 200 .or. veln*real(1-2*mod(fm,2))<=0._R8 .or. fm==3) then
             velocity = velocity - 2._R8*veln*normal
           endif
 
           grid%blk(bm)%cond_phase(pm)%prim(2:4,ig,jg,kg) = velocity(1:3)
+
+
+        case (0) !> planar 2-D face: copy of the interior cell
+          grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),im,jm,km)
 
 
         case (401:403) !> inflow
@@ -214,14 +218,17 @@ contains
     integer(kind=I4) :: ig2, jg2, kg2
     integer(kind=I4) :: ip, jp, kp
     integer(kind=I4) :: bs, is, js, ks, fs
+    integer(kind=I4) :: ic, jc, kc
+    real(kind=R8)    :: normal(1:3), velocity(1:3)
 
     !$OMP PARALLEL DEFAULT(NONE), &
     !$OMP SHARED(grid, ncond), &
-    !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, bs, is, js, ks, fs)
+    !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, bs, is, js, ks, fs, &
+    !$OMP         ic, jc, kc, normal, velocity)
     !$OMP DO SCHEDULE(dynamic)
     do i = 1, size(grid%bc)
 
-      if (grid%bc(i)%type == 0 .or. grid%bc(i)%type == 200) cycle
+      if (grid%bc(i)%type == 0) cycle
 
       bm = grid%bc(i)%b
       if (.not. is_local_block(bm)) cycle
@@ -243,6 +250,22 @@ contains
 
         case (102) !> chimera: second ghost layer from its own donors
           call ghost_chimera(grid%blk, grid%bc(i), 2)
+
+        case (200) !> wedge side face: the second ghost mirrors the second interior cell
+          ip = im + guide(fm,1) ; jp = jm + guide(fm,2) ; kp = km + guide(fm,3)
+          if (fm <= 2) then
+            ic = im - mod(fm,2)
+            normal = grid%blk(bm)%dir(1)%f(ic,jm,km)%N
+          elseif (fm <= 4) then
+            jc = jm - mod(fm,2)
+            normal = grid%blk(bm)%dir(2)%f(im,jc,km)%N
+          else
+            kc = km - mod(fm,2)
+            normal = grid%blk(bm)%dir(3)%f(im,jm,kc)%N
+          endif
+          grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig2,jg2,kg2) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ip,jp,kp)
+          velocity = grid%blk(bm)%cond_phase(pm)%prim(2:4,ip,jp,kp)
+          grid%blk(bm)%cond_phase(pm)%prim(2:4,ig2,jg2,kg2) = velocity - 2._R8*dot_product(velocity,normal)*normal
 
         case default !> 2nd-order extrapolation: P(g2) = 3*P(g1) - 3*P(m) + P(m+1)
           ip = im + guide(fm,1) ; jp = jm + guide(fm,2) ; kp = km + guide(fm,3)

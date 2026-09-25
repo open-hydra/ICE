@@ -7,7 +7,7 @@ module ICE_IO_BC
   private
   public :: Setup_BC, Print_BC_Summary
 
-  integer :: nconn = 0, nsym = 0, nio = 0, next = 0, nchim = 0
+  integer :: nconn = 0, nsym = 0, nio = 0, next = 0, nchim = 0, naxi = 0
 
 contains
 
@@ -20,10 +20,11 @@ contains
   !  holds one entry per (cell, group), so each record is fanned out over the groups with
   !  bc%p set accordingly. bc%type stores the ATLAS code as is:
   !
-  !      0        null                   no ghost, no boundary flux
+  !      0        planar 2-D face        ghost = copy of the interior cell, no boundary flux
   !      101/201  connection / periodic
   !      102      chimera
-  !      200      axisymmetry            no ghost, no boundary flux
+  !      200      wedge side face        ghosts mirrored; boundary flux for IG/AG (the hoop
+  !                                      pressure), none for MK
   !      300      symmetry
   !      301      dispersed-phase wall   treated as 300: the symmetry ghost already absorbs
   !                                      particles moving toward the face and mirrors receding ones
@@ -48,7 +49,7 @@ contains
 
     bc  => grid%bc
     nbc => grid%n_bf
-    nconn = 0; nsym = 0; nio = 0; next = 0; nchim = 0
+    nconn = 0; nsym = 0; nio = 0; next = 0; nchim = 0; naxi = 0
 
     if (ngroups <= 0) error stop 'Setup_BC: ngroups not set'
     if (mod(size(bc), ngroups) /= 0) error stop 'Setup_BC: bc array is not a multiple of ngroups'
@@ -105,8 +106,8 @@ contains
             endif
           endif
 
-        case (200)               ! axisymmetry, no payload
-          continue
+        case (200)               ! wedge side face, no payload
+          naxi = naxi + 1
 
         case (300, 301)          ! symmetry / dispersed-phase wall, no payload
           nsym = nsym + 1
@@ -255,6 +256,7 @@ contains
     write(*,'(A)') ' Boundary Conditions:'
     if (nconn > 0) write(*,'(A,T35,I0)') '   Connection',    nconn
     if (nsym  > 0) write(*,'(A,T35,I0)') '   Symmetry',      nsym
+    if (naxi  > 0) write(*,'(A,T35,I0)') '   Axisymmetry',   naxi
     if (nio   > 0) write(*,'(A,T35,I0)') '   Inflow',        nio
     if (next  > 0) write(*,'(A,T35,I0)') '   Extrapolation', next
     if (nchim > 0) write(*,'(A,T35,I0)') '   Chimera',       nchim

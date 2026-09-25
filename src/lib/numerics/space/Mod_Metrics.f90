@@ -67,7 +67,7 @@ contains
     use ICE_Global_m, only: ndir
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
-    real(kind=R8) :: theta1, theta2, theta(2)
+    real(kind=R8) :: theta(2)
 
     if (grid%blk(1)%dim(3) > 1) then
       meshType = 3
@@ -76,11 +76,10 @@ contains
     else
       meshType = 2
       associate( node => grid%blk(1)%node, jm => grid%blk(1)%dim(2) )
-        theta1 = atan2( node(0,1,0)%c(3), node(0,1,0)%c(2) )
-        theta2 = atan2( node(0,jm,1)%c(3), node(0,jm,1)%c(2) )
+        theta(1) = atan2( node(0,jm,1)%c(3), node(0,jm,1)%c(2) ) - atan2( node(0,jm,0)%c(3), node(0,jm,0)%c(2) )
+        theta(2) = atan2( node(0,1,1)%c(3),  node(0,1,1)%c(2) )  - atan2( node(0,1,0)%c(3),  node(0,1,0)%c(2) )
       end associate
-      theta(2) = theta2 - theta1
-      if ( (theta(1) - theta(2)) < 1.d-5 ) then
+      if ( abs(theta(1) - theta(2)) < 1.d-5 .and. theta(1) /= 0.d0 ) then
         delthe = theta(1)
       else
         delthe = 0.d0
