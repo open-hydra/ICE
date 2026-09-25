@@ -94,6 +94,8 @@ refuse Doisneau/MK "table: a short row" "sed -i '104s/ [^ ]*$//' INPUT/part-prop
        "unreadable rows"
 refuse Doisneau/MK "table: relative enthalpy with an offset" "awk 'NR<=4{print;next}{\$4=\$4+1e5;print}' INPUT/part-properties.dat > t && mv t INPUT/part-properties.dat" \
        "relative \"Enthalpy\" column with an offset"
+refuse Doisneau/MK "table: rows in degrees Celsius" "sed -i 's/\"Enthalpy\"/\"Enthalpy_abs\"/' INPUT/part-properties.dat && awk 'NR<=4{print;next}{\$1=\$1-273;\$4=\$4-409500;print}' INPUT/part-properties.dat > t && mv t INPUT/part-properties.dat" \
+       "a temperature below 0 K"
 refuse Doisneau/MK "table: rows half a kelvin off the nodes" "awk 'NR<=4{print;next}{\$1=\$1+0.5;print}' INPUT/part-properties.dat > t && mv t INPUT/part-properties.dat" \
        "rows not on consecutive integer kelvins"
 refuse Doisneau/MK "table: INI density against a constant column" "sed -i '/^heat-transfer/a density = 2700' input.ini" \

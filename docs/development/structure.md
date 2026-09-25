@@ -50,7 +50,7 @@ src/lib/
 │   ├── IO_Solution.f90         # Solution and restart read/write via ORION
 │   ├── IO_BC.f90               # Parses the ATLAS boundary table
 │   ├── IO_Probes.f90
-│   └── Load_Table.f90          # Optional rho(T), cs(T) table
+│   └── Load_Table.f90          # Reads and checks the optional property table
 ├── numerics/
 │   ├── space/
 │   │   ├── Mod_Metrics.f90         # Areas, normals, volumes, dimensionality
@@ -75,6 +75,7 @@ src/lib/
 │   ├── Lib_Drag.f90            # Twelve drag correlations
 │   ├── Lib_Heat.f90            # Seven Nusselt correlations
 │   ├── Lib_Evaporation.f90     # Five evaporation models and their interface options
+│   ├── Lib_Properties.f90      # Density, cp and energy of the material as functions of T
 │   └── Mod_Sources.f90         # Assembles the source vector
 └── diagnostic/
     └── Mod_Diagnostic.f90      # Residual norms and their output

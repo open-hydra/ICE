@@ -111,6 +111,56 @@ def write_ini(path, sections):
     Path(path).write_text('\n'.join(out))
 
 
+def write_properties(path, Tmin, Tmax, cp, rho, datum='Enthalpy', h0=0.0, psat=None, zone='A'):
+    """Condensed-material property table: one Tecplot POINT zone on T = Tmin..Tmax K.
+
+    cp, rho and psat are constants or functions of T. The enthalpy integrates cp exactly
+    from h(Tmin) = cp(Tmin)*Tmin + h0: cp*T + h0 for a constant cp, the cumulative
+    trapezoid of the piecewise-linear cp otherwise, so the reader's h/cp check holds.
+    datum names the column: 'Enthalpy' (relative, keep h0 = 0) or 'Enthalpy_abs'.
+    The four header lines are the ones both of ICE's readers expect (the old one skips
+    three lines and takes I= from the fourth). T is a whole kelvin, every other value
+    %.10e. Returns the columns as written, parsed back from the text, so an oracle
+    reads the numbers ICE reads: {'T', 'cp', 'rho', 'h', 'psat' (None), 'datum'}.
+    """
+    def column(v):
+        return [float(v(T)) for T in Ts] if callable(v) else [float(v)] * len(Ts)
+
+    Ts = list(range(int(Tmin), int(Tmax) + 1))
+    cps, rhos = column(cp), column(rho)
+    if callable(cp):
+        hs = [cps[0] * Ts[0] + h0]
+        for i in range(1, len(Ts)):
+            hs.append(hs[-1] + 0.5 * (cps[i - 1] + cps[i]) * (Ts[i] - Ts[i - 1]))
+    else:
+        hs = [cps[0] * T + h0 for T in Ts]
+    cols = [cps, rhos, hs] + ([column(psat)] if psat is not None else [])
+    names = ['Temperature', 'Cp', 'Density', datum] + (['Psat'] if psat is not None else [])
+    rows = [('%.1f' % T) + ''.join(' %.10e' % c[i] for c in cols) for i, T in enumerate(Ts)]
+    head = ['TITLE = "Mass Thermodynamic Properties"',
+            'VARIABLES = ' + ', '.join('"%s"' % v for v in names),
+            'ZONE T="%s"' % zone,
+            'I=%d, F=POINT' % len(Ts)]
+    Path(path).write_text('\n'.join(head + rows) + '\n')
+    back = list(zip(*[[float(x) for x in r.split()] for r in rows]))
+    return {'T': list(back[0]), 'cp': list(back[1]), 'rho': list(back[2]), 'h': list(back[3]),
+            'psat': list(back[4]) if psat is not None else None, 'datum': datum}
+
+
+def table_lookup(table, key, T):
+    """A written table column at T: linear between the rows, the end row past either end.
+
+    The oracle's reading of a table, i.e. the rule the verification cases hold ICE to.
+    """
+    Ts, col = table['T'], table[key]
+    if T <= Ts[0]:
+        return col[0]
+    if T >= Ts[-1]:
+        return col[-1]
+    i = min(int(math.floor(T - Ts[0])), len(Ts) - 2)
+    return col[i] + (T - Ts[i]) / (Ts[i + 1] - Ts[i]) * (col[i + 1] - col[i])
+
+
 class Case(object):
     """A generated ICE case in a scratch directory."""
 
@@ -129,6 +179,7 @@ class Case(object):
         self.zn = [0.0, self.Lz]
         self.xc = [0.5 * (self.xn[i] + self.xn[i + 1]) for i in range(nx)]
         self.yc = [0.5 * (self.yn[j] + self.yn[j + 1]) for j in range(ny)]
+        self.has_table = False
 
     @property
     def centres(self):
@@ -165,6 +216,15 @@ class Case(object):
     def boundaries(self, mode='extrapolation'):
         write_bc(self.dir / 'INPUT/part-bc.txt', self.nx, self.ny, self.nz, mode)
 
+    def properties(self, Tmin, Tmax, cp, rho, **kw):
+        """Write INPUT/part-properties.dat (see write_properties) and return it as written.
+
+        Call it before ini(): from then on ini() leaves density and specific-heat out,
+        since the table owns them and the reader refuses an INI value that contradicts it.
+        """
+        self.has_table = True
+        return write_properties(self.dir / 'INPUT/part-properties.dat', Tmin, Tmax, cp, rho, **kw)
+
     def ini(self, t_end=None, iters=1000000000, cfl=0.8, rk='RK2', drag='Stokes',
             heat='Stokes', reconstruction='MUSCL', limiter='vanleer', rho_al=1000.0,
             cs=900.0, dt_max=None, physics=None):
@@ -176,6 +236,10 @@ class Case(object):
         # evaporation case reaches the vapour keys without every other case carrying them
         phys = {'drag': drag, 'heat-transfer': heat,
                 'density': rho_al, 'specific-heat': cs, 'emissivity': 0.0}
+        if self.has_table:
+            # The table owns both: a set key must equal a constant column and is refused
+            # against a varying one, so a case with a table sets neither by default
+            del phys['density'], phys['specific-heat']
         phys.update(physics or {})
         write_ini(self.dir / 'input.ini', {
             'ICE-Parameters': {'iter-threshold': iters,
@@ -204,6 +268,30 @@ def run_ice(case_dir, threads=1):
         rc = subprocess.call([str(ICE_BIN)], cwd=str(case_dir), stdout=out, stderr=err, env=env)
     if rc != 0:
         raise RuntimeError('ICE failed (exit %d) in %s - see log and err there' % (rc, case_dir))
+
+
+def try_run(rep, fn, *args, **kw):
+    """fn(*args, **kw) with a failed ICE run recorded as a FAIL, so the legs after it still run.
+
+    run_ice raises on a non-zero exit; a leg expected to fail on an older binary must not
+    take the controls after it down with it. The FAIL line quotes ICE's first error line.
+    Returns fn's result, or None when ICE failed.
+    """
+    try:
+        return fn(*args, **kw)
+    except RuntimeError as exc:
+        why = ''
+        where = re.search(r' in (.+) - see log and err there$', str(exc))
+        if where:
+            for name in ('log', 'err'):
+                f = Path(where.group(1)) / name
+                lines = f.read_text(errors='replace').splitlines() if f.exists() else []
+                hits = [s.strip() for s in lines if re.search(r'ERROR|forrtl|severe|error stop', s)]
+                if hits:
+                    why = ': ' + hits[0]
+                    break
+        rep.check(False, str(exc) + why)
+        return None
 
 
 def read_solution(path):

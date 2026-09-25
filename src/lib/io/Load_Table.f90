@@ -17,7 +17,7 @@ module ICE_Load_Table
                                 TAB_NO_ENTHALPY = 4, TAB_TWO_ENTHALPY = 5, TAB_DUPLICATE = 6, &
                                 TAB_FEW_ROWS = 7, TAB_OFF_NODE = 8, TAB_NONFINITE = 9, &
                                 TAB_RHO_NONPOSITIVE = 10, TAB_CP_NONPOSITIVE = 11, TAB_H_NONMONOTONE = 12, &
-                                TAB_H_CP_MISMATCH = 13, TAB_DATUM_MISMATCH = 14
+                                TAB_H_CP_MISMATCH = 13, TAB_DATUM_MISMATCH = 14, TAB_NEGATIVE_T = 15
 
   character(len=*), parameter :: grammar = &
     'expected: VARIABLES = "Temperature", "Cp", "Density", "Enthalpy" (or "Enthalpy_abs")[, "Psat"], '// &
@@ -96,12 +96,13 @@ contains
     obj_condensed%cs_varies  = any(cp /= cp(1))
     obj_condensed%h_datum    = merge('relative', 'absolute', relative)
     obj_condensed%h_off      = table_h_offset(T, cp, h)
+    allocate(obj_condensed%e_tab(Tmin:Tmin+Ni-1),   source=h - obj_condensed%h_off)
     obj_condensed%use_table  = .true.
     obj_condensed%description = 'Table-based rho_al(T) and cs_al(T) from '//trim(tablefile)
 
     if (mpi_is_root) then
       write(*,'(A,I0,A,I0,A,I0,A)') ' [ICE] condensed properties: '//trim(tablefile)//', ', Ni, &
-        ' rows on T = ', Tmin, '..', Tmin+Ni-1, ' K (nearest integer T)'
+        ' rows on T = ', Tmin, '..', Tmin+Ni-1, ' K (linear between the nodes, end values outside)'
       write(*,'(A)') '   material 1: density '//trim(range_text(rho))//', cp '//trim(range_text(cp))// &
         ', enthalpy '//trim(obj_condensed%h_datum)//' (hOff = '//trim(rtoa(obj_condensed%h_off))//' J/kg)'
     endif
@@ -163,7 +164,7 @@ contains
   end subroutine classify_table_tokens
 
 
-  !> At least two rows, each within 1e-6 K of the integer node Tmin+i-1.
+  !> At least two rows, none below 0 K, each within 1e-6 K of the integer node Tmin+i-1.
   pure function check_table_nodes(T) result(code)
     real(R8), intent(in) :: T(:)
     integer :: code, i, Tmin
@@ -172,8 +173,10 @@ contains
     if (size(T) < 2) return
     code = TAB_NONFINITE
     if (.not. all(ieee_is_finite(T))) return
-    code = TAB_OFF_NODE
+    code = TAB_NEGATIVE_T
     Tmin = nint(T(1))
+    if (Tmin < 0) return
+    code = TAB_OFF_NODE
     do i = 1, size(T)
       if (abs(T(i) - real(Tmin+i-1, R8)) > 1.e-6_R8) return
     enddo
@@ -242,6 +245,7 @@ contains
     case (TAB_DUPLICATE);      txt = 'a column named twice'
     case (TAB_FEW_ROWS);       txt = 'fewer than two rows'
     case (TAB_OFF_NODE);       txt = 'rows not on consecutive integer kelvins'
+    case (TAB_NEGATIVE_T);     txt = 'a temperature below 0 K'
     case (TAB_NONFINITE);      txt = 'a value that is not finite'
     case (TAB_RHO_NONPOSITIVE); txt = 'a density that is not positive'
     case (TAB_CP_NONPOSITIVE); txt = 'a cp that is not positive'
@@ -255,31 +259,21 @@ contains
 
   function get_rho_al(Tp) result(rho)
     use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Lib_Properties, only: mat_rho
     implicit none
     real(R8), intent(in) :: Tp
     real(R8)             :: rho
-    integer              :: iT
-    if (obj_condensed%use_table) then
-      iT  = min(max(nint(Tp), obj_condensed%T_min), obj_condensed%T_max)
-      rho = obj_condensed%rho_tab(iT)
-    else
-      rho = obj_condensed%rho_al
-    end if
+    rho = mat_rho(obj_condensed, Tp)
   end function get_rho_al
 
 
   function get_cs_al(Tp) result(cs)
     use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Lib_Properties, only: mat_cp
     implicit none
     real(R8), intent(in) :: Tp
     real(R8)             :: cs
-    integer              :: iT
-    if (obj_condensed%use_table) then
-      iT = min(max(nint(Tp), obj_condensed%T_min), obj_condensed%T_max)
-      cs = obj_condensed%cs_tab(iT)
-    else
-      cs = obj_condensed%cs_al
-    end if
+    cs = mat_cp(obj_condensed, Tp)
   end function get_cs_al
 
 

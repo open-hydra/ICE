@@ -31,14 +31,15 @@ test/
 │   ├── F-evaporation/         # All 5 evaporation models against the d-squared law
 │   ├── G-cloud-translation/   # Transport + drag together, against exact translation
 │   ├── H-linear-strain/       # Straining gas, exact affine map + small-St asymptote
-│   └── I-vortex-cloud/        # 2D cloud in a prescribed vortex, exact conformal map
+│   ├── I-vortex-cloud/        # 2D cloud in a prescribed vortex, exact conformal map
+│   └── K-properties-table/    # Property table read at a fixed T: interpolation, range, saturation
 ├── fast/                      # Short invariant checks, no stored references
 │   ├── common.sh              # Shared helpers (short run, compare byte for byte)
 │   ├── openmp-equiv/          # 1 vs 4 threads bit-identical
 │   ├── refusals/              # Broken inputs and a diverging run must exit non-zero
 │   └── mpi-equiv/             # 1 vs 2 ranks bit-identical (connection and chimera)
 └── unit/                      # Programs linked against the library, no solver run
-    └── test_properties.f90    # Property table: header grammar, node and column checks, loading
+    └── test_properties.f90    # Property table: grammar, checks, loading, lookup and energy inversion
 ```
 
 Each case under `Doisneau/` is self-contained: `input.ini`, `INPUT/` (initial and

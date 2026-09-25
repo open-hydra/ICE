@@ -186,7 +186,7 @@ module ICE_Config_Types_m
   !! ------------------------------------------------------
   !! Condensed Phase (ICE-specific) -----------------------
   !! ------------------------------------------------------
-  type :: condensed_phase_t
+  type, public :: condensed_phase_t
     character(len=llen) :: warning_message
     character(len=llen) :: error_message
     character(len=llen) :: description
@@ -210,6 +210,7 @@ module ICE_Config_Types_m
     real(R8), allocatable     :: rho_tab(:)   ! indexed T_min:T_max
     real(R8), allocatable     :: cs_tab(:)    ! indexed T_min:T_max
     real(R8), allocatable     :: h_tab(:)     ! indexed T_min:T_max
+    real(R8), allocatable     :: e_tab(:)     ! h_tab - h_off, indexed T_min:T_max
     logical                   :: rho_varies = .false., cs_varies = .false.
     character(len=8)          :: h_datum = 'none'  ! 'relative' (Enthalpy) or 'absolute' (Enthalpy_abs)
     real(R8)                  :: h_off = 0._R8     ! h at 0 K along the first table segment [J/kg]

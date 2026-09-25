@@ -9,7 +9,7 @@ They live in `test/verification/`. Each one writes its own mesh, initial conditi
 boundary conditions and `input.ini` into a scratch directory, runs the solver and
 compares: there is no case data in the repository and no reference to regenerate.
 
-All of them use the MK closure. A to F hold the cloud uniform in space, so the exact
+All of them use the MK closure. A to F and K hold the cloud uniform in space, so the exact
 answer is the same in every cell and the mesh only has to be large enough to exercise
 the flux loops. G to I transport a localized cloud through a prescribed frozen carrier
 field, so the answer varies from cell to cell and the mesh resolution is part of what
@@ -22,6 +22,7 @@ is measured.
 | **D** | [Every drag correlation](#d-every-drag-correlation) | All twelve drag laws, to $Ma = 2.6$ | Independent RK4 |
 | **E** | [Every Nusselt correlation](#e-every-nusselt-correlation) | All seven heat laws, velocity and temperature relaxing together | Independent RK4 and closed form |
 | **F** | [Evaporation](#f-evaporation) | All five evaporation models, the latent sink, two exact identities, the boiling clamp | Closed form and RK4 |
+| **K** | [The property table](#k-the-property-table-at-a-fixed-temperature) | Linear interpolation between the table's rows, a table that starts above 1 K, saturation past its ends | Closed form |
 | **C** | [Sinusoidal advection](#c-sinusoidal-advection-on-a-periodic-mesh) | Transport alone, and the order of the space scheme | Closed form |
 | **G** | [Cloud in a uniform gas](#g-a-cloud-released-into-a-uniform-gas) | Transport and drag together | Closed form |
 | **H** | [Cloud in a straining gas](#h-a-cloud-in-a-straining-gas) | A non-trivial particle velocity field, and the small-Stokes limit | Closed form |
@@ -273,6 +274,34 @@ $10^{-5}$: one ulp of $Y_s$ at the clamp moves the rate by $2.5\times10^{-6}$.
     those follow from the published forms and would break under any transcription
     error.
 
+## Material properties
+
+### K. The property table at a fixed temperature
+
+Case A's cloud with its density taken from `INPUT/part-properties.dat` instead of the
+INI. With `heat-transfer = NoHeat` and no radiation nothing heats the particles, and the
+drag work cancels the kinetic energy it produces, so $T_p$ keeps its initial value and
+the table is read at one temperature for the whole run. The velocity is case A's
+exponential with $\tau_p = \rho_{al}(T_p)\,d_p^2/(18\mu_g)$, and $\rho_{al}(T_p)$ is what
+the case measures: ICE recovers the radius from $\rho_p$ and $n$ through the table's
+density, so at fixed $(\rho_p, n)$ the relaxation time goes as $\rho_{al}^{1/3}$.
+
+| Leg | Table | $T_p$ | $\rho_{al}(T_p)$ | Relative error on $u_p(\tau_p)$ |
+|---|---|---|---|---|
+| K1 | 1 to 5000 K; $\rho$ = 2000 up to 300 K, 1000 from 301 K | 300.4 K | 1600 (linear) | $9.8\times10^{-8}$ |
+| K1c | the same rows, $\rho$ = 1600 everywhere | 300.4 K | 1600 | $9.7\times10^{-8}$ |
+| K6 | 280 to 400 K, constant | 300.4 K | 1500 | $9.7\times10^{-8}$ |
+| K7 | 280 to 400 K, $\rho = 1500 + 5\,(T - 280)$ | 250 K | 1500 (the end value) | $9.7\times10^{-8}$ |
+
+The tolerance is $10^{-4}$. RK2 at $\Delta t = \tau_p/1000$ leaves
+$e^{-1}(\Delta t/\tau_p)^2/6 = 6.1\times10^{-8}\,u_g$ on $u_p(\tau_p)$, that is
+$9.7\times10^{-8}$ of $u_p(\tau_p)$ itself, which is what the four legs measure. The
+nearest row would give K1 $\rho_{al} = 2000$ and put $u_p(\tau_p)$ 4.3 % low; a linear
+extrapolation below $T_{min}$ would put K7 2.0 % high, and the row at $T_{max}$ 6.5 % low.
+K1c is K1's control, the same run with nothing to interpolate. $T_p$ must stay within
+$10^{-4}$ K of its initial value, well under the 0.1 K that would change the nearest row;
+it moves by round-off.
+
 ## Clouds carried by the gas
 
 The remaining four give the transport operator something to do. C is transport alone;
@@ -512,7 +541,7 @@ converges faster, at 1.84 – 2.28.
 ctest --test-dir build -L verification --output-on-failure
 ```
 
-A, B and C also carry the `fast` label, so the pre-push hook runs them. The rest are in
+A, B, C and K also carry the `fast` label, so the pre-push hook runs them. The rest are in
 the default tier only: D, E and F because each correlation is a separate run of the
 solver, and G, H and I because each refinement level is. I is the longest, being two
 dimensional. `ICE_KEEP_WORK=1` keeps the generated case directories instead of deleting

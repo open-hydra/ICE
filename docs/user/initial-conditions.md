@@ -83,13 +83,13 @@ columns: `Temperature` first, then `Cp`, `Density` and one enthalpy column, in a
 The enthalpy is either `Enthalpy` (relative: $c_p T$ for a constant $c_p$) or
 `Enthalpy_abs` (absolute: its offset is kept as the material's datum); other names are
 ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least two
-of them, and the table saturates outside $[T_{min}, T_{max}]$; between the nodes the
-nearest kelvin is used.
+of them. Between the nodes the density and $c_p$ are linear in $T$, and outside
+$[T_{min}, T_{max}]$ they keep the end values.
 
 ICE refuses a table that is missing a column, names a column twice or names two
 enthalpies; that has more than one zone, a row that does not hold a number for every
-column, a row count other than the one its zone announces, rows off the integer nodes
-(by more than $10^{-6}$ K) or anything after the last row; or whose density or $c_p$ is
+column, a row count other than the one its zone announces, a row below 0 K, rows off the integer
+nodes (by more than $10^{-6}$ K) or anything after the last row; or whose density or $c_p$ is
 not positive, whose enthalpy does not increase or disagrees with $c_p$, or whose relative
 `Enthalpy` has an offset. A constant $c_p$ must give $h = c_p T + h_{off}$ on every row,
 and a varying one must match the trapezoidal integral of $c_p$ within 0.1 % per step, or
