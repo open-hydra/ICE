@@ -6,11 +6,13 @@ program test_properties
   use, intrinsic :: iso_fortran_env, only: R8 => real64
   use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
   use ICE_Load_Table
-  use ICE_Config_Types_m, only: obj_condensed, condensed_phase_t, obj_time_scheme
-  use ICE_Global_m,       only: ICE_phase_prefix
+  use ICE_Config_Types_m, only: obj_condensed, condensed_phase_t
+  use ICE_Global_m,       only: ICE_phase_prefix, nmat
   implicit none
   integer :: nfail = 0
 
+  nmat = 1
+  allocate(obj_condensed(1))
   call test_tokens()
   call test_nodes()
   call test_columns()
@@ -138,35 +140,35 @@ contains
 
     call write_table('u1-', '"Temperature", "Cp", "Density", "Enthalpy"', 280, 400, 1)
     call load('u1-')
-    call check(obj_condensed%use_table .and. obj_condensed%T_min == 280 .and. obj_condensed%T_max == 400, &
+    call check(obj_condensed(1)%use_table .and. obj_condensed(1)%T_min == 280 .and. obj_condensed(1)%T_max == 400, &
                'load: Tmin = 280, Tmax = 400 from the rows')
-    call check(lbound(obj_condensed%rho_tab, 1) == 280 .and. ubound(obj_condensed%rho_tab, 1) == 400, &
+    call check(lbound(obj_condensed(1)%rho_tab, 1) == 280 .and. ubound(obj_condensed(1)%rho_tab, 1) == 400, &
                'load: the tables are indexed by temperature')
-    call check(mat_rho(obj_condensed, 250._R8) == 1500._R8 .and. mat_rho(obj_condensed, 300.4_R8) == 1500._R8 .and. &
-               mat_cp(obj_condensed, 450._R8) == 2000._R8, 'load: constant properties inside and outside the range')
-    call check(obj_condensed%h_datum == 'relative' .and. obj_condensed%h_off == 0._R8 .and. &
-               .not. obj_condensed%rho_varies .and. .not. obj_condensed%cs_varies, 'load: relative datum, hOff = 0')
+    call check(mat_rho(obj_condensed(1), 250._R8) == 1500._R8 .and. mat_rho(obj_condensed(1), 300.4_R8) == 1500._R8 .and. &
+               mat_cp(obj_condensed(1), 450._R8) == 2000._R8, 'load: constant properties inside and outside the range')
+    call check(obj_condensed(1)%h_datum == 'relative' .and. obj_condensed(1)%h_off == 0._R8 .and. &
+               .not. obj_condensed(1)%rho_varies .and. .not. obj_condensed(1)%cs_varies, 'load: relative datum, hOff = 0')
 
     call write_table('u2-', '"Temperature", "Enthalpy", "Density", "Cp"', 280, 400, 2)
     call load('u2-')
-    call check(obj_condensed%rho_tab(300) == 1700._R8 .and. obj_condensed%rho_tab(301) == 1699._R8 .and. &
-               all(obj_condensed%cs_tab == 2000._R8) .and. obj_condensed%rho_varies, &
+    call check(obj_condensed(1)%rho_tab(300) == 1700._R8 .and. obj_condensed(1)%rho_tab(301) == 1699._R8 .and. &
+               all(obj_condensed(1)%cs_tab == 2000._R8) .and. obj_condensed(1)%rho_varies, &
                'load: permuted columns give the right density and cp')
-    call check(abs(mat_rho(obj_condensed, 300.4_R8) - 1699.6_R8) <= 1.e-12_R8*1699.6_R8 .and. &
-               mat_rho(obj_condensed, 100._R8) == 1720._R8, &
+    call check(abs(mat_rho(obj_condensed(1), 300.4_R8) - 1699.6_R8) <= 1.e-12_R8*1699.6_R8 .and. &
+               mat_rho(obj_condensed(1), 100._R8) == 1720._R8, &
                'load: linear inside, end value outside')
 
     call write_table('u3-', '"Temperature", "Cp", "Density", "Enthalpy_abs"', 1, 50, 3)
     call load('u3-')
-    call check(obj_condensed%h_datum == 'absolute' .and. obj_condensed%h_off == -1.5e7_R8 .and. &
-               obj_condensed%T_min == 1 .and. size(obj_condensed%h_tab) == 50, 'load: absolute datum keeps its offset')
-    call check(lbound(obj_condensed%e_tab, 1) == 1 .and. obj_condensed%e_tab(1) == 2000._R8 .and. &
-               obj_condensed%e_tab(50) == 1.e5_R8, 'load: the energy table is h - hOff (cp*T here)')
+    call check(obj_condensed(1)%h_datum == 'absolute' .and. obj_condensed(1)%h_off == -1.5e7_R8 .and. &
+               obj_condensed(1)%T_min == 1 .and. size(obj_condensed(1)%h_tab) == 50, 'load: absolute datum keeps its offset')
+    call check(lbound(obj_condensed(1)%e_tab, 1) == 1 .and. obj_condensed(1)%e_tab(1) == 2000._R8 .and. &
+               obj_condensed(1)%e_tab(50) == 1.e5_R8, 'load: the energy table is h - hOff (cp*T here)')
 
     call write_table('u4-', '"Temperature", "Cp", "Density", "Hvap", "Enthalpy"', 280, 400, 4)
     call load('u4-')
-    call check(obj_condensed%h_tab(300) == 6.e5_R8 .and. obj_condensed%h_tab(400) == 8.e5_R8 .and. &
-               all(obj_condensed%rho_tab == 1500._R8), 'load: a fifth column after an unknown one binds by name')
+    call check(obj_condensed(1)%h_tab(300) == 6.e5_R8 .and. obj_condensed(1)%h_tab(400) == 8.e5_R8 .and. &
+               all(obj_condensed(1)%rho_tab == 1500._R8), 'load: a fifth column after an unknown one binds by name')
   end subroutine test_load
 
 
@@ -272,17 +274,17 @@ contains
                'psat: linear between the nodes, exact on them, end values outside')
 
     call write_table('u5-', '"Temperature", "Cp", "Density", "Enthalpy", "Psat"', 300, 400, 5)
-    obj_condensed%Tboil = 373.15_R8
-    obj_time_scheme%evapSelect = 0
+    obj_condensed(1)%Tboil = 373.15_R8
+    obj_condensed(1)%evapSelect = 0
     call load('u5-')
-    call check(.not. obj_condensed%use_psat .and. .not. allocated(obj_condensed%psat_tab), &
+    call check(.not. obj_condensed(1)%use_psat .and. .not. allocated(obj_condensed(1)%psat_tab), &
                'psat: without evaporation the column is not read')
-    obj_time_scheme%evapSelect = 2
+    obj_condensed(1)%evapSelect = 2
     call load('u5-')
-    call check(obj_condensed%use_psat .and. lbound(obj_condensed%psat_tab, 1) == 300 .and. &
-               obj_condensed%psat_tab(373) == psat_curve(373._R8) .and. obj_condensed%psat_tab(400) == psat_curve(400._R8), &
+    call check(obj_condensed(1)%use_psat .and. lbound(obj_condensed(1)%psat_tab, 1) == 300 .and. &
+               obj_condensed(1)%psat_tab(373) == psat_curve(373._R8) .and. obj_condensed(1)%psat_tab(400) == psat_curve(400._R8), &
                'psat: with evaporation the column is stored, indexed by temperature')
-    obj_time_scheme%evapSelect = 0
+    obj_condensed(1)%evapSelect = 0
   end subroutine test_psat
 
 
@@ -296,13 +298,13 @@ contains
 
   subroutine load(prefix)
     character(len=*), intent(in) :: prefix
-    if (allocated(obj_condensed%rho_tab)) deallocate(obj_condensed%rho_tab)
-    if (allocated(obj_condensed%cs_tab))  deallocate(obj_condensed%cs_tab)
-    if (allocated(obj_condensed%h_tab))   deallocate(obj_condensed%h_tab)
-    if (allocated(obj_condensed%e_tab))   deallocate(obj_condensed%e_tab)
-    if (allocated(obj_condensed%psat_tab)) deallocate(obj_condensed%psat_tab)
-    obj_condensed%use_table = .false.
-    obj_condensed%use_psat  = .false.
+    if (allocated(obj_condensed(1)%rho_tab)) deallocate(obj_condensed(1)%rho_tab)
+    if (allocated(obj_condensed(1)%cs_tab))  deallocate(obj_condensed(1)%cs_tab)
+    if (allocated(obj_condensed(1)%h_tab))   deallocate(obj_condensed(1)%h_tab)
+    if (allocated(obj_condensed(1)%e_tab))   deallocate(obj_condensed(1)%e_tab)
+    if (allocated(obj_condensed(1)%psat_tab)) deallocate(obj_condensed(1)%psat_tab)
+    obj_condensed(1)%use_table = .false.
+    obj_condensed(1)%use_psat  = .false.
     ICE_phase_prefix = prefix
     call Load_Table()
   end subroutine load

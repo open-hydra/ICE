@@ -191,6 +191,10 @@ module ICE_Config_Types_m
     character(len=llen) :: warning_message
     character(len=llen) :: error_message
     character(len=llen) :: description
+    character(len=64)   :: name = 'A'   ! Material name, from the phase file
+    ! Evaporation model and interface of this material: the [ICE-Physics] default or its tokens
+    character(len=16)   :: evapWord = 'none', intfWord = 'VLE'
+    integer             :: evapSelect = 0, intfSelect = 0
     ! USER-DEFINED INPUTS
     real(R8) :: rho_al = 2700._R8    ! Particle density            [kg/m^3]
     real(R8) :: cs_al  = 1598._R8    ! Particle specific heat      [J/(kg K)]
@@ -203,7 +207,7 @@ module ICE_Config_Types_m
     real(R8) :: Yinf   = 0._R8       ! Far-field vapour mass fraction [-]
     real(R8) :: Tboil  = 2792._R8    ! Boiling temperature at 1 atm [K]
     real(R8) :: alphaE = 1._R8       ! Evaporation (accommodation) coefficient [-]
-    ! Packed form of the above, built by Assign_Setup and handed to Lib_Evaporation
+    ! Packed form of the above, built by Setup_Materials and handed to Lib_Evaporation
     real(R8) :: ep(nep) = 0._R8
     ! Table-based properties rho(T) and cs(T) (optional, loaded by Load_Table)
     logical                   :: use_table = .false.
@@ -234,6 +238,7 @@ module ICE_Config_Types_m
   type(irs_t),                     public :: obj_irs
   type(space_scheme_t),            public :: obj_space_scheme
   type(multigrid_t),               public :: obj_multigrid
-  type(condensed_phase_t),         public :: obj_condensed
+  type(condensed_phase_t),         public :: ini_condensed        ! the [ICE-Physics] values
+  type(condensed_phase_t), allocatable, public :: obj_condensed(:)  ! one per material
 
 end module ICE_Config_Types_m

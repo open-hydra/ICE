@@ -35,7 +35,7 @@ contains
                               grid%blk(b)%gas_phase%k(i,j,k),            &
                               grid%blk(b)%gas_phase%mu(i,j,k),           &
                               grid%blk(b)%cond_phase(p)%source(:,i,j,k), &
-                              obj_condensed                              )
+                              obj_condensed(mat_of(p))                   )
   
       enddo ; enddo ; enddo
       !$OMP END DO
@@ -108,13 +108,13 @@ contains
     if (mat%use_psat) then
       call evaporation(gas_prim(1), gas_prim(ng), gas_gam, gas_R, gas_mu, gas_k,  &
                        cond_prim(n-1), 2._R8*Rp, Re,                              &
-                       obj_time_scheme%evapSelect, obj_time_scheme%intfSelect,    &
+                       mat%evapSelect, mat%intfSelect,                            &
                        mat%ep, mdot, Qevap, override_Qdot,              &
                        psatExt=mat_psat(mat, cond_prim(n-1)))
     else
       call evaporation(gas_prim(1), gas_prim(ng), gas_gam, gas_R, gas_mu, gas_k,  &
                        cond_prim(n-1), 2._R8*Rp, Re,                              &
-                       obj_time_scheme%evapSelect, obj_time_scheme%intfSelect,    &
+                       mat%evapSelect, mat%intfSelect,                            &
                        mat%ep, mdot, Qevap, override_Qdot)
     endif
 

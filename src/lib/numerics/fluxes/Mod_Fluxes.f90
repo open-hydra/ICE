@@ -61,7 +61,7 @@ contains
                             grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i:i+1,j,k),  &
                             ncond(p),                                                    &
                             grid%blk(b)%cond_phase(p)%beta(i,j,k),                     &
-                            obj_condensed                                               )
+                            obj_condensed(mat_of(p))                                    )
 
       end do ; end do ; end do
       !$OMP END DO
@@ -83,7 +83,7 @@ contains
                             grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j:j+1,k),  &
                             ncond(p),                                                    &
                             grid%blk(b)%cond_phase(p)%beta(i,j,k),                     &
-                            obj_condensed                                               )
+                            obj_condensed(mat_of(p))                                    )
 
       enddo ; enddo ; enddo
       !$OMP END DO
@@ -105,7 +105,7 @@ contains
                             grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k:k+1),  &
                             ncond(p),                                                    &
                             grid%blk(b)%cond_phase(p)%beta(i,j,k),                     &
-                            obj_condensed                                               )
+                            obj_condensed(mat_of(p))                                    )
 
       enddo ; enddo ; enddo
       !$OMP END DO

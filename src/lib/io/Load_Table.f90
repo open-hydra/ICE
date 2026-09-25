@@ -11,7 +11,7 @@ module ICE_Load_Table
   public :: classify_table_tokens, check_table_nodes, check_table_columns, table_h_offset, table_reason
   public :: validate_psat_column, psat_reason
 
-  integer, parameter :: ntok_max = 32, tok_len = 64
+  integer, parameter :: ntok_max = 32, tok_len = 64, nzone_max = 64
 
   !> Codes of the header, node and column checks; table_reason gives the text.
   integer, parameter, public :: TAB_OK = 0, TAB_NO_TEMPERATURE = 1, TAB_NO_CP = 2, TAB_NO_DENSITY = 3, &
@@ -31,13 +31,14 @@ module ICE_Load_Table
 
 contains
 
-  !> Reads the optional table and fills the obj_condensed table fields. Absent => the
-  !  constant [ICE-Physics] density/specific-heat, and the log says which of the two applies.
+  !> Reads the optional table, one zone per material, and fills the table fields of obj_condensed(:).
+  !  Absent => the constant [ICE-Physics] density/specific-heat of a single material (several
+  !  materials need the table), and the log says which of the two applies.
   subroutine Load_Table()
     use Lib_ORION_data,     only: orion_data
     use Lib_Tecplot,        only: tec_read_points_multivars
-    use ICE_Config_Types_m, only: obj_condensed, obj_time_scheme
-    use ICE_Global_m,       only: ICE_phase_prefix
+    use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Global_m,       only: ICE_phase_prefix, nmat
     use ICE_Mod_MPI,        only: mpi_is_root
     use ICE_Lib_Evaporation, only: Patm
     use ICE_Lib_Properties, only: mat_psat
@@ -46,15 +47,18 @@ contains
     type(orion_data)        :: orion
     character(len=512)      :: tablefile
     character(len=tok_len)  :: tokens(ntok_max)
-    integer                 :: ntok, icp, irho, ih, ips, code, err, Ni, Tmin
-    integer                 :: nzone, nsize, ndata, nrows, nannounced, ntrail, badline
+    integer                 :: ntok, icp, irho, ih, ips, code, err, Ni, Tmin, m
+    integer                 :: nzone, nsize, ndata, ntrail, badline
+    integer                 :: nannounced(nzone_max), nrows(nzone_max)
     logical                 :: exists, relative, found
+    character(len=32)       :: expected
     real(R8), allocatable   :: T(:), cp(:), rho(:), h(:)
 
     tablefile = 'INPUT/'//trim(ICE_phase_prefix)//'properties.dat'
 
     inquire(file=trim(tablefile), exist=exists)
     if (.not. exists) then
+      if (nmat > 1) call refuse(tablefile, 'absent, and '//trim(itoa(nmat))//' materials need it, one zone each')
       if (mpi_is_root) write(*,'(A)') ' [ICE] condensed properties: no '//trim(tablefile)// &
                      ' -- using the constant [ICE-Physics] density/specific-heat'
       return
@@ -67,76 +71,96 @@ contains
     if (code /= TAB_OK) call refuse(tablefile, table_reason(code))
 
     ! Rows: ORION reads them, after a scan that guards what ORION cannot see
-    call scan_rows(tablefile, ntok, nzone, nsize, ndata, nrows, nannounced, ntrail, badline)
+    call scan_rows(tablefile, ntok, nzone, nsize, ndata, nannounced, nrows, ntrail, badline)
     if (ntrail > 0) call refuse(tablefile, 'text after the last data row (remove it)')
-    if (nzone /= 1 .or. nsize /= 1 .or. ndata /= 1) &
-      call refuse(tablefile, 'one zone expected (one per material), found '//trim(itoa(nzone))//' ZONE lines, '// &
+    if (nzone /= nmat .or. nsize /= nmat .or. ndata /= nmat) then
+      if (nmat == 1) then
+        expected = 'one zone expected'
+      else
+        expected = trim(itoa(nmat))//' zones expected'
+      endif
+      call refuse(tablefile, trim(expected)//' (one per material), found '//trim(itoa(nzone))//' ZONE lines, '// &
                   trim(itoa(nsize))//' I= lines and '//trim(itoa(ndata))//' blocks of rows')
+    endif
     if (badline > 0) call refuse(tablefile, 'unreadable rows: line '//trim(itoa(badline))//' does not hold '// &
                                  trim(itoa(ntok))//' numbers')
-    if (nannounced /= nrows) call refuse(tablefile, 'the zone announces '//trim(itoa(nannounced))// &
-                                         ' rows but holds '//trim(itoa(nrows)))
+    do m = 1, nmat
+      if (nannounced(m) /= nrows(m)) call refuse(tablefile, trim(zone_label(m))//'the zone announces '// &
+                                                 trim(itoa(nannounced(m)))//' rows but holds '//trim(itoa(nrows(m))))
+    enddo
     err = tec_read_points_multivars(orion, ntok-1, trim(tablefile))
     if (err /= 0) call refuse(tablefile, 'unreadable rows')
     Ni = orion%block(1)%Ni
-    if (Ni /= nrows) call refuse(tablefile, 'the zone announces '//trim(itoa(Ni))//' rows but holds '//trim(itoa(nrows)))
+    do m = 1, nmat
+      if (orion%block(m)%Ni /= nrows(m)) call refuse(tablefile, trim(zone_label(m))//'the zone announces '// &
+                                                     trim(itoa(orion%block(m)%Ni))//' rows but holds '//trim(itoa(nrows(m))))
+      if (orion%block(m)%Ni /= Ni .or. nint(orion%block(m)%mesh(1,1,1,1)) /= nint(orion%block(1)%mesh(1,1,1,1))) &
+        call refuse(tablefile, trim(zone_label(m))//'spans '//trim(itoa(orion%block(m)%Ni))//' rows from T = '// &
+                    trim(itoa(nint(orion%block(m)%mesh(1,1,1,1))))//', zone 1 '//trim(itoa(Ni))//' from T = '// &
+                    trim(itoa(nint(orion%block(1)%mesh(1,1,1,1))))//' (every zone covers the same temperatures)')
+    enddo
 
     allocate(T(Ni), cp(Ni), rho(Ni), h(Ni))
-    T   = orion%block(1)%mesh(1,1:Ni,1,1)
-    cp  = orion%block(1)%vars(icp,1:Ni,1,1)
-    rho = orion%block(1)%vars(irho,1:Ni,1,1)
-    h   = orion%block(1)%vars(ih,1:Ni,1,1)
+    do m = 1, nmat
+      T   = orion%block(m)%mesh(1,1:Ni,1,1)
+      cp  = orion%block(m)%vars(icp,1:Ni,1,1)
+      rho = orion%block(m)%vars(irho,1:Ni,1,1)
+      h   = orion%block(m)%vars(ih,1:Ni,1,1)
 
-    code = check_table_nodes(T)
-    if (code /= TAB_OK) call refuse(tablefile, table_reason(code))
-    code = check_table_columns(T, cp, rho, h, relative)
-    if (code /= TAB_OK) call refuse(tablefile, table_reason(code))
-    call check_ini_value(tablefile, 'density',       obj_condensed%rho_al, rho)
-    call check_ini_value(tablefile, 'specific-heat', obj_condensed%cs_al,  cp)
+      code = check_table_nodes(T)
+      if (code /= TAB_OK) call refuse(tablefile, trim(zone_label(m))//table_reason(code))
+      code = check_table_columns(T, cp, rho, h, relative)
+      if (code /= TAB_OK) call refuse(tablefile, trim(zone_label(m))//table_reason(code))
+      call check_ini_value(tablefile, 'density',       obj_condensed(m)%rho_al, rho)
+      call check_ini_value(tablefile, 'specific-heat', obj_condensed(m)%cs_al,  cp)
 
-    Tmin = nint(T(1))
-    obj_condensed%T_min = Tmin
-    obj_condensed%T_max = Tmin + Ni - 1
-    allocate(obj_condensed%rho_tab(Tmin:Tmin+Ni-1), source=rho)
-    allocate(obj_condensed%cs_tab(Tmin:Tmin+Ni-1),  source=cp)
-    allocate(obj_condensed%h_tab(Tmin:Tmin+Ni-1),   source=h)
-    obj_condensed%rho_varies = any(rho /= rho(1))
-    obj_condensed%cs_varies  = any(cp /= cp(1))
-    obj_condensed%h_datum    = merge('relative', 'absolute', relative)
-    obj_condensed%h_off      = table_h_offset(T, cp, h)
-    allocate(obj_condensed%e_tab(Tmin:Tmin+Ni-1),   source=h - obj_condensed%h_off)
-    obj_condensed%use_table  = .true.
-    obj_condensed%description = 'Table-based rho_al(T) and cs_al(T) from '//trim(tablefile)
+      Tmin = nint(T(1))
+      associate (mat => obj_condensed(m))
+        mat%T_min = Tmin
+        mat%T_max = Tmin + Ni - 1
+        allocate(mat%rho_tab(Tmin:Tmin+Ni-1), source=rho)
+        allocate(mat%cs_tab(Tmin:Tmin+Ni-1),  source=cp)
+        allocate(mat%h_tab(Tmin:Tmin+Ni-1),   source=h)
+        mat%rho_varies = any(rho /= rho(1))
+        mat%cs_varies  = any(cp /= cp(1))
+        mat%h_datum    = merge('relative', 'absolute', relative)
+        mat%h_off      = table_h_offset(T, cp, h)
+        allocate(mat%e_tab(Tmin:Tmin+Ni-1),   source=h - mat%h_off)
+        mat%use_table  = .true.
+        mat%description = 'Table-based rho_al(T) and cs_al(T) from '//trim(tablefile)
+      end associate
 
-    if (mpi_is_root) then
-      write(*,'(A,I0,A,I0,A,I0,A)') ' [ICE] condensed properties: '//trim(tablefile)//', ', Ni, &
-        ' rows on T = ', Tmin, '..', Tmin+Ni-1, ' K (linear between the nodes, end values outside)'
-      write(*,'(A)') '   material 1: density '//trim(range_text(rho))//', cp '//trim(range_text(cp))// &
-        ', enthalpy '//trim(obj_condensed%h_datum)//' (hOff = '//trim(rtoa(obj_condensed%h_off))//' J/kg)'
-    endif
-    if (ips > 0) call load_psat(orion%block(1)%vars(ips,1:Ni,1,1))
+      if (mpi_is_root) then
+        if (m == 1) write(*,'(A,I0,A,I0,A,I0,A)') ' [ICE] condensed properties: '//trim(tablefile)//', ', Ni, &
+          ' rows on T = ', Tmin, '..', Tmin+Ni-1, ' K (linear between the nodes, end values outside)'
+        write(*,'(A,I0,A)') '   material ', m, ': density '//trim(range_text(rho))//', cp '//trim(range_text(cp))// &
+          ', enthalpy '//trim(obj_condensed(m)%h_datum)//' (hOff = '//trim(rtoa(obj_condensed(m)%h_off))//' J/kg)'
+      endif
+      if (ips > 0) call load_psat(orion%block(m)%vars(ips,1:Ni,1,1), m)
+    enddo
 
   contains
 
-    !> The Psat column serves the evaporation models only: without one it is not read, a column of
-    !  zeros is absent, and otherwise it must pass validate_psat_column.
-    subroutine load_psat(ps)
+    !> The Psat column serves the evaporation models only: a material that does not evaporate does
+    !  not use it, a column of zeros is absent, and otherwise it must pass validate_psat_column.
+    subroutine load_psat(ps, m)
       real(R8), intent(in) :: ps(:)
+      integer,  intent(in) :: m
       integer :: pcode
-      if (obj_time_scheme%evapSelect == 0) then
-        if (mpi_is_root) write(*,'(A)') '   Psat column not used: this run does not evaporate'
+      if (obj_condensed(m)%evapSelect == 0) then
+        if (mpi_is_root) write(*,'(A)') '   Psat column not used: this material does not evaporate'
         return
       endif
-      pcode = validate_psat_column(ps, Tmin, Tmin+Ni-1, obj_condensed%Tboil, Patm)
+      pcode = validate_psat_column(ps, Tmin, Tmin+Ni-1, obj_condensed(m)%Tboil, Patm)
       if (pcode == PSAT_ABSENT) then
         if (mpi_is_root) write(*,'(A)') '   Psat column all zero: Clausius-Clapeyron is used'
         return
       endif
-      if (pcode /= PSAT_OK) call refuse(tablefile, 'Psat column: '//psat_reason(pcode))
-      allocate(obj_condensed%psat_tab(Tmin:Tmin+Ni-1), source=ps)
-      obj_condensed%use_psat = .true.
+      if (pcode /= PSAT_OK) call refuse(tablefile, trim(zone_label(m))//'Psat column: '//psat_reason(pcode))
+      allocate(obj_condensed(m)%psat_tab(Tmin:Tmin+Ni-1), source=ps)
+      obj_condensed(m)%use_psat = .true.
       if (mpi_is_root) write(*,'(A)') '   Psat from the table, psat(boiling-temperature) = '// &
-        trim(rtoa(mat_psat(obj_condensed, obj_condensed%Tboil)/Patm))//' atm'
+        trim(rtoa(mat_psat(obj_condensed(m), obj_condensed(m)%Tboil)/Patm))//' atm'
     end subroutine load_psat
 
 
@@ -147,13 +171,22 @@ contains
       real(R8),         intent(in) :: ini, col(:)
       if (.not. param_is_set(trim(codename)//'-Physics', key)) return
       if (any(col /= col(1))) then
-        call refuse(file, '['//trim(codename)//'-Physics] '//key//' is set but the table''s column varies with T '// &
-                    '(remove the key: the table owns the property)')
+        call refuse(file, trim(zone_label(m))//'['//trim(codename)//'-Physics] '//key// &
+                    ' is set but the table''s column varies with T (remove the key: the table owns the property)')
       elseif (abs(ini - col(1)) > 1.e-9_R8*abs(col(1))) then
-        call refuse(file, '['//trim(codename)//'-Physics] '//key//' = '//trim(rtoa(ini))// &
+        call refuse(file, trim(zone_label(m))//'['//trim(codename)//'-Physics] '//key//' = '//trim(rtoa(ini))// &
                     ' differs from the table''s constant '//trim(rtoa(col(1)))//' (remove the key or make them equal)')
       endif
     end subroutine check_ini_value
+
+
+    !> Refusals name the zone when there are several materials.
+    function zone_label(m) result(txt)
+      integer, intent(in) :: m
+      character(len=96) :: txt
+      txt = ''
+      if (nmat > 1) txt = 'zone '//trim(itoa(m))//' ('//trim(obj_condensed(m)%name)//'): '
+    end function zone_label
 
   end subroutine Load_Table
 
@@ -366,18 +399,19 @@ contains
 
 
   !> What ORION's point reader does not check, line by line: the ZONE lines (its zone count), the
-  !  lines holding I= (it gives each one a block), the rows the first of them announces, every data
-  !  row holding ntok numbers (ORION keeps only the last row's status), and text after the last row.
-  subroutine scan_rows(file, ntok, nzone, nsize, ndata, nrows, nannounced, ntrail, badline)
+  !  lines holding I= (it gives each one a block), the rows each of them announces and each block
+  !  of rows holds, every data row holding ntok numbers (ORION keeps only the last row's status),
+  !  and text after the last row.
+  subroutine scan_rows(file, ntok, nzone, nsize, ndata, nannounced, nrows, ntrail, badline)
     character(len=*), intent(in)  :: file
     integer,          intent(in)  :: ntok
-    integer,          intent(out) :: nzone, nsize, ndata, nrows, nannounced, ntrail, badline
+    integer,          intent(out) :: nzone, nsize, ndata, nannounced(nzone_max), nrows(nzone_max), ntrail, badline
     character(len=4096) :: line
     real(R8) :: x, v(ntok_max)
     integer  :: unit, ios, rd, iline
     logical  :: numeric, prev_numeric
 
-    nzone = 0; nsize = 0; ndata = 0; nrows = 0; nannounced = -1; ntrail = 0; badline = 0
+    nzone = 0; nsize = 0; ndata = 0; nannounced = -1; nrows = 0; ntrail = 0; badline = 0
     prev_numeric = .false.; iline = 0
     open(newunit=unit, file=trim(file), status='old', action='read', iostat=ios)
     if (ios /= 0) return
@@ -389,13 +423,13 @@ contains
           index(line, 'ZONE T') > 0) nzone = nzone + 1     ! ORION's own rule
       if (index(line, 'I=') > 0) then
         nsize = nsize + 1
-        if (nsize == 1) nannounced = announced_rows(line)
+        if (nsize <= nzone_max) nannounced(nsize) = announced_rows(line)
       endif
       read(line, *, iostat=rd) x
       numeric = (rd == 0 .and. index(line, 'DATA') == 0)
       if (numeric) then
         if (.not. prev_numeric) ndata = ndata + 1
-        nrows = nrows + 1
+        if (ndata <= nzone_max) nrows(ndata) = nrows(ndata) + 1
         ntrail = 0
         if (badline == 0) then
           read(line, *, iostat=rd) v(1:ntok)

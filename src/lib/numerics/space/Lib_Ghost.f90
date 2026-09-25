@@ -31,7 +31,7 @@ contains
     call exchange_ghost_prim(grid)
 
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ncond, obj_time_scheme, obj_condensed), &
+    !$OMP SHARED(grid, ncond, mat_of, obj_time_scheme, obj_condensed), &
     !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, area, normal, velocity, veln)
     !$OMP DO SCHEDULE (dynamic)
     do i = 1, size(grid%bc)
@@ -178,7 +178,7 @@ contains
             endif
 
             !> N particles, with the condensed density at the inlet temperature
-            prim(ncond(pm),ig,jg,kg) =  prim(1,ig,jg,kg) / mat_rho(obj_condensed, prim(ncond(pm)-1,ig,jg,kg)) / &
+            prim(ncond(pm),ig,jg,kg) =  prim(1,ig,jg,kg) / mat_rho(obj_condensed(mat_of(pm)), prim(ncond(pm)-1,ig,jg,kg)) / &
                                         (4._R8/3._R8*pi*grid%bc(i)%radius**3._I4)
 
             !> Pseudo pressure
@@ -201,7 +201,7 @@ contains
 
 
         case (102) !> chimera: first ghost layer from its donors
-          call ghost_chimera(grid%blk, grid%bc(i), 1, obj_condensed)
+          call ghost_chimera(grid%blk, grid%bc(i), 1, obj_condensed(mat_of(pm)))
 
 
       end select
@@ -226,7 +226,7 @@ contains
     real(kind=R8)    :: normal(1:3), velocity(1:3)
 
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ncond, obj_condensed), &
+    !$OMP SHARED(grid, ncond, mat_of, obj_condensed), &
     !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, bs, is, js, ks, fs, &
     !$OMP         ic, jc, kc, normal, velocity)
     !$OMP DO SCHEDULE(dynamic)
@@ -253,7 +253,7 @@ contains
             grid%blk(bs)%cond_phase(pm)%prim(1:ncond(pm),is,js,ks)
 
         case (102) !> chimera: second ghost layer from its own donors
-          call ghost_chimera(grid%blk, grid%bc(i), 2, obj_condensed)
+          call ghost_chimera(grid%blk, grid%bc(i), 2, obj_condensed(mat_of(pm)))
 
         case (200) !> wedge side face: the second ghost mirrors the second interior cell
           ip = im + guide(fm,1) ; jp = jm + guide(fm,2) ; kp = km + guide(fm,3)

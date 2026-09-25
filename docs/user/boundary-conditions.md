@@ -28,8 +28,11 @@ $$
 2\,(n_y n_z + n_x n_z + n_x n_y)
 $$
 
-records per block, covering every boundary cell of every face once, in any order. A
-record applies to all particle families.
+records per block, covering every boundary cell of every face once, in any order, and a
+record applies to all particle families; or one such block of records per family inside
+each mesh block, in ATLAS's order (mesh block, family, faces), each family repeating the
+first family's faces, so that each family has its own inlets. Any other record count stops
+the run.
 
 A header whose sixth column is neither `0` nor a three-digit code stops the run with
 the record number — which is what a file in an older, wider format looks like when it

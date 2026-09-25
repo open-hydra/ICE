@@ -77,33 +77,36 @@ are identical — it is the same writer.
 
 ## Property table
 
-`INPUT/part-properties.dat` is optional and gives $\rho_{al}(T)$, $c_s(T)$ and $h(T)$ for the
-condensed material. It is a Tecplot point file whose first `VARIABLES` line names the
-columns: `Temperature` first, then `Cp`, `Density` and one enthalpy column, in any order.
-The enthalpy is either `Enthalpy` (relative: $c_p T$ for a constant $c_p$) or
-`Enthalpy_abs` (absolute: its offset is kept as the material's datum). An optional `Psat`
-column (Pa) replaces the Clausius-Clapeyron saturation curve of the evaporation models;
-other names are ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least two
-of them. Between the nodes the density and $c_p$ are linear in $T$, and outside
+`INPUT/part-properties.dat` gives $\rho_{al}(T)$, $c_s(T)$ and $h(T)$ of the condensed
+materials, one zone per material in the order of the [phase file](input.md#materials),
+every zone on the same temperatures. It is optional with one material and required with
+several. It is a Tecplot point file whose first `VARIABLES` line names the columns:
+`Temperature` first, then `Cp`, `Density` and one enthalpy column, in any order. The
+enthalpy is either `Enthalpy` (relative: $c_p T$ for a constant $c_p$) or `Enthalpy_abs`
+(absolute: its offset is kept as the material's datum). An optional `Psat` column (Pa)
+replaces the Clausius-Clapeyron saturation curve of the evaporation models; other names
+are ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least
+two of them. Between the nodes the density and $c_p$ are linear in $T$, and outside
 $[T_{min}, T_{max}]$ they keep the end values.
 
 ICE refuses a table that is missing a column, names a column twice or names two
-enthalpies; that has more than one zone, a row that does not hold a number for every
-column, a row count other than the one its zone announces, a row below 0 K, rows off the integer
-nodes (by more than $10^{-6}$ K) or anything after the last row; or whose density or $c_p$ is
-not positive, whose enthalpy does not increase or disagrees with $c_p$, or whose relative
-`Enthalpy` has an offset. A constant $c_p$ must give $h = c_p T + h_{off}$ on every row,
-and a varying one must match the trapezoidal integral of $c_p$ within 0.1 % per step, or
-within $10^{-6}\,|h|$ when that is larger, the rounding of an absolute enthalpy printed
-to seven digits. When an evaporation model is selected it also refuses a `Psat` column
-that is not finite, is negative, decreases with $T$ or is constant, or does not give 0.5 to
-2 atm at `boiling-temperature`, which must lie in $[T_{min}, T_{max}-1]$; a column of zeros
-counts as absent, and a run that does not evaporate does not use the column.
+enthalpies; that has a zone count other than the number of materials, zones on different
+temperatures, a row that does not hold a number for every column, a row count other than
+the one its zone announces, a row below 0 K, rows off the integer nodes (by more than
+$10^{-6}$ K) or anything after the last row; or whose density or $c_p$ is not positive,
+whose enthalpy does not increase or disagrees with $c_p$, or whose relative `Enthalpy` has
+an offset. A constant $c_p$ must give $h = c_p T + h_{off}$ on every row, and a varying one
+must match the trapezoidal integral of $c_p$ within 0.1 % per step, or within
+$10^{-6}\,|h|$ when that is larger, the rounding of an absolute enthalpy printed to seven
+digits. For a material that evaporates it also refuses a `Psat` column that is not finite,
+is negative, decreases with $T$ or is constant, or does not give 0.5 to 2 atm at its
+`boiling-temperature`, which must lie in $[T_{min}, T_{max}-1]$; a column of zeros counts
+as absent, and a material that does not evaporate does not use the column.
 
 With a table, `density` and `specific-heat` of `[ICE-Physics]` may be left out; if one is
-given it must equal its constant column, and it may not be given against a column that
-varies. If the file is absent, those two constants are used; ICE prints which of the two
-applies.
+given it must equal its material's constant column, and it may not be given against a
+column that varies. If the file is absent, the single material takes those two constants;
+ICE prints which of the two applies.
 
 ```
 TITLE = "Mass Thermodynamic Properties"

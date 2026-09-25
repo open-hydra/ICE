@@ -97,6 +97,10 @@ ice_add_verification(TauLimit          J-tau-limit         "fast;verification;so
 # interpolation between the integer-kelvin rows, a table from Tmin > 1, saturation below it.
 ice_add_verification(PropertiesTable   K-properties-table  "fast;verification;sources")
 
+# Several materials: the phase file maps the families onto materials, each with its own
+# table zone, model tokens and inlet records, against each material's own oracle.
+ice_add_verification(Materials         L-materials         "fast;verification;sources")
+
 # Eulerian transport against free advection, with a grid-refinement study
 ice_add_verification(SineAdvection     C-advection-sine    "fast;verification;transport")
 

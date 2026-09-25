@@ -13,7 +13,7 @@ All of them use the MK closure. A to F and K hold the cloud uniform in space, so
 answer is the same in every cell and the mesh only has to be large enough to exercise
 the flux loops. G to I transport a localized cloud through a prescribed frozen carrier
 field, so the answer varies from cell to cell and the mesh resolution is part of what
-is measured.
+is measured. L runs two or three families side by side in one case, each on its own material.
 
 | | Case | What it pins down | Reference |
 |---|---|---|---|
@@ -24,6 +24,7 @@ is measured.
 | **E** | [Every Nusselt correlation](#e-every-nusselt-correlation) | All seven heat laws, velocity and temperature relaxing together | Independent RK4 and closed form |
 | **F** | [Evaporation](#f-evaporation) | All five evaporation models, the latent sink, two exact identities, the boiling clamp, the table's `Psat` | Closed form and RK4 |
 | **K** | [The property table](#k-the-property-table-at-a-fixed-temperature) | Linear interpolation between the table's rows, a table that starts above 1 K, saturation past its ends | Closed form |
+| **L** | [Several materials](#l-several-materials) | Each family on its own material: its table zone, its model tokens, its inlet records, its inlet density | Closed form and case F's |
 | **C** | [Sinusoidal advection](#c-sinusoidal-advection-on-a-periodic-mesh) | Transport alone, and the order of the space scheme | Closed form |
 | **G** | [Cloud in a uniform gas](#g-a-cloud-released-into-a-uniform-gas) | Transport and drag together | Closed form |
 | **H** | [Cloud in a straining gas](#h-a-cloud-in-a-straining-gas) | A non-trivial particle velocity field, and the small-Stokes limit | Closed form |
@@ -368,6 +369,35 @@ extrapolation below $T_{min}$ would put K7 2.0 % high, and the row at $T_{max}$ 
 K1c is K1's control, the same run with nothing to interpolate. $T_p$ must stay within
 $10^{-4}$ K of its initial value, well under the 0.1 K that would change the nearest row;
 it moves by round-off.
+
+### L. Several materials
+
+The phase file names the materials, one line each, `<name> <groups> [key=value ...]`, and
+the families map onto them in that order; the property table gives one zone per material.
+Every leg runs two or three MK families side by side in one case, so a family that reads
+another family's material, model or inlet record is seen directly in its own field.
+
+| Leg | Phase file | What it checks | Measured |
+|---|---|---|---|
+| L1 | `A 1` / `B 1`, zones $c_s$ = 1000, $\rho$ = 2000 and $c_s$ = 2000, $\rho$ = 1000 | Families at rest heat in a gas at 400 K ($Nu = 2$): each follows $T_g + (T_0 - T_g)\,e^{-t/\tau}$ with its own $\tau = \rho_p c_s/(4\pi k_g R_p n)$, $R_p$ from its own density | $6.1\times10^{-8}$, $2.2\times10^{-8}$ of the gap |
+| L1b | `A 2` / `B 1`, three families | Families 1 and 2 heat as A, family 3 as B | the same |
+| L1c | `A 2`, one zone | Control: two families on one material | the same |
+| L2 | `A 1 evaporation=CEM` / `B 1`, no `[ICE-Physics] evaporation` | A evaporates as case F's CEM (the $d^2$ slope), B keeps $\rho_p$ and $n$ bit for bit | slope $1.6\times10^{-8}$ |
+| L2b | L2 with `evaporation = none` in the INI | The token overrides the INI default: `part-field.tec` bit for bit L2's | identical |
+| L2d | `A 1` / `B 1 evaporation=none`, `evaporation = CEM` in the INI | The INI default applies to A, the token switches B off | slope $1.6\times10^{-8}$ |
+| L2c, L2e | `A 1 evaporation=CEM`; `A 1` with `evaporation = CEM` | Controls: one material, the token alone and the INI alone | slope $1.6\times10^{-8}$ |
+| L3 | `A 2`, face-1 inlets in ATLAS's order (the records of family 1, radius 10 µm, then family 2, 20 µm) | $n_1/n_2 = (r_2/r_1)^3 = 8$ in the cells the inlet fills | $6.8\times10^{-15}$ |
+| L3b | L3 on two mesh blocks (mesh block, then family, then faces), radii 10/20 and 20/10 µm | 8 in block 1, 1/8 in block 2 | $6.9\times10^{-15}$, $5.1\times10^{-15}$ |
+| L3c, L3d | Controls: equal radii; one record per face on two blocks | ratio 1 | exact |
+| L4 | `A 1` / `B 1`, zones $\rho$ = 2000 and 1000, one record per face | Each family's inlet $n$ uses its own table density: $n_1/n_2 = 1/2$ | $4.6\times10^{-15}$ |
+| L4c | `A 2`, one zone | Control: ratio 1 | exact |
+
+L1's tolerance is $10^{-6}$ of the initial gap: RK2 at $\Delta t = \tau_A/1000$ leaves at most
+$(t/\tau)(\Delta t/\tau)^2/6 = 6\times10^{-8}$ of it, and a family that heats with the other
+material misses by 0.165. L2 takes case F's $10^{-6}$ on the slope. L3 and L4 compare ratios
+that are exact in binary ($r_2 = 2r_1$, $\rho_A = 2\rho_B$) through a flux and a limiter that
+are homogeneous of degree one in $n$, so $10^{-12}$ bounds their round-off; a cell counts as
+filled at half the inlet density.
 
 ## Clouds carried by the gas
 

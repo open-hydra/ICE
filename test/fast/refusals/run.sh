@@ -7,7 +7,8 @@
 #  first rows are refused while the input is read (a value outside its allowed
 #  list, a required model left unset in a coupled run, the heat name Chang, whose
 #  formula is JAXA3, a property table that is malformed or contradicts the INI,
-#  a Psat column an evaporation model cannot use);
+#  a Psat column an evaporation model cannot use, a phase file whose materials or
+#  model tokens ICE cannot honour);
 #  the last one diverges at run time (a NaN source in one cell) and must be
 #  caught after the update. A solver that reports success on
 #  any of these would let a harness read a broken run as a pass. One row goes the
@@ -131,6 +132,36 @@ refuse Refuse/MK   "Psat: decreasing, with evaporation" "psat_table decreasing &
        "Psat column: a pressure that decreases with T"
 refuse Refuse/MK   "Psat: far from 1 atm at the boiling temperature" "psat_table linear && $evap_on" \
        "Psat column: psat(boiling-temperature) is not within a factor 2 of one atmosphere"
+# Materials come from the phase file: "<name> <groups> [key=value ...]" per line. two_mat declares
+# a second material and a second family; the tokens are read for every material, coupled or not.
+two_mat="printf 'condensed-dispersed phase\nA 1\nB 1\n' > INPUT/part-phase.txt && printf '\n[ICE-Family2]\nclosure = MK\n' >> input.ini"
+tokens() { printf 'condensed-dispersed phase\nA 1 %s\n' "$1" > INPUT/part-phase.txt; }
+refuse Doisneau/MK "materials: more populations than families" \
+       "printf 'condensed-dispersed phase\nA 1\nB 1\n' > INPUT/part-phase.txt" \
+       "declares 2 populations over 2 materials, but [ICE-Family*] defines 1 families"
+refuse Doisneau/MK "materials: two materials without a table" "$two_mat && rm INPUT/part-properties.dat" \
+       "absent, and 2 materials need it, one zone each"
+refuse Doisneau/MK "materials: one table zone for two materials" "$two_mat" \
+       "2 zones expected (one per material)"
+refuse Doisneau/MK "materials: a vector of the wrong length" \
+       "sed -i '/^heat-transfer/a latent-heat = 1e6 2e6' input.ini" \
+       "latent-heat carries 2 values for 1 material(s)"
+refuse Doisneau/MK "tokens: an unknown evaporation model" "tokens evaporation=LEB" \
+       "Wrong evaporation model input ---> LEB;Choose one of the following"
+refuse Doisneau/MK "tokens: combustion is not modelled" "tokens combustion=Beckstead" \
+       "Wrong combustion input ---> Beckstead;- none"
+refuse Doisneau/MK "tokens: solidification is not modelled" "tokens solidification=on" \
+       "Wrong solidification input ---> on;- off"
+refuse Doisneau/MK "tokens: only the infinite-conductivity liquid" "tokens liquid-conduction=P2T" \
+       "Wrong liquid-conduction input ---> P2T;- ITC"
+refuse Doisneau/MK "tokens: only the boiling clamp" "tokens boiling=ZGR" \
+       "Wrong boiling input ---> ZGR;- clamp"
+refuse Doisneau/MK "tokens: an unknown key" "tokens colour=blue" \
+       'unknown key "colour"; the keys are'
+refuse Doisneau/MK "tokens: a real key that is not a number" "tokens alpha-e=abc" \
+       "alpha-e=abc is not a real number"
+refuse Doisneau/MK "tokens: LK interface on the d-squared law" "tokens 'evaporation=d2-law interface=LK'" \
+       "interface = LK needs a gas-side evaporation model"
 refuse Refuse/MK   "divergence caught after the update" ":" \
        "invalid state after the update"
 

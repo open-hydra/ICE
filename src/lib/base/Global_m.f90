@@ -15,4 +15,8 @@ module ICE_Global_m
   integer,              dimension(:), allocatable  :: npop
   integer,              dimension(:), allocatable  :: ncond
 
+  ! Condensed materials (set by Setup_Materials): family p uses material mat_of(p)
+  integer                                          :: nmat = 1
+  integer,              dimension(:), allocatable  :: mat_of
+
 end module ICE_Global_m

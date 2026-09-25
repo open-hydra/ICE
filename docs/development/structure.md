@@ -38,6 +38,7 @@ src/lib/
 │   ├── Backend_INI.f90         # FiNeR wrapper; scans for families, probes, MG levels
 │   ├── Read_Ini.f90            # Scan, register, load, validate
 │   ├── Assign_Setup.f90        # Post-read derivations: closures, ncond, coupling
+│   ├── Setup_Materials.f90     # Materials of the phase file, their models, the property table
 │   └── Config_Types_m.f90      # The obj_* configuration objects
 ├── driver/
 │   ├── Procedures_m.f90        # The ICE_type facade: setup / solve / postprocess

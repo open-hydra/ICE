@@ -40,7 +40,8 @@ test/
 │   ├── H-linear-strain/       # Straining gas, exact affine map + small-St asymptote
 │   ├── I-vortex-cloud/        # 2D cloud in a prescribed vortex, exact conformal map
 │   ├── J-tau-limit/           # Step bounded by the relaxation time, both modes; dilute cells left out
-│   └── K-properties-table/    # Property table read at a fixed T: interpolation, range, saturation
+│   ├── K-properties-table/    # Property table read at a fixed T: interpolation, range, saturation
+│   └── L-materials/           # Several materials: table zones, model tokens, inlet records per family
 ├── fast/                      # Short invariant checks, no stored references
 │   ├── common.sh              # Shared helpers (short run, compare byte for byte)
 │   ├── openmp-equiv/          # 1 vs 4 threads bit-identical

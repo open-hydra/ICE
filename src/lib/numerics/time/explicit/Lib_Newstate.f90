@@ -41,7 +41,7 @@ contains
     logical :: prim_status, bad_state
 
     bad_state = .false.
-    !$OMP PARALLEL DEFAULT(NONE) PRIVATE(b,i,j,k,prim_status) SHARED(grid,p,srk,bad_state,obj_condensed)
+    !$OMP PARALLEL DEFAULT(NONE) PRIVATE(b,i,j,k,prim_status) SHARED(grid,p,srk,bad_state,obj_condensed,mat_of)
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
 
@@ -53,7 +53,7 @@ contains
         call state_update_(grid%blk(b)%cond_phase(p)%prim(:,i,j,k),     &
                            grid%blk(b)%cond_phase(p)%prim_old(:,i,j,k), &
                            grid%blk(b)%cond_phase(p)%residual(:,i,j,k), &
-                           srk, prim_status, obj_condensed)
+                           srk, prim_status, obj_condensed(mat_of(p)))
 
         if (.not. prim_status) then
           !$OMP CRITICAL (ICE_state_report)

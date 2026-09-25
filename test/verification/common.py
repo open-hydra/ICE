@@ -53,36 +53,47 @@ def _nodal(xn, yn, zn, component):
 
 def write_tec(path, names, xn, yn, zn, cellvars, zone='B1'):
     """Structured single-zone Tecplot BLOCK file: nodal x,y,z then cell-centred data."""
+    write_tec_blocks(path, names, [(xn, yn, zn, cellvars, zone)])
+
+
+def write_tec_blocks(path, names, blocks):
+    """write_tec with one zone per mesh block, blocks = [(xn, yn, zn, cellvars, zone)]."""
     nvar = 3 + len(names)
-    head = [' VARIABLES ="x" "y" "z" ' + ' '.join('"%s"' % v for v in names),
-            ' ZONE  T = %s, I=%d, J=%d, K=%d, DATAPACKING=BLOCK, '
-            'VARLOCATION=([1-3]=NODAL,[4-%d]=CELLCENTERED)' % (zone, len(xn), len(yn), len(zn), nvar)]
-    body = [_fmt(_nodal(xn, yn, zn, c)) for c in (0, 1, 2)]
-    body += [_fmt(v) for v in cellvars]
-    Path(path).write_text('\n'.join(head + body) + '\n')
+    lines = [' VARIABLES ="x" "y" "z" ' + ' '.join('"%s"' % v for v in names)]
+    for xn, yn, zn, cellvars, zone in blocks:
+        lines.append(' ZONE  T = %s, I=%d, J=%d, K=%d, DATAPACKING=BLOCK, '
+                     'VARLOCATION=([1-3]=NODAL,[4-%d]=CELLCENTERED)' % (zone, len(xn), len(yn), len(zn), nvar))
+        lines += [_fmt(_nodal(xn, yn, zn, c)) for c in (0, 1, 2)]
+        lines += [_fmt(v) for v in cellvars]
+    Path(path).write_text('\n'.join(lines) + '\n')
 
 
-def write_bc(path, nx, ny, nz, mode='extrapolation'):
-    """ATLAS-format BC file for a single block.
+def inlet_payload(massflux, speed, T, radius):
+    """Payload of a code-402 record: mass flux [kg/(s m^2)], speed [m/s] along the face normal,
+    temperature [K] and radius [m], then the three fields only IGLOO reads."""
+    return '%.10e %.10e normal normal %.10e %.10e 0.0 Dirac 0.0' % (massflux, speed, T, radius)
 
-    ICE reads exactly 2*(ny*nz + nx*nz + nx*ny) records, one per boundary face cell,
-    so every face has to be present - including the degenerate k faces, which get the
-    null code 0. 'periodic-x' closes faces 1 and 2 onto each other with code 201.
-    """
+
+def bc_rows(nx, ny, nz, mode='extrapolation', block=1, inlet=None):
+    """The records of write_bc for mesh block `block`. With inlet (an inlet_payload), the
+    face-1 records are code-402 inlets carrying it."""
     rows = []
 
     def header(i, j, k, f, code):
-        return '%8d%8d%8d%8d%8d%8d' % (1, i, j, k, f, code)
+        return '%8d%8d%8d%8d%8d%8d' % (block, i, j, k, f, code)
 
     def connection(i, j, k, f):
         # The ghost cells of face f take the cells behind the opposite face
         src, fs = (nx, 2) if f == 1 else (1, 1)
-        return ['%8d%8d%8d%8d%8d%8d%8d%8d%8d' % (1, src, j, k, fs, 1, 0, 0, 1)]
+        return ['%8d%8d%8d%8d%8d%8d%8d%8d%8d' % (block, src, j, k, fs, 1, 0, 0, 1)]
 
     side = 201 if mode == 'periodic-x' else 400
     for f, (i0, j0, k0) in ((1, (1, None, None)), (2, (nx, None, None))):
         for k in range(1, nz + 1):
             for j in range(1, ny + 1):
+                if f == 1 and inlet is not None:
+                    rows += [header(i0, j, k, f, 402), '   ' + inlet]
+                    continue
                 rows.append(header(i0, j, k, f, side))
                 if side == 201:
                     rows += connection(i0, j, k, f)
@@ -94,8 +105,17 @@ def write_bc(path, nx, ny, nz, mode='extrapolation'):
         for j in range(1, ny + 1):
             for i in range(1, nx + 1):
                 rows.append(header(i, j, k0, f, 0))
+    return rows
 
-    Path(path).write_text('\n'.join(rows) + '\n')
+
+def write_bc(path, nx, ny, nz, mode='extrapolation'):
+    """ATLAS-format BC file for a single block.
+
+    ICE reads exactly 2*(ny*nz + nx*nz + nx*ny) records, one per boundary face cell,
+    so every face has to be present - including the degenerate k faces, which get the
+    null code 0. 'periodic-x' closes faces 1 and 2 onto each other with code 201.
+    """
+    Path(path).write_text('\n'.join(bc_rows(nx, ny, nz, mode)) + '\n')
 
 
 def write_ini(path, sections):
@@ -123,28 +143,42 @@ def write_properties(path, Tmin, Tmax, cp, rho, datum='Enthalpy', h0=0.0, psat=N
     %.10e. Returns the columns as written, parsed back from the text, so an oracle
     reads the numbers ICE reads: {'T', 'cp', 'rho', 'h', 'psat' (None), 'datum'}.
     """
+    return write_properties_zones(path, Tmin, Tmax, [dict(cp=cp, rho=rho, h0=h0, psat=psat, zone=zone)],
+                                  datum)[0]
+
+
+def write_properties_zones(path, Tmin, Tmax, zones, datum='Enthalpy'):
+    """write_properties with one zone per material, in the order of the phase file.
+
+    zones = [dict(cp=..., rho=..., h0=0.0, psat=None, zone='A')], all on the rows Tmin..Tmax
+    and all with or all without psat. Returns one dict per zone, as write_properties does.
+    """
     def column(v):
         return [float(v(T)) for T in Ts] if callable(v) else [float(v)] * len(Ts)
 
     Ts = list(range(int(Tmin), int(Tmax) + 1))
-    cps, rhos = column(cp), column(rho)
-    if callable(cp):
-        hs = [cps[0] * Ts[0] + h0]
-        for i in range(1, len(Ts)):
-            hs.append(hs[-1] + 0.5 * (cps[i - 1] + cps[i]) * (Ts[i] - Ts[i - 1]))
-    else:
-        hs = [cps[0] * T + h0 for T in Ts]
-    cols = [cps, rhos, hs] + ([column(psat)] if psat is not None else [])
-    names = ['Temperature', 'Cp', 'Density', datum] + (['Psat'] if psat is not None else [])
-    rows = [('%.1f' % T) + ''.join(' %.10e' % c[i] for c in cols) for i, T in enumerate(Ts)]
-    head = ['TITLE = "Mass Thermodynamic Properties"',
-            'VARIABLES = ' + ', '.join('"%s"' % v for v in names),
-            'ZONE T="%s"' % zone,
-            'I=%d, F=POINT' % len(Ts)]
-    Path(path).write_text('\n'.join(head + rows) + '\n')
-    back = list(zip(*[[float(x) for x in r.split()] for r in rows]))
-    return {'T': list(back[0]), 'cp': list(back[1]), 'rho': list(back[2]), 'h': list(back[3]),
-            'psat': list(back[4]) if psat is not None else None, 'datum': datum}
+    with_psat = zones[0].get('psat') is not None
+    names = ['Temperature', 'Cp', 'Density', datum] + (['Psat'] if with_psat else [])
+    lines = ['TITLE = "Mass Thermodynamic Properties"',
+             'VARIABLES = ' + ', '.join('"%s"' % v for v in names)]
+    out = []
+    for z in zones:
+        cp, rho, h0, psat = z['cp'], z['rho'], z.get('h0', 0.0), z.get('psat')
+        cps, rhos = column(cp), column(rho)
+        if callable(cp):
+            hs = [cps[0] * Ts[0] + h0]
+            for i in range(1, len(Ts)):
+                hs.append(hs[-1] + 0.5 * (cps[i - 1] + cps[i]) * (Ts[i] - Ts[i - 1]))
+        else:
+            hs = [cps[0] * T + h0 for T in Ts]
+        cols = [cps, rhos, hs] + ([column(psat)] if with_psat else [])
+        rows = [('%.1f' % T) + ''.join(' %.10e' % c[i] for c in cols) for i, T in enumerate(Ts)]
+        lines += ['ZONE T="%s"' % z.get('zone', 'A'), 'I=%d, F=POINT' % len(Ts)] + rows
+        back = list(zip(*[[float(x) for x in r.split()] for r in rows]))
+        out.append({'T': list(back[0]), 'cp': list(back[1]), 'rho': list(back[2]), 'h': list(back[3]),
+                    'psat': list(back[4]) if with_psat else None, 'datum': datum})
+    Path(path).write_text('\n'.join(lines) + '\n')
+    return out
 
 
 def table_lookup(table, key, T):
@@ -201,10 +235,17 @@ class Case(object):
 
     def particles(self, rho, u, v, w, T, n):
         """Write the condensed-phase initial condition (MK: rho, u, v, w, T, n)."""
-        write_tec(self.dir / 'INPUT/part-ic.tec',
-                  ['rp1', 'up1', 'vp1', 'wp1', 'Tp1', 'np1'],
-                  self.xn, self.yn, self.zn,
-                  [self.cells(f) for f in (rho, u, v, w, T, n)], zone='B1-CD')
+        self.families((rho, u, v, w, T, n))
+
+    def families(self, *states):
+        """particles() for several MK families, one (rho, u, v, w, T, n) each, in family order."""
+        names = ['%s%d' % (s, p) for p in range(1, len(states) + 1) for s in ('rp', 'up', 'vp', 'wp', 'Tp', 'np')]
+        write_tec(self.dir / 'INPUT/part-ic.tec', names, self.xn, self.yn, self.zn,
+                  [self.cells(f) for state in states for f in state], zone='B1-CD')
+
+    def phase(self, *materials):
+        """INPUT/part-phase.txt: the type word, then one "<name> <groups> [key=value ...]" line each."""
+        (self.dir / 'INPUT/part-phase.txt').write_text('\n'.join(('condensed-dispersed phase',) + materials) + '\n')
 
     def gas(self, rho, u, v, w, T, R, gam, k, mu):
         """Write the frozen carrier phase. Its presence switches on one-way coupling."""
@@ -213,8 +254,14 @@ class Case(object):
                   self.xn, self.yn, self.zn,
                   [self.cells(f) for f in (rho, u, v, w, T, R, gam, k, mu, 0.0)], zone='B1-GAS')
 
-    def boundaries(self, mode='extrapolation'):
-        write_bc(self.dir / 'INPUT/part-bc.txt', self.nx, self.ny, self.nz, mode)
+    def boundaries(self, mode='extrapolation', inlets=None):
+        """inlets: face-1 payloads (inlet_payload), one for every family (the records are fanned
+        out) or one per family (a block of records per family, in ATLAS's order)."""
+        if inlets is None:
+            write_bc(self.dir / 'INPUT/part-bc.txt', self.nx, self.ny, self.nz, mode)
+        else:
+            rows = [r for pl in inlets for r in bc_rows(self.nx, self.ny, self.nz, mode, inlet=pl)]
+            (self.dir / 'INPUT/part-bc.txt').write_text('\n'.join(rows) + '\n')
 
     def properties(self, Tmin, Tmax, cp, rho, **kw):
         """Write INPUT/part-properties.dat (see write_properties) and return it as written.
@@ -225,9 +272,14 @@ class Case(object):
         self.has_table = True
         return write_properties(self.dir / 'INPUT/part-properties.dat', Tmin, Tmax, cp, rho, **kw)
 
+    def properties_zones(self, Tmin, Tmax, zones, **kw):
+        """properties() with one zone per material (see write_properties_zones)."""
+        self.has_table = True
+        return write_properties_zones(self.dir / 'INPUT/part-properties.dat', Tmin, Tmax, zones, **kw)
+
     def ini(self, t_end=None, iters=1000000000, cfl=0.8, rk='RK2', drag='Stokes',
             heat='Stokes', reconstruction='MUSCL', limiter='vanleer', rho_al=1000.0,
-            cs=900.0, dt_max=None, physics=None, numerics=None):
+            cs=900.0, dt_max=None, physics=None, numerics=None, closures=('MK',)):
         numerics_ = {'time-scheme': rk, 'cfl': cfl, 'time-accurate': True,
                      'space-reconstruction': reconstruction, 'flux-limiter': limiter}
         if dt_max is not None:
@@ -243,17 +295,18 @@ class Case(object):
             # against a varying one, so a case with a table sets neither by default
             del phys['density'], phys['specific-heat']
         phys.update(physics or {})
-        write_ini(self.dir / 'input.ini', {
+        sections = {
             'ICE-Parameters': {'iter-threshold': iters,
                                'time-threshold': t_end if t_end is not None else 1e30,
                                'res-threshold': 0.0},
-            'ICE-Numerics': numerics_,
-            'ICE-Family1': {'closure': 'MK'},
-            'ICE-Physics': phys,
-            'ICE-IO': {'ic-format': 'tecplot ascii', 'sol-format': 'tecplot ascii',
-                       'shell-diter': 1000000000, 'sol-diter': 1000000000,
-                       'res-diter': 1000000000},
-        })
+            'ICE-Numerics': numerics_}
+        for p, closure in enumerate(closures, 1):
+            sections['ICE-Family%d' % p] = {'closure': closure}
+        sections['ICE-Physics'] = phys
+        sections['ICE-IO'] = {'ic-format': 'tecplot ascii', 'sol-format': 'tecplot ascii',
+                              'shell-diter': 1000000000, 'sol-diter': 1000000000,
+                              'res-diter': 1000000000}
+        write_ini(self.dir / 'input.ini', sections)
 
     def run(self, threads=1):
         run_ice(self.dir, threads)
@@ -296,11 +349,11 @@ def try_run(rep, fn, *args, **kw):
         return None
 
 
-def read_solution(path):
-    """First zone of a Tecplot BLOCK output: {'time', 'nx', 'ny', 'var'[v][cell]}."""
+def read_solution(path, zone=0):
+    """One zone (the first by default) of a Tecplot BLOCK output: {'time', 'nx', 'ny', 'var'[v][cell]}."""
     text = Path(path).read_text()
     zones = re.split(r'^\s*ZONE', text, flags=re.IGNORECASE | re.MULTILINE)[1:]
-    header, body = zones[0].split('\n', 1)
+    header, body = zones[zone].split('\n', 1)
     I, J, K = (int(re.search(r'\b%s\s*=\s*(\d+)' % a, header, re.IGNORECASE).group(1)) for a in 'IJK')
     stime = re.search(r'SOLUTIONTIME\s*=\s*([-+0-9.EDed]+)', header, re.IGNORECASE)
     values = [float(t) for t in body.split() if re.fullmatch(r'[-+0-9.Ee]+', t)]
