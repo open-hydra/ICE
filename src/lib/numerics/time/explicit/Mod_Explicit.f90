@@ -38,9 +38,11 @@ contains
 
     !$omp parallel
     do p = 1, ngroups
+      !$omp single
       call assign_wavespeed_make(p)
+      !$omp end single
       call compute_dt(p, obj_time_scheme%cfl, obj_time_scheme%cfl_rampa_iter, &
-                      obj_time_scheme%dt_max, grid)
+                      obj_time_scheme%dt_max, obj_time_scheme%tau_factor, grid)
     end do
     !$omp end parallel
 

@@ -18,6 +18,7 @@ is measured.
 | | Case | What it pins down | Reference |
 |---|---|---|---|
 | **A** | [Stokes drag relaxation](#a-relaxation-under-stokes-drag) | The momentum source, and the order of the time scheme | Closed form |
+| **J** | [The step at the relaxation time](#j-the-step-at-the-relaxation-time) | `tau-factor`: the step bounded by $\tau_p$ in both stepping modes, and cells below the empty-cell density left out | Closed form |
 | **B** | [Thermal relaxation](#b-thermal-relaxation) | The energy source at $Nu = 2$ | Closed form |
 | **D** | [Every drag correlation](#d-every-drag-correlation) | All twelve drag laws, to $Ma = 2.6$ | Independent RK4 |
 | **E** | [Every Nusselt correlation](#e-every-nusselt-correlation) | All seven heat laws, velocity and temperature relaxing together | Independent RK4 and closed form |
@@ -85,6 +86,61 @@ not `cfl * dt-max`:
 |---|---|---|---|---|
 | RK2 | $3.8\times10^{-7}$ | $9.5\times10^{-8}$ | $2.4\times10^{-8}$ | 2.00 |
 | RK3 | $2.5\times10^{-10}$ | $3.1\times10^{-11}$ | $3.9\times10^{-12}$ | 3.00 |
+
+### J. The step at the relaxation time
+
+Case A's cloud with particles small enough that the relaxation time is below `dt-max`:
+$d_p = 2$ µm, $\rho_{al} = 2000$ kg/m³, $\mu_g = 2\times10^{-5}$ Pa s, so
+$\tau_p = \rho_{al}d_p^2/(18\mu_g) = 2.222\times10^{-5}$ s $= \mathrm{dt\text{-}max}/4.5$. A cloud at
+rest has no signal speed under MK, so the CFL condition does not bound its step. With `dt-max`
+the only bound, SSP-RK3 integrates the relaxation at $z = -4.5$, outside its stability interval:
+$R(z) = 1 + z + z^2/2 + z^3/6 = -8.56$, and the slip grows by that factor every step until the
+convective limit takes over. At $t = 20\tau_p$ the cloud is still $1.8\times10^3$ m/s off the
+gas velocity.
+
+`tau-factor` (default 1) bounds the step of every populated cell by $\mathrm{tau\text{-}factor}
+\times\tau_p$. Then $R(-1) = 1/3$ and the slip falls by 3 per step. The first step is the
+exception: $\tau_p$ is not known before the first source evaluation, so that step is `dt-max`
+alone and overshoots to $u_p = 95.6$ m/s. Every step after it is exactly $\tau_p$, and the end
+time shows it: $(t - \mathrm{dt\text{-}max})/\tau_p$ is an integer.
+
+| Leg | Setting | Check | Tolerance | Measured |
+|---|---|---|---|---|
+| J1 | time accurate, to $20\tau_p$ | $\max\lvert u_p/u_g - 1\rvert$ | $10^{-3}$ | $1.99\times10^{-7}$ ($= 85.6\cdot3^{-16}/u_g$) |
+| | | $(t - \mathrm{dt\text{-}max})/\tau_p$ an integer | $10^{-6}$ | 16.000000 |
+| J1a | `tau-factor` 0.2, `dt-max` $5\times10^{-6}$, to $2\tau_p$ | $\lvert u_p - u_g(1 - e^{-t/\tau_p})\rvert/u_g$ at the time reached | $5\times10^{-3}$ | $1.1\times10^{-4}$ |
+| | | $(t - 5\times10^{-6})/(0.2\tau_p)$ an integer | $10^{-6}$ | 9.000000 |
+| J2 | two clouds, $d_p$ = 2 and 20 µm, time accurate | small: $\max\lvert u_p/u_g - 1\rvert$ | $10^{-3}$ | $1.99\times10^{-7}$ |
+| | | large: $\lvert u_p - u_g(1 - e^{-t/\tau_L})\rvert/u_g$ | $10^{-4}$ | $1.5\times10^{-7}$ |
+| | | $(t - \mathrm{dt\text{-}max})/\tau_S$ an integer | $10^{-6}$ | 16.000000 |
+| J2l | the same, local steps, 20 iterations | small: $\max\lvert u_p/u_g - 1\rvert$ | $10^{-6}$ | $7.4\times10^{-9}$ ($= 85.6\cdot3^{-19}/u_g$) |
+| | | large: on its exponential at $20\,\mathrm{dt\text{-}max}$ | $10^{-4}$ | $1.4\times10^{-6}$ |
+| J3 | dilute half, $\rho_p = 10^{-7}$, $\tau_p = 0.611\tau_S$ | $(t - \mathrm{dt\text{-}max})/\tau_S$ an integer | $10^{-6}$ | 16.000000 |
+| | | dilute $\rho_p$ and $n$ unchanged | bit for bit | unchanged |
+
+**J1** is the limit itself. **J1a** shows that `tau-factor` scales the step and buys accuracy
+as well as stability: at $0.2\tau_p$ the RK3 error per step is $8\times10^{-5}$ of the slip, and
+the comparison is made at the time the run reached ($2.025\tau_p$), not at the requested end time.
+
+**J2** puts two clouds side by side, one per row of a two-row slab, so that no particle crosses
+from one to the other: split in $x$, the small particles would flow into the large ones' cells
+and change their number density, hence their $\tau_p$. In time-accurate mode the global step is
+the smallest limit in the domain, $\tau_S$, and the large particles ($\tau_L = 100\,\tau_S$)
+simply take small steps, $\Delta t/\tau_L = 0.01$, which RK3 integrates to $10^{-7}$. In local
+mode every cell keeps its own limit: the small particles take $\tau_S$-sized steps, and the
+large ones keep `dt-max`, since $\tau_L > \mathrm{dt\text{-}max}$, so after 20 iterations they
+sit on their exponential at $t = 20\,\mathrm{dt\text{-}max}$, not at $20\tau_S$. That second
+check is what distinguishes a per-cell limit from a global one.
+
+**J3** checks the population floor: a cell whose bulk density is below $10^{-6}$ counts as
+empty, and its $\tau_p$, the ratio of two state variables that mean nothing there, must not set
+the step. The dilute half has $\rho_p = 10^{-7}$ and $n = 2.5\times10^7$, a radius of 0.78 µm and a
+$\tau_p$ of $0.611\tau_S$. Were it counted, the steps would be $0.611\tau_S$ and the end time would
+read 15.883 (26 such steps), which is what a build without the floor gives. The dilute
+$\tau_p$ is kept close to $\tau_S$ on purpose: a cell whose $\tau_p$ is orders of magnitude
+below the step is unstable under the explicit source whatever the step, so it cannot be used
+to test which cells set the step. At $\Delta t/\tau_p = 1.64$ the dilute half relaxes stably and
+keeps $\rho_p$ and $n$ bit for bit.
 
 ### B. Thermal relaxation
 

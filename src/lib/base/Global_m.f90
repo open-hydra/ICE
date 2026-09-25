@@ -7,6 +7,7 @@ module ICE_Global_m
   integer :: ndir     ! Number of spatial dimensions (set by setup_metrics)
   integer :: gc=2     ! Ghost cells per face
   integer :: nres=5   ! Number of tracked residuals (rho, u, v, w, T)
+  real(R8), parameter :: rho_empty = 1e-6_R8   ! Bulk density below which a cell counts as empty
 
   ! Condensed-phase topology (set by Assign_Setup after reading input.ini)
   integer                                          :: ngroups

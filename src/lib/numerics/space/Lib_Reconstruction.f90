@@ -14,6 +14,7 @@ contains
   subroutine state_reconstruction(prev, local, next, next2, dl0, dl1, dl2, dll, dlr, priml, primr, beta)
     use ICE_Lib_Limiters
     use ICE_Lib_Model
+    use ICE_Global_m, only: rho_empty
     implicit none
     real(R8), dimension(:), intent(in)  :: prev, local, next, next2
     real(R8), dimension(:), intent(out) :: priml, primr
@@ -29,7 +30,7 @@ contains
     limval = beta
 
     ! Piecewise Linear Reconstruction
-    if (prev(1)<=1d-6 .or. local(1)<=1d-6 .or. next(1)<=1e-6) then
+    if (prev(1)<=rho_empty .or. local(1)<=rho_empty .or. next(1)<=rho_empty) then
       priml = local
       primr = next
     else

@@ -52,7 +52,7 @@ contains
 
 
   subroutine Allocate_Block(blk, nijk)
-    use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
+    use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_positive_inf
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m, only: obj_irs
@@ -84,6 +84,8 @@ contains
       blk%cond_phase(p)%prim     = ieee_value(1._R8, ieee_quiet_nan)
       blk%cond_phase(p)%prim_old = ieee_value(1._R8, ieee_quiet_nan)
       blk%cond_phase(p)%source   = 0._R8
+      !> No relaxation known yet, so no limit on the first step
+      blk%cond_phase(p)%tau      = ieee_value(1._R8, ieee_positive_inf)
       if (obj_irs%enabled) then
         allocate( blk%cond_phase(p)%RS1 (1:ncond(p), 0:ni+1, 0:nj+1, 0:nk+1) )
         allocate( blk%cond_phase(p)%RS2 (1:ncond(p), 0:ni+1, 0:nj+1, 0:nk+1) )

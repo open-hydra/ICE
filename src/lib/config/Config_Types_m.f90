@@ -94,7 +94,8 @@ module ICE_Config_Types_m
     character(len=llen) :: description
     ! USER-DEFINED INPUTS (global)
     real(R8) :: cfl            ! CFL stability parameter
-    real(R8) :: dt_max         ! Ceiling on the time step, before the CFL factor
+    real(R8) :: dt_max         ! Ceiling on the time step, after the CFL factor
+    real(R8) :: tau_factor     ! Time-step ceiling as a multiple of the particle relaxation time [-]; 0 = off
     integer  :: cfl_rampa_iter ! Iteration at which CFL ramp starts
     logical  :: time_accurate  ! Time-accurate integration flag
     character(len=llen) :: solver_type   ! Time integrator: '1'=Euler, '2'=RK2, '3'=RK3

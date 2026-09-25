@@ -39,6 +39,7 @@ test/
 │   ├── G-cloud-translation/   # Transport + drag together, against exact translation
 │   ├── H-linear-strain/       # Straining gas, exact affine map + small-St asymptote
 │   ├── I-vortex-cloud/        # 2D cloud in a prescribed vortex, exact conformal map
+│   ├── J-tau-limit/           # Step bounded by the relaxation time, both modes; dilute cells left out
 │   └── K-properties-table/    # Property table read at a fixed T: interpolation, range, saturation
 ├── fast/                      # Short invariant checks, no stored references
 │   ├── common.sh              # Shared helpers (short run, compare byte for byte)

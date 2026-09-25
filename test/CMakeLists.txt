@@ -89,6 +89,10 @@ ice_add_case(NAME DoisneauSplit4 DIR Doisneau/IG-split4 LABELS "validation;IG;co
 ice_add_verification(DragRelaxation    A-drag-relaxation   "fast;verification;sources")
 ice_add_verification(ThermalRelaxation B-thermal-relaxation "fast;verification;sources")
 
+# Particles whose relaxation time is below dt-max: tau-factor bounds the step by it in
+# both stepping modes, and cells below the empty-cell density do not set it.
+ice_add_verification(TauLimit          J-tau-limit         "fast;verification;sources")
+
 # The property table read at one fixed temperature through the drag relaxation: linear
 # interpolation between the integer-kelvin rows, a table from Tmin > 1, saturation below it.
 ice_add_verification(PropertiesTable   K-properties-table  "fast;verification;sources")

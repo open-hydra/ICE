@@ -34,6 +34,9 @@ contains
     call reg%add(trim(section), 'dt-max', obj_time_scheme%dt_max,                      &
                  '1e-4',   'Ceiling on the time step [s], applied after the CFL factor', &
                  '> 0', .false.)
+    call reg%add(trim(section), 'tau-factor', obj_time_scheme%tau_factor,              &
+                 '1.0',    'Ceiling on the time step as a multiple of the particle relaxation time, '// &
+                           'coupled runs only (0 = off)', '>= 0', .false.)
     call reg%add(trim(section), 'cfl-rise-threshold', obj_time_scheme%cfl_rampa_iter,  &
                  '0',      'CFL rise threshold', '>= 0', .false.)
 

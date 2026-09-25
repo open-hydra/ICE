@@ -37,17 +37,19 @@ $$
 with $\ell_d$ the cell length along $d$, $\hat{\mathbf e}_d$ the unit vector of the metric row and $a$ the closure's signal speed along $\hat{\mathbf e}_d$ — zero for MK, so the MK step is set by convection alone; $\sqrt{3P/\rho_p}$ for IG; $\sqrt{3P_{dd}/\rho_p}$ for AG, with $P_{dd} = \hat{\mathbf e}_d\cdot\mathsf P\,\hat{\mathbf e}_d$. The cell step is then
 
 $$
-\Delta t_i = \min\Big(\texttt{dt-max},\ \ \mathrm{CFL} \cdot \min_d \Delta t_d\Big),
+\Delta t_i = \min\Big(\texttt{dt-max},\ \ \mathrm{CFL} \cdot \min_d \Delta t_d,\ \ \texttt{tau-factor}\cdot\tau_{p,i}\Big),
 $$
 
 so `dt-max` bounds the step that is actually taken. If a CFL ramp is set, the CFL factor is additionally scaled by $\min(1, \text{iteration}/N)$, ramping it linearly from zero over the first $N$ iterations; the ceiling is applied after that too.
 
-`dt-max` exists because the source terms are explicit: the drag relaxation time $\tau_p$ does not appear in the CFL condition at all, so nothing else stops the step from overshooting it. It has a finite default for that reason, and on a coarse mesh or a slow flow it — rather than the CFL condition — is what sets the pace.
+`dt-max` and `tau-factor` exist because the source terms are explicit: the relaxation time $\tau_p$ does not appear in the CFL condition at all, so nothing else stops the step from overshooting it. `dt-max` is a fixed ceiling with a finite default, and on a coarse mesh or a slow flow it — rather than the CFL condition — is what sets the pace. `tau-factor` follows $\tau_p$ cell by cell. It applies to coupled runs only, and only in cells that carry the phase ($\rho_p > 10^{-6}$) and have a finite $\tau_{p,i}$; `tau-factor = 0` switches it off. $\tau_{p,i}$ is the value the source terms computed during the previous step, so the first step of a run is bounded by `dt-max` alone.
+
+The explicit relaxation of the velocity is stable for $\Delta t < 2\tau_p$ with Euler and RK2 and $2.51\tau_p$ with RK3, which the default `tau-factor = 1` respects. The IG and AG dispersion relaxes twice as fast ($\Delta t < \tau_p$ with Euler and RK2, $1.25\tau_p$ with RK3), so a coupled IG or AG run with RK2 wants `tau-factor = 0.5`.
 
 ### Time-accurate mode
 
 The smallest $\Delta t_i$ over every cell, every block, every
-family and every MPI rank becomes the step for all of them, and the simulation clock advances by it. This is the mode to use whenever the answer at a given physical time matters.
+family and every MPI rank becomes the step for all of them, and the simulation clock advances by it. This is the mode to use whenever the answer at a given physical time matters. With `tau-factor` the global step follows the smallest $\tau_p$ in the domain, so a family of small or burning droplets slows the whole run.
 
 ### Steady-state mode
 

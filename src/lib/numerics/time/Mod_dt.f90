@@ -8,17 +8,23 @@ module ICE_Mod_dt
 
 contains
 
-  subroutine compute_dt (p, cfl, cfl_rampa_iter, dt_max, grid)
+  subroutine compute_dt (p, cfl, cfl_rampa_iter, dt_max, tau_factor, grid)
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
     use ICE_Global_m
     use ICE_Advanced_Types_m
+    use ICE_Config_Types_m, only: obj_sim_param
     implicit none
     integer(kind=I4), intent(in)  :: p
     real(kind=R8), intent(in)     :: cfl
     integer(kind=I4), intent(in)  :: cfl_rampa_iter
     real(kind=R8), intent(in)     :: dt_max
+    real(kind=R8), intent(in)     :: tau_factor
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4) :: b, i, j, k
-    real(kind=R8)    :: dtmin
+    real(kind=R8)    :: dtmin, tau
+    logical          :: tau_limit
+
+    tau_limit = (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) .and. tau_factor > 0._R8
 
     !> Per-thread minimum, merged once below: updating grid%dtglobal inside the
     !> worksharing loop would race between threads.
@@ -50,6 +56,14 @@ contains
         !  factor and after the ramp. Its job is to bound the explicit source terms,
         !  whose relaxation times the CFL condition knows nothing about.
         grid%blk(b)%cond_phase(p)%dt(i,j,k) = min(grid%blk(b)%cond_phase(p)%dt(i,j,k), dt_max)
+
+        !> Coupled runs: the explicit relaxation sources bound the step by the relaxation time
+        !  of the cells that carry the phase; an empty cell has no meaningful tau
+        if (tau_limit) then
+          tau = grid%blk(b)%cond_phase(p)%tau(i,j,k)
+          if (grid%blk(b)%cond_phase(p)%prim(1,i,j,k) > rho_empty .and. ieee_is_finite(tau) .and. tau > 0._R8) &
+            grid%blk(b)%cond_phase(p)%dt(i,j,k) = min(grid%blk(b)%cond_phase(p)%dt(i,j,k), tau_factor*tau)
+        endif
 
         dtmin = min (dtmin, grid%blk(b)%cond_phase(p)%dt(i,j,k))
 
