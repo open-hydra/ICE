@@ -35,6 +35,12 @@ f2 = b/(e^b - 1) = ln(1+B_T)/B_T, and the blown convective heat 2 pi d k (T_g-T_
 equals the latent sink -mdot L_v exactly, for any gas, any material and any droplet
 temperature. That combination is therefore rigorously isothermal, and the droplet
 follows the plain d-squared law with a physical specific heat and nothing frozen.
+
+The fourth part holds the droplet above its boiling point, where the saturation
+pressure exceeds the gas pressure and the surface sits on the boiling clamp
+X_s = 1 - xsCap. B_M is then about 6e11 but finite, and at frozen temperature each
+model follows its d-squared slope; with the Langmuir-Knudsen interface the reference is
+the integrated ODE, as in the first part.
 """
 import math
 import sys
@@ -48,6 +54,7 @@ RHO, U, V, W, T, N = range(6)
 
 RU = 8314.46          # universal gas constant [J/(kmol K)], as Lib_Evaporation has it
 PATM = 101325.0
+XS_CAP = 1.0e-12      # Lib_Evaporation's xsCap: the boiling clamp holds X_s this far below 1
 
 # --- The carrier gas: air at 800 K and one atmosphere, at rest -------------------
 TG, RGAS, GAM, MU, KG = 800.0, 287.05, 1.4, 1.8e-5, 0.026
@@ -83,7 +90,7 @@ def surface_state(Tp):
     """Clausius-Clapeyron saturation, the boiling clamp, and the Spalding number."""
     psat = PATM * math.exp(-(LV * MV / RU) * (1.0 / Tp - 1.0 / TBOIL))
     p = RHO_G * RGAS * TG
-    Xs = 1.0 if psat >= p else psat / p
+    Xs = min(psat / p, 1.0 - XS_CAP)
     Ys = molar2mass(Xs)
     BM = (Ys - YINF) / (1.0 - Ys) if Ys > YINF else 0.0
     return p, Xs, Ys, BM
@@ -145,7 +152,7 @@ def gas_side_rate(model, d, Tp, Ys, BM):
         return mdot, Qdot, True
 
     if model == 'TC':
-        Xs = min(mass2molar(Ys), 1.0 - 1.0e-12)
+        Xs = min(mass2molar(Ys), 1.0 - XS_CAP)
         Xinf = mass2molar(YINF)
         Minf = Xinf * MV + (1.0 - Xinf) * MGAS
         rhs0 = MV / Minf * math.log((1.0 - Xinf) / (1.0 - Xs))
@@ -260,7 +267,7 @@ def diameter(rho_p):
     return 2.0 * (0.75 * rho_p / (NDENS * math.pi * RHO_L)) ** (1.0 / 3.0)
 
 
-def coupled(model, t_end, cs, blowing='none', interface='VLE', steps=40000):
+def coupled(model, t_end, cs, blowing='none', interface='VLE', steps=40000, tp0=TP0):
     """RK4 on (rho_p, T_p) with the temperature released.
 
     rho_p' = n mdot and, after the enthalpy the leaving mass carries cancels,
@@ -280,7 +287,7 @@ def coupled(model, t_end, cs, blowing='none', interface='VLE', steps=40000):
                 Qconv *= blowing_factor(d, mp, mdot)
         return NDENS * mdot, NDENS * (Qconv + mdot * LV) / (rho_p * cs)
 
-    rho_p, Tp = RHO_P0, TP0
+    rho_p, Tp = RHO_P0, tp0
     for _ in range(steps):
         k1 = rhs(rho_p, Tp)
         k2 = rhs(rho_p + 0.5 * h * k1[0], Tp + 0.5 * h * k1[1])
@@ -295,9 +302,9 @@ def coupled(model, t_end, cs, blowing='none', interface='VLE', steps=40000):
 #  Running ICE
 # ---------------------------------------------------------------------------
 
-def run(name, model, t_end, dt_max, cs, blowing='none', interface='VLE'):
+def run(name, model, t_end, dt_max, cs, blowing='none', interface='VLE', tp0=TP0):
     case = Case(WORK / name, nx=8, Lx=1.0)
-    case.particles(rho=RHO_P0, u=0.0, v=0.0, w=0.0, T=TP0, n=NDENS)
+    case.particles(rho=RHO_P0, u=0.0, v=0.0, w=0.0, T=tp0, n=NDENS)
     case.gas(rho=RHO_G, u=0.0, v=0.0, w=0.0, T=TG,
              R=RGAS, gam=GAM, k=KG, mu=MU)
     case.boundaries('extrapolation')
@@ -307,6 +314,15 @@ def run(name, model, t_end, dt_max, cs, blowing='none', interface='VLE'):
     case.ini(t_end=t_end, cfl=0.8, rk='RK2', drag='Stokes', heat='Stokes',
              rho_al=RHO_L, cs=cs, dt_max=dt_max, physics=phys)
     return case.run()
+
+
+def try_run(rep, *args, **kw):
+    """run(), with a failed run recorded as a FAIL so the legs after it still run."""
+    try:
+        return run(*args, **kw)
+    except RuntimeError as exc:
+        rep.check(False, str(exc))
+        return None
 
 
 def main():
@@ -395,6 +411,37 @@ def main():
     rep.check(drift <= 1.0e-8, 'd2-law + blowing is isothermal to %.1e K' % drift)
     rep.check(err <= 1.0e-6, 'd2-law + blowing: d-squared slope to %.1e' % err)
     rep.check(free['d2-law'] - TP0 > 1.0, 'without blowing the same droplet heats up')
+
+    # --- Part 4: above the boiling point ------------------------------------------
+    # psat(380 K) = 1.27 atm > p, so every model evaluates at X_s = 1 - xsCap. The run
+    # lasts until CEM has lost 10 % of its mass. One ulp of Y_s at the cap moves the
+    # rate by 2.5e-6, hence 1e-5 on K; d2-law never reads B_M and TC caps on its own.
+    tp_boil = 380.0
+    p, Xs, _, BM = surface_state(tp_boil)
+    t_end = (1.0 - 0.9 ** (2.0 / 3.0)) * D0 ** 2 / slope('CEM', Tp=tp_boil)
+    dt_max = t_end / 1000.0
+    print('   boiling: T_p = %.0f K, psat/p = %.3f, B_M = %.3e, t_end = %.4e s'
+          % (tp_boil, PATM * math.exp(-(LV * MV / RU) * (1.0 / tp_boil - 1.0 / TBOIL)) / p,
+             BM, t_end))
+    print('   model      K (ICE)        K (reference)   rel. error')
+    for model in MODELS:
+        sol = try_run(rep, 'boil-%s' % model, model, t_end, dt_max, CS_FROZEN, tp0=tp_boil)
+        if sol is None:
+            continue
+        K_ice = (D0 ** 2 - diameter(sol['var'][RHO][0]) ** 2) / sol['time']
+        K_ref = slope(model, Tp=tp_boil)
+        err = abs(K_ice - K_ref) / K_ref
+        print('   %-9s  %.8e  %.8e  %9.2e' % (model, K_ice, K_ref, err))
+        rep.check(err <= 1.0e-5, '%s boiling: d-squared slope to %.1e' % (model, err))
+
+    # The Langmuir-Knudsen depression takes X_s off the cap, to 0.98 here, so this leg
+    # is not ulp-sensitive and keeps the 1e-8 of the leg at 300 K.
+    sol = try_run(rep, 'boil-lk', 'CEM', t_end, dt_max, CS_FROZEN, interface='LK', tp0=tp_boil)
+    if sol is not None:
+        rho_ref, _ = coupled('CEM', sol['time'], CS_FROZEN, interface='LK', steps=4000, tp0=tp_boil)
+        err = abs(sol['var'][RHO][0] - rho_ref) / RHO_P0
+        print('   CEM + LK boiling: rho_p %.10e vs %.10e (%.2e)' % (sol['var'][RHO][0], rho_ref, err))
+        rep.check(err <= 1.0e-8, 'CEM + LK boiling: bulk density to %.1e' % err)
 
     rep.close(WORK)
 

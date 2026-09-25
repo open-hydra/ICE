@@ -21,7 +21,7 @@ is measured.
 | **B** | [Thermal relaxation](#b-thermal-relaxation) | The energy source at $Nu = 2$ | Closed form |
 | **D** | [Every drag correlation](#d-every-drag-correlation) | All twelve drag laws, to $Ma = 2.6$ | Independent RK4 |
 | **E** | [Every Nusselt correlation](#e-every-nusselt-correlation) | All seven heat laws, velocity and temperature relaxing together | Independent RK4 and closed form |
-| **F** | [Evaporation](#f-evaporation) | All five evaporation models, the latent sink, two exact identities | Closed form and RK4 |
+| **F** | [Evaporation](#f-evaporation) | All five evaporation models, the latent sink, two exact identities, the boiling clamp | Closed form and RK4 |
 | **C** | [Sinusoidal advection](#c-sinusoidal-advection-on-a-periodic-mesh) | Transport alone, and the order of the space scheme | Closed form |
 | **G** | [Cloud in a uniform gas](#g-a-cloud-released-into-a-uniform-gas) | Transport and drag together | Closed form |
 | **H** | [Cloud in a straining gas](#h-a-cloud-in-a-straining-gas) | A non-trivial particle velocity field, and the small-Stokes limit | Closed form |
@@ -257,6 +257,14 @@ latent sink term for term. That combination is rigorously isothermal, for any ga
 material and any droplet temperature. ICE holds $T_p$ to $8\times10^{-12}$ K over ten
 thousand steps with a physical specific heat, and reproduces the $d^2$ slope to
 $5\times10^{-11}$ — where the same run without the blowing factor heats by 19.5 K.
+
+**Above the boiling point.** At 380 K the saturation pressure is 1.27 atm, above the gas
+pressure, so the surface sits on the boiling clamp $X_s = 1 - 10^{-12}$ and
+$B_M = 6.2\times10^{11}$. The temperature is frozen again and the run lasts until `CEM`
+has lost 10 % of its mass ($1.2\times10^{-4}$ s). Every model reproduces its $d^2$ slope
+to $4\times10^{-10}$, and `CEM` with the `LK` interface, which takes $X_s$ off the clamp
+to 0.98, matches the integrated ODE to $10^{-13}$. The tolerance on the slope is
+$10^{-5}$: one ulp of $Y_s$ at the clamp moves the rate by $2.5\times10^{-6}$.
 
 !!! note "What this check can and cannot catch"
     As with D and E, a correlation written wrongly in the same way in both ICE and the

@@ -105,9 +105,10 @@ p_{sat}(T_p) = p_{atm}\,\exp\left[-\frac{L_v M_v}{\mathcal{R}}
 $$
 
 with $M_v$ as the vapour molar mass, $T_{boil}$ the boiling-temperature, $L_v$ the latent-heat. The surface mole fraction is
-$X_s = p_{sat}/p$, clamped to 1 once $p_{sat}$ reaches the local gas pressure — the
-boiling regime. Converting to a mass fraction $Y_s$ against the gas molar mass gives
-the Spalding mass-transfer number
+$X_s = p_{sat}/p$, clamped to $1 - 10^{-12}$ once $p_{sat}$ reaches the local gas pressure — the
+boiling regime. The cap keeps $B_M$ finite, about $10^{12}\,M_v/M_g$, so every model returns a finite
+rate while the droplet boils (IGLOO clamps at the same value). Converting to a mass fraction $Y_s$ against the gas
+molar mass gives the Spalding mass-transfer number
 
 $$
 B_M = \frac{Y_s - Y_\infty}{1 - Y_s},

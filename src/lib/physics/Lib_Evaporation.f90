@@ -17,6 +17,8 @@ module ICE_Lib_Evaporation
     real(R8), parameter :: pi   = acos(-1._R8)
     real(R8), parameter, public :: Ru = 8314.46_R8  ! universal gas constant [J/(kmol K)]
     real(R8), parameter :: Patm = 101325._R8  ! atmospheric pressure [Pa]
+    !> The boiling clamp holds Xs this far below 1, so BM = (Ys-Yinf)/(1-Ys) stays finite.
+    real(R8), parameter, public :: xsCap = 1.e-12_R8
 
 contains
 
@@ -134,9 +136,9 @@ contains
 
         !> Surface vapor fraction
         if (psat >= p) then
-            Xs = 1._R8  ! boiling regime: clamp
+            Xs = 1._R8 - xsCap  ! boiling regime: clamp
         else
-            Xs = psat / p
+            Xs = min(psat / p, 1._R8 - xsCap)
         endif
         Ys = molar2mass(Xs, ep(iMv), Mg)
 
@@ -399,7 +401,7 @@ contains
         endif
 
         !> Molar (partial-pressure) frame; cap Xs below 1 so the boiling clamp stays finite
-        Xs   = min(mass2molar(Ys, Mv, Mg), 1._R8 - 1.e-12_R8)
+        Xs   = min(mass2molar(Ys, Mv, Mg), 1._R8 - xsCap)
         Xinf = mass2molar(Yinf, Mv, Mg)
         Minf = Xinf*Mv + (1._R8 - Xinf)*Mg
         rhs0 = Mv/Minf * log((1._R8 - Xinf)/(1._R8 - Xs))  ! = -p_cr·ln[(p_cr-p_vs)/(p_cr-Yinf)]
