@@ -49,7 +49,7 @@ diamond centred at $(0.25, 0)$, where the density is 0.2 kg/m³.
 | Exact | 0.200 | Jets pass through each other |
 | MK | 1.98 | Jets merge into a single jet along $y = 0$; mass concentrates in the axis cells (delta shock) |
 | IG | 0.283 | Jets merge where they meet, then spread as a single jet |
-| AG | 0.159 | Jets cross and continue as two separate, diffused jets |
+| AG | 0.158 | Jets cross and continue as two separate, diffused jets |
 
 - **MK** merges the jets into one along $y = 0$ and piles their mass into the axis cells.
   This delta shock is the expected monokinetic answer to crossing streams.

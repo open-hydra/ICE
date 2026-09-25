@@ -13,6 +13,7 @@ module ICE_Lib_Model
   public :: assign_check_prim
   public :: assign_pressure_make
   public :: assign_sound_make
+  public :: assign_wavespeed_make
   public :: assign_flux_make
   public :: assign_source_make
   public :: assign_all
@@ -23,6 +24,7 @@ module ICE_Lib_Model
   procedure(check_prim_if), pointer, public    :: check_prim
   procedure(pressure_make_if), pointer, public :: pressure_make
   procedure(sound_make_if), pointer, public    :: sound_make
+  procedure(wavespeed_make_if), pointer, public :: wavespeed_make
   procedure(flux_make_if), pointer, public     :: flux_make
   procedure(source_make_if), pointer, public   :: source_make
 
@@ -62,6 +64,13 @@ module ICE_Lib_Model
     real(kind=R8), intent(in) :: prim(:)
     real(kind=R8)             :: sound
   end function sound_make_if
+
+  function wavespeed_make_if(prim, normal) result(speed)
+    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+    implicit none
+    real(kind=R8), intent(in) :: prim(:), normal(3)
+    real(kind=R8)             :: speed
+  end function wavespeed_make_if
 
   function flux_make_if(prim, normal) result(flux)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
@@ -157,6 +166,21 @@ contains
 
   end subroutine assign_sound_make
 
+  subroutine assign_wavespeed_make(phase)
+    implicit none
+    integer(kind=I4), intent(in) :: phase
+
+    select case (trim(obj_time_scheme%model(phase)))
+    case ('MK')
+      wavespeed_make => wavespeed_make_MK
+    case ('IG')
+      wavespeed_make => wavespeed_make_IG
+    case ('AG')
+      wavespeed_make => wavespeed_make_AG
+    end select
+
+  end subroutine assign_wavespeed_make
+
   subroutine assign_flux_make(phase)
     implicit none
     integer(kind=I4), intent(in) :: phase
@@ -196,6 +220,7 @@ contains
     call assign_check_prim (phase)
     call assign_pressure_make (phase)
     call assign_sound_make (phase)
+    call assign_wavespeed_make (phase)
     call assign_flux_make (phase)
     call assign_source_make (phase)
 

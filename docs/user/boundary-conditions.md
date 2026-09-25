@@ -59,7 +59,8 @@ unfilled, since no stencil reaches it.
 
 ## Symmetry (`300`)
 
-The ghost copies the interior cell and its velocity is mirrored about the face normal —
+The ghost copies the interior cell and its velocity is mirrored about the face normal (for
+AG the dispersion tensor too, $\mathsf{P}' = H\mathsf{P}H$ with $H = I - 2\hat{\mathbf n}\hat{\mathbf n}^T$) —
 except when the particles are moving *out* through the face, in which case the copy is
 left unmirrored and the face behaves as an outflow. A cloud reaching a symmetry plane
 is therefore reflected, while one leaving through it is allowed to go.
@@ -71,7 +72,7 @@ axisymmetric case, where letting the cloud leave would be wrong.
 
 A 2-D axisymmetric mesh is one layer of cells rotated about the $x$ axis, and its two side
 faces (5 and 6) carry `200`. The ghost is the mirror image of the interior cell, with the
-velocity reflected about the face; for a state without swirl this is exactly the
+velocity (and for AG the dispersion tensor) reflected about the face; for a state without swirl this is exactly the
 neighbouring wedge rotated into place. The second ghost mirrors the second interior cell.
 For IG and AG the boundary flux is the Riemann flux between the cell and its mirror image:
 no mass crosses, and the pressure on the two side faces supplies the hoop term of the

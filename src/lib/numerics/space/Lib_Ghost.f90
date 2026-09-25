@@ -7,7 +7,7 @@ module ICE_Lib_Ghost
   use ICE_Mod_Metrics, only : delthe
   use ICE_Lib_MK, only : prim_2_cons_MK, cons_2_prim_MK
   use ICE_Lib_IG, only : prim_2_cons_IG, cons_2_prim_IG
-  use ICE_Lib_AG, only : prim_2_cons_AG, cons_2_prim_AG
+  use ICE_Lib_AG, only : prim_2_cons_AG, cons_2_prim_AG, mirror_tensor_AG
   use ICE_Mod_MPI, only : is_local_block
   use ICE_Mod_GhostExchange, only : exchange_ghost_prim
 
@@ -81,6 +81,8 @@ contains
           veln     = dot_product(velocity,normal)
           if (grid%bc(i)%type == 200 .or. veln*real(1-2*mod(fm,2))<=0._R8 .or. fm==3) then
             velocity = velocity - 2._R8*veln*normal
+            if (ncond(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig,jg,kg) = &
+              mirror_tensor_AG(grid%blk(bm)%cond_phase(pm)%prim(5:10,im,jm,km), normal)
           endif
 
           grid%blk(bm)%cond_phase(pm)%prim(2:4,ig,jg,kg) = velocity(1:3)
@@ -119,6 +121,8 @@ contains
             grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),im,jm,km)
             velocity = velocity - 2._R8*veln*normal
             grid%blk(bm)%cond_phase(pm)%prim(2:4,ig,jg,kg) = velocity(1:3)
+            if (ncond(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig,jg,kg) = &
+              mirror_tensor_AG(grid%blk(bm)%cond_phase(pm)%prim(5:10,im,jm,km), normal)
 
 
           !> Injection boundary condition
@@ -266,6 +270,8 @@ contains
           grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig2,jg2,kg2) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ip,jp,kp)
           velocity = grid%blk(bm)%cond_phase(pm)%prim(2:4,ip,jp,kp)
           grid%blk(bm)%cond_phase(pm)%prim(2:4,ig2,jg2,kg2) = velocity - 2._R8*dot_product(velocity,normal)*normal
+          if (ncond(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig2,jg2,kg2) = &
+            mirror_tensor_AG(grid%blk(bm)%cond_phase(pm)%prim(5:10,ip,jp,kp), normal)
 
         case default !> 2nd-order extrapolation: P(g2) = 3*P(g1) - 3*P(m) + P(m+1)
           ip = im + guide(fm,1) ; jp = jm + guide(fm,2) ; kp = km + guide(fm,3)

@@ -112,6 +112,19 @@ contains
   end function sound_make_IG
 
 
+  !> Fastest signal speed across a face of normal n: the isotropic sqrt(3P/rho)
+  function wavespeed_make_IG(prim,normal) result(speed)
+    implicit none
+    real(kind=R8), intent(in) :: prim(:), normal(3)
+    real(kind=R8)             :: speed
+
+    real(kind=R8), parameter  :: eps = 1e-25
+
+    speed = sqrt( 3._R8*pressure_make_IG(prim)/(prim(1)+eps) )
+
+  end function wavespeed_make_IG
+
+
   function flux_make_IG(prim,normal) result(flux)
     implicit none
     real(kind=R8), intent(in) :: prim(:), normal(3)
@@ -132,7 +145,7 @@ contains
 
     flux(5) = flux(1)*norm2V + 5._R8*prim(5)*un
    
-    flux(6) = flux(1)*(0.5_R8*norm2V + get_cs_al(prim(6))*prim(6)) + 1.5_R8*prim(5)*un
+    flux(6) = flux(1)*(0.5_R8*norm2V + get_cs_al(prim(6))*prim(6)) + 2.5_R8*prim(5)*un
    
     flux(7) = prim(7)*un
 

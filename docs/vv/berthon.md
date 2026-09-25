@@ -82,12 +82,12 @@ error over the domain, normalised by the range of the exact profile:
 
 | $L_1$ error | SCS | RCS | RCR |
 |---|---|---|---|
-| $\rho_p$ | $4.3\times10^{-3}$ | $2.5\times10^{-3}$ | $1.9\times10^{-3}$ |
-| $u_p$ | $1.7\times10^{-3}$ | $1.8\times10^{-3}$ | $7.3\times10^{-4}$ |
-| $v_p$ | $4.1\times10^{-3}$ | $7.4\times10^{-3}$ | $3.5\times10^{-3}$ |
-| $P_{11}$ | $3.0\times10^{-3}$ | $2.1\times10^{-3}$ | $3.3\times10^{-3}$ |
-| $P_{22}$ | $1.4\times10^{-2}$ | $5.0\times10^{-3}$ | $8.0\times10^{-3}$ |
-| $\det P$ | $1.6\times10^{-2}$ | $2.4\times10^{-3}$ | $2.7\times10^{-3}$ |
+| $\rho_p$ | $4.3\times10^{-3}$ | $2.7\times10^{-3}$ | $1.9\times10^{-3}$ |
+| $u_p$ | $1.5\times10^{-3}$ | $1.9\times10^{-3}$ | $7.4\times10^{-4}$ |
+| $v_p$ | $4.4\times10^{-3}$ | $7.8\times10^{-3}$ | $3.4\times10^{-3}$ |
+| $P_{11}$ | $2.8\times10^{-3}$ | $2.1\times10^{-3}$ | $3.5\times10^{-3}$ |
+| $P_{22}$ | $1.5\times10^{-2}$ | $5.3\times10^{-3}$ | $7.9\times10^{-3}$ |
+| $\det P$ | $1.6\times10^{-2}$ | $2.3\times10^{-3}$ | $2.8\times10^{-3}$ |
 | **tolerance** | $2.5\times10^{-2}$ | $1.5\times10^{-2}$ | $1.5\times10^{-2}$ |
 
 The tolerances are set at roughly twice the measured error: loose enough that a change
@@ -104,8 +104,8 @@ on this scale — will.
 
 !!! warning "The step is set by `dt-max`, not by the CFL number"
     At $\mathrm{CFL} = 0.5$ on this mesh the stability limit is $\Delta t \approx
-    2.6\times10^{-4}$ s, but the default `dt-max` of $10^{-4}$ s holds the step at
-    $5\times10^{-5}$ s, so each case takes about five times more steps than it needs.
+    1.8\times10^{-4}$ s at the start, but the default `dt-max` holds the step at
+    $10^{-4}$ s, so each case takes almost twice as many steps as it needs.
     They still run in about a second each. Raising `dt-max` will change these numbers
     slightly.
 

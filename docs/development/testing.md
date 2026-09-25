@@ -17,6 +17,10 @@ test/
 ├── Axis/                      # One-degree wedge about x: side faces 200, axis face 300
 │   ├── MK/                    # Pressureless cloud along x: stationary field, boundary census
 │   └── IG/  AG/               # Uniform cloud at rest in a closed wedge: stays at rest (hoop pressure)
+├── Thermal/                   # Expanding blob in a closed box at uniform T
+│   └── IG/  AG/               # T stays uniform: the pressure work in the energy flux
+├── Riemann/AG/                # Anisotropic Sod tube against the exact gamma = 3 solution
+├── Reflect/AG/                # Sheared blob on a code-200 symmetry plane: x-momentum conserved
 ├── Berthon/                   # 1D Riemann problems for the AG closure
 │   ├── SCS/  RCS/  RCR/       # Shock-contact-shock, rarefaction-contact-shock, ...
 │   ├── SCS-hlle/              # SCS again through the HLLE flux

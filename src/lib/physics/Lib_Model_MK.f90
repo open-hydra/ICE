@@ -102,6 +102,17 @@ contains
   end function sound_make_MK
 
 
+  !> A pressureless cloud has no signal speed of its own
+  function wavespeed_make_MK(prim,normal) result(speed)
+    implicit none
+    real(kind=R8), intent(in) :: prim(:), normal(3)
+    real(kind=R8)             :: speed
+
+    speed = 0._R8
+
+  end function wavespeed_make_MK
+
+
   function flux_make_MK(prim,normal) result(flux)
     implicit none
     real(kind=R8), intent(in) :: prim(:), normal(3)

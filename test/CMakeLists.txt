@@ -142,6 +142,21 @@ ice_add_case(NAME BerthonRCR DIR Berthon/RCR LABELS "fast;verification;AG;transp
 # the solver the closure would pick. Nothing else exercises that path.
 ice_add_case(NAME BerthonHLLE DIR Berthon/SCS-hlle LABELS "verification;AG;transport;1D")
 
+# A pressurised blob expanding from rest in a closed box at uniform temperature: with
+# the pressure work in the energy flux the thermal energy moves with the mass, so the
+# temperature of the Gaussian closures stays uniform to round-off.
+ice_add_case(NAME ThermalIG DIR Thermal/IG LABELS "fast;verification;IG;2D")
+ice_add_case(NAME ThermalAG DIR Thermal/AG LABELS "fast;verification;AG;2D")
+
+# A strongly anisotropic Sod tube (P11/P22 = 1e7) through explicit Euler and first order,
+# against the exact gamma = 3 solution the 1-D AG system reduces to. Free of oscillations
+# only when Rusanov and the time step use the directional speed sqrt(3 P_nn / rho).
+ice_add_case(NAME RiemannAG DIR Riemann/AG LABELS "fast;verification;AG;transport;1D")
+
+# A sheared AG blob on a code-200 symmetry plane: the mirrored tensor exerts no shear
+# on the plane, so the x-momentum is conserved to round-off.
+ice_add_case(NAME ReflectAG DIR Reflect/AG LABELS "fast;verification;AG;2D")
+
 # ===========================================================================
 #  FAST tier  (pre-push: ctest -L fast) - short runs, no stored references
 # ===========================================================================

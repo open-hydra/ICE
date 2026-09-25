@@ -34,7 +34,7 @@ $$
 \Delta t_d = \frac{\ell_d}{|\mathbf{u}\cdot\hat{\mathbf e}_d| + a},
 $$
 
-with $\ell_d$ the cell length along $d$, $\hat{\mathbf e}_d$ the unit vector of the metric row and $a$ the closure's sound speed — zero for MK, so the MK step is set by convection alone. The cell step is then
+with $\ell_d$ the cell length along $d$, $\hat{\mathbf e}_d$ the unit vector of the metric row and $a$ the closure's signal speed along $\hat{\mathbf e}_d$ — zero for MK, so the MK step is set by convection alone; $\sqrt{3P/\rho_p}$ for IG; $\sqrt{3P_{dd}/\rho_p}$ for AG, with $P_{dd} = \hat{\mathbf e}_d\cdot\mathsf P\,\hat{\mathbf e}_d$. The cell step is then
 
 $$
 \Delta t_i = \min\Big(\texttt{dt-max},\ \ \mathrm{CFL} \cdot \min_d \Delta t_d\Big),

@@ -78,11 +78,10 @@ contains
     real(kind=R8)    :: versor(3)
     real(kind=R8)    :: speed, sound, dtd
 
-    sound = sound_make(prim)
-
     do d = 1, 3
       versor = tensor(d,:) / norm2 ( tensor(d,:) )
       speed  = abs( dot_product (prim(2:4), versor) )
+      sound  = wavespeed_make(prim, versor)
       
       dtd = length(d) / (speed + sound)
       dt = min (dt,dtd)

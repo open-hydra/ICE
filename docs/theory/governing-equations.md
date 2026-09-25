@@ -71,6 +71,8 @@ $$
      \rho_p u_n|\mathbf{u}|^2 + 5Pu_n,\ \ \dots,\ n u_n\Big).
 $$
 
+The total energy $\rho_p c_s T_p + \tfrac12 E$ is carried with $u_n\,\rho_p\big(c_s T_p +
+\tfrac12|\mathbf{u}|^2\big) + \tfrac52 P u_n$: the pressure work is half the $5Pu_n$ of $E$.
 The system is strictly hyperbolic, with sound speed
 
 $$
@@ -89,9 +91,16 @@ $$
 whose conservative form is $\rho_p u_i u_j + P_{ij}$ for the six tensor components. The
 off-diagonal terms are what let the closure carry a shear: two streams crossing at an
 angle show up as a $P_{12}$ that the transport equation then carries along, which is
-the quantity the [Berthon Riemann problems](../vv/berthon.md) check. The sound speed
-uses the mean normal stress, $a = \sqrt{3\bar P/\rho_p}$ with
-$\bar P = (P_{11}+P_{22}+P_{33})/3$.
+the quantity the [Berthon Riemann problems](../vv/berthon.md) check. The total energy
+$\rho_p c_s T_p + \tfrac12(\rho_p|\mathbf{u}|^2 + P_{11} + P_{22} + P_{33})$ is carried at
+$u_n$ plus the pressure work $\mathbf{u}\cdot(\mathsf{P}\hat{\mathbf n})$. Across a face of
+normal $\hat{\mathbf n}$ the waves travel at $u_n$ and $u_n \pm a_n$, with
+
+$$
+a_n = \sqrt{3P_{nn}/\rho_p}, \qquad P_{nn} = \hat{\mathbf n}\cdot\mathsf{P}\,\hat{\mathbf n},
+$$
+
+so a dispersion that differs by direction gives a signal speed that does too.
 
 ## Energy and temperature
 

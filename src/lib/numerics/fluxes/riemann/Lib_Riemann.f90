@@ -113,8 +113,8 @@ end subroutine assign_riemann
     veln_1 = prim_1(2)*normal(1)+prim_1(3)*normal(2)+prim_1(4)*normal(3)
     veln_4 = prim_4(2)*normal(1)+prim_4(3)*normal(2)+prim_4(4)*normal(3)
 
-    sound_1 = sound_make(prim_1)
-    sound_4 = sound_make(prim_4)
+    sound_1 = wavespeed_make(prim_1,normal)
+    sound_4 = wavespeed_make(prim_4,normal)
     
     cons_1 = prim_2_cons(prim_1)
     cons_4 = prim_2_cons(prim_4)
@@ -150,8 +150,8 @@ end subroutine assign_riemann
     veln_1 = prim_1(2)*normal(1)+prim_1(3)*normal(2)+prim_1(4)*normal(3)
     veln_4 = prim_4(2)*normal(1)+prim_4(3)*normal(2)+prim_4(4)*normal(3)
 
-    sound_1 = sound_make(prim_1)
-    sound_4 = sound_make(prim_4)
+    sound_1 = wavespeed_make(prim_1,normal)
+    sound_4 = wavespeed_make(prim_4,normal)
    
     u_ROE = (sqrt(prim_1(1))*prim_1(2)+sqrt(prim_4(1))*prim_4(2)) / (sqrt(prim_1(1))+sqrt(prim_4(1)))
     v_ROE = (sqrt(prim_1(1))*prim_1(3)+sqrt(prim_4(1))*prim_4(3)) / (sqrt(prim_1(1))+sqrt(prim_4(1)))
