@@ -5,10 +5,10 @@
 #  Every case below is a copy of a shipped case with one thing broken, and each
 #  must terminate with exit status != 0 and print the texts listed for it. The
 #  first rows are refused while the input is read (a value outside its allowed
-#  list, a required model left unset in a coupled run); the last one diverges at
-#  run time (a NaN source in one cell) and must be caught after the update. A
-#  solver that reports success on any of these would let a harness read a
-#  broken run as a pass.
+#  list, a required model left unset in a coupled run, the heat name Chang, whose
+#  formula is JAXA3); the last one diverges at run time (a NaN source in one
+#  cell) and must be caught after the update. A solver that reports success on
+#  any of these would let a harness read a broken run as a pass.
 #===============================================================================
 set -uo pipefail
 
@@ -56,6 +56,8 @@ refuse Refuse/MK   "drag not set (coupled run)"  "sed -i '/^drag /d' input.ini" 
        "drag is not set;Schiller-Naumann"
 refuse Refuse/MK   "heat not set (coupled run)"  "sed -i '/^heat-transfer /d' input.ini" \
        "heat-transfer is not set;Kavanau-Drake"
+refuse Refuse/MK   "heat Chang points to JAXA3"  "sed -i 's/^heat-transfer .*/heat-transfer = Chang/' input.ini" \
+       "Chang is now JAXA3;Mach-corrected law is JAXA4;- JAXA4"
 refuse Refuse/MK   "divergence caught after the update" ":" \
        "invalid state after the update"
 

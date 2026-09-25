@@ -71,11 +71,15 @@ per unit volume, which is the familiar $h A \Delta T$ with $h = Nu\,k_g/d_p$ sum
 | `Stokes` | $2$ | 2 |
 | `JAXA1` | $2.5\,Re^{0.15} + 0.04\,Re$ | 0 |
 | `JAXA2` | $2 + 0.37\,Re^{0.6}Pr^{1/3}$ | 2 |
-| `JAXA3` | $\left[\left(2+0.645\,Re^{1/2}Pr^{1/3}\right)^{-1} + \dfrac{3.42\,Ma}{Re\,Pr}\right]^{-1}$ | rarefaction-dependent |
-| `Chang` | $2 + 0.459\,Re^{0.55}Pr^{1/3}$ | 2 |
+| `JAXA3` | $2 + 0.459\,Re^{0.55}Pr^{1/3}$ (Chang) | 2 |
+| `JAXA4` | $\left[\left(2+0.654\,Re^{1/2}Pr^{1/3}\right)^{-1} + \dfrac{3.42\,Ma}{Re\,Pr}\right]^{-1}$ | rarefaction-dependent |
 | `Ranz-Marshall` | $2 + 0.6\,Re^{1/2}Pr^{1/3}$ | 2 |
 | `Kavanau-Drake` | $\dfrac{N}{1 + 3.42\,Ma\,N/(Re\,Pr)}$, $N = 2+0.459\,Re^{0.55}Pr^{0.33}$ | rarefaction-dependent |
 | `NoHeat` | $0$ | 0 (no convective exchange) |
+
+The `JAXA` names and their constants are IGLOO's, so a case that runs both solvers can name one law for both. In a
+coupled run the word `Chang` is refused with a pointer to `JAXA3`; the constant 0.654 of `JAXA4` is Shimada's (2006,
+eq. 50, after NASA SP-8039).
 
 ## Radiation
 

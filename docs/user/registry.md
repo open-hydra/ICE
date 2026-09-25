@@ -73,7 +73,7 @@ Required column says otherwise, and omitting one selects the default.
 | Parameter | Default | Allowed | Required | Description |
 |-----------|---------|---------|----------|-------------|
 | `drag` | none | Newton, Stokes, Schlichting, Schiller-Naumann, Wen-Yu, Putnam, Clift-Gauvin, Morsi-Alexander, Carlson-Hoglund, Henderson, Crowe, Hermsen, NoDrag, none |  no | Drag model, global for all families; required for a coupled run (none = not set, NoDrag = no momentum exchange) |
-| `heat-transfer` | none | Stokes, JAXA1, JAXA2, JAXA3, Chang, Ranz-Marshall, Kavanau-Drake, NoHeat, none |  no | Convective heat transfer model, global for all families; required for a coupled run (none = not set, NoHeat = no convective exchange) |
+| `heat-transfer` | none | Stokes, JAXA1, JAXA2, JAXA3, JAXA4, Chang, Ranz-Marshall, Kavanau-Drake, NoHeat, none |  no | Convective heat transfer model, global for all families; required for a coupled run (none = not set, NoHeat = no convective exchange; Chang stops with a pointer to JAXA3, which is its formula) |
 | `evaporation` | none | d2-law, CEM, CEM-B, ASM, TC, none |  no | Evaporation model, global for all families |
 | `evaporation-interface` | VLE | VLE, LK |  no | Vapour-liquid interface: VLE equilibrium, or LK Langmuir-Knudsen non-equilibrium; ignored when evaporation is none |
 | `evaporation-blowing` | none | LK, none |  no | Stefan-blowing reduction of the convective heat; LK applies Miller-Harstad-Bellan f2. Ignored under ASM and TC, which carry their own gas-side heat |

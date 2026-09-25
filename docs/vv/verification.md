@@ -20,7 +20,7 @@ is measured.
 | **A** | [Stokes drag relaxation](#a-relaxation-under-stokes-drag) | The momentum source, and the order of the time scheme | Closed form |
 | **B** | [Thermal relaxation](#b-thermal-relaxation) | The energy source at $Nu = 2$ | Closed form |
 | **D** | [Every drag correlation](#d-every-drag-correlation) | All twelve drag laws, to $Ma = 2.6$ | Independent RK4 |
-| **E** | [Every Nusselt correlation](#e-every-nusselt-correlation) | All seven heat laws, velocity and temperature relaxing together | Independent RK4 |
+| **E** | [Every Nusselt correlation](#e-every-nusselt-correlation) | All seven heat laws, velocity and temperature relaxing together | Independent RK4 and closed form |
 | **F** | [Evaporation](#f-evaporation) | All five evaporation models, the latent sink, two exact identities | Closed form and RK4 |
 | **C** | [Sinusoidal advection](#c-sinusoidal-advection-on-a-periodic-mesh) | Transport alone, and the order of the space scheme | Closed form |
 | **G** | [Cloud in a uniform gas](#g-a-cloud-released-into-a-uniform-gas) | Transport and drag together | Closed form |
@@ -166,12 +166,20 @@ change while the particles cool and the Nusselt number follows them. The referen
 integrates the coupled pair with RK4.
 
 At vanishing slip the four laws that tend to $Nu = 2$ must reproduce case B's exact
-relaxation, and do, to between $5\times10^{-7}$ (Stokes) and $6\times10^{-3}$
+relaxation, and do, to between $7\times10^{-7}$ (Stokes) and $6\times10^{-3}$
 (Ranz-Marshall, whose $Re^{1/2}$ correction is the largest of the four at this slip).
 JAXA1 tends to zero rather than 2, and the two laws with a Mach correction keep a
-finite $Ma/Re$ ratio there, so they are excluded from that check and covered only by
-the finite-slip comparison. At $Re = 67$ all seven agree with the reference to
-$1.7\times10^{-6}$ of the initial temperature gap.
+finite $Ma/Re$ ratio there, so they are excluded from that check and covered by the
+finite-slip comparison, `JAXA4` also by the constant-slip leg below. At $Re = 67$ all seven agree with the reference to
+$2.6\times10^{-6}$ of the initial temperature gap.
+
+A last leg holds the slip constant: under `NoDrag` the particles stay at rest in the
+moving gas, so $Re = 67$, $Ma = 0.029$ and $Nu$ are frozen and the cooling is an exact
+exponential. `JAXA4` meets it to $8\times10^{-6}$ of the gap at $t = 0.01$ s, which is the
+RK2 error of the default step; the tolerance, $3\times10^{-4}$, is about 40 times that.
+This is the leg with margin on the law's constant: a 1.4 % change of
+it moves the result by $3.5\times10^{-3}$ of the gap, against $1.4\times10^{-3}$ in the
+finite-slip leg.
 
 ## Phase change
 

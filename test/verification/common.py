@@ -311,9 +311,9 @@ def nusselt(law, Re, Pr, Ma):
     if law == 'JAXA2':
         return 2.0 + 0.37 * Re ** 0.6 * Pr ** (1.0 / 3.0)
     if law == 'JAXA3':
-        return 1.0 / (1.0 / (2.0 + 0.645 * Re ** 0.5 * Pr ** (1.0 / 3.0)) + 3.42 * Ma / (Re * Pr))
-    if law == 'Chang':
         return 2.0 + 0.459 * Re ** 0.55 * Pr ** (1.0 / 3.0)
+    if law == 'JAXA4':
+        return 1.0 / (1.0 / (2.0 + 0.654 * Re ** 0.5 * Pr ** (1.0 / 3.0)) + 3.42 * Ma / (Re * Pr))
     if law == 'Ranz-Marshall':
         return 2.0 + 0.6 * Re ** 0.5 * Pr ** (1.0 / 3.0)
     if law == 'Kavanau-Drake':

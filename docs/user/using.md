@@ -78,7 +78,7 @@ the master is newer, so a case always runs against the current build.
  - Space   --> MUSCL with MC flux limiter
  - Time    --> Explicit Runge-Kutta 2
  - Drag    --> Stokes
- - Heat    --> Ranz-Marshall
+ - Heat    --> Ranz-Marshall (Nu = 2 + 0.6 Re^0.5 Pr^1/3)
  - Evap    --> CEM
 
  Boundary Conditions:
