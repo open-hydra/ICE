@@ -2,7 +2,8 @@ module ICE_Lib_Ghost
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   use ICE_Global_m
   use ICE_Advanced_Types_m
-  use ICE_Config_Types_m, only: obj_condensed, obj_time_scheme
+  use ICE_Config_Types_m, only: obj_time_scheme
+  use ICE_Load_Table, only : get_rho_al
   use ICE_Mod_Metrics, only : delthe
   use ICE_Lib_MK, only : prim_2_cons_MK, cons_2_prim_MK
   use ICE_Lib_IG, only : prim_2_cons_IG, cons_2_prim_IG
@@ -30,7 +31,7 @@ contains
     call exchange_ghost_prim(grid)
 
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ncond, obj_condensed, obj_time_scheme), &
+    !$OMP SHARED(grid, ncond, obj_time_scheme), &
     !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, area, normal, velocity, veln)
     !$OMP DO SCHEDULE (dynamic)
     do i = 1, size(grid%bc)
@@ -168,8 +169,9 @@ contains
 
             endif
 
-            !> N particles
-            prim(ncond(pm),ig,jg,kg) =  prim(1,ig,jg,kg) / obj_condensed%rho_al / (4._R8/3._R8*pi*grid%bc(i)%radius**3._I4)
+            !> N particles, with the condensed density at the inlet temperature
+            prim(ncond(pm),ig,jg,kg) =  prim(1,ig,jg,kg) / get_rho_al(prim(ncond(pm)-1,ig,jg,kg)) / &
+                                        (4._R8/3._R8*pi*grid%bc(i)%radius**3._I4)
 
             !> Pseudo pressure
             select case (trim(obj_time_scheme%model(pm)))

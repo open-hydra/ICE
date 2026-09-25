@@ -60,4 +60,4 @@ diamond centred at $(0.25, 0)$, where the density is 0.2 kg/m³.
   weaker than the exact bands.
 
 The cases are also part of the regression suite (`Doisneau/MK`, `Doisneau/IG`,
-`Doisneau/AG`), which checks the density field against a stored reference.
+`Doisneau/AG`), which checks the density and number-density fields against a stored reference.

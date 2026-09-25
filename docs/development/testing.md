@@ -41,7 +41,8 @@ test/
 
 Each case under `Doisneau/` is self-contained: `input.ini`, `INPUT/` (initial and
 boundary conditions, particle properties), `MESH/`, a stored `reference/` solution, a
-`verify.py` that compares the run against it (L2 norm of density, tolerance $10^{-4}$),
+`verify.py` that compares the run against it (L2 norm of the density, tolerance $10^{-4}$, and
+of the number density relative to its own scale, held to the same tolerance over the density's RMS),
 and an `ICE.sh` run script. The cases and what they verify are described in
 [Verification & Validation](../vv/index.md).
 
