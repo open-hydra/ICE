@@ -85,8 +85,9 @@ The correlations and their expressions are listed under
 [Particle Physics](theory/physics.md). Combustion is not implemented.
 
 The material density and specific heat can be constants from `[ICE-Physics]` or
-tabulated against temperature in `INPUT/part-properties.dat`; the table wins when it is
-present, and ICE says at startup which of the two it is using.
+tabulated against temperature in `INPUT/part-properties.dat`. With a table the two keys
+may be left out, and a value given there must agree with it; ICE says at startup which of
+the two it is using.
 
 ---
 

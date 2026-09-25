@@ -32,11 +32,13 @@ test/
 │   ├── G-cloud-translation/   # Transport + drag together, against exact translation
 │   ├── H-linear-strain/       # Straining gas, exact affine map + small-St asymptote
 │   └── I-vortex-cloud/        # 2D cloud in a prescribed vortex, exact conformal map
-└── fast/                      # Short invariant checks, no stored references
-    ├── common.sh              # Shared helpers (short run, compare byte for byte)
-    ├── openmp-equiv/          # 1 vs 4 threads bit-identical
-    ├── refusals/              # Broken inputs and a diverging run must exit non-zero
-    └── mpi-equiv/             # 1 vs 2 ranks bit-identical (connection and chimera)
+├── fast/                      # Short invariant checks, no stored references
+│   ├── common.sh              # Shared helpers (short run, compare byte for byte)
+│   ├── openmp-equiv/          # 1 vs 4 threads bit-identical
+│   ├── refusals/              # Broken inputs and a diverging run must exit non-zero
+│   └── mpi-equiv/             # 1 vs 2 ranks bit-identical (connection and chimera)
+└── unit/                      # Programs linked against the library, no solver run
+    └── test_properties.f90    # Property table: header grammar, node and column checks, loading
 ```
 
 Each case under `Doisneau/` is self-contained: `input.ini`, `INPUT/` (initial and
@@ -54,6 +56,10 @@ wrote its initial and boundary conditions. See
 
 The fast tests own no data: they copy one of the `Doisneau` cases, shorten it to 200
 iterations, and run it twice under different parallel settings.
+
+The unit tests call the library's routines directly and run no case. Each writes the
+small files it reads into its own directory in the build tree, `build/test/unit/<name>/`,
+and prints one line per assertion.
 
 The verification cases own no data either: each `run.py` writes its own mesh, initial
 condition, boundary conditions and `input.ini` into a scratch `work/` directory, runs
@@ -80,6 +86,7 @@ running `./ICE.sh solve` by hand does.
 | `fast` | Short runs of hard invariants (no stored reference); a few seconds each |
 | `validation` | Full case compared against its stored reference solution |
 | `verification` | Compared against a solution that does not come from ICE (closed form or independent integration) |
+| `unit` | A program linked against the library that asserts what its routines return |
 | `needs-mpi` | Needs an MPI build; registered only when `USE_MPI=ON` |
 | `sources`, `transport`, `implementation` | What part of the solver a case covers |
 | `MK`, `IG`, `AG`, `chimera`, `connection`, `1D`, `2D` | What configuration it covers |
@@ -118,7 +125,7 @@ ICE_PREPUSH_JOBS=2 git push
 
 ## Adding a case
 
-Decide first which kind it is, because the two are registered differently and carry
+Decide first which kind it is, because the kinds are registered differently and carry
 different weight.
 
 ### A validation case
@@ -148,8 +155,18 @@ something. Prefer one whenever the problem admits an exact answer.
 2. Register it with `ice_add_verification`, labelled `verification` plus its coverage,
    and add `fast` if it runs in a few seconds.
 
-Either way, document what the case checks and what tolerance it uses on a
-[V&V page](../vv/index.md) — a tolerance with no recorded reasoning is one nobody can
-tighten later.
+### A unit test
+
+It asserts a routine's contract directly, without a run: a parser, a check, a lookup.
+Use one when the contract is a routine's and a case would reach it only indirectly.
+
+1. Add `test/unit/test_<name>.f90`, a program that `use`s the library modules, prints
+   `OK` or `FAIL` with a description for every assertion, and ends with `error stop 1`
+   if any failed.
+2. Register it with `ice_add_unit_test(<Name> unit/test_<name>.f90 "fast;unit;implementation")`.
+
+For a validation or verification case, document what it checks and what tolerance it
+uses on a [V&V page](../vv/index.md) — a tolerance with no recorded reasoning is one
+nobody can tighten later.
 
 ---

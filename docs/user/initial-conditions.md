@@ -77,19 +77,38 @@ are identical — it is the same writer.
 
 ## Property table
 
-`INPUT/part-properties.dat` is optional and gives $\rho_{al}(T)$ and $c_s(T)$ for the
-condensed material. It is a Tecplot point file with four columns — temperature, $c_p$,
-density, enthalpy — indexed by **integer** temperature: row $i$ must be $T = i$, and
-the table covers $1 \le T \le N$, saturating outside. If it is absent, the constants
-`density` and `specific-heat` from `[ICE-Physics]` are used; ICE prints which of the two applies.
+`INPUT/part-properties.dat` is optional and gives $\rho_{al}(T)$, $c_s(T)$ and $h(T)$ for the
+condensed material. It is a Tecplot point file whose first `VARIABLES` line names the
+columns: `Temperature` first, then `Cp`, `Density` and one enthalpy column, in any order.
+The enthalpy is either `Enthalpy` (relative: $c_p T$ for a constant $c_p$) or
+`Enthalpy_abs` (absolute: its offset is kept as the material's datum); other names are
+ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least two
+of them, and the table saturates outside $[T_{min}, T_{max}]$; between the nodes the
+nearest kelvin is used.
+
+ICE refuses a table that is missing a column, names a column twice or names two
+enthalpies; that has more than one zone, a row that does not hold a number for every
+column, a row count other than the one its zone announces, rows off the integer nodes
+(by more than $10^{-6}$ K) or anything after the last row; or whose density or $c_p$ is
+not positive, whose enthalpy does not increase or disagrees with $c_p$, or whose relative
+`Enthalpy` has an offset. A constant $c_p$ must give $h = c_p T + h_{off}$ on every row,
+and a varying one must match the trapezoidal integral of $c_p$ within 0.1 % per step, or
+within $10^{-6}\,|h|$ when that is larger, the rounding of an absolute enthalpy printed
+to seven digits.
+
+With a table, `density` and `specific-heat` of `[ICE-Physics]` may be left out; if one is
+given it must equal its constant column, and it may not be given against a column that
+varies. If the file is absent, those two constants are used; ICE prints which of the two
+applies.
 
 ```
 TITLE = "Mass Thermodynamic Properties"
 VARIABLES = "Temperature", "Cp", "Density", "Enthalpy"
 ZONE T="A"
 I=5000, F=POINT
-   1.0   900.0  2700.0   ...
-   2.0   900.1  2700.0   ...
+   1.0   900.0  2700.0    900.0
+   2.0   900.0  2700.0   1800.0
+   ...
 ```
 
 ## Gas field

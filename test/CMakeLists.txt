@@ -142,6 +142,30 @@ ice_add_fast_script(OpenMPEquiv fast/openmp-equiv "fast;implementation")
 # required model left unset in a coupled run, a NaN after the update).
 ice_add_fast_script(Refusals fast/refusals "fast;implementation;refusal")
 
+# Unit tests: programs linked against the library, each run in its own directory
+function(ice_add_unit_test NAME SOURCE)
+    add_executable(${NAME} ${SOURCE})
+    set_target_properties(${NAME} PROPERTIES LINKER_LANGUAGE Fortran
+                          RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/unit/${NAME}")
+    target_link_libraries(${NAME} PRIVATE ICEL FiNeR::FiNeR)
+    target_include_directories(${NAME} PRIVATE $<BUILD_INTERFACE:${CMAKE_Fortran_MODULE_DIRECTORY}>)
+    if(USE_TECIO)
+        target_link_libraries(${NAME} PRIVATE -pthread)
+    endif()
+    if(USE_OPENMP)
+        target_link_libraries(${NAME} PRIVATE OpenMP::OpenMP_Fortran)
+    endif()
+    if(USE_MPI)
+        target_compile_definitions(${NAME} PRIVATE USE_MPI)
+        target_link_libraries(${NAME} PRIVATE MPI::MPI_Fortran)
+    endif()
+    add_test(NAME ${NAME} COMMAND ${NAME} WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/unit/${NAME}")
+    set_tests_properties(${NAME} PROPERTIES LABELS "${ARGN}" TIMEOUT 120 ENVIRONMENT "${_ICE_TEST_ENV}")
+endfunction()
+
+# The property-table reader: header grammar, node and column checks, Tmin > 1
+ice_add_unit_test(PropertiesUnit unit/test_properties.f90 "fast;unit;implementation")
+
 # Rank count must not change the answer either. Needs an MPI build, so it is
 # registered only when there is one.
 if(USE_MPI)

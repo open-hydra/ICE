@@ -77,8 +77,8 @@ Required column says otherwise, and omitting one selects the default.
 | `evaporation` | none | d2-law, CEM, CEM-B, ASM, TC, none |  no | Evaporation model, global for all families |
 | `evaporation-interface` | VLE | VLE, LK |  no | Vapour-liquid interface: VLE equilibrium, or LK Langmuir-Knudsen non-equilibrium; ignored when evaporation is none |
 | `evaporation-blowing` | none | LK, none |  no | Stefan-blowing reduction of the convective heat; LK applies Miller-Harstad-Bellan f2. Ignored under ASM and TC, which carry their own gas-side heat |
-| `density` | 2700.0 | > 0 |  no | Condensed-material density [kg/m^3], used when no property table is given |
-| `specific-heat` | 1598.0 | > 0 |  no | Condensed-material specific heat [J/(kg K)], used when no property table is given |
+| `density` | 2700.0 | > 0 |  no | Condensed-material density [kg/m^3], used when no property table is given; with a table it may be left out, and if given it must equal the table's constant density |
+| `specific-heat` | 1598.0 | > 0 |  no | Condensed-material specific heat [J/(kg K)], used when no property table is given; with a table it may be left out, and if given it must equal the table's constant cp |
 | `latent-heat` | 1.08e7 | > 0 |  no | Latent heat of vaporisation [J/kg]; the evaporation models use it both as the energy sink and as the anchor of the saturation curve |
 | `emissivity` | 1.0 | >= 0 |  no | Particle surface emissivity; 0 switches radiative exchange off |
 | `vapour-molar-mass` | 26.98 | > 0 |  no | Molar mass of the vapour [kg/kmol] |

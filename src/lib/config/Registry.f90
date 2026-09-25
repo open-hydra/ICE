@@ -6,7 +6,7 @@ module ICE_Input_Registry
 
   integer, parameter :: TYPE_INT=1, TYPE_REAL=2, TYPE_LOG=3, TYPE_STR=4
 
-  public :: registry_t, Validate_Registry
+  public :: registry_t, Validate_Registry, param_is_set
 
   !--------------------------------------------------------
   ! Value container (typed pointers)
@@ -195,6 +195,19 @@ contains
     this%params(n)%value%rarr    => var
     read(default,*) defval ; var(:) = defval
   end subroutine add_real_array
+
+  !> True when the INI gave a value for this key (false for a key never registered).
+  logical function param_is_set(section, name)
+    character(*), intent(in) :: section, name
+    integer :: i
+    param_is_set = .false.
+    do i = 1, reg%size
+      if (reg%params(i)%section == section .and. reg%params(i)%name == name) then
+        param_is_set = reg%params(i)%is_set
+        return
+      end if
+    end do
+  end function param_is_set
 
   function Validate_Registry() result(out)
     character(len=1024) :: out

@@ -51,10 +51,12 @@ contains
 
     ! Condensed-material properties ----------------------
     call reg%add(section, 'density', obj_condensed%rho_al, '2700.0', &
-                 'Condensed-material density [kg/m^3], used when no property table is given', &
+                 'Condensed-material density [kg/m^3], used when no property table is given; with a table '// &
+                 'it may be left out, and if given it must equal the table''s constant density', &
                  '> 0',  .false.)
     call reg%add(section, 'specific-heat', obj_condensed%cs_al, '1598.0', &
-                 'Condensed-material specific heat [J/(kg K)], used when no property table is given', &
+                 'Condensed-material specific heat [J/(kg K)], used when no property table is given; with a '// &
+                 'table it may be left out, and if given it must equal the table''s constant cp', &
                  '> 0',  .false.)
     call reg%add(section, 'latent-heat', obj_condensed%lv_al, '1.08e7', &
                  'Latent heat of vaporisation [J/kg]; the evaporation models use it '// &
