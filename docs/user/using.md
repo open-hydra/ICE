@@ -169,4 +169,5 @@ Give either `position` (physical coordinates, and ICE finds the nearest cell) or
 
 If `ini-diter` is set, ICE re-reads `input.ini` every that many iterations, so
 thresholds and output frequencies can be changed while the run is in progress. Values
-that are consumed once at setup — the closures, the mesh, the scheme — are not affected.
+that are consumed once at setup — the closures, the mesh, the scheme, the materials and
+their properties — are not affected.

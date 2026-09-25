@@ -161,4 +161,5 @@ residual — which for a genuinely unsteady problem may be immediately. Set
 
 If `ini-diter` is set, `input.ini` is re-read every that many iterations. Thresholds
 and output frequencies then take effect during a run; anything consumed once at setup
-does not.
+does not: the closures, the scheme, and the materials with their properties, models and
+property table.
