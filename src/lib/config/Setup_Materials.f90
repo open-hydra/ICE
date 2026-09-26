@@ -22,6 +22,8 @@ module ICE_Setup_Materials
                                   'vapour-specific-heat', 'lewis-number', 'vapour-mass-fraction', 'evaporation-coefficient']
   logical, parameter :: vector_positive(10) = [.true., .true., .true., .false., .true., .true., .false., .true., &
                                                .false., .true.]
+  !> The alias of each such key ('' = none), the name IGLOO also reads
+  character(len=5),  parameter :: vector_alias(10) = [character(len=5) :: '', '', '', '', '', 'Tboil', '', '', '', '']
 
 contains
 
@@ -182,7 +184,8 @@ contains
 
 
   !> With several materials, a [ICE-Physics] property key carries one value per material; with
-  !  one, the registry has already read it. The count is checked either way.
+  !  one, the registry has already read it. The count is checked either way. A key may be given
+  !  under its alias instead, never under both names.
   subroutine read_ini_vectors()
     use Finer,              only: file_ini
     use ICE_Backend_INI,    only: Open_Ini
@@ -191,18 +194,29 @@ contains
     use ICE_Config_Types_m, only: obj_condensed
     implicit none
     type(file_ini)      :: fini
-    character(len=1024) :: buf
+    character(len=1024) :: buf, abuf
     character(len=256)  :: tok
+    character(len=23)   :: key
     real(R8) :: x
-    integer  :: i, m, n, k, err, ios
+    integer  :: i, m, n, k, err, aerr, ios
 
     call Open_Ini(fini)
     do i = 1, size(vector_keys)
+      key = vector_keys(i)
       buf = ''
-      call fini%get(section_name=trim(codename)//'-Physics', option_name=trim(vector_keys(i)), val=buf, error=err)
+      call fini%get(section_name=trim(codename)//'-Physics', option_name=trim(key), val=buf, error=err)
+      if (len_trim(vector_alias(i)) > 0) then
+        abuf = ''
+        call fini%get(section_name=trim(codename)//'-Physics', option_name=trim(vector_alias(i)), val=abuf, error=aerr)
+        if (aerr == 0) then
+          if (err == 0) call refuse('['//trim(codename)//'-Physics]: give '//trim(key)//' or its alias '// &
+                                    trim(vector_alias(i))//', not both')
+          key = vector_alias(i); buf = abuf; err = 0
+        endif
+      endif
       if (err /= 0 .or. len_trim(buf) == 0) cycle
       n = count_fields(buf)
-      if (n /= nmat) call refuse('['//trim(codename)//'-Physics] '//trim(vector_keys(i))//' carries '// &
+      if (n /= nmat) call refuse('['//trim(codename)//'-Physics] '//trim(key)//' carries '// &
         trim(itoa(n))//' values for '//trim(itoa(nmat))//' material(s): give one value per material')
       if (nmat == 1) cycle
       k = 1
@@ -210,9 +224,9 @@ contains
         call next_field(buf, k, tok, k)
         read(tok, *, iostat=ios) x
         if (ios /= 0 .or. index(tok, ',') > 0) call refuse('['//trim(codename)//'-Physics] '// &
-          trim(vector_keys(i))//': "'//trim(tok)//'" is not a real number')
+          trim(key)//': "'//trim(tok)//'" is not a real number')
         if ((vector_positive(i) .and. .not. x > 0._R8) .or. (.not. vector_positive(i) .and. .not. x >= 0._R8)) &
-          call refuse('['//trim(codename)//'-Physics] '//trim(vector_keys(i))//' = '//trim(tok)// &
+          call refuse('['//trim(codename)//'-Physics] '//trim(key)//' = '//trim(tok)// &
                       merge(' must be > 0 ', ' must be >= 0', vector_positive(i)))
         select case (i)
         case (1);  obj_condensed(m)%rho_al = x

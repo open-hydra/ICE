@@ -213,6 +213,21 @@ contains
     end do
   end function param_is_set
 
+  !> True when another entry with the same real target (a key and its alias) was set by the INI.
+  logical function set_by_alias(i)
+    integer, intent(in) :: i
+    integer :: j
+    set_by_alias = .false.
+    do j = 1, reg%size
+      if (j == i .or. .not. reg%params(j)%is_set) cycle
+      if (.not. associated(reg%params(j)%value%r)) cycle
+      if (associated(reg%params(j)%value%r, reg%params(i)%value%r)) then
+        set_by_alias = .true.
+        return
+      end if
+    end do
+  end function set_by_alias
+
   function Validate_Registry() result(out)
     character(len=1024) :: out
     integer  :: i
@@ -234,6 +249,7 @@ contains
       case(TYPE_REAL)
         if (.not. associated(reg%params(i)%value%r)) cycle
         if (reg%params(i)%multi) cycle   ! each value is checked by Setup_Materials
+        if (set_by_alias(i)) cycle   ! checked under the name given; Setup_Materials refuses both names
         val = reg%params(i)%value%r
         call validate_numeric(reg%params(i)%name, val, reg%params(i)%allowed, out)
         if (out /= "") return

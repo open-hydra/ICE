@@ -22,6 +22,10 @@ case, so a family that reads another family's material, model or inlet is seen d
        the INI and "B 1 evaporation=none": A evaporates, B does not.
   L2c  the token alone: one material, "A 1 evaporation=CEM", no table and no INI model.
   L2e  control: one material, no token, evaporation = CEM in the INI.
+  L2f  boiling temperature per material. "A 1 evaporation=CEM" / "B 1 evaporation=CEM", two
+       zones of the same material, boiling-temperature = 373.15 403.15. L2g: the same values
+       under the alias Tboil give L2f's part-field.tec byte for byte. L2h: control, the two
+       values swapped change it, so each value reaches its own material.
   L3   inlet records per family. One material, "A 2", an empty domain, code-402 inlets
        on face 1 (mass flux 0.01 kg/(s m^2), 10 m/s, 300 K) in ATLAS's order: the records
        of family 1 (radius 10 um), then those of family 2 (20 um). No coupling, so both
@@ -42,6 +46,7 @@ Tolerances.
       gap; the tolerance, 1e-6 of the gap, is 16 times that and 1.6e5 below the signal.
   L2: case F's 1e-6 on the d-squared slope, which F's own CEM leg meets at 1.6e-8 (the
       same arithmetic: a constant table cp returns the INI value's number). B: exact.
+      L2g, L2h: byte comparisons of two runs of one binary.
   L3, L4: r_2 = 2 r_1 and rho_A = 2 rho_B are exact in binary, the flux and the limiter
       are homogeneous of degree 1 in n, and the inlet formula divides by rho_mat r^3, so
       n_1/n_2 is exact up to the initial content (1e-20 kg/m^3 against 1e-3 at the inlet).
@@ -149,11 +154,12 @@ def heating(rep, label, phase, zones, fam_mat):
 #  L2 - per-material evaporation tokens (case F's material and gas)
 # ---------------------------------------------------------------------------
 
-def evaporating(label, phase, zones=None, model=None):
+def evaporating(label, phase, zones=None, model=None, boiling=None):
     """Case F's frozen-temperature cloud, one family per material line of phase.
 
     zones: the table (one per material), or None for the INI constants of one material.
     model: [ICE-Physics] evaporation, or None to leave the key out.
+    boiling: (key, values), the boiling temperature per material under that key, or None for case F's.
     """
     case = Case(WORK / label.lower(), nx=8, Lx=1.0)
     nmat = len(phase)
@@ -164,6 +170,9 @@ def evaporating(label, phase, zones=None, model=None):
     case.boundaries('extrapolation')
     case.phase(*phase)
     phys = dict((k, vector(*[v] * nmat)) for k, v in F.VAPOUR.items())
+    if boiling is not None:
+        del phys['boiling-temperature']
+        phys[boiling[0]] = vector(*boiling[1])
     if nmat > 1:
         phys['emissivity'] = vector(*[0.0] * nmat)
     if model is not None:
@@ -229,6 +238,21 @@ def evap_legs(rep):
     sol = try_run(rep, evaporating('L2e', ('A 1',), model='CEM').run)
     if sol is not None:
         slope_check('L2e', sol, 0)
+
+    same = [dict(cp=F.CS_FROZEN, rho=F.RHO_L, zone='A'), dict(cp=F.CS_FROZEN, rho=F.RHO_L, zone='B')]
+    tb = (F.TBOIL, F.TBOIL + 30.0)
+    out = {}
+    for label, key, values in (('L2f', 'boiling-temperature', tb), ('L2g', 'Tboil', tb),
+                               ('L2h', 'boiling-temperature', tb[::-1])):
+        print('   %s "A 1 evaporation=CEM" / "B 1 evaporation=CEM", %s = %s' % (label, key, vector(*values)))
+        case = evaporating(label, ('A 1 evaporation=CEM', 'B 1 evaporation=CEM'), same, boiling=(key, values))
+        if try_run(rep, case.run) is not None:
+            out[label] = (case.dir / 'OUTPUT/part-field.tec').read_bytes()
+    if 'L2f' in out and 'L2g' in out:
+        rep.check(out['L2g'] == out['L2f'], 'L2g: the alias Tboil gives L2f\'s part-field.tec byte for byte')
+    if 'L2f' in out and 'L2h' in out:
+        rep.check(out['L2h'] != out['L2f'], 'L2h: the two values swapped change part-field.tec, '
+                  'so each reaches its own material')
 
 
 # ---------------------------------------------------------------------------

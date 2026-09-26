@@ -84,6 +84,7 @@ Required column says otherwise, and omitting one selects the default.
 | `emissivity` | 1.0 | >= 0 |  no | Particle surface emissivity; 0 switches radiative exchange off; one value per material |
 | `vapour-molar-mass` | 26.98 | > 0 |  no | Molar mass of the vapour [kg/kmol]; one value per material |
 | `boiling-temperature` | 2792.0 | > 0 |  no | Boiling temperature at 1 atm [K], the anchor of the Clausius-Clapeyron saturation pressure; with a Psat column in the property table it must lie in [Tmin, Tmax-1] of the table, where the column must give 0.5 to 2 atm; one value per material |
+| `Tboil` | 2792.0 | > 0 |  no | Alias of boiling-temperature, the name IGLOO also accepts; give one or the other, not both; one value per material |
 | `vapour-specific-heat` | 0.0 | >= 0 |  no | Specific heat of the vapour [J/(kg K)]; 0 falls back to the gas cp; one value per material |
 | `lewis-number` | 1.0 | > 0 |  no | Lewis number of the vapour in the gas, Le = k/(rho cp D); one value per material |
 | `vapour-mass-fraction` | 0.0 | >= 0 |  no | Vapour mass fraction in the far-field gas; evaporation stops once the surface value falls to it; one value per material |

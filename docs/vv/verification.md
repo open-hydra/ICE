@@ -414,6 +414,8 @@ another family's material, model or inlet record is seen directly in its own fie
 | L2b | L2 with `evaporation = none` in the INI | The token overrides the INI default: `part-field.tec` bit for bit L2's | identical |
 | L2d | `A 1` / `B 1 evaporation=none`, `evaporation = CEM` in the INI | The INI default applies to A, the token switches B off | slope $1.6\times10^{-8}$ |
 | L2c, L2e | `A 1 evaporation=CEM`; `A 1` with `evaporation = CEM` | Controls: one material, the token alone and the INI alone | slope $1.6\times10^{-8}$ |
+| L2f, L2g | `A 1 evaporation=CEM` / `B 1 evaporation=CEM`, two zones of one material, `boiling-temperature = 373.15 403.15` | One boiling temperature per material; L2g gives the same values under the alias `Tboil`: `part-field.tec` bit for bit L2f's | identical |
+| L2h | L2f with the two values swapped | Control: the field changes, so each value reaches its own material | differs |
 | L3 | `A 2`, face-1 inlets in ATLAS's order (the records of family 1, radius 10 µm, then family 2, 20 µm) | $n_1/n_2 = (r_2/r_1)^3 = 8$ in the cells the inlet fills | $6.8\times10^{-15}$ |
 | L3b | L3 on two mesh blocks (mesh block, then family, then faces), radii 10/20 and 20/10 µm | 8 in block 1, 1/8 in block 2 | $6.9\times10^{-15}$, $5.1\times10^{-15}$ |
 | L3c, L3d | Controls: equal radii; one record per face on two blocks | ratio 1 | exact |

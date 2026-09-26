@@ -96,7 +96,7 @@ several, the groups must add up to the `[ICE-FamilyN]` count and the
 [property table](initial-conditions.md#property-table) must give one zone per material.
 
 `density`, `specific-heat`, `latent-heat`, `emissivity`, `vapour-molar-mass`,
-`boiling-temperature`, `vapour-specific-heat`, `lewis-number`, `vapour-mass-fraction` and
+`boiling-temperature` (alias `Tboil`), `vapour-specific-heat`, `lewis-number`, `vapour-mass-fraction` and
 `evaporation-coefficient` take one value per material, in the phase file's order
 (`emissivity = 0 0` for two materials); any other count stops the run.
 
@@ -123,7 +123,8 @@ convective heat exchange off explicitly; radiation stays under `emissivity`.
 `evaporation` defaults to `none`, and while it is `none` the vapour keys beside it are
 never read. Selecting a model makes `latent-heat`, `vapour-molar-mass` and
 `boiling-temperature` matter — those three set the saturation curve unless the property
-table carries a `Psat` column, and their defaults describe aluminium. `evaporation-interface` and `evaporation-blowing` are refinements of
+table carries a `Psat` column, and their defaults describe aluminium. `boiling-temperature`
+may be given as `Tboil`, the name IGLOO also accepts; giving both stops the run. `evaporation-interface` and `evaporation-blowing` are refinements of
 the selected model rather than models of their own:
 
 ```ini
