@@ -40,15 +40,14 @@ exists.
 
  ICE numerical scheme:
  - Space   --> MUSCL with vanleer flux limiter
- - Shock   --> Jameson detector
- - Time    --> Explicit Runge-Kutta 2
+ - Time    --> Explicit RK2
 
  Boundary Conditions:
    Symmetry                       80
    Inflow                         20
    Extrapolation                  300
 
-ICE  | Iter =       10 | Global iter =       10 | Density residual = 0.162364E-01
+ICE  | Iter =       10 | Global iter =       10 | Density residual = 0.144622E-01
 ```
 
 The first line says how the step is taken (local, so steady state) and how the phases

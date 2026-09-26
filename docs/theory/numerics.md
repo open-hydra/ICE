@@ -70,6 +70,16 @@ $$
 
 So $\beta = 1$ in smooth flow, where the scheme is the plain MUSCL one, and falls to 0 at a shock, where it drops to first order.
 
+The weight is close to a switch, and that has two consequences. In a steady computation the
+cells near the threshold can keep switching from one iteration to the next, so the residual
+levels off instead of converging. And a face on a block boundary takes the weight of its own
+block's cell, while inside a block every face takes the weight of the cell on its low-index
+side, so a domain split into blocks switches some faces differently from the same domain in
+one block. The detector earns its place where a collision would otherwise go wrong: it keeps
+the MK delta shock of the [crossing jets](../vv/crossing-jets.md) from creeping upstream and
+the AG pressure tensor from reaching its floor where the jets cross. The IG crossing-jets
+cases run without it.
+
 ## Riemann solvers
 
 The face flux is a two-state flux solved via three possible schemes.

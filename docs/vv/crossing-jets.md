@@ -29,7 +29,7 @@ the test:
 | Faces 2–4 | Extrapolation (`400`) |
 | Coupling | 0-way (no gas) |
 | Time | Local time stepping, 5000 iterations, CFL 0.8 |
-| Space reconstruction | MUSCL with shock detector, Van Leer limiter |
+| Space reconstruction | MUSCL, Van Leer limiter; shock detector on for MK and AG, off for IG |
 
 In the exact solution each jet is a 45° band of density 0.1 kg/m³. The bands overlap in a
 diamond centred at $(0.25, 0)$, where the density is 0.2 kg/m³.
@@ -48,7 +48,7 @@ diamond centred at $(0.25, 0)$, where the density is 0.2 kg/m³.
 |---|---|---|
 | Exact | 0.200 | Jets pass through each other |
 | MK | 1.98 | Jets merge into a single jet along $y = 0$; mass concentrates in the axis cells (delta shock) |
-| IG | 0.283 | Jets merge where they meet, then spread as a single jet |
+| IG | 0.339 | Jets merge where they meet, then spread as a single jet |
 | AG | 0.158 | Jets cross and continue as two separate, diffused jets |
 
 - **MK** merges the jets into one along $y = 0$ and piles their mass into the axis cells.
@@ -59,12 +59,18 @@ diamond centred at $(0.25, 0)$, where the density is 0.2 kg/m³.
 - **AG** is the only closure that lets the jets cross. Downstream they are much wider and
   weaker than the exact bands.
 
-With the shock detector on, the iterations do not settle into a steady state: after
-about 1750 iterations the density residual levels off at $2 \times 10^{-3}$ (MK) to
-$4 \times 10^{-3}$ (IG, AG), because cells at the jet edges switch between first and
-second order from one iteration to the next. The fields above, and the stored references,
-are those at iteration 5000. With `shock-detector = none` the same cases converge (IG: a
-residual of $3 \times 10^{-6}$ at 5000 iterations).
+MK and AG run with the [shock detector](../theory/numerics.md#shock-detector), because without
+it their collisions go wrong. MK's delta shock creeps upstream and piles mass against the
+inlet wall along the axis: a density of 0.16 kg/m³ moving at 0.1 m/s in the axis row next
+to the wall, where the jets leave $2 \times 10^{-7}$ kg/m³ moving at their own 7.07 m/s. AG
+clips its pressure tensor at the floor in about 450 populated cells where the jets cross.
+With the detector the two do not settle into a steady state: after about 1750 iterations
+the density residual levels off at $2 \times 10^{-3}$ (MK) and $5 \times 10^{-3}$ (AG), as
+cells at the jet edges switch between first and second order, so their fields above and
+their stored references are those at iteration 5000. IG needs no detector: it converges
+(a residual of $3 \times 10^{-6}$ at 5000 iterations), and its chimera and multi-block
+versions then match it to round-off ([Chimera Overset](chimera.md),
+[Multi-block and MPI](multiblock-mpi.md)).
 
 The cases are also part of the regression suite (`Doisneau/MK`, `Doisneau/IG`,
 `Doisneau/AG`), which checks the density and number-density fields against a stored reference.

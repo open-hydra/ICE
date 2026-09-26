@@ -6,8 +6,9 @@ their volume weights. ICE fills each ghost cell with the weighted blend of its d
 done in conservative variables, as MOSE does (see
 [Boundary Conditions](../user/boundary-conditions.md#chimera)).
 
-All checks use the [crossing-jets](crossing-jets.md) case with the IG closure, and compare
-against the same case solved on the original single $100 \times 100$ block.
+All checks use the [crossing-jets](crossing-jets.md) case with the IG closure, which runs
+without the shock detector, and compare against the same case solved on the original single
+$100 \times 100$ block.
 
 ## Split block with matching cells
 
@@ -18,16 +19,13 @@ chimera path must reproduce the single-block solution.
 
 | Comparison | Max difference relative to each variable's maximum |
 |---|---|
-| Split with chimera vs single block, `shock-detector = none` | $7 \times 10^{-13}$ (round-off) |
-| Split with chimera vs single block, shock detector on | $3.6 \times 10^{-2}$ (density) |
+| Split with chimera vs single block | $7 \times 10^{-13}$ (round-off) |
 
-With the shock detector on, a face on a block boundary takes the detector value of its own
-block's cell, while inside a block every face takes the one of the cell on its low-index
-side, so where a jet edge crosses the interface the split and the single block switch that
-face differently; the detector also keeps the iterations from settling (see
-[Crossing Jets](crossing-jets.md)). The checks below are therefore given for both settings:
-the detector-off numbers measure the chimera transfer, the others the regression case as it
-runs.
+The shock detector would break this. A face on a block boundary takes the detector value of
+its own block's cell, while inside a block every face takes the one of the cell on its
+low-index side, so where a jet edge crosses the interface the split and the single block
+switch that face differently: with the detector on, the split differs from the single block
+by $3.6 \times 10^{-2}$ of the peak density at 5000 iterations.
 
 ## Overlapping blocks with non-matching cells
 
@@ -50,12 +48,12 @@ input used for the donor search.
   {% include "vv/images/chimera-overset.svg" %}
 </figure>
 
-| Check | Shock detector on | `shock-detector = none` |
-|---|---|---|
-| Block 1 vs single block (mean, relative to peak density) | $2.8 \times 10^{-4}$ | $3.0 \times 10^{-6}$ |
-| Block 1 vs block 2 inside the overlap (mean / max, relative to peak density) | $3.1 \times 10^{-4}$ / $2.6 \times 10^{-3}$ | $2.9 \times 10^{-4}$ / $2.5 \times 10^{-3}$ |
-| Mass flux $\int \rho u\,dy$, block 1 vs single block | $-0.20\%$ to $+0.26\%$ | $-0.06\%$ to $+0.03\%$ |
-| Mass flux $\int \rho u\,dy$, block 2 vs single block | $-0.19\%$ to $+0.09\%$ | $-0.08\%$ to $+0.14\%$ |
+| Check | Result |
+|---|---|
+| Block 1 vs single block (mean, relative to peak density) | $3.0 \times 10^{-6}$ |
+| Block 1 vs block 2 inside the overlap (mean / max, relative to peak density) | $2.9 \times 10^{-4}$ / $2.5 \times 10^{-3}$ |
+| Mass flux $\int \rho u\,dy$, block 1 vs single block | $-0.06\%$ to $+0.03\%$ |
+| Mass flux $\int \rho u\,dy$, block 2 vs single block | $-0.08\%$ to $+0.14\%$ |
 
 The two blocks agree with each other across the overlap, and the jet passes the chimera
 interface without a visible step in density or mass flux.
@@ -68,14 +66,13 @@ by a $60 \times 100$ block with the single block's spacing, shifted by half a ce
 ($x \in [0.405, 1.005]$). The interface is still non-matching (each ghost cell takes two
 donors of weight 0.5), but the resolution is the same on both sides.
 
-| Check | `shock-detector = none` |
+| Check | Result |
 |---|---|
 | Mass flux $\int \rho u\,dy$, block 1 vs single block | $-0.003\%$ to $+0.009\%$ |
 | Mass flux $\int \rho u\,dy$, block 2 vs single block | $-0.02\%$ to $+0.15\%$ |
 
-The control runs with the detector off, so that it measures the transfer alone. Block 1,
-whose cells are the single block's, matches it to 0.01 %: the transfer adds a negligible
-error. Block 2's range is over its interior columns; its cells sit half a cell off the single
+Block 1, whose cells are the single block's, matches it to 0.01 %: the transfer adds a
+negligible error. Block 2's range is over its interior columns; its cells sit half a cell off the single
 block's, and at second order two such grids give jets that differ at the edges by that
 much.
 
