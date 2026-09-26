@@ -49,6 +49,7 @@ contains
     use Finer,              only: file_ini
     implicit none
     type(file_ini), intent(in) :: fini
+    character(len=1024) :: buf
     integer :: i, error
 
     do i = 1, reg%size
@@ -57,7 +58,14 @@ contains
       if (associated(reg%params(i)%value%i)) then
         call fini%get(reg%params(i)%section, reg%params(i)%name, val=reg%params(i)%value%i, error=error)
       else if (associated(reg%params(i)%value%r)) then
-        call fini%get(reg%params(i)%section, reg%params(i)%name, val=reg%params(i)%value%r, error=error)
+        reg%params(i)%multi = .false.
+        if (reg%params(i)%per_material) then
+          buf = ''
+          call fini%get(reg%params(i)%section, reg%params(i)%name, val=buf, error=error)
+          reg%params(i)%multi = error == 0 .and. count_fields(buf) > 1
+        endif
+        if (.not. reg%params(i)%multi) &
+          call fini%get(reg%params(i)%section, reg%params(i)%name, val=reg%params(i)%value%r, error=error)
       else if (associated(reg%params(i)%value%l)) then
         call fini%get(reg%params(i)%section, reg%params(i)%name, val=reg%params(i)%value%l, error=error)
       else if (associated(reg%params(i)%value%s)) then
@@ -72,6 +80,24 @@ contains
     end do
 
   end subroutine Load_Ini
+
+
+  !> Blank-separated fields of a value.
+  pure integer function count_fields(line)
+    character(len=*), intent(in) :: line
+    integer :: k
+    logical :: inside
+    count_fields = 0
+    inside = .false.
+    do k = 1, len_trim(line)
+      if (line(k:k) == ' ') then
+        inside = .false.
+      elseif (.not. inside) then
+        inside = .true.
+        count_fields = count_fields + 1
+      endif
+    enddo
+  end function count_fields
 
 
   !> Report keys ICE does not know, inside sections it does.

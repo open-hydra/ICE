@@ -29,6 +29,11 @@ See [Testing](testing.md) for the tiers and how to add a case.
 - **Purity**: new leaf procedures — correlations, limiters, flux functions — should be
   `pure` and take everything they need as arguments, rather than reaching for module
   state.
+- **Fatal errors**: end in `error stop` (with a message, or `error stop 1` after a
+  `' [ERROR] [ICE::<Routine>] <message>'` line), never in a bare `stop`, which exits with
+  status 0 and reads as success to any caller. When the input names an unknown option,
+  list the accepted ones. Inside an OpenMP region, set a shared flag under a named
+  `critical` section and stop after `end parallel`.
 
 ## Changing an input parameter
 

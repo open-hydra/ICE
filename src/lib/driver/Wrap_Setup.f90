@@ -17,7 +17,8 @@ contains
     use ICE_Mod_Allocate_Data
     use ICE_Mod_Metrics
     use ICE_IO_BC,          only: Setup_BC
-    use ICE_Load_Table,     only: Load_Table
+    use ICE_Setup_Materials, only: Setup_Materials
+    use ICE_Lib_Heat,       only: heat_formula
     use ICE_IO_Probes,      only: Setup_Probes
     use ICE_Mod_BC_Fluxes
     use ICE_Mod_Phase
@@ -39,8 +40,8 @@ contains
     ! Post-read: assign solvers, compute ncond, detect coupling
     call Assign_Setup()
 
-    ! Load optional temperature-dependent property tables (printed here, after check section)
-    call Load_Table()
+    ! The materials of the phase file, their models, and the property table
+    call Setup_Materials()
 
     obj_sim_param%HYDRA_MG = (obj_multigrid%MGL > 1)
 
@@ -165,6 +166,7 @@ contains
 
 
     subroutine print_simulation_info()
+      integer :: m
 
       write(*,*)
       write(*,'(A)') " Checking input file..."
@@ -209,12 +211,15 @@ contains
       end if
       if (coupled) then
         write(*,'(A)') " - Drag    --> "//trim(obj_time_scheme%drag)
-        write(*,'(A)') " - Heat    --> "//trim(obj_time_scheme%heat)
-        write(*,'(A)') " - Evap    --> "//trim(obj_time_scheme%evaporation)
-        if (obj_time_scheme%evapSelect /= 0) then
-          write(*,'(A)') " - Interf  --> "//trim(obj_time_scheme%interface_model)
+        write(*,'(A)') " - Heat    --> "//trim(obj_time_scheme%heat)//" ("//heat_formula(obj_time_scheme%heatSelect)//")"
+        do m = 1, nmat
+          write(*,'(A,I0,A)') " - Evap    --> material ", m, " ("//trim(obj_condensed(m)%name)//"): "// &
+            trim(obj_condensed(m)%evapWord)
+          if (obj_condensed(m)%evapSelect /= 0) &
+            write(*,'(A)') " - Interf  --> "//trim(obj_condensed(m)%intfWord)
+        enddo
+        if (any(obj_condensed(:)%evapSelect /= 0)) &
           write(*,'(A)') " - Blowing --> "//trim(obj_time_scheme%blowing)
-        end if
       end if
 
     end subroutine print_simulation_info

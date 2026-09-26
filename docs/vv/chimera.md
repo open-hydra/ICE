@@ -6,8 +6,9 @@ their volume weights. ICE fills each ghost cell with the weighted blend of its d
 done in conservative variables, as MOSE does (see
 [Boundary Conditions](../user/boundary-conditions.md#chimera)).
 
-All checks use the [crossing-jets](crossing-jets.md) case with the IG closure, and compare
-against the same case solved on the original single $100 \times 100$ block.
+All checks use the [crossing-jets](crossing-jets.md) case with the IG closure, which runs
+without the shock detector, and compare against the same case solved on the original single
+$100 \times 100$ block.
 
 ## Split block with matching cells
 
@@ -16,9 +17,15 @@ declared as chimera with one donor of weight 1 per ghost cell (the cell a block 
 would copy). Each ghost cell then receives exactly the value of one interior cell, so the
 chimera path must reproduce the single-block solution.
 
-| Comparison | Max relative difference, all variables |
+| Comparison | Max difference relative to each variable's maximum |
 |---|---|
-| Split with chimera vs single block | $1 \times 10^{-11}$ (round-off) |
+| Split with chimera vs single block | $7 \times 10^{-13}$ (round-off) |
+
+The shock detector would break this. A face on a block boundary takes the detector value of
+its own block's cell, while inside a block every face takes the one of the cell on its
+low-index side, so where a jet edge crosses the interface the split and the single block
+switch that face differently: with the detector on, the split differs from the single block
+by $3.6 \times 10^{-2}$ of the peak density at 5000 iterations.
 
 ## Overlapping blocks with non-matching cells
 
@@ -43,10 +50,10 @@ input used for the donor search.
 
 | Check | Result |
 |---|---|
-| Block 1 vs single block (mean, relative to peak density) | $6 \times 10^{-5}$ |
-| Block 1 vs block 2 inside the overlap (mean / max, relative to peak density) | $6 \times 10^{-4}$ / $3.4 \times 10^{-3}$ |
-| Mass flux $\int \rho u\,dy$, block 1 vs single block | $0.00\%$ to $+0.15\%$ |
-| Mass flux $\int \rho u\,dy$, block 2 vs single block | $+0.03\%$ to $+0.46\%$ |
+| Block 1 vs single block (mean, relative to peak density) | $3.0 \times 10^{-6}$ |
+| Block 1 vs block 2 inside the overlap (mean / max, relative to peak density) | $2.9 \times 10^{-4}$ / $2.5 \times 10^{-3}$ |
+| Mass flux $\int \rho u\,dy$, block 1 vs single block | $-0.06\%$ to $+0.03\%$ |
+| Mass flux $\int \rho u\,dy$, block 2 vs single block | $-0.08\%$ to $+0.14\%$ |
 
 The two blocks agree with each other across the overlap, and the jet passes the chimera
 interface without a visible step in density or mass flux.
@@ -61,10 +68,13 @@ donors of weight 0.5), but the resolution is the same on both sides.
 
 | Check | Result |
 |---|---|
-| Mass flux $\int \rho u\,dy$, both blocks vs single block | within $\pm 0.004\%$ |
+| Mass flux $\int \rho u\,dy$, block 1 vs single block | $-0.003\%$ to $+0.009\%$ |
+| Mass flux $\int \rho u\,dy$, block 2 vs single block | $-0.02\%$ to $+0.15\%$ |
 
-So the chimera transfer itself adds a negligible error here, and the 0.03–0.46% seen with
-the coarser block 2 comes from its resolution.
+Block 1, whose cells are the single block's, matches it to 0.01 %: the transfer adds a
+negligible error. Block 2's range is over its interior columns; its cells sit half a cell off the single
+block's, and at second order two such grids give jets that differ at the edges by that
+much.
 
 !!! note
     The mass flux is computed from cell-centre values of $\rho u$. For the IG closure this

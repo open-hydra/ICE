@@ -6,7 +6,7 @@ module ICE_Input_Registry
 
   integer, parameter :: TYPE_INT=1, TYPE_REAL=2, TYPE_LOG=3, TYPE_STR=4
 
-  public :: registry_t, Validate_Registry
+  public :: registry_t, Validate_Registry, param_is_set
 
   !--------------------------------------------------------
   ! Value container (typed pointers)
@@ -31,6 +31,8 @@ module ICE_Input_Registry
     character(len=:), allocatable :: allowed
     logical :: required = .false.
     logical :: is_set   = .false.
+    logical :: per_material = .false.   ! may hold one value per material (Setup_Materials reads them)
+    logical :: multi        = .false.   ! holds several values: the scalar target keeps its default
     integer :: type_id  = 0
     type(param_value_t) :: value
   end type
@@ -100,11 +102,12 @@ contains
     read(default,*) var
   end subroutine add_int
 
-  subroutine add_real(this, section, name, var, default, desc, allowed, required)
+  subroutine add_real(this, section, name, var, default, desc, allowed, required, per_material)
     class(registry_t), intent(inout) :: this
     character(*),      intent(in)    :: section, name, default, desc, allowed
     logical,           intent(in)    :: required
     real(R8), target,  intent(inout) :: var
+    logical, optional, intent(in)    :: per_material
     integer :: n
     call ensure_space(this)
     this%size = this%size + 1 ; n = this%size
@@ -116,6 +119,7 @@ contains
     this%params(n)%required    = required
     this%params(n)%type_id     = TYPE_REAL
     this%params(n)%value%r    => var
+    if (present(per_material)) this%params(n)%per_material = per_material
     read(default,*) var
   end subroutine add_real
 
@@ -196,6 +200,19 @@ contains
     read(default,*) defval ; var(:) = defval
   end subroutine add_real_array
 
+  !> True when the INI gave a value for this key (false for a key never registered).
+  logical function param_is_set(section, name)
+    character(*), intent(in) :: section, name
+    integer :: i
+    param_is_set = .false.
+    do i = 1, reg%size
+      if (reg%params(i)%section == section .and. reg%params(i)%name == name) then
+        param_is_set = reg%params(i)%is_set
+        return
+      end if
+    end do
+  end function param_is_set
+
   function Validate_Registry() result(out)
     character(len=1024) :: out
     integer  :: i
@@ -216,6 +233,7 @@ contains
         if (out /= "") return
       case(TYPE_REAL)
         if (.not. associated(reg%params(i)%value%r)) cycle
+        if (reg%params(i)%multi) cycle   ! each value is checked by Setup_Materials
         val = reg%params(i)%value%r
         call validate_numeric(reg%params(i)%name, val, reg%params(i)%allowed, out)
         if (out /= "") return

@@ -2,15 +2,16 @@
 module ICE_Lib_AG
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   use ICE_Global_m
-  use ICE_Config_Types_m, only: obj_condensed
-  use ICE_Load_Table,     only: get_cs_al
+  use ICE_Config_Types_m, only: condensed_phase_t
+  use ICE_Lib_Properties, only: mat_cp_const, mat_e, mat_T_from_rhoe
   implicit none
 
 contains
 
-  function prim_2_cons_AG(prim) result(cons)
+  function prim_2_cons_AG(prim, mat) result(cons)
     implicit none
     real(kind=R8), intent(in) :: prim(:)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: cons(size(prim))
 
     real(kind=R8) :: norm2V
@@ -30,16 +31,21 @@ contains
     cons(9)  = prim(1)*prim(3)*prim(4) + prim(9)
     cons(10) = prim(1)*prim(4)*prim(4) + prim(10)
 
-    cons(11) = prim(1)*get_cs_al(prim(11))*prim(11) + 0.5_R8*(cons(5)+cons(8)+cons(10))
+    if (mat%cs_varies) then
+      cons(11) = prim(1)*mat_e(mat, prim(11)) + 0.5_R8*(cons(5)+cons(8)+cons(10))
+    else
+      cons(11) = prim(1)*mat_cp_const(mat)*prim(11) + 0.5_R8*(cons(5)+cons(8)+cons(10))
+    endif
 
     cons(12) = prim(12)
   
   end function prim_2_cons_AG
 
 
-  function cons_2_prim_AG(cons) result(prim)
+  function cons_2_prim_AG(cons, mat) result(prim)
     implicit none
     real(kind=R8), intent(in) :: cons(:)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: prim(size(cons))
 
     real(kind=R8) :: norm2V
@@ -61,8 +67,11 @@ contains
     prim(9)  = cons(9)  - prim(1)*prim(3)*prim(4)
     prim(10) = cons(10) - prim(1)*prim(4)*prim(4)
 
-    prim(11) = (cons(11) - 0.5_R8*(cons(5)+cons(8)+cons(10))) / (obj_condensed%cs_al*prim(1)+eps)   ! initial estimate
-    prim(11) = (cons(11) - 0.5_R8*(cons(5)+cons(8)+cons(10))) / (get_cs_al(prim(11))*prim(1)+eps)  ! table correction
+    if (mat%cs_varies) then
+      prim(11) = mat_T_from_rhoe(mat, cons(11) - 0.5_R8*(cons(5)+cons(8)+cons(10)), prim(1), eps)
+    else
+      prim(11) = (cons(11) - 0.5_R8*(cons(5)+cons(8)+cons(10))) / (mat_cp_const(mat)*prim(1)+eps)
+    endif
 
     prim(12) = cons(12)
 
@@ -145,9 +154,48 @@ contains
   end function sound_make_AG
 
 
-  function flux_make_AG(prim,normal) result(flux)
+  !> Fastest signal speed across a face of normal n: sqrt(3 P_nn/rho), P_nn = n.P.n
+  function wavespeed_make_AG(prim,normal) result(speed)
     implicit none
     real(kind=R8), intent(in) :: prim(:), normal(3)
+    real(kind=R8)             :: speed
+    real(kind=R8)             :: pnn
+    real(kind=R8), parameter  :: eps = 1e-25
+
+    pnn = normal(1)*(prim(5)*normal(1) + prim(6)*normal(2) + prim(7)*normal(3)) + &
+          normal(2)*(prim(6)*normal(1) + prim(8)*normal(2) + prim(9)*normal(3)) + &
+          normal(3)*(prim(7)*normal(1) + prim(9)*normal(2) + prim(10)*normal(3))
+    speed = sqrt( 3._R8*max(pnn,0._R8)/(prim(1)+eps) )
+
+  end function wavespeed_make_AG
+
+
+  !> Reflect the symmetric tensor (xx,xy,xz,yy,yz,zz) across the plane of unit normal n: H P H, H = I - 2 n n^T
+  pure function mirror_tensor_AG(p, n) result(pm)
+    implicit none
+    real(kind=R8), intent(in) :: p(6), n(3)
+    real(kind=R8)             :: pm(6)
+    real(kind=R8)             :: t(3), s
+
+    t(1) = p(1)*n(1) + p(2)*n(2) + p(3)*n(3)
+    t(2) = p(2)*n(1) + p(4)*n(2) + p(5)*n(3)
+    t(3) = p(3)*n(1) + p(5)*n(2) + p(6)*n(3)
+    s    = n(1)*t(1) + n(2)*t(2) + n(3)*t(3)
+
+    pm(1) = p(1) - 4._R8*n(1)*t(1) + 4._R8*s*n(1)*n(1)
+    pm(2) = p(2) - 2._R8*(n(1)*t(2) + t(1)*n(2)) + 4._R8*s*n(1)*n(2)
+    pm(3) = p(3) - 2._R8*(n(1)*t(3) + t(1)*n(3)) + 4._R8*s*n(1)*n(3)
+    pm(4) = p(4) - 4._R8*n(2)*t(2) + 4._R8*s*n(2)*n(2)
+    pm(5) = p(5) - 2._R8*(n(2)*t(3) + t(2)*n(3)) + 4._R8*s*n(2)*n(3)
+    pm(6) = p(6) - 4._R8*n(3)*t(3) + 4._R8*s*n(3)*n(3)
+
+  end function mirror_tensor_AG
+
+
+  function flux_make_AG(prim,normal,mat) result(flux)
+    implicit none
+    real(kind=R8), intent(in) :: prim(:), normal(3)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: flux(size(prim))
 
     real(kind=R8) :: norm2V
@@ -177,16 +225,23 @@ contains
     flux(9)  = flux(1)*prim(3)*prim(4) + un*prim(9) + prim(3)*p3n + prim(4)*p2n
     flux(10) = flux(1)*prim(4)*prim(4) + un*prim(10) + prim(4)*p3n + prim(4)*p3n
 
-    flux(11) = flux(1)*(0.5_R8*norm2V + 0.5_R8*(prim(5)+prim(8)+prim(10))/(prim(1)+eps) + get_cs_al(prim(11))*prim(11))
+    if (mat%cs_varies) then
+      flux(11) = flux(1)*(0.5_R8*norm2V + 0.5_R8*(prim(5)+prim(8)+prim(10))/(prim(1)+eps) + mat_e(mat, prim(11))) &
+               + prim(2)*p1n + prim(3)*p2n + prim(4)*p3n
+    else
+      flux(11) = flux(1)*(0.5_R8*norm2V + 0.5_R8*(prim(5)+prim(8)+prim(10))/(prim(1)+eps) + mat_cp_const(mat)*prim(11)) &
+               + prim(2)*p1n + prim(3)*p2n + prim(4)*p3n
+    endif
 
     flux(12) = prim(12)*un
 
   end function flux_make_AG
 
 
-  function source_make_AG(prim,force) result(source)
+  function source_make_AG(prim,force,mat) result(source)
     implicit none
     real(kind=R8), intent(in) :: prim(:), force(6)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: source(size(prim))
 
     real(kind=R8), parameter  :: eps = 1e-25
@@ -221,7 +276,13 @@ contains
                    prim(1)*(force(4)*prim(4)+force(4)*prim(4))/(force(6)+eps) - &
                    2._R8*prim(10)/(force(6)+eps)
 
-    source(11) = - force(1)*get_cs_al(prim(11))*prim(11) - force(1)*obj_condensed%lv_al + force(5) + 0.5_R8*source(5) + 0.5_R8*source(8) + 0.5_R8*source(10)
+    if (mat%cs_varies) then
+      source(11) = - force(1)*mat_e(mat, prim(11)) - force(1)*mat%lv_al + force(5) &
+                   + 0.5_R8*source(5) + 0.5_R8*source(8) + 0.5_R8*source(10)
+    else
+      source(11) = - force(1)*mat_cp_const(mat)*prim(11) - force(1)*mat%lv_al + force(5) &
+                   + 0.5_R8*source(5) + 0.5_R8*source(8) + 0.5_R8*source(10)
+    endif
 
     source(12) = 0._R8
 

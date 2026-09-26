@@ -9,19 +9,22 @@ They live in `test/verification/`. Each one writes its own mesh, initial conditi
 boundary conditions and `input.ini` into a scratch directory, runs the solver and
 compares: there is no case data in the repository and no reference to regenerate.
 
-All of them use the MK closure. A to F hold the cloud uniform in space, so the exact
+All of them use the MK closure. A to F and K hold the cloud uniform in space, so the exact
 answer is the same in every cell and the mesh only has to be large enough to exercise
 the flux loops. G to I transport a localized cloud through a prescribed frozen carrier
 field, so the answer varies from cell to cell and the mesh resolution is part of what
-is measured.
+is measured. L runs two or three families side by side in one case, each on its own material.
 
 | | Case | What it pins down | Reference |
 |---|---|---|---|
 | **A** | [Stokes drag relaxation](#a-relaxation-under-stokes-drag) | The momentum source, and the order of the time scheme | Closed form |
+| **J** | [The step at the relaxation time](#j-the-step-at-the-relaxation-time) | `tau-factor`: the step bounded by $\tau_p$ in both stepping modes, and cells below the empty-cell density left out | Closed form |
 | **B** | [Thermal relaxation](#b-thermal-relaxation) | The energy source at $Nu = 2$ | Closed form |
 | **D** | [Every drag correlation](#d-every-drag-correlation) | All twelve drag laws, to $Ma = 2.6$ | Independent RK4 |
-| **E** | [Every Nusselt correlation](#e-every-nusselt-correlation) | All seven heat laws, velocity and temperature relaxing together | Independent RK4 |
-| **F** | [Evaporation](#f-evaporation) | All five evaporation models, the latent sink, two exact identities | Closed form and RK4 |
+| **E** | [Every Nusselt correlation](#e-every-nusselt-correlation) | All seven heat laws, velocity and temperature relaxing together | Independent RK4 and closed form |
+| **F** | [Evaporation](#f-evaporation) | All five evaporation models, the latent sink, two exact identities, the boiling clamp, the table's `Psat` | Closed form and RK4 |
+| **K** | [The property table](#k-the-property-table) | Linear interpolation between the table's rows, a table that starts above 1 K, saturation past its ends, the energy of a varying specific heat | Closed form and RK4 |
+| **L** | [Several materials](#l-several-materials) | Each family on its own material: its table zone, its model tokens, its inlet records, its inlet density | Closed form and case F's |
 | **C** | [Sinusoidal advection](#c-sinusoidal-advection-on-a-periodic-mesh) | Transport alone, and the order of the space scheme | Closed form |
 | **G** | [Cloud in a uniform gas](#g-a-cloud-released-into-a-uniform-gas) | Transport and drag together | Closed form |
 | **H** | [Cloud in a straining gas](#h-a-cloud-in-a-straining-gas) | A non-trivial particle velocity field, and the small-Stokes limit | Closed form |
@@ -84,6 +87,61 @@ not `cfl * dt-max`:
 |---|---|---|---|---|
 | RK2 | $3.8\times10^{-7}$ | $9.5\times10^{-8}$ | $2.4\times10^{-8}$ | 2.00 |
 | RK3 | $2.5\times10^{-10}$ | $3.1\times10^{-11}$ | $3.9\times10^{-12}$ | 3.00 |
+
+### J. The step at the relaxation time
+
+Case A's cloud with particles small enough that the relaxation time is below `dt-max`:
+$d_p = 2$ µm, $\rho_{al} = 2000$ kg/m³, $\mu_g = 2\times10^{-5}$ Pa s, so
+$\tau_p = \rho_{al}d_p^2/(18\mu_g) = 2.222\times10^{-5}$ s $= \mathrm{dt\text{-}max}/4.5$. A cloud at
+rest has no signal speed under MK, so the CFL condition does not bound its step. With `dt-max`
+the only bound, SSP-RK3 integrates the relaxation at $z = -4.5$, outside its stability interval:
+$R(z) = 1 + z + z^2/2 + z^3/6 = -8.56$, and the slip grows by that factor every step until the
+convective limit takes over. At $t = 20\tau_p$ the cloud is still $1.8\times10^3$ m/s off the
+gas velocity.
+
+`tau-factor` (default 1) bounds the step of every populated cell by $\mathrm{tau\text{-}factor}
+\times\tau_p$. Then $R(-1) = 1/3$ and the slip falls by 3 per step. The first step is the
+exception: $\tau_p$ is not known before the first source evaluation, so that step is `dt-max`
+alone and overshoots to $u_p = 95.6$ m/s. Every step after it is exactly $\tau_p$, and the end
+time shows it: $(t - \mathrm{dt\text{-}max})/\tau_p$ is an integer.
+
+| Leg | Setting | Check | Tolerance | Measured |
+|---|---|---|---|---|
+| J1 | time accurate, to $20\tau_p$ | $\max\lvert u_p/u_g - 1\rvert$ | $10^{-3}$ | $1.99\times10^{-7}$ ($= 85.6\cdot3^{-16}/u_g$) |
+| | | $(t - \mathrm{dt\text{-}max})/\tau_p$ an integer | $10^{-6}$ | 16.000000 |
+| J1a | `tau-factor` 0.2, `dt-max` $5\times10^{-6}$, to $2\tau_p$ | $\lvert u_p - u_g(1 - e^{-t/\tau_p})\rvert/u_g$ at the time reached | $5\times10^{-3}$ | $1.1\times10^{-4}$ |
+| | | $(t - 5\times10^{-6})/(0.2\tau_p)$ an integer | $10^{-6}$ | 9.000000 |
+| J2 | two clouds, $d_p$ = 2 and 20 µm, time accurate | small: $\max\lvert u_p/u_g - 1\rvert$ | $10^{-3}$ | $1.99\times10^{-7}$ |
+| | | large: $\lvert u_p - u_g(1 - e^{-t/\tau_L})\rvert/u_g$ | $10^{-4}$ | $1.5\times10^{-7}$ |
+| | | $(t - \mathrm{dt\text{-}max})/\tau_S$ an integer | $10^{-6}$ | 16.000000 |
+| J2l | the same, local steps, 20 iterations | small: $\max\lvert u_p/u_g - 1\rvert$ | $10^{-6}$ | $7.4\times10^{-9}$ ($= 85.6\cdot3^{-19}/u_g$) |
+| | | large: on its exponential at $20\,\mathrm{dt\text{-}max}$ | $10^{-4}$ | $1.4\times10^{-6}$ |
+| J3 | dilute half, $\rho_p = 10^{-7}$, $\tau_p = 0.611\tau_S$ | $(t - \mathrm{dt\text{-}max})/\tau_S$ an integer | $10^{-6}$ | 16.000000 |
+| | | dilute $\rho_p$ and $n$ unchanged | bit for bit | unchanged |
+
+**J1** is the limit itself. **J1a** shows that `tau-factor` scales the step and buys accuracy
+as well as stability: at $0.2\tau_p$ the RK3 error per step is $8\times10^{-5}$ of the slip, and
+the comparison is made at the time the run reached ($2.025\tau_p$), not at the requested end time.
+
+**J2** puts two clouds side by side, one per row of a two-row slab, so that no particle crosses
+from one to the other: split in $x$, the small particles would flow into the large ones' cells
+and change their number density, hence their $\tau_p$. In time-accurate mode the global step is
+the smallest limit in the domain, $\tau_S$, and the large particles ($\tau_L = 100\,\tau_S$)
+simply take small steps, $\Delta t/\tau_L = 0.01$, which RK3 integrates to $10^{-7}$. In local
+mode every cell keeps its own limit: the small particles take $\tau_S$-sized steps, and the
+large ones keep `dt-max`, since $\tau_L > \mathrm{dt\text{-}max}$, so after 20 iterations they
+sit on their exponential at $t = 20\,\mathrm{dt\text{-}max}$, not at $20\tau_S$. That second
+check is what distinguishes a per-cell limit from a global one.
+
+**J3** checks the population floor: a cell whose bulk density is below $10^{-6}$ counts as
+empty, and its $\tau_p$, the ratio of two state variables that mean nothing there, must not set
+the step. The dilute half has $\rho_p = 10^{-7}$ and $n = 2.5\times10^7$, a radius of 0.78 µm and a
+$\tau_p$ of $0.611\tau_S$. Were it counted, the steps would be $0.611\tau_S$ and the end time would
+read 15.883 (26 such steps), which is what a build without the floor gives. The dilute
+$\tau_p$ is kept close to $\tau_S$ on purpose: a cell whose $\tau_p$ is orders of magnitude
+below the step is unstable under the explicit source whatever the step, so it cannot be used
+to test which cells set the step. At $\Delta t/\tau_p = 1.64$ the dilute half relaxes stably and
+keeps $\rho_p$ and $n$ bit for bit.
 
 ### B. Thermal relaxation
 
@@ -166,12 +224,20 @@ change while the particles cool and the Nusselt number follows them. The referen
 integrates the coupled pair with RK4.
 
 At vanishing slip the four laws that tend to $Nu = 2$ must reproduce case B's exact
-relaxation, and do, to between $5\times10^{-7}$ (Stokes) and $6\times10^{-3}$
+relaxation, and do, to between $7\times10^{-7}$ (Stokes) and $6\times10^{-3}$
 (Ranz-Marshall, whose $Re^{1/2}$ correction is the largest of the four at this slip).
 JAXA1 tends to zero rather than 2, and the two laws with a Mach correction keep a
-finite $Ma/Re$ ratio there, so they are excluded from that check and covered only by
-the finite-slip comparison. At $Re = 67$ all seven agree with the reference to
-$1.7\times10^{-6}$ of the initial temperature gap.
+finite $Ma/Re$ ratio there, so they are excluded from that check and covered by the
+finite-slip comparison, `JAXA4` also by the constant-slip leg below. At $Re = 67$ all seven agree with the reference to
+$2.6\times10^{-6}$ of the initial temperature gap.
+
+A last leg holds the slip constant: under `NoDrag` the particles stay at rest in the
+moving gas, so $Re = 67$, $Ma = 0.029$ and $Nu$ are frozen and the cooling is an exact
+exponential. `JAXA4` meets it to $8\times10^{-6}$ of the gap at $t = 0.01$ s, which is the
+RK2 error of the default step; the tolerance, $3\times10^{-4}$, is about 40 times that.
+This is the leg with margin on the law's constant: a 1.4 % change of
+it moves the result by $3.5\times10^{-3}$ of the gap, against $1.4\times10^{-3}$ in the
+finite-slip leg.
 
 ## Phase change
 
@@ -250,12 +316,116 @@ material and any droplet temperature. ICE holds $T_p$ to $8\times10^{-12}$ K ove
 thousand steps with a physical specific heat, and reproduces the $d^2$ slope to
 $5\times10^{-11}$ — where the same run without the blowing factor heats by 19.5 K.
 
+**Above the boiling point.** At 380 K the saturation pressure is 1.27 atm, above the gas
+pressure, so the surface sits on the boiling clamp $X_s = 1 - 10^{-12}$ and
+$B_M = 6.2\times10^{11}$. The temperature is frozen again and the run lasts until `CEM`
+has lost 10 % of its mass ($1.2\times10^{-4}$ s). Every model reproduces its $d^2$ slope
+to $4\times10^{-10}$, and `CEM` with the `LK` interface, which takes $X_s$ off the clamp
+to 0.98, matches the integrated ODE to $10^{-13}$. The tolerance on the slope is
+$10^{-5}$: one ulp of $Y_s$ at the clamp moves the rate by $2.5\times10^{-6}$.
+
+**The saturation pressure from the property table.** The last part writes the droplet
+material as a [property table](../user/initial-conditions.md#property-table) on 250 to
+450 K with a `Psat` column, which replaces Clausius-Clapeyron. A specific heat of
+$10^{16}$ holds $T_p$ on the 300 K row to $6\times10^{-11}$ K, so the interpolation
+between rows never enters, and the reference is the integrated `CEM` ODE with $p_{sat}$
+read from the table as written. A column 1.2 times the curve raises the rate by a factor
+1.207, and ICE matches its reference to $5\times10^{-13}$ of the initial bulk density;
+a column equal to the curve is the control, and gives what the curve gives, to
+$3\times10^{-13}$. The tolerance is $10^{-8}$, that of the other integrated references;
+reading the curve instead of the 1.2 column misses it by $6.6\times10^{-3}$.
+
 !!! note "What this check can and cannot catch"
     As with D and E, a correlation written wrongly in the same way in both ICE and the
     reference would pass. What is not vulnerable to that is the $\dot m \propto d$
     scaling, the `ASM`–`CEM` identity at $Re = 0$ and the isothermal identity above:
     those follow from the published forms and would break under any transcription
     error.
+
+## Material properties
+
+### K. The property table
+
+**At a fixed temperature.** Case A's cloud with its density taken from `INPUT/part-properties.dat` instead of the
+INI. With `heat-transfer = NoHeat` and no radiation nothing heats the particles, and the
+drag work cancels the kinetic energy it produces, so $T_p$ keeps its initial value and
+the table is read at one temperature for the whole run. The velocity is case A's
+exponential with $\tau_p = \rho_{al}(T_p)\,d_p^2/(18\mu_g)$, and $\rho_{al}(T_p)$ is what
+the case measures: ICE recovers the radius from $\rho_p$ and $n$ through the table's
+density, so at fixed $(\rho_p, n)$ the relaxation time goes as $\rho_{al}^{1/3}$.
+
+| Leg | Table | $T_p$ | $\rho_{al}(T_p)$ | Relative error on $u_p(\tau_p)$ |
+|---|---|---|---|---|
+| K1 | 1 to 5000 K; $\rho$ = 2000 up to 300 K, 1000 from 301 K | 300.4 K | 1600 (linear) | $9.8\times10^{-8}$ |
+| K1c | the same rows, $\rho$ = 1600 everywhere | 300.4 K | 1600 | $9.7\times10^{-8}$ |
+| K6 | 280 to 400 K, constant | 300.4 K | 1500 | $9.7\times10^{-8}$ |
+| K7 | 280 to 400 K, $\rho = 1500 + 5\,(T - 280)$ | 250 K | 1500 (the end value) | $9.7\times10^{-8}$ |
+
+The tolerance is $10^{-4}$. RK2 at $\Delta t = \tau_p/1000$ leaves
+$e^{-1}(\Delta t/\tau_p)^2/6 = 6.1\times10^{-8}\,u_g$ on $u_p(\tau_p)$, that is
+$9.7\times10^{-8}$ of $u_p(\tau_p)$ itself, which is what the four legs measure. The
+nearest row would give K1 $\rho_{al} = 2000$ and put $u_p(\tau_p)$ 4.3 % low; a linear
+extrapolation below $T_{min}$ would put K7 2.0 % high, and the row at $T_{max}$ 6.5 % low.
+K1c is K1's control, the same run with nothing to interpolate. $T_p$ must stay within
+$10^{-4}$ K of its initial value, well under the 0.1 K that would change the nearest row;
+it moves by round-off.
+
+**A specific heat that varies.** The energy of a material whose `Cp` column varies is
+$\rho_p e(T_p)$ with $e = h - h_{off}$
+([Energy and temperature](../theory/governing-equations.md#energy-and-temperature)). The
+tables below have $c_s = 1000 + 2T$ on the rows 1 to 5000 K, $h$ its exact integral, whose
+values are integers so that every subtraction is exact, and a density of 1000 kg/m³.
+
+| Leg | Setup | Check | Measured |
+|---|---|---|---|
+| K2 | No gas; a uniform cloud at 10 m/s and 500.37 K, 200 RK2 steps | $\lvert T_p - T_{p0}\rvert \le 10^{-9}$ K | 0 |
+| K2c | K2 with $c_s$ = 2000 on every row | the same | 0 |
+| K3 | The cloud moving with a gas at 800 K, $T_{p0}$ = 300 K, $Nu = 2$, no drag, to $t = \tau_T$ | $T_p$ within $10^{-6}$ of the 500 K gap of the oracle | $4.7\times10^{-8}$ |
+| K3c | K3 with $c_s$ = 2000 on every row | the same | $6.1\times10^{-8}$ |
+| K4 | K3's table as `Enthalpy_abs`, $h - 1.5\times10^7$ J/kg | `part-field.tec` bit for bit K3's | identical |
+| K5 | K3's table with its columns in the order `Temperature`, `Enthalpy`, `Density`, `Cp` | the same | identical |
+
+The oracle of K3 integrates $\rho_p\,de/dt = 4\pi k_g R_p\,n\,(T_g - T(e))$ with RK4 in $e$,
+$T(e)$ the inverse of the table's line, and $\tau_T = \rho_{al} c_s d_p^2/(12 k_g)$ with
+$c_s$ = 2000. An energy $\rho_p c_s(T_p)\,T_p$ is what these legs detect: its inversion is
+not a round trip, so K2's cloud drifts 201 K towards 299 K in 200 steps, and K3's never
+heats (error 0.64 of the gap). K2c and K3c are the controls with nothing to vary.
+
+K2's tolerance: a round trip $T \to e \to T$ returns $T$ to a few ulp, $10^{-13}$ K at
+500 K, and the 400 of the run stay below $10^{-10}$ K; the output holds 15 digits, so the
+check resolves $10^{-12}$ K. K3's: RK2 at $\Delta t = \tau_T/1000$ leaves
+$e^{-1}(\Delta t/\tau_T)^2/6 = 6\times10^{-8}$ of the gap at $t = \tau_T$, which the
+constant-$c_s$ control measures too; the kinks of $e$ at the rows add at most
+$10^{-9}$ each over the 300 rows crossed. $10^{-6}$ sits a decade above both.
+
+### L. Several materials
+
+The phase file names the materials, one line each, `<name> <groups> [key=value ...]`, and
+the families map onto them in that order; the property table gives one zone per material.
+Every leg runs two or three MK families side by side in one case, so a family that reads
+another family's material, model or inlet record is seen directly in its own field.
+
+| Leg | Phase file | What it checks | Measured |
+|---|---|---|---|
+| L1 | `A 1` / `B 1`, zones $c_s$ = 1000, $\rho$ = 2000 and $c_s$ = 2000, $\rho$ = 1000 | Families at rest heat in a gas at 400 K ($Nu = 2$): each follows $T_g + (T_0 - T_g)\,e^{-t/\tau}$ with its own $\tau = \rho_p c_s/(4\pi k_g R_p n)$, $R_p$ from its own density | $6.1\times10^{-8}$, $2.2\times10^{-8}$ of the gap |
+| L1b | `A 2` / `B 1`, three families | Families 1 and 2 heat as A, family 3 as B | the same |
+| L1c | `A 2`, one zone | Control: two families on one material | the same |
+| L2 | `A 1 evaporation=CEM` / `B 1`, no `[ICE-Physics] evaporation` | A evaporates as case F's CEM (the $d^2$ slope), B keeps $\rho_p$ and $n$ bit for bit | slope $1.6\times10^{-8}$ |
+| L2b | L2 with `evaporation = none` in the INI | The token overrides the INI default: `part-field.tec` bit for bit L2's | identical |
+| L2d | `A 1` / `B 1 evaporation=none`, `evaporation = CEM` in the INI | The INI default applies to A, the token switches B off | slope $1.6\times10^{-8}$ |
+| L2c, L2e | `A 1 evaporation=CEM`; `A 1` with `evaporation = CEM` | Controls: one material, the token alone and the INI alone | slope $1.6\times10^{-8}$ |
+| L3 | `A 2`, face-1 inlets in ATLAS's order (the records of family 1, radius 10 µm, then family 2, 20 µm) | $n_1/n_2 = (r_2/r_1)^3 = 8$ in the cells the inlet fills | $6.8\times10^{-15}$ |
+| L3b | L3 on two mesh blocks (mesh block, then family, then faces), radii 10/20 and 20/10 µm | 8 in block 1, 1/8 in block 2 | $6.9\times10^{-15}$, $5.1\times10^{-15}$ |
+| L3c, L3d | Controls: equal radii; one record per face on two blocks | ratio 1 | exact |
+| L4 | `A 1` / `B 1`, zones $\rho$ = 2000 and 1000, one record per face | Each family's inlet $n$ uses its own table density: $n_1/n_2 = 1/2$ | $4.6\times10^{-15}$ |
+| L4c | `A 2`, one zone | Control: ratio 1 | exact |
+
+L1's tolerance is $10^{-6}$ of the initial gap: RK2 at $\Delta t = \tau_A/1000$ leaves at most
+$(t/\tau)(\Delta t/\tau)^2/6 = 6\times10^{-8}$ of it, and a family that heats with the other
+material misses by 0.165. L2 takes case F's $10^{-6}$ on the slope. L3 and L4 compare ratios
+that are exact in binary ($r_2 = 2r_1$, $\rho_A = 2\rho_B$) through a flux and a limiter that
+are homogeneous of degree one in $n$, so $10^{-12}$ bounds their round-off; a cell counts as
+filled at half the inlet density.
 
 ## Clouds carried by the gas
 
@@ -496,7 +666,7 @@ converges faster, at 1.84 – 2.28.
 ctest --test-dir build -L verification --output-on-failure
 ```
 
-A, B and C also carry the `fast` label, so the pre-push hook runs them. The rest are in
+A, B, C and K also carry the `fast` label, so the pre-push hook runs them. The rest are in
 the default tier only: D, E and F because each correlation is a separate run of the
 solver, and G, H and I because each refinement level is. I is the longest, being two
 dimensional. `ICE_KEEP_WORK=1` keeps the generated case directories instead of deleting

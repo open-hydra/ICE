@@ -78,7 +78,7 @@ the master is newer, so a case always runs against the current build.
  - Space   --> MUSCL with MC flux limiter
  - Time    --> Explicit Runge-Kutta 2
  - Drag    --> Stokes
- - Heat    --> Ranz-Marshall
+ - Heat    --> Ranz-Marshall (Nu = 2 + 0.6 Re^0.5 Pr^1/3)
  - Evap    --> CEM
 
  Boundary Conditions:
@@ -169,4 +169,5 @@ Give either `position` (physical coordinates, and ICE finds the nearest cell) or
 
 If `ini-diter` is set, ICE re-reads `input.ini` every that many iterations, so
 thresholds and output frequencies can be changed while the run is in progress. Values
-that are consumed once at setup — the closures, the mesh, the scheme — are not affected.
+that are consumed once at setup — the closures, the mesh, the scheme, the materials and
+their properties — are not affected.

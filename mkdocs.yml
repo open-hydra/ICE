@@ -110,6 +110,8 @@ nav:
     - Chimera Overset: vv/chimera.md
     - Multi-block and MPI: vv/multiblock-mpi.md
     - Berthon Riemann Problems: vv/berthon.md
+    - Axisymmetric Wedge: vv/axisymmetry.md
+    - Gaussian Closures: vv/gaussian-closures.md
     - Code Verification: vv/verification.md
 
   - Developer Guide:

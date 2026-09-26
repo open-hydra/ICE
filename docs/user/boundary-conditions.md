@@ -28,8 +28,11 @@ $$
 2\,(n_y n_z + n_x n_z + n_x n_y)
 $$
 
-records per block, covering every boundary cell of every face once, in any order. A
-record applies to all particle families.
+records per block, covering every boundary cell of every face once, in any order, and a
+record applies to all particle families; or one such block of records per family inside
+each mesh block, in ATLAS's order (mesh block, family, faces), each family repeating the
+first family's faces, so that each family has its own inlets. Any other record count stops
+the run.
 
 A header whose sixth column is neither `0` nor a three-digit code stops the run with
 the record number — which is what a file in an older, wider format looks like when it
@@ -39,11 +42,11 @@ is read with this schema.
 
 | Code | Type | Payload | ICE treatment |
 |------|------|---------|---------------|
-| `0` | Null | none | No ghost fill and no boundary flux. This is the code for the faces of a direction the mesh does not resolve — faces 5 and 6 of a 2-D case |
+| `0` | Null | none | The ghost copies the interior cell; no boundary flux. This is the code for the faces of a direction the mesh does not resolve — faces 5 and 6 of a planar 2-D case |
 | `101` | Connection | `b2 i2 j2 k2 f2 c1 c2 c3 c4` | Both ghost layers copied from the interior cells of the neighbouring block |
 | `201` | Periodic | as `101` | As `101` |
 | `102` | Chimera (overset) | donor counts per layer, then `b i j k weight` per donor | Each ghost layer set to the weighted blend of its own donors, in conservative variables |
-| `200` | Axisymmetry | none | Accepted, then treated as `0`: no ghost fill, no boundary flux |
+| `200` | Axisymmetry | none | The side faces of an axisymmetric wedge: see below |
 | `300` | Symmetry | none | See below |
 | `400` | Extrapolation | none | Ghost copies the interior cell: zero gradient |
 | `401` | Inlet, ratios to the gas | `krho kV alpha beta kT rp` | See below |
@@ -53,18 +56,32 @@ is read with this schema.
 Any other code stops ICE at setup.
 
 The second ghost layer is copied from the neighbour for `101`/`201`, taken from its own
-donors for `102`, and otherwise built by a second-order extrapolation
-$P_{g2} = 3P_{g1} - 3P_m + P_{m+1}$.
+donors for `102`, the mirror image of the second interior cell for `200`, and otherwise
+built by a second-order extrapolation $P_{g2} = 3P_{g1} - 3P_m + P_{m+1}$; `0` leaves it
+unfilled, since no stencil reaches it.
 
 ## Symmetry (`300`)
 
-The ghost copies the interior cell and its velocity is mirrored about the face normal —
+The ghost copies the interior cell and its velocity is mirrored about the face normal (for
+AG the dispersion tensor too, $\mathsf{P}' = H\mathsf{P}H$ with $H = I - 2\hat{\mathbf n}\hat{\mathbf n}^T$) —
 except when the particles are moving *out* through the face, in which case the copy is
 left unmirrored and the face behaves as an outflow. A cloud reaching a symmetry plane
 is therefore reflected, while one leaving through it is allowed to go.
 
 Face 3 is the exception: it always mirrors, because it is conventionally the axis of an
 axisymmetric case, where letting the cloud leave would be wrong.
+
+## Axisymmetry (`200`)
+
+A 2-D axisymmetric mesh is one layer of cells rotated about the $x$ axis, and its two side
+faces (5 and 6) carry `200`. The ghost is the mirror image of the interior cell, with the
+velocity (and for AG the dispersion tensor) reflected about the face; for a state without swirl this is exactly the
+neighbouring wedge rotated into place. The second ghost mirrors the second interior cell.
+For IG and AG the boundary flux is the Riemann flux between the cell and its mirror image:
+no mass crosses, and the pressure on the two side faces supplies the hoop term of the
+radial momentum. A pressureless MK cloud has no flux through these faces.
+
+The axis face (face 3) of such a mesh mirrors whether it carries `200` or `300`.
 
 ## Inlets (`401`–`403`)
 
@@ -80,8 +97,9 @@ differ in whether those are absolute or ratios to the local gas.
 `alpha` and `beta` are the injection angles about the $x$ axis; written as the literal
 `normal`, they are replaced by the angles of the face normal, which is the usual choice.
 The number density follows from the prescribed radius,
-$n = \rho_p / \big(\rho_{al}\tfrac43\pi r_p^3\big)$ — using the constant `density` from
-`[ICE-Physics]`, not the property table. For the Gaussian closures the dispersion in
+$n = \rho_p / \big(\rho_{al}(T_p)\tfrac43\pi r_p^3\big)$, with the condensed density at the
+inlet temperature: the property table's when the case has one, the constant `density` of
+`[ICE-Physics]` otherwise. For the Gaussian closures the dispersion in
 the ghost cell is set to $10^{-6}$, so an inlet injects an effectively monokinetic
 stream.
 

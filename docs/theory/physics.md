@@ -50,6 +50,7 @@ Stokes value $\rho_{al}d_p^2/(18\mu_g)$, which is the identity
 | `Henderson` | Separate subsonic and supersonic fits, linearly bridged over $1 < Ma < 1.75$ | The bridge is continuous at both ends |
 | `Crowe` | Wen-Yu blended towards $C_d = 2$ by $Ma$, with a $\tanh(\log_{10} Re)$ function | |
 | `Hermsen` | Same structure as Crowe with a rational $Re$ function | |
+| `NoDrag` | $0$ | No momentum exchange; the relaxation time is infinite |
 
 Each correlation is a pure function of $(Re, Ma, \gamma, T_r)$; the choice travels as an
 integer, so nothing mutable is shared between threads. Every one of them is checked
@@ -70,10 +71,15 @@ per unit volume, which is the familiar $h A \Delta T$ with $h = Nu\,k_g/d_p$ sum
 | `Stokes` | $2$ | 2 |
 | `JAXA1` | $2.5\,Re^{0.15} + 0.04\,Re$ | 0 |
 | `JAXA2` | $2 + 0.37\,Re^{0.6}Pr^{1/3}$ | 2 |
-| `JAXA3` | $\left[\left(2+0.645\,Re^{1/2}Pr^{1/3}\right)^{-1} + \dfrac{3.42\,Ma}{Re\,Pr}\right]^{-1}$ | rarefaction-dependent |
-| `Chang` | $2 + 0.459\,Re^{0.55}Pr^{1/3}$ | 2 |
+| `JAXA3` | $2 + 0.459\,Re^{0.55}Pr^{1/3}$ (Chang) | 2 |
+| `JAXA4` | $\left[\left(2+0.654\,Re^{1/2}Pr^{1/3}\right)^{-1} + \dfrac{3.42\,Ma}{Re\,Pr}\right]^{-1}$ | rarefaction-dependent |
 | `Ranz-Marshall` | $2 + 0.6\,Re^{1/2}Pr^{1/3}$ | 2 |
 | `Kavanau-Drake` | $\dfrac{N}{1 + 3.42\,Ma\,N/(Re\,Pr)}$, $N = 2+0.459\,Re^{0.55}Pr^{0.33}$ | rarefaction-dependent |
+| `NoHeat` | $0$ | 0 (no convective exchange) |
+
+The `JAXA` names and their constants are IGLOO's, so a case that runs both solvers can name one law for both. In a
+coupled run the word `Chang` is refused with a pointer to `JAXA3`; the constant 0.654 of `JAXA4` is Shimada's (2006,
+eq. 50, after NASA SP-8039).
 
 ## Radiation
 
@@ -88,10 +94,14 @@ with $\sigma = 5.67\times10^{-8}$ W m⁻² K⁻⁴. The area factor is $2\pi R_p
 Particles evaporation provides a mass source term. Every model returns a rate $\dot m$ **per particle**, negative while the droplet loses mass. The source routine multiplies it by the number density, so the bulk density loses $n\dot m$ per unit volume, the energy equation loses both the
 enthalpy that mass carries away and the latent heat $L_v$ needed to vaporise it, and the momentum equation loses the momentum it carries. The number density has no source term at all: droplets shrink, they never disappear, and the radius follows from $\rho_p$ and $n$ as it always does.
 
+The model, the interface and the accommodation coefficient belong to the material: each takes its phase-file tokens, or the `[ICE-Physics]` default without them (see [Materials](../user/input.md#materials)), together with its own vapour properties.
+
 ### The surface state
 
-All five models share one surface condition. The saturation pressure is
-Clausius-Clapeyron, anchored at the boiling point rather than at a tabulated curve:
+All five models share one surface condition. The saturation pressure is the `Psat` column
+of the [property table](../user/initial-conditions.md#property-table) when it has a non-zero one, linear
+between the nodes and constant beyond its ends, and otherwise Clausius-Clapeyron, anchored at
+the boiling point:
 
 $$
 p_{sat}(T_p) = p_{atm}\,\exp\left[-\frac{L_v M_v}{\mathcal{R}}
@@ -99,9 +109,10 @@ p_{sat}(T_p) = p_{atm}\,\exp\left[-\frac{L_v M_v}{\mathcal{R}}
 $$
 
 with $M_v$ as the vapour molar mass, $T_{boil}$ the boiling-temperature, $L_v$ the latent-heat. The surface mole fraction is
-$X_s = p_{sat}/p$, clamped to 1 once $p_{sat}$ reaches the local gas pressure — the
-boiling regime. Converting to a mass fraction $Y_s$ against the gas molar mass gives
-the Spalding mass-transfer number
+$X_s = p_{sat}/p$, clamped to $1 - 10^{-12}$ once $p_{sat}$ reaches the local gas pressure — the
+boiling regime. The cap keeps $B_M$ finite, about $10^{12}\,M_v/M_g$, so every model returns a finite
+rate while the droplet boils (IGLOO clamps at the same value). Converting to a mass fraction $Y_s$ against the gas
+molar mass gives the Spalding mass-transfer number
 
 $$
 B_M = \frac{Y_s - Y_\infty}{1 - Y_s},
