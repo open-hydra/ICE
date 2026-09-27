@@ -35,7 +35,7 @@ contains
                               grid%blk(b)%gas_phase%k(i,j,k),            &
                               grid%blk(b)%gas_phase%mu(i,j,k),           &
                               grid%blk(b)%cond_phase(p)%source(:,i,j,k), &
-                              obj_condensed(mat_of(p))                   )
+                              obj_condensed(mat_of(p)), nbase(p)         )
   
       enddo ; enddo ; enddo
       !$OMP END DO
@@ -46,7 +46,7 @@ contains
   end subroutine compute_source
           
   
-  subroutine compute_source_ (cond_prim, cond_tau, gas_prim, gas_R, gas_gam, gas_k, gas_mu, source, mat)
+  subroutine compute_source_ (cond_prim, cond_tau, gas_prim, gas_R, gas_gam, gas_k, gas_mu, source, mat, nb)
     use ICE_Parameters_m, only: pi, sigma_SB, I4
     use ICE_Config_Types_m, only: condensed_phase_t, obj_time_scheme
     use ICE_Lib_Model
@@ -60,6 +60,7 @@ contains
     real(kind=R8),               intent(in)    :: gas_R, gas_gam, gas_k, gas_mu
     real(kind=R8), dimension(:), intent(inout) :: source
     type(condensed_phase_t),     intent(in)    :: mat
+    integer(kind=I4),            intent(in)    :: nb
 
     integer(kind=I4) :: n, ng
     real(kind=R8)    :: Rp, Re, Ma, Pr, Tr
@@ -68,8 +69,8 @@ contains
     logical          :: override_Qdot
     real(kind=R8)    :: force(6)
 
-    !> Condensed variable number
-    n = size(cond_prim)
+    !> Slots of the closure: T is n-1, the number density n
+    n = nb
     ng = size(gas_prim)
 
     !> Condensed-material density at the particle temperature

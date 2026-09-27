@@ -31,7 +31,7 @@ contains
     call exchange_ghost_prim(grid)
 
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ncond, mat_of, obj_time_scheme, obj_condensed), &
+    !$OMP SHARED(grid, ncond, nbase, mat_of, obj_time_scheme, obj_condensed), &
     !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, area, normal, velocity, veln)
     !$OMP DO SCHEDULE (dynamic)
     do i = 1, size(grid%bc)
@@ -81,7 +81,7 @@ contains
           veln     = dot_product(velocity,normal)
           if (grid%bc(i)%type == 200 .or. veln*real(1-2*mod(fm,2))<=0._R8 .or. fm==3) then
             velocity = velocity - 2._R8*veln*normal
-            if (ncond(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig,jg,kg) = &
+            if (nbase(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig,jg,kg) = &
               mirror_tensor_AG(grid%blk(bm)%cond_phase(pm)%prim(5:10,im,jm,km), normal)
           endif
 
@@ -121,7 +121,7 @@ contains
             grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),im,jm,km)
             velocity = velocity - 2._R8*veln*normal
             grid%blk(bm)%cond_phase(pm)%prim(2:4,ig,jg,kg) = velocity(1:3)
-            if (ncond(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig,jg,kg) = &
+            if (nbase(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig,jg,kg) = &
               mirror_tensor_AG(grid%blk(bm)%cond_phase(pm)%prim(5:10,im,jm,km), normal)
 
 
@@ -148,7 +148,7 @@ contains
               !> Density
               prim(1,ig,jg,kg) = grid%bc(i)%massflux/(1._R8-grid%bc(i)%massflux) * grid%blk(bm)%gas_phase%prim(1,im,jm,km) / grid%bc(i)%velocity
               !> Temperature
-              prim(ncond(pm)-1,ig,jg,kg) = grid%bc(i)%temperature * grid%blk(bm)%gas_phase%prim(5,im,jm,km)
+              prim(nbase(pm)-1,ig,jg,kg) = grid%bc(i)%temperature * grid%blk(bm)%gas_phase%prim(5,im,jm,km)
 
             !> Direct assignement of massflux, velocity, and temperature.
             elseif (grid%bc(i)%type == 402) then
@@ -160,7 +160,7 @@ contains
               veln = dot_product(prim(2:4,ig,jg,kg),normal)
               prim(1,ig,jg,kg) = grid%bc(i)%massflux / abs(veln)
               !> Temperature
-              prim(ncond(pm)-1,ig,jg,kg) = grid%bc(i)%temperature
+              prim(nbase(pm)-1,ig,jg,kg) = grid%bc(i)%temperature
 
             !> Direct assignement of massflux and temperature. Velocity is computed from the gas phase
             elseif (grid%bc(i)%type == 403) then
@@ -173,12 +173,12 @@ contains
               veln = dot_product(prim(2:4,ig,jg,kg),normal)
               prim(1,ig,jg,kg) = grid%bc(i)%massflux / abs(veln)
               !> Temperature
-              prim(ncond(pm)-1,ig,jg,kg) = grid%bc(i)%temperature
+              prim(nbase(pm)-1,ig,jg,kg) = grid%bc(i)%temperature
 
             endif
 
             !> N particles, with the condensed density at the inlet temperature
-            prim(ncond(pm),ig,jg,kg) =  prim(1,ig,jg,kg) / mat_rho(obj_condensed(mat_of(pm)), prim(ncond(pm)-1,ig,jg,kg)) / &
+            prim(nbase(pm),ig,jg,kg) =  prim(1,ig,jg,kg) / mat_rho(obj_condensed(mat_of(pm)), prim(nbase(pm)-1,ig,jg,kg)) / &
                                         (4._R8/3._R8*pi*grid%bc(i)%radius**3._I4)
 
             !> Pseudo pressure
@@ -226,7 +226,7 @@ contains
     real(kind=R8)    :: normal(1:3), velocity(1:3)
 
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ncond, mat_of, obj_condensed), &
+    !$OMP SHARED(grid, ncond, nbase, mat_of, obj_condensed), &
     !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, bs, is, js, ks, fs, &
     !$OMP         ic, jc, kc, normal, velocity)
     !$OMP DO SCHEDULE(dynamic)
@@ -270,7 +270,7 @@ contains
           grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig2,jg2,kg2) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ip,jp,kp)
           velocity = grid%blk(bm)%cond_phase(pm)%prim(2:4,ip,jp,kp)
           grid%blk(bm)%cond_phase(pm)%prim(2:4,ig2,jg2,kg2) = velocity - 2._R8*dot_product(velocity,normal)*normal
-          if (ncond(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig2,jg2,kg2) = &
+          if (nbase(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig2,jg2,kg2) = &
             mirror_tensor_AG(grid%blk(bm)%cond_phase(pm)%prim(5:10,ip,jp,kp), normal)
 
         case default !> 2nd-order extrapolation: P(g2) = 3*P(g1) - 3*P(m) + P(m+1)
@@ -300,7 +300,7 @@ contains
     integer(kind=I4),     intent(in)    :: g
     type(condensed_phase_t), intent(in) :: mat
     integer(kind=I4) :: c, c1, c2, pm, nv, bs, is, js, ks, ig, jg, kg
-    real(kind=R8)    :: consg(12)
+    real(kind=R8)    :: consg(ncond_max)
 
     pm = bc%p
     nv = ncond(pm)

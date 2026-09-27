@@ -95,7 +95,7 @@ contains
         call compute_ghost(grid)
         call fill_second_ghost(grid)
 
-        call compute_bound(grid)
+        call compute_bound(grid, p)
 
         call compute_flux(grid, p)
 
@@ -118,6 +118,7 @@ contains
                               old=grid%blk(b)%cond_phase(p)%prim_old, &
                               dt=grid%blk(b)%cond_phase(p)%dt,        &
                               n=grid%blk(b)%dim, nc=ncond(p),         &
+                              iT=nbase(p)-1,                           &
                               average=average,                         &
                               total=obj_sim_param%residuotot)
       end do

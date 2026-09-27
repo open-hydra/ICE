@@ -14,6 +14,9 @@ module ICE_Global_m
   integer                                          :: nrk
   integer,              dimension(:), allocatable  :: npop
   integer,              dimension(:), allocatable  :: ncond
+  integer,              dimension(:), allocatable  :: nbase      ! slots of the closure alone
+  logical,              dimension(:), allocatable  :: solid_of   ! family p's material solidifies
+  integer, parameter                               :: ncond_max = 14   ! widest family: AG plus two slots
 
   ! Condensed materials (set by Setup_Materials): family p uses material mat_of(p)
   integer                                          :: nmat = 1

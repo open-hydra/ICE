@@ -124,10 +124,8 @@ contains
       obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"w_p'//trim(str(.true.,p))//'"'
       select case (trim(obj_time_scheme%model(p)))
       case ('MK')
-        Onvar = Onvar + 6
       case ('IG')
         obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"P_p'//trim(str(.true.,p))//'"'
-        Onvar = Onvar + 7
       case ('AG')
         obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"P11_p'//trim(str(.true.,p))//'"'
         obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"P12_p'//trim(str(.true.,p))//'"'
@@ -135,8 +133,8 @@ contains
         obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"P22_p'//trim(str(.true.,p))//'"'
         obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"P23_p'//trim(str(.true.,p))//'"'
         obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"P33_p'//trim(str(.true.,p))//'"'
-        Onvar = Onvar + 12
       end select
+      Onvar = Onvar + ncond(p)
       obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"T_p'//trim(str(.true.,p))//'"'
       obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"n_p'//trim(str(.true.,p))//'"'
     end do
