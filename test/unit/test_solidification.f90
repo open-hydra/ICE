@@ -1,11 +1,18 @@
 !> Unit test of ICE_Lib_Solidification (IGLOO's solid-box material; a hypercooled variant with f0 > 1; a cold solid
 !> whose energy is negative): the energy against IGLOO's hSolid on its three branches, the recalescence conserving
 !> the energy, the nucleation threshold, melting at T-melt, the injection rule, the plateau rate, the ranges, the
-!> nucleated fraction's events and its majority threshold. Prints every assertion and exits non-zero if any failed.
+!> nucleated fraction's events and its majority threshold; then (U9) the closure wrappers of ICE_Lib_Solid. Prints every
+!> assertion and exits non-zero if any failed.
 program test_solidification
-  use, intrinsic :: iso_fortran_env, only: R8 => real64
+  use, intrinsic :: iso_fortran_env, only: R8 => real64, I8 => int64
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
   use ICE_Lib_Solidification
+  use ICE_Lib_Solid
+  use ICE_Lib_MK,          only: prim_2_cons_MK, cons_2_prim_MK, flux_make_MK, source_make_MK
+  use ICE_Lib_IG,          only: prim_2_cons_IG, cons_2_prim_IG, flux_make_IG, source_make_IG
+  use ICE_Lib_AG,          only: prim_2_cons_AG, cons_2_prim_AG, flux_make_AG, source_make_AG
+  use ICE_Lib_Riemann,     only: assign_riemann, riemann
+  use ICE_Config_Types_m,  only: condensed_phase_t
   implicit none
   real(R8), parameter :: cl = 1250._R8, cs = 600._R8, hf = 1.07e6_R8, Tm = 2327._R8, hf2 = 4.e5_R8
   real(R8) :: Tn, etol, Ttol
@@ -25,6 +32,7 @@ program test_solidification
   call test_range()
   call test_memory()
   call test_majority()
+  call test_wrappers()
 
   if (nfail > 0) then
     write(*,'(A,I0,A)') 'test_solidification: ', nfail, ' FAILED'
@@ -255,5 +263,126 @@ contains
                                     ' K, one double below gives ', T2, ' K'
     call check(T1 == Tm .and. f1 > 0._R8 .and. T2 == 2000._R8 .and. f2 == 0._R8, trim(msg))
   end subroutine test_majority
+
+
+  !> U9: the wrappers. Round trips on the branches (liquid, a liquid band content with chi = 0.3, a nucleated band content,
+  !> the plateau, the solid); a liquid state gives the base's slots bit for bit through the four wrappers; f and chi
+  !> move with the mass flux; Saurel's variant with f = 0 is Saurel in flux(1:6); a cold solid with a negative energy
+  !> comes back at its temperature.
+  subroutine test_wrappers()
+    type(condensed_phase_t) :: mat, cold
+    real(R8) :: states(3,5), pr(14), cn(14), bk(14), fx(14), sr(14), base(12), force(6), nrm(3), fa(8), fb(8)
+    real(R8) :: p1(8), p4(8), wT, wf, wx, wo
+    logical  :: bit
+    integer  :: k, s, nb, iT, j
+    character(len=160) :: msg
+
+    mat%cs_al = cl; mat%rho_al = 2950._R8; mat%Tmelt = Tm; mat%Tnuc = Tn; mat%hFus = hf; mat%cpSol = cs
+    mat%solidSelect = 1; mat%solid = .true.
+    states(:,1) = [2400._R8, 0._R8, 0._R8]
+    states(:,2) = [2000._R8, 0._R8, 0.3_R8]
+    states(:,3) = [Tm, 0.3_R8, 0.7_R8]
+    states(:,4) = [Tm, 0.7_R8, 1._R8]
+    states(:,5) = [1500._R8, 1._R8, 1._R8]
+    nrm   = [1._R8, 0._R8, 0._R8]
+    force = [0._R8, 0.1_R8, -0.2_R8, 0.05_R8, 3.e3_R8, 7.e-3_R8]
+
+    wT = 0._R8; wf = 0._R8; wx = 0._R8; wo = 0._R8; bit = .true.
+    do k = 1, 3
+      nb = merge(6, merge(7, 12, k == 2), k == 1)
+      iT = nb - 1
+      do s = 1, 5
+        pr = 0._R8
+        pr(1:4) = [2.95_R8, 10._R8, 2._R8, -1._R8]
+        if (k == 2) pr(5) = 1.e-6_R8
+        if (k == 3) pr(5:10) = [1.e-6_R8, 0._R8, 0._R8, 1.e-6_R8, 0._R8, 1.e-6_R8]
+        pr(iT) = states(1,s); pr(nb) = 1.e8_R8; pr(nb+1) = states(2,s); pr(nb+2) = states(3,s)
+        select case (k)
+        case (1); cn(1:nb+2) = prim_2_cons_MK_S(pr(1:nb+2), mat); bk(1:nb+2) = cons_2_prim_MK_S(cn(1:nb+2), mat)
+        case (2); cn(1:nb+2) = prim_2_cons_IG_S(pr(1:nb+2), mat); bk(1:nb+2) = cons_2_prim_IG_S(cn(1:nb+2), mat)
+        case (3); cn(1:nb+2) = prim_2_cons_AG_S(pr(1:nb+2), mat); bk(1:nb+2) = cons_2_prim_AG_S(cn(1:nb+2), mat)
+        end select
+        wT = max(wT, abs(bk(iT) - pr(iT)))
+        wf = max(wf, abs(bk(nb+1) - pr(nb+1)))
+        wx = max(wx, abs(bk(nb+2) - pr(nb+2)))
+        ! every other slot is the base closure's own round trip, bit for bit
+        select case (k)
+        case (1); base(1:nb) = cons_2_prim_MK(prim_2_cons_MK(pr(1:nb), mat), mat)
+        case (2); base(1:nb) = cons_2_prim_IG(prim_2_cons_IG(pr(1:nb), mat), mat)
+        case (3); base(1:nb) = cons_2_prim_AG(prim_2_cons_AG(pr(1:nb), mat), mat)
+        end select
+        do j = 1, nb
+          if (j /= iT .and. .not. same([bk(j)], [base(j)])) wo = wo + 1._R8
+        enddo
+        if (s <= 2) then
+          select case (k)
+          case (1)
+            base(1:nb) = prim_2_cons_MK(pr(1:nb), mat); bit = bit .and. same(cn(1:nb), base(1:nb))
+            base(1:nb) = cons_2_prim_MK(cn(1:nb), mat); bit = bit .and. same(bk(1:nb), base(1:nb))
+            fx(1:nb+2) = flux_make_MK_S(pr(1:nb+2), nrm, mat); base(1:nb) = flux_make_MK(pr(1:nb), nrm, mat)
+            bit = bit .and. same(fx(1:nb), base(1:nb))
+            sr(1:nb+2) = source_make_MK_S(pr(1:nb+2), force, mat); base(1:nb) = source_make_MK(pr(1:nb), force, mat)
+            bit = bit .and. same(sr(1:nb), base(1:nb))
+          case (2)
+            base(1:nb) = prim_2_cons_IG(pr(1:nb), mat); bit = bit .and. same(cn(1:nb), base(1:nb))
+            base(1:nb) = cons_2_prim_IG(cn(1:nb), mat); bit = bit .and. same(bk(1:nb), base(1:nb))
+            fx(1:nb+2) = flux_make_IG_S(pr(1:nb+2), nrm, mat); base(1:nb) = flux_make_IG(pr(1:nb), nrm, mat)
+            bit = bit .and. same(fx(1:nb), base(1:nb))
+            sr(1:nb+2) = source_make_IG_S(pr(1:nb+2), force, mat); base(1:nb) = source_make_IG(pr(1:nb), force, mat)
+            bit = bit .and. same(sr(1:nb), base(1:nb))
+          case (3)
+            base(1:nb) = prim_2_cons_AG(pr(1:nb), mat); bit = bit .and. same(cn(1:nb), base(1:nb))
+            base(1:nb) = cons_2_prim_AG(cn(1:nb), mat); bit = bit .and. same(bk(1:nb), base(1:nb))
+            fx(1:nb+2) = flux_make_AG_S(pr(1:nb+2), nrm, mat); base(1:nb) = flux_make_AG(pr(1:nb), nrm, mat)
+            bit = bit .and. same(fx(1:nb), base(1:nb))
+            sr(1:nb+2) = source_make_AG_S(pr(1:nb+2), force, mat); base(1:nb) = source_make_AG(pr(1:nb), force, mat)
+            bit = bit .and. same(sr(1:nb), base(1:nb))
+          end select
+          bit = bit .and. cn(nb+1) == 0._R8 .and. same([cn(nb+2)], [pr(1)*pr(nb+2)])
+        endif
+        if (s == 3) then
+          select case (k)
+          case (1); fx(1:nb+2) = flux_make_MK_S(pr(1:nb+2), nrm, mat)
+          case (2); fx(1:nb+2) = flux_make_IG_S(pr(1:nb+2), nrm, mat)
+          case (3); fx(1:nb+2) = flux_make_AG_S(pr(1:nb+2), nrm, mat)
+          end select
+          bit = bit .and. same(fx(nb+1:nb+2), [fx(1)*pr(nb+1), fx(1)*pr(nb+2)])
+        endif
+      enddo
+    enddo
+    write(msg,'(A,ES9.2,A,ES9.2,A,ES9.2,A,I0,A)') 'U9 round trips MK/IG/AG x 5 states: T ', wT, ' K, f ', wf, &
+                                                  ', chi ', wx, '; ', int(wo), ' other slots off the base round trip'
+    call check(wT <= 1.e-9_R8 .and. wf <= 1.e-12_R8 .and. wx <= 4._R8*spacing(1._R8) .and. wo == 0._R8, trim(msg))
+    call check(bit, 'U9 liquid states give the base slots bit for bit through the four wrappers; f, chi move with the mass')
+
+    ! Saurel's variant with f = 0 and chi = 0: Saurel in flux(1:6), for veln > 0, < 0 and = 0
+    bit = .true.
+    do s = 1, 3
+      p1 = [2.95_R8, 10._R8, 0._R8, 0._R8, 2400._R8, 1.e8_R8, 0._R8, 0._R8]
+      p4 = [2.00_R8,  8._R8, 1._R8, 0._R8, 2200._R8, 7.e7_R8, 0._R8, 0._R8]
+      if (s == 2) then; p1(2) = -10._R8; p4(2) = -8._R8; endif
+      if (s == 3) then; p1(2) = 5._R8;   p4(2) = -5._R8; endif
+      call assign_riemann('Saurel');          fa = riemann(p1, p4, nrm, mat)
+      call assign_riemann('Saurel', .true.);  fb = riemann(p1, p4, nrm, mat)
+      bit = bit .and. same(fa(1:6), fb(1:6)) .and. fb(7) == 0._R8 .and. fb(8) == 0._R8
+    enddo
+    call check(bit, 'U9 Saurel with f = chi = 0 is Saurel in flux(1:6) for veln > 0, < 0, = 0; no f, chi flux')
+
+    ! A cold solid with a negative energy (c_l = c_s = 1380, h_fus 1.09e6, 390 K) comes back at 390 K
+    cold = mat; cold%cs_al = 1380._R8; cold%cpSol = 1380._R8; cold%hFus = 1.09e6_R8
+    pr = 0._R8
+    pr(1:8) = [2.95_R8, 10._R8, 0._R8, 0._R8, 390._R8, 1.e8_R8, 1._R8, 1._R8]
+    cn(1:8) = prim_2_cons_MK_S(pr(1:8), cold); bk(1:8) = cons_2_prim_MK_S(cn(1:8), cold)
+    write(msg,'(A,ES11.4,A,F10.4,A)') 'U9 cold solid, rho e = ', cn(5) - 0.5_R8*pr(1)*100._R8, ' J/m^3: back at ', bk(5), &
+                                      ' K (390 K)'
+    call check(abs(bk(5) - 390._R8) <= 1.e-9_R8 .and. bk(7) == 1._R8 .and. bk(8) == 1._R8, trim(msg))
+  end subroutine test_wrappers
+
+
+  !> Bitwise equality of two arrays of reals.
+  logical function same(a, b)
+    real(R8), intent(in) :: a(:), b(:)
+    same = all(transfer(a, 0_I8, size(a)) == transfer(b, 0_I8, size(b)))
+  end function same
 
 end program test_solidification

@@ -10,6 +10,9 @@ module ICE_Lib_Ghost
   use ICE_Lib_AG, only : prim_2_cons_AG, cons_2_prim_AG, mirror_tensor_AG
   use ICE_Mod_MPI, only : is_local_block
   use ICE_Mod_GhostExchange, only : exchange_ghost_prim
+  use ICE_Lib_Solidification, only : solidPhaseAtInjection
+  use ICE_Lib_Solid, only : prim_2_cons_MK_S, cons_2_prim_MK_S, prim_2_cons_IG_S, cons_2_prim_IG_S, &
+                           prim_2_cons_AG_S, cons_2_prim_AG_S
 
   implicit none
   private
@@ -24,15 +27,15 @@ contains
     integer(kind=I4) :: bm, pm, im, jm, km, fm
     integer(kind=I4) :: ig, jg, kg
     integer(kind=I4) :: bs, is, js, ks, fs
-    integer(kind=I4) :: ic, jc, kc
+    integer(kind=I4) :: ic, jc, kc, ph
     real(kind=R8)    :: area, normal(1:3), velocity(1:3), veln
 
     !> Remote cells read below (connection sources, chimera donors) from their owners
     call exchange_ghost_prim(grid)
 
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ncond, nbase, mat_of, obj_time_scheme, obj_condensed), &
-    !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, area, normal, velocity, veln)
+    !$OMP SHARED(grid, ncond, nbase, solid_of, mat_of, obj_time_scheme, obj_condensed), &
+    !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, ph, area, normal, velocity, veln)
     !$OMP DO SCHEDULE (dynamic)
     do i = 1, size(grid%bc)
 
@@ -180,6 +183,13 @@ contains
             !> N particles, with the condensed density at the inlet temperature
             prim(nbase(pm),ig,jg,kg) =  prim(1,ig,jg,kg) / mat_rho(obj_condensed(mat_of(pm)), prim(nbase(pm)-1,ig,jg,kg)) / &
                                         (4._R8/3._R8*pi*grid%bc(i)%radius**3._I4)
+
+            !> Frozen fraction at injection by IGLOO's rule; injected solid is nucleated
+            if (solid_of(pm)) then
+              call solidPhaseAtInjection(prim(nbase(pm)-1,ig,jg,kg), obj_condensed(mat_of(pm))%Tmelt, &
+                                         obj_condensed(mat_of(pm))%Tnuc, ph, prim(nbase(pm)+1,ig,jg,kg))
+              prim(ncond(pm),ig,jg,kg) = prim(nbase(pm)+1,ig,jg,kg)
+            endif
 
             !> Pseudo pressure
             select case (trim(obj_time_scheme%model(pm)))
@@ -332,6 +342,14 @@ contains
     type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)                :: cons(size(prim))
 
+    if (solid_of(p)) then
+      select case (trim(obj_time_scheme%model(p)))
+      case ('MK'); cons = prim_2_cons_MK_S(prim, mat)
+      case ('IG'); cons = prim_2_cons_IG_S(prim, mat)
+      case ('AG'); cons = prim_2_cons_AG_S(prim, mat)
+      end select
+      return
+    endif
     select case (trim(obj_time_scheme%model(p)))
     case ('MK'); cons = prim_2_cons_MK(prim, mat)
     case ('IG'); cons = prim_2_cons_IG(prim, mat)
@@ -348,6 +366,14 @@ contains
     type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)                :: prim(size(cons))
 
+    if (solid_of(p)) then
+      select case (trim(obj_time_scheme%model(p)))
+      case ('MK'); prim = cons_2_prim_MK_S(cons, mat)
+      case ('IG'); prim = cons_2_prim_IG_S(cons, mat)
+      case ('AG'); prim = cons_2_prim_AG_S(cons, mat)
+      end select
+      return
+    endif
     select case (trim(obj_time_scheme%model(p)))
     case ('MK'); prim = cons_2_prim_MK(cons, mat)
     case ('IG'); prim = cons_2_prim_IG(cons, mat)

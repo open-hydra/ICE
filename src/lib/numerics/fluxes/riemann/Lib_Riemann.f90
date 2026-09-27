@@ -3,6 +3,7 @@ module ICE_Lib_Riemann
   use ICE_Lib_Model
   use ICE_Config_Types_m, only: condensed_phase_t
   use ICE_Lib_Properties, only: mat_cp_const, mat_e
+  use ICE_Lib_Solidification, only: solid_de
   implicit none
   private
   public :: assign_riemann
@@ -26,13 +27,17 @@ module ICE_Lib_Riemann
 
 contains
 
-subroutine assign_riemann(riemann_word)
+subroutine assign_riemann(riemann_word, solid)
   implicit none
   character(len=*), intent(in) :: riemann_word
+  logical, optional, intent(in) :: solid
 
   select case (riemann_word)
   case ('Saurel')
     riemann => riemann_Saurel
+    if (present(solid)) then
+      if (solid) riemann => riemann_Saurel_S
+    endif
   case ('Rusanov')
     riemann => riemann_Rusanov
   case ('HLLE')
@@ -102,6 +107,40 @@ end subroutine assign_riemann
     endif
 
   end function riemann_Saurel
+
+
+  !> Saurel for a solidifying MK family: the base flux, the frozen and nucleated fractions upwinded with the mass,
+  !  and the latent part of the energy flux.
+  function riemann_Saurel_S(prim_1,prim_4,normal,mat) result(flux)
+    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+    implicit none
+    real(kind=R8), intent(in) :: prim_1(:)
+    real(kind=R8), intent(in) :: prim_4(:)
+    real(kind=R8), intent(in) :: normal(3)
+    type(condensed_phase_t), intent(in) :: mat
+    real(kind=R8)             :: flux(size(prim_1))
+
+    real(kind=R8) :: veln_1, veln_4, veln, Tup, fup, chiup
+
+    flux(1:6) = riemann_Saurel(prim_1(1:6), prim_4(1:6), normal, mat)
+
+    veln_1 = prim_1(2)*normal(1)+prim_1(3)*normal(2)+prim_1(4)*normal(3)
+    veln_4 = prim_4(2)*normal(1)+prim_4(3)*normal(2)+prim_4(4)*normal(3)
+    veln = 0.5_R8*(veln_1+veln_4)
+
+    if (veln > 0._R8) then
+      Tup = prim_1(5); fup = prim_1(7); chiup = prim_1(8)
+    elseif (veln < 0._R8) then
+      Tup = prim_4(5); fup = prim_4(7); chiup = prim_4(8)
+    else
+      flux(7:8) = 0._R8
+      return
+    endif
+    flux(7) = flux(1)*fup
+    flux(8) = flux(1)*chiup
+    if (fup /= 0._R8) flux(5) = flux(5) + flux(1)*solid_de(Tup, fup, mat_cp_const(mat), mat%cpSol, mat%hFus, mat%Tmelt)
+
+  end function riemann_Saurel_S
 
 
   !> Rusanov Riemann Solver

@@ -101,6 +101,12 @@ ice_add_verification(PropertiesTable   K-properties-table  "fast;verification;so
 # table zone, model tokens and inlet records, against each material's own oracle.
 ice_add_verification(Materials         L-materials         "fast;verification;sources")
 
+# Solidification: a closed cell through supercooling, recalescence, the plateau, the solid and melting at T-melt, against
+# the closed forms; a steady stream against its first-order recursion, the closed form and a Rusanov model, a heated
+# solid melting, and a gas change that must move the nucleation front back (no lock).
+ice_add_verification(SolidCooling      N-solid-cooling     "fast;verification;sources;phase-change")
+ice_add_verification(SolidAdvection    O-solid-advection   "fast;verification;sources;transport;phase-change")
+
 # Eulerian transport against free advection, with a grid-refinement study
 ice_add_verification(SineAdvection     C-advection-sine    "fast;verification;transport")
 

@@ -28,7 +28,7 @@ module ICE_Setup_Materials
 contains
 
   subroutine Setup_Materials()
-    use ICE_Global_m,        only: ngroups, nmat, mat_of, ICE_phase_prefix
+    use ICE_Global_m,        only: ngroups, nmat, mat_of, ICE_phase_prefix, ncond, nbase, solid_of
     use ICE_Config_Types_m,  only: obj_condensed, ini_condensed, obj_sim_param, obj_time_scheme
     use ICE_Load_Table,      only: Load_Table
     use ICE_Lib_Evaporation, only: Ru, iMv, iLv, icpv, iLe, iYinf, iLvMvOverRu, iinvTboil, ialphaE
@@ -77,6 +77,7 @@ contains
       if (obj_condensed(m)%intfSelect == 1 .and. obj_condensed(m)%evapSelect == 1) &
         call refuse(material_label(m)//': interface = LK needs a gas-side evaporation model '// &
                     '(CEM, CEM-B, ASM or TC), not d2-law')
+      call finalize_solidification(m)
       if (.not. coupled) obj_condensed(m)%evapSelect = 0
 
       ! Vapour properties, packed as Lib_Evaporation indexes them
@@ -93,7 +94,22 @@ contains
       end associate
     enddo
 
+    ! A solidifying family carries the frozen and nucleated fractions after its closure's slots
+    do p = 1, ngroups
+      solid_of(p) = obj_condensed(mat_of(p))%solid
+      ncond(p)    = nbase(p) + merge(2, 0, solid_of(p))
+    enddo
+
     call Load_Table()
+
+    ! Solidification integrates the temperature with constant properties, as IGLOO does
+    do m = 1, nmat
+      if (.not. obj_condensed(m)%solid) cycle
+      if (obj_condensed(m)%cs_varies) &
+        call refuse(material_label(m)//': solidification=on requires a constant-cp material (temperature state)')
+      if (obj_condensed(m)%rho_varies) &
+        call refuse(material_label(m)//': solidification=on requires a constant-density material')
+    enddo
 
   contains
 
@@ -165,20 +181,46 @@ contains
         case ('combustion')
           if (value /= 'none') call refuse_word(key, value, ['none'])
         case ('solidification')
-          if (value /= 'off') call refuse_word(key, value, ['off'])
+          select case (trim(value))
+          case ('on');  obj_condensed(m)%solidSelect = 1
+          case ('off'); obj_condensed(m)%solidSelect = 0
+          case default; call refuse_word(key, value, ['on ', 'off'])
+          end select
         case default
           if (.not. any(real_keys == key)) &
             call refuse(material_label(m)//': unknown key "'//trim(key)//'"; the keys are '//key_list())
           read(value, *, iostat=ios) x
           if (ios /= 0 .or. index(value, ',') > 0) &
             call refuse(material_label(m)//': '//trim(key)//'='//trim(value)//' is not a real number')
-          if (trim(key) == 'alpha-e') then
+          select case (trim(key))
+          case ('alpha-e')
             if (.not. x > 0._R8) call refuse(material_label(m)//': alpha-e='//trim(value)//' must be > 0')
             obj_condensed(m)%alphaE = x
-          endif
+          case ('T-melt');   obj_condensed(m)%Tmelt = x
+          case ('h-fus');    obj_condensed(m)%hFus  = x
+          case ('T-nuc');    obj_condensed(m)%Tnuc  = x
+          case ('cp-solid'); obj_condensed(m)%cpSol = x
+          end select
         end select
       enddo
     end subroutine apply_tokens
+
+
+    !> The resolved solidification inputs of material m and IGLOO's refusals, before an uncoupled run drops evaporation.
+    subroutine finalize_solidification(m)
+      integer, intent(in) :: m
+      if (obj_condensed(m)%Tnuc <= 0._R8) obj_condensed(m)%Tnuc = 0.8_R8*obj_condensed(m)%Tmelt
+      obj_condensed(m)%solid = obj_condensed(m)%solidSelect > 0
+      if (.not. obj_condensed(m)%solid) return
+      if (.not. obj_condensed(m)%hFus > 0._R8) &
+        call refuse(material_label(m)//': solidification=on requires h-fus > 0 in [GPB-PhaseX]')
+      if (.not. obj_condensed(m)%cpSol > 0._R8) &
+        call refuse(material_label(m)//': solidification=on requires cp-solid > 0 in [GPB-PhaseX]')
+      if (obj_condensed(m)%Tnuc >= obj_condensed(m)%Tmelt) &
+        call refuse(material_label(m)//': solidification=on requires T-nuc < T-melt')
+      if (obj_condensed(m)%evapSelect > 0) &
+        call refuse(material_label(m)//': solidification=on is exclusive with evaporation (alumina does not evaporate)')
+    end subroutine finalize_solidification
 
   end subroutine Setup_Materials
 

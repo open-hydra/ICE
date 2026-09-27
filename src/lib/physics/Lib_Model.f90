@@ -6,6 +6,8 @@ module ICE_Lib_Model
   use ICE_Lib_Drag
   use ICE_Lib_Heat
   use ICE_Config_Types_m, only: obj_time_scheme, condensed_phase_t
+  use ICE_Global_m,       only: solid_of
+  use ICE_Lib_Solid
   implicit none
   private
   public :: assign_prim_2_cons
@@ -111,6 +113,13 @@ contains
     case ('AG')
       prim_2_cons => prim_2_cons_AG
     end select
+    if (solid_of(phase)) then
+      select case (trim(obj_time_scheme%model(phase)))
+      case ('MK'); prim_2_cons => prim_2_cons_MK_S
+      case ('IG'); prim_2_cons => prim_2_cons_IG_S
+      case ('AG'); prim_2_cons => prim_2_cons_AG_S
+      end select
+    endif
 
   end subroutine assign_prim_2_cons
 
@@ -126,6 +135,13 @@ contains
     case ('AG')
       cons_2_prim => cons_2_prim_AG
     end select
+    if (solid_of(phase)) then
+      select case (trim(obj_time_scheme%model(phase)))
+      case ('MK'); cons_2_prim => cons_2_prim_MK_S
+      case ('IG'); cons_2_prim => cons_2_prim_IG_S
+      case ('AG'); cons_2_prim => cons_2_prim_AG_S
+      end select
+    endif
 
   end subroutine assign_cons_2_prim
 
@@ -201,6 +217,13 @@ contains
     case ('AG')
       flux_make => flux_make_AG
     end select
+    if (solid_of(phase)) then
+      select case (trim(obj_time_scheme%model(phase)))
+      case ('MK'); flux_make => flux_make_MK_S
+      case ('IG'); flux_make => flux_make_IG_S
+      case ('AG'); flux_make => flux_make_AG_S
+      end select
+    endif
 
   end subroutine assign_flux_make
 
@@ -216,6 +239,13 @@ contains
     case ('AG')
       source_make => source_make_AG
     end select
+    if (solid_of(phase)) then
+      select case (trim(obj_time_scheme%model(phase)))
+      case ('MK'); source_make => source_make_MK_S
+      case ('IG'); source_make => source_make_IG_S
+      case ('AG'); source_make => source_make_AG_S
+      end select
+    endif
 
   end subroutine assign_source_make
 

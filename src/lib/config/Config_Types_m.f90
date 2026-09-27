@@ -207,6 +207,13 @@ module ICE_Config_Types_m
     real(R8) :: Yinf   = 0._R8       ! Far-field vapour mass fraction [-]
     real(R8) :: Tboil  = 2792._R8    ! Boiling temperature at 1 atm [K]
     real(R8) :: alphaE = 1._R8       ! Evaporation (accommodation) coefficient [-]
+    ! Solidification, from the phase-file tokens (IGLOO's defaults); T-nuc <= 0 means 0.8 T-melt
+    integer  :: solidSelect = 0
+    logical  :: solid = .false.
+    real(R8) :: Tmelt = 2327._R8     ! Melting temperature         [K]
+    real(R8) :: hFus  = 0._R8        ! Heat of fusion              [J/kg]
+    real(R8) :: Tnuc  = 0._R8        ! Nucleation temperature      [K]
+    real(R8) :: cpSol = 0._R8        ! Solid specific heat         [J/(kg K)]
     ! Packed form of the above, built by Setup_Materials and handed to Lib_Evaporation
     real(R8) :: ep(nep) = 0._R8
     ! Table-based properties rho(T) and cs(T) (optional, loaded by Load_Table)

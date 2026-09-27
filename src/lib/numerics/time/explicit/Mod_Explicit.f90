@@ -61,7 +61,7 @@ contains
       call assign_all(p)
       if (len_trim(obj_time_scheme%riemann) == 0) then
         select case (trim(obj_time_scheme%model(p)))
-        case ('MK');     call assign_riemann('Saurel')
+        case ('MK');     call assign_riemann('Saurel', solid_of(p))
         case default;    call assign_riemann('Rusanov')
         end select
       else
@@ -73,7 +73,7 @@ contains
                          'use Rusanov or HLLE with IG and AG.'
           error stop 'ICE: Saurel with a non-MK family'
         endif
-        call assign_riemann(trim(obj_time_scheme%riemann))
+        call assign_riemann(trim(obj_time_scheme%riemann), solid_of(p))
       endif
       select case (trim(obj_time_scheme%solver_type))
       case ('euler'); nrk = 1

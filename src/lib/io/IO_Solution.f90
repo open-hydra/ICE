@@ -2,7 +2,7 @@ module ICE_IO_Solution
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   use IR_Precision
   use Lib_ORION_data
-  use ICE_Global_m,      only: ICE_phase_prefix, ngroups, ncond
+  use ICE_Global_m,      only: ICE_phase_prefix, ngroups, ncond, solid_of
   use ICE_Config_Types_m, only: obj_time_scheme
   use ICE_Parameters_m,  only: llen
 
@@ -137,6 +137,10 @@ contains
       Onvar = Onvar + ncond(p)
       obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"T_p'//trim(str(.true.,p))//'"'
       obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"n_p'//trim(str(.true.,p))//'"'
+      if (solid_of(p)) then
+        obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"f_p'//trim(str(.true.,p))//'"'
+        obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"chi_p'//trim(str(.true.,p))//'"'
+      end if
     end do
 
     !> VTK specification

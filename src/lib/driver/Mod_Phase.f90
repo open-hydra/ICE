@@ -63,25 +63,60 @@ contains
   end subroutine setup_gas
 
 
+  !> The condensed state from the IC (or the restart field), variable by variable in family order. A solidifying
+  !> family's frozen and nucleated fractions are read when the file carries them, else derived from its temperature
+  !> by IGLOO's injection rule.
   subroutine setup_cond (grid, IOfield_cond)
+    use ICE_Config_Types_m,     only: obj_condensed
+    use ICE_Lib_Solidification, only: solidPhaseAtInjection
     implicit none
     type(ICE_domain_type), intent(inout)   :: grid
     type(orion_data), intent(inout) :: IOfield_cond
-    integer(kind=I4) :: b, p, v, d
+    integer(kind=I4) :: b, p, v, d, nfile, i, j, k, ph
+    logical          :: full
 
-    !> Import condensed phase variables
-    !if (restart) then
-      do b = 1, grid%nb
-        p = 1 ; v = 1
-        do d = 1, sum(ncond)
+    do b = 1, grid%nb
+      nfile = size(IOfield_cond%block(b)%vars, 1)
+      if (any(solid_of)) then
+        if (nfile /= sum(ncond) .and. nfile /= sum(nbase)) call refuse_ic(nfile)
+      elseif (nfile < sum(ncond)) then
+        call refuse_ic(nfile)
+      endif
+      full = nfile >= sum(ncond)
+      d = 0
+      do p = 1, ngroups
+        do v = 1, merge(ncond(p), nbase(p), full)
+          d = d + 1
           grid%blk(b)%cond_phase(p)%prim(v,1:grid%blk(b)%dim(1),1:grid%blk(b)%dim(2),1:grid%blk(b)%dim(3)) = &
           IOfield_cond%block(b)%vars(d,:,:,:)
-          v = v + 1
-          if (v > ncond(p)) then
-            v = 1 ; p = p +1
-          endif
         enddo
+        if (solid_of(p) .and. .not. full) then
+          associate (prim => grid%blk(b)%cond_phase(p)%prim, mat => obj_condensed(mat_of(p)))
+          do k = 1, grid%blk(b)%dim(3) ; do j = 1, grid%blk(b)%dim(2) ; do i = 1, grid%blk(b)%dim(1)
+            call solidPhaseAtInjection(prim(nbase(p)-1,i,j,k), mat%Tmelt, mat%Tnuc, ph, prim(nbase(p)+1,i,j,k))
+            prim(ncond(p),i,j,k) = prim(nbase(p)+1,i,j,k)
+          enddo ; enddo ; enddo
+          end associate
+        endif
       enddo
+    enddo
+
+  contains
+
+    subroutine refuse_ic(n)
+      integer(kind=I4), intent(in) :: n
+      character(len=16) :: a, b1, b2
+      write(a, '(I0)') n ; write(b1, '(I0)') sum(ncond) ; write(b2, '(I0)') sum(nbase)
+      if (any(solid_of)) then
+        write(*,'(A)') ' [ERROR] [ICE::setup_cond] the initial condition holds '//trim(a)//' variables per cell; expected '// &
+          trim(b1)//' (with the frozen and nucleated fractions of the solidifying families) or '//trim(b2)// &
+          ' (without them: both from T)'
+      else
+        write(*,'(A)') ' [ERROR] [ICE::setup_cond] the initial condition holds '//trim(a)//' variables per cell; expected '// &
+          trim(b1)
+      endif
+      error stop 1
+    end subroutine refuse_ic
 
   end subroutine setup_cond
 
