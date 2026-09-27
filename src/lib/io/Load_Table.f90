@@ -27,7 +27,7 @@ module ICE_Load_Table
 
   character(len=*), parameter :: grammar = &
     'expected: VARIABLES = "Temperature", "Cp", "Density", "Enthalpy" (or "Enthalpy_abs")[, "Psat"], '// &
-    'Temperature first and the others in any order, one zone, rows on consecutive integer kelvins'
+    'Temperature first and the others in any order, one zone per material, rows on consecutive integer kelvins'
 
 contains
 
