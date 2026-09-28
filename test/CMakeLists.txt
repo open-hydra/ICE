@@ -103,9 +103,10 @@ ice_add_verification(Materials         L-materials         "fast;verification;so
 
 # Solidification: a closed cell through supercooling, recalescence, the plateau, the solid and melting at T-melt, against
 # the closed forms; a steady stream against its first-order recursion, the closed form and a Rusanov model, a heated
-# solid melting, and a gas change that must move the nucleation front back (no lock).
+# solid melting, a gas change that must move the nucleation front back (no lock), and the stream on two blocks.
 ice_add_verification(SolidCooling      N-solid-cooling     "fast;verification;sources;phase-change")
 ice_add_verification(SolidAdvection    O-solid-advection   "fast;verification;sources;transport;phase-change")
+set_tests_properties(SolidAdvection PROPERTIES RESOURCE_LOCK O-solid-advection-work)
 
 # Eulerian transport against free advection, with a grid-refinement study
 ice_add_verification(SineAdvection     C-advection-sine    "fast;verification;transport")
@@ -220,4 +221,10 @@ if(USE_MPI)
     ice_add_fast_script(MPIEquivChimera fast/mpi-equiv "fast;implementation;chimera;needs-mpi")
     set_tests_properties(MPIEquivChimera PROPERTIES
         ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-chimera")
+
+    # The two-block solidifying stream of SolidAdvection (leg O6) on two ranks, against the serial runs
+    ice_add_verification(SolidAdvectionMPI O-solid-advection "fast;verification;phase-change;needs-mpi")
+    set_tests_properties(SolidAdvectionMPI PROPERTIES
+        ENVIRONMENT "${_ICE_TEST_ENV};ICE_SOLID_LEGS=O6;ICE_MPI_RANKS=2"
+        RESOURCE_LOCK O-solid-advection-work)
 endif()

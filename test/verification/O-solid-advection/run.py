@@ -25,18 +25,29 @@ liquid); chi is the inflow's between T_nuc and T_m, 1 below, 0 above. It is ICE'
       first order, nx = 120 and 240, MK/Saurel and IG/Rusanov, from an empty domain.
   O5  a steady run with the gas at 300 K, then a restart in place with the gas at 1000 K: the front moves back to
       the 1000 K run's cell (no lock), per cell equal to a fresh 1000 K run.
+  O6  O2's stream at nx = 120 on two mesh blocks joined by a connection after cell 40 (on the freezing plateau, so
+      the partner cells carry f and chi), at first order with RK2 and at MUSCL with RK3: the one-block run, the
+      two-block run and, with ICE_MPI_RANKS = n > 1, the two-block run on n MPI ranks are fixed points. At first order
+      the two-block run equals the one-block run value for value: the connection hands each block its partner's
+      cells, a zero slope keeps the cell lengths out of the faces, and a cell's residual sums the same two fluxes. With
+      MUSCL the connection face is reconstructed with compute_bound's lengths, which differ from the interior's in the
+      last bits (the pre-existing dl_g2 ~ dl_g1 of the ledger), so they agree to 1e-13 in T (relative) and 1e-14 in f
+      and chi (measured 8.6e-15 and 1.0e-15). The MPI run equals the serial two-block run value for value.
 
 Every steady run is compared with a twin at 40 nx + 1 iterations - an odd gap, not a multiple of 3, so a cycle of
 period 2 or 3 shows - in T, f and chi, cell by cell, to 1e-12 (else it is not a fixed point).
 """
 import importlib.util
 import math
+import os
+import subprocess
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
-from common import Case, Report, inlet_payload, read_solution, run_ice             # noqa: E402
+from common import (Case, Report, inlet_payload, read_solution, run_ice, write_tec_blocks,  # noqa: E402
+                    ICE_BIN)
 
 _spec = importlib.util.spec_from_file_location('N_solid', str(HERE.parent / 'N-solid-cooling' / 'run.py'))
 N = importlib.util.module_from_spec(_spec)
@@ -148,7 +159,7 @@ def closed_form(x, Tg=600.0, T0=T_IN, h=N.HF):
 # ---------------------------------------------------------------------------
 
 def stream(label, nx, Tg, phase=N.PHASE, closure='MK', order='first-order', T0=T_IN, ic=None, lx=LX, u=U_IN,
-           gp=GP, iters=None, cfl=0.8):
+           gp=GP, iters=None, cfl=0.8, rk='RK2'):
     """The steady stream; ic = (rho, T) of the initial content (the inlet state by default)."""
     case = Case(WORK / label.lower(), nx=nx, Lx=lx)
     rho0, Tic = ic if ic is not None else (gp / u, T0)
@@ -162,7 +173,7 @@ def stream(label, nx, Tg, phase=N.PHASE, closure='MK', order='first-order', T0=T
     case.boundaries('extrapolation', inlets=[inlet_payload(gp, u, T0, N.RP)])
     case.phase(phase)
     limiter = 'vanleer' if order == 'MUSCL' else 'none'
-    case.ini(iters=iters or 20 * nx, cfl=cfl, rk='RK2', drag='NoDrag', heat='Stokes', rho_al=N.RHO_M, cs=N.CL,
+    case.ini(iters=iters or 20 * nx, cfl=cfl, rk=rk, drag='NoDrag', heat='Stokes', rho_al=N.RHO_M, cs=N.CL,
              reconstruction=order, limiter=limiter, numerics={'time-accurate': False}, closures=(closure,))
     return case
 
@@ -173,10 +184,10 @@ def steady(rep, label, builder, **kw):
     recorded) if a run failed or the two differ."""
     nx = kw['nx']
     base = kw.pop('iters', None) or 20 * nx
-    one = N.attempt(rep, label, stream(label, iters=base, **kw))
+    one = N.attempt(rep, label, builder(label, iters=base, **kw))
     if one is None:
         return None
-    two = N.attempt(rep, label + ' (twin)', stream(label + '-twin', iters=2 * base + 1, **kw))
+    two = N.attempt(rep, label + ' (twin)', builder(label + '-twin', iters=2 * base + 1, **kw))
     if two is None:
         return None
     closure = kw.get('closure', 'MK')
@@ -186,6 +197,49 @@ def steady(rep, label, builder, **kw):
     rep.check(max(dT, df, dchi) <= 1.0e-12, '%s: a fixed point (T, f, chi move %.1e, %.1e, %.1e from %d to %d iterations)'
               % (label, dT, df, dchi, base, 2 * base + 1))
     return two
+
+
+def stream2(label, nx, Tg, split, ranks=1, **kw):
+    """stream() on two mesh blocks joined by a connection after cell `split` (block 1: cells 1..split), run on `ranks`
+    MPI ranks; the case's run() returns both zones as one solution, cells in x order."""
+    case = stream(label, nx, Tg, **kw)
+    assert case.ny == 1 and 0 < split < nx
+    xs = (case.xn[:split + 1], case.xn[split:])
+    for name, zone in (('part-ic.tec', 'CD'), ('gas.tec', 'GAS')):
+        one = read_solution(case.dir / 'INPUT' / name)
+        write_tec_blocks(case.dir / 'INPUT' / name, one['names'],
+                         [(xs[0], case.yn, case.zn, [v[:split] for v in one['var']], 'B1-' + zone),
+                          (xs[1], case.yn, case.zn, [v[split:] for v in one['var']], 'B2-' + zone)])
+    inlet = (case.dir / 'INPUT/part-bc.txt').read_text().splitlines()[1]
+    rows = []
+    for b, n in ((1, split), (2, nx - split)):
+        def rec(i, f, code, b=b):
+            return '%8d%8d%8d%8d%8d%8d' % (b, i, 1, 1, f, code)
+        if b == 1:
+            rows += [rec(1, 1, 402), inlet, rec(n, 2, 101), '%8d%8d%8d%8d%8d%8d%8d%8d%8d' % (2, 1, 1, 1, 1, 1, 0, 0, 1)]
+        else:
+            rows += [rec(1, 1, 101), '%8d%8d%8d%8d%8d%8d%8d%8d%8d' % (1, split, 1, 1, 2, 1, 0, 0, 1), rec(n, 2, 400)]
+        rows += [rec(i, f, 400) for f in (3, 4) for i in range(1, n + 1)]
+        rows += [rec(i, f, 0) for f in (5, 6) for i in range(1, n + 1)]
+    (case.dir / 'INPUT/part-bc.txt').write_text('\n'.join(rows) + '\n')
+    case.run = lambda threads=1: run_blocks(case, ranks)
+    return case
+
+
+def run_blocks(case, ranks):
+    """Run a two-block case on `ranks` MPI ranks (serially when 1); both zones of its solution as one."""
+    if ranks > 1:
+        env = dict(os.environ, OMP_NUM_THREADS='1', KMP_STACKSIZE='100M')
+        with open(str(case.dir / 'log'), 'w') as out, open(str(case.dir / 'err'), 'w') as err:
+            rc = subprocess.call(['mpirun', '-np', str(ranks), str(ICE_BIN)], cwd=str(case.dir), stdout=out,
+                                 stderr=err, env=env)
+        if rc != 0:
+            raise RuntimeError('ICE failed (exit %d) in %s - see log and err there' % (rc, case.dir))
+    else:
+        run_ice(case.dir)
+    zones = [read_solution(case.dir / 'OUTPUT/part-field.tec', zone=z) for z in (0, 1)]
+    return {'time': zones[0]['time'], 'nx': zones[0]['nx'] + zones[1]['nx'], 'ny': 1, 'names': zones[0]['names'],
+            'var': [a + b for a, b in zip(zones[0]['var'], zones[1]['var'])]}
 
 
 def cells(sol, closure='MK'):
@@ -367,6 +421,43 @@ def o5(rep):
         rep.check(w <= 1.0e-9, 'O5: the restart equals the fresh 1000 K run to %.1e' % w)
 
 
+def o6(rep):
+    ranks = int(os.environ.get('ICE_MPI_RANKS', '1'))
+    for order, rk in (('first-order', 'RK2'), ('MUSCL', 'RK3')):
+        label = 'O6-%s' % ('first' if order == 'first-order' else 'muscl')
+        print("   %s O2's stream, nx = 120, %s with %s: one block, two blocks joined after cell 40%s"
+              % (label, order, rk, (', and those on %d MPI ranks' % ranks) if ranks > 1 else ''))
+        one = steady(rep, label + '-1', stream, nx=120, Tg=600.0, order=order, rk=rk)
+        runs = [('two blocks', steady(rep, label + '-2', stream2, nx=120, Tg=600.0, order=order, rk=rk, split=40))]
+        if ranks > 1:
+            sol = steady(rep, label + '-mpi', stream2, nx=120, Tg=600.0, order=order, rk=rk, split=40, ranks=ranks)
+            if sol is not None:
+                witness = (WORK / (label + '-mpi-twin').lower() / 'log').read_text(errors='replace')
+                rep.check('Number of ranks   --> %4d' % ranks in witness and 'MPI partition: 2 blocks over %d ranks'
+                          % ranks in witness, '%s: the solver reported %d MPI ranks and the two blocks spread over them '
+                          '(a serial binary under mpirun would not)' % (label, ranks))
+            runs.append(('two blocks on %d ranks' % ranks, sol))
+        if one is None:
+            continue
+        a = cells(one)
+        print('       one block: front cell %s, exit %.4f K' % (first_nucleated(a), a[-1][0]))
+        tol = (0.0, 0.0) if order == 'first-order' else (1.0e-13, 1.0e-14)
+        ref = [('the one-block run', a, tol)]
+        for n, (what, sol) in enumerate(runs):
+            if sol is None:
+                continue
+            b = cells(sol)
+            if n == 0:
+                ref.append(('the serial two-block run', b, (0.0, 0.0)))
+            other, c, (tT, tf) = ref[0] if n == 0 else ref[-1]
+            dT = max(abs(x[0] - y[0]) / y[0] for x, y in zip(b, c))
+            df, dchi = (max(abs(x[k] - y[k]) for x, y in zip(b, c)) for k in (1, 2))
+            rep.check(len(b) == len(c) and dT <= tT and max(df, dchi) <= tf,
+                      '%s: %s agree with %s (T %.1e relative, f %.1e, chi %.1e; %s)'
+                      % (label, what, other, dT, df, dchi,
+                         'value for value' if tT == 0.0 else 'within %.0e and %.0e' % (tT, tf)))
+
+
 def main():
     rep = Report('O. Solidification, steady stream')
     for leg, fn in (('O0', o0), ('O1', o1)):
@@ -375,7 +466,7 @@ def main():
     fronts = o2(rep) if N.selected('O2') or N.selected('O3') else {}
     if N.selected('O3'):
         o3(rep, fronts.get(240))
-    for leg, fn in (('O3b', o3b), ('O4', o4), ('O5', o5)):
+    for leg, fn in (('O3b', o3b), ('O4', o4), ('O5', o5), ('O6', o6)):
         if N.selected(leg):
             fn(rep)
     rep.close(WORK)
