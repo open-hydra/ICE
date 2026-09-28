@@ -122,6 +122,10 @@ with $T$, with a bisection on the rows. $e$ is then the integral of the tabulate
 it does not depend on the datum of the enthalpy column, and an empty cell keeps a
 temperature near zero, as it does with a constant $c_s$.
 
+A family of a solidifying material carries $\rho_p f$ and $\rho_p \chi$ after $n_p$, the frozen and nucleated
+fractions, and its energy per unit mass includes the latent part, $e = c_l T_p - f\,L(T_p)$; $T_p$, $f$ and $\chi$
+follow from the energy and the transported $\chi$ (see [Solidification](physics.md#solidification)).
+
 ## Source terms
 
 $\mathbf{S}$ collects, for every closure,
@@ -130,6 +134,9 @@ $\mathbf{S}$ collects, for every closure,
 - **convective heat exchange** with the gas, through a Nusselt number;
 - **radiative exchange** with the gas, as a grey body;
 - **mass transfer** between the phases, from the selected evaporation model. The leaving mass carries its own enthalpy and momentum out of the condensed phase, and the latent heat is applied to it in the energy equation. The number density is not a source of anything, so the droplets shrink rather than vanish.
+
+The latent heat of fusion of a solidifying material has no term of its own: it is inside the energy, and it reaches
+the gas through the convective exchange.
 
 The expressions are in [Particle Physics](physics.md). All of them vanish when no gas
 field is present, which is the 0-way coupled mode.

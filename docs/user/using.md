@@ -126,7 +126,8 @@ independent — a case may be given in Tecplot ASCII and written in VTK.
 | `vtk ascii` / `vtk binary` / `vtk raw` | `part-field.vtm` plus one `.vts` per block under `vtk/` |
 
 The file holds the node coordinates followed by the primitive variables of every
-family, cell-centred, named `rho_p1`, `u_p1`, … `n_p1`, `rho_p2`, … The solution time
+family, cell-centred, named `rho_p1`, `u_p1`, … `n_p1`, `rho_p2`, …, a solidifying family adding `f_p1` and
+`chi_p1` after `n_p1` (a probe takes them as `f_1` and `chi_1`). The solution time
 is recorded in the zone header; in steady-state mode it carries the iteration count
 instead, negated.
 

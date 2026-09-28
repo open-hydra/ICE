@@ -103,12 +103,14 @@ several, the groups must add up to the `[ICE-FamilyN]` count and the
 The tokens are the ones IGLOO reads. `evaporation`, `interface` and `alpha-e` set that
 material's evaporation model, interface and accommodation coefficient; `[ICE-Physics]
 evaporation`, `evaporation-interface` and `evaporation-coefficient` are the default of every
-material without the token. `liquid-conduction`, `boiling`, `combustion` and
-`solidification` accept only the value ICE implements (`ITC`, `clamp`, `none`, `off`), and
-IGLOO's other numeric keys (`k-liq`, `mu-liq`, `K-burn`, …) are read and ignored. An
-unknown key, a value that is not a number, or `interface = LK` with the d2-law stops the
-run. `evaporation-blowing` stays global. The setup prints each material's evaporation
-model.
+material without the token. `solidification = on` makes the material freeze and melt, with
+`T-melt`, `h-fus`, `T-nuc` and `cp-solid` (see [Solidification](../theory/physics.md#solidification)); it
+stops the run without a positive `h-fus` and `cp-solid`, with `T-nuc` at or above `T-melt`, together
+with evaporation, and with a `Cp` or `Density` column that varies. `liquid-conduction`, `boiling`
+and `combustion` accept only the value ICE implements (`ITC`, `clamp`, `none`), and IGLOO's other
+numeric keys (`k-liq`, `mu-liq`, `K-burn`, …) are read and ignored. An unknown key, a value that is
+not a number, or `interface = LK` with the d2-law stops the run. `evaporation-blowing` stays global.
+The setup prints each material's evaporation model and each solidifying material's values.
 
 ### Choosing the exchange models
 

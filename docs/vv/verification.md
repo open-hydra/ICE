@@ -342,6 +342,64 @@ reading the curve instead of the 1.2 column misses it by $6.6\times10^{-3}$.
     those follow from the published forms and would break under any transcription
     error.
 
+## Solidification
+
+IGLOO's solid-box material (`tests/solidification/solid-box` there): droplets of 30 µm, $\rho$ = 2950 kg/m³,
+$c_l$ = 1250 and $c_s$ = 600 J/(kg K), $h_{fus}$ = 1.07 MJ/kg, $T_m$ = 2327 K and $T_{nuc}$ = 0.8 $T_m$ = 1861.6 K, in a
+gas with $k_g$ = 0.026 W/(m K) and $Nu = 2$ (`heat-transfer = Stokes`, `drag = NoDrag`, emissivity 0). With
+$m = \rho\pi d^3/6$ and $A = \pi d k_g Nu$, every regime is a closed form: the liquid and the solid relax on
+$\tau = m c/A$ (10.637 ms and 5.106 ms), the plateau moves $f$ at $A(T_g - T_m)/(m h_{fus})$, and nucleation from
+$T_{nuc}$ lands on $f_0 = c_l(T_m - T_{nuc})/h_{fus}$ = 0.543692 at $T_m$ (or, for $f_0 \ge 1$, on the solid at the
+temperature that keeps the energy).
+
+### N. A closed cell
+
+Eight uniform cells moving with the gas, so each integrates the heat source alone; RK2 with $\Delta t = 10^{-5}$ s. The
+oracle is taken at the solution's own time.
+
+| Leg | Setup | What it checks | Measured |
+|---|---|---|---|
+| N1 | 2400 K in a 600 K gas | the liquid at $t_n/2$; the plateau at three times, $T_p = T_m$ exactly; the solid at 10 and 15 ms | liquid $4\times10^{-5}$ K; plateau $f$ $2.3\times10^{-4}$ (bound $5.1\times10^{-4}$, the stage-end nucleation); solid 0.20 and 0.074 K (bounds 0.54 and 0.21 K) |
+| N2 | `h-fus = 4e5` ($f_0$ = 1.4544) | the jump lands on the solid at 2024.083 K, then $\tau_s$ | 0.13 K (bound 0.35 K) |
+| N3 | a solid at 1500 K in a 3000 K gas | it reaches $T_m$ at 4.092 ms and melts there: $T_p = T_m$, $f$ = 0.170 at $3\tau_s$ | $f$ $7\times10^{-8}$; MK, IG and AG |
+| N4 | a mush ($T_m$, $f$ = 0.8, $\chi$ = 1) in a 3000 K gas | $f$ falls to 0 at 10.82 ms, then the liquid with $\chi = 0$ | $f$ $5\times10^{-14}$; liquid $7\times10^{-5}$ K |
+| N5 | N1 and N3 with IG and AG | the same numbers | the same |
+| N6 | N1 stopped on the plateau, restarted in place to 15 ms | the straight run's state | identical |
+| N7 | `A 1 solidification=on …` / `B 1` ($c_s$ = 1000) | each material its own history; B's columns those of a run with B alone | identical |
+
+In every leg $\chi$ is exactly 0 on the liquid and 1 on the nucleated states, the eight cells agree to $10^{-10}$, and
+the velocity, density and number density do not move.
+
+### O. A steady stream
+
+The same material entering a 0.15 m box at 10 m/s through a code-402 inlet, as a steady run. At first order the
+steady state is a recursion from the inlet, $a = (A/m)\Delta x/u$: the liquid $e = (e_{up} + a T_g)/(1 + a/c_l)$
+while it stays above $T_{nuc}$, otherwise the equilibrium state (solid, plateau or liquid), with $\chi$ the inflow's
+between $T_{nuc}$ and $T_m$. Every run is compared with a twin at $40\,n_x + 1$ iterations, an odd gap and not a
+multiple of 3 so that a cycle of period 2 or 3 shows, in $T_p$, $f$ and $\chi$ cell by cell to $10^{-12}$.
+
+| Leg | Setup | What it checks | Measured |
+|---|---|---|---|
+| O0 | `T-melt = 200` (every cell liquid), MUSCL; MK/Saurel and IG/Rusanov | the plain run's blocks byte for byte, $f$ and $\chi$ all zero | identical |
+| O1 | first order, $n_x$ = 120, gas 600 K | every cell on the recursion (front cell 31, exit 914.2832 K) and the energy balance | $T$ $1.3\times10^{-14}$, $f$ $3\times10^{-15}$; balance $3\times10^{-15}$ |
+| O2 | MUSCL, $n_x$ = 120, 240, 480 | the front in the cell of $x_n$ = 37.805 mm; $T_p = T_m$ exactly and $\chi = 1$ on the plateau; the liquid error falling at first order (the inlet state is held at the ghost-cell centre, half a cell upstream of the face) | fronts 31, 61, 121; liquid errors 10.5, 5.3, 2.6 K; $n_x$ = 480 a period-2 cycle at the front (below), held to its amplitude |
+| O3 | IG/Rusanov, MUSCL, $n_x$ = 240 | the front of O2, $\chi < \tfrac12$ upstream | front 61; $\chi$ 0.2 in the cell upstream, a fixed point of the RK2 step at CFL 0.8 |
+| O3b | IG/Rusanov, first order, O1's stream at 0.1 m/s where the inlet's $P$ gives $c$ = 2.5 $u$ and 4 $u$ | every cell on an independent Rusanov model of $e$ and $\chi$; the front one and two cells above the upwind one | fronts 30 and 29; $T$ $7\times10^{-14}$, $1.5\times10^{-13}$ |
+| O4 | a solid at 1500 K into a 3000 K gas, `h-fus = 4e5`, from an empty domain; MK and IG, $n_x$ = 120, 240 | the melting recursion: solid to $T_m$, the plateau, the liquid; no cell with $f > 0$ above $T_m$ | first mush and liquid cells 34/74 and 66/147, exits 2608.6368 and 2610.1672 K; MK $10^{-14}$, IG $2\times10^{-7}$ |
+| O5 | a steady run with the gas at 300 K, then restarted in place with the gas at 1000 K | the front moves back to the 1000 K run's cell: no lock | fronts 26, then 42; per cell $3\times10^{-14}$ from a fresh run |
+
+With MUSCL a nucleation front need not be a fixed point of the pseudo-time step. On O2's stream, RK2 at CFL 0.8
+settles at $n_x$ = 120 and 240 but cycles with period 2 at 480: the front cell's $\chi$ alternates between 0.6 and 1
+(nucleated both times) and an $f$ ripple of $2.9\times10^{-3}$ dies out over the next 60 cells, $T_p$ unchanged. RK3,
+and RK2 at CFL 0.4, cycle at the front at $n_x$ = 240 and 480, the front cell turning liquid and nucleated in turn, over
+two, three or more iterations. In every cycle measured the density residual stays zero (the temperature residual
+stalls only where the front cell changes phase), and the solid region and the exit are steady (to $10^{-9}$ where
+compared cell by cell). First-order reconstruction converged in every
+configuration measured (MK and IG, Euler and RK2), and so did the melting points with MUSCL, the temperature being
+continuous there. O2 at $n_x$ = 480 holds the front cell and the 64 after it to the measured amplitude ($f$ within
+$5\times10^{-3}$, $\chi$ within 0.49, so the front cell stays nucleated), every other cell and $T_p$ everywhere to
+$10^{-12}$.
+
 ## Material properties
 
 ### K. The property table
