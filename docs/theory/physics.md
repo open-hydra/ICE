@@ -229,21 +229,23 @@ is the nucleation switch, which happens at the end of a stage: the plateau is sh
 $\pi d_p k_g Nu\,(T_m - T_{nuc})\,\Delta t/(m h_{fus})$ in $f$. Melting has none, the heat rate being continuous through
 both of its switches.
 
-In a steady stream the nucleation front and both melting points are located within one cell. The reconstruction
-works on $T_\ell$ in place of $T_p$ ([Reconstruction](numerics.md#reconstruction)): $T_\ell$ is continuous where a
-content nucleates, since the recalescence keeps its energy, so the limiter sees no jump at the nucleation front, and in
-every configuration measured a steady run converges there with MUSCL as at first order: `space-reconstruction =
-first-order` is not needed for that. Three approximations remain. A cell where contents of
-different histories meet ($0 < \chi < 1$) holds one state, decided by the majority; carrying the nucleated and the
-liquid parts as two populations would lift it. At the nucleation front the liquid and the nucleated state of the
-front cell can both be steady when its inflow lies in a narrow window, which puts the front one cell earlier or later.
-In a time-accurate run nucleation happens at the end of a stage (above).
+In a steady stream the nucleation front and both melting points are located within one cell. The reconstruction works
+on $T_\ell$ in place of $T_p$ ([Reconstruction](numerics.md#reconstruction)): $T_\ell$ is continuous where a content
+nucleates, since the recalescence keeps its energy, so $T_\ell$ has no jump at the nucleation front ($\chi$ still has
+one, and its limited value decides a face in the band), and in every configuration measured a steady run converges
+there with MUSCL as at first order: `space-reconstruction = first-order` is not needed for that. Three approximations
+remain. A cell where contents of different histories meet ($0 < \chi < 1$) holds one state, decided by the majority;
+carrying the nucleated and the liquid parts as two populations would lift it. At the nucleation front the liquid and
+the nucleated state of the front cell can both be steady when its inflow lies in a narrow window, which puts the front
+one cell earlier or later. In a time-accurate run nucleation happens at the end of a stage (above).
 
-The Rusanov and HLLE fluxes leak $\chi$ upstream of a sharp front: $c/(2u + c)$ into the first cell with Rusanov,
-nothing with HLLE while $c \le u$ and $(c - u)/(c + u)$ above, where $u$ is the flow speed and $c$ the closure's signal
-speed. No cell flips while $c < 2u$ (Rusanov) or $c < 3u$ (HLLE); above that one or two cells upstream of the front
-are nucleated by the leak, and the tail decays, so the front moves by that much and no further. An IG or AG stream
-injected with the inlet's pseudo-pressure ($P = 10^{-6}$) is far below that bound unless its bulk density is tiny.
+The Rusanov and HLLE fluxes leak $\chi$ upstream of a sharp front. At first order Rusanov puts $c/(2u + c)$ into the
+first cell and HLLE nothing while $c \le u$ and $(c - u)/(c + u)$ above, where $u$ is the flow speed and $c$ the
+closure's signal speed; with MUSCL and the van Leer limiter the Rusanov leak is about half as large
+($2.5\times10^{-5}$ against $5.0\times10^{-5}$ at first order on the stream of the verification case O3). No cell
+flips while $c < 2u$ (Rusanov) or $c < 3u$ (HLLE); above that one or two cells upstream of the front are nucleated by
+the leak, and the tail decays, so the front moves by that much and no further. An IG or AG stream injected with the
+inlet's pseudo-pressure ($P = 10^{-6}$) is far below that bound unless its bulk density is tiny.
 
 ### Inputs
 
