@@ -13,12 +13,16 @@ liquid); chi is the inflow's between T_nuc and T_m, 1 below, 0 above. It is ICE'
   O2  MUSCL at nx = 120, 240, 480 against the closed form: the front within a cell, T = T_m on the plateau, the
       liquid error falling with dx - at first order: ICE holds the inlet state at the ghost-cell centre, half a cell
       upstream of the face, which shifts the profile by dx/2, (T_0 - T_g) dx/(2 L_l) = 10.6 K at nx = 120 - and the
-      exit within the solid's first-order bound.
+      exit within the solid's first-order bound. A MUSCL nucleation front need not be a fixed point of the pseudo-time
+      step: here nx = 120 and 240 are, nx = 480 cycles with period 2 (the front cell's chi 0.6/1.0, an f ripple of
+      2.9e-3 dying over 60 cells, T unchanged). At nx = 480 the front cell and the 64 after it are held to that
+      amplitude (f 5e-3, chi 0.49, so the front cell stays nucleated), every other cell and T everywhere to 1e-12;
+      nx = 120 and 240 must be fixed points.
   O3  IG/Rusanov, MUSCL nx = 240: the front of O2 within a cell and chi < 1/2 in every cell upstream of it. The
-      Rusanov leak is c/(2u + c) = 5e-5 at the inlet's P = 1e-6; with MUSCL and RK2 the cell upstream of the front
-      holds more (0.2 at CFL 0.8 and 0.446 at 0.4, MK/Saurel as well): its RK2 predictor nucleates it every
-      pseudo-step and the corrector returns it to the liquid, a two-stage cycle rather than a steady state of the
-      spatial scheme; Euler and RK3 converge instead to a steady state with the front one cell earlier.
+      Rusanov leak is c/(2u + c) = 5e-5 at the inlet's P = 1e-6; the cell upstream of the front holds more, 0.2
+      (MK/Saurel as well): a fixed point of the RK2 step at CFL 0.8 that no steady state of the spatial scheme has.
+      RK3, or RK2 at CFL 0.4, cycles there instead (period 2 or 3; forward Euler with MUSCL at CFL 0.8 diverges even
+      without solidification); first order converges.
   O3b IG/Rusanov above the no-flip bound: O1's stream scaled to u = 0.1 m/s (box 1.5e-3 m), where the inlet's
       P = 1e-6 gives c = sqrt(3P/rho_p) = 2.5u and 4u; first order against the driver's own Rusanov model.
   O4  a solid injected at 1500 K into a 3000 K gas, h-fus = 4e5: solid, melting at T_m, liquid - the melting law;
@@ -26,7 +30,9 @@ liquid); chi is the inflow's between T_nuc and T_m, 1 below, 0 above. It is ICE'
   O5  a steady run with the gas at 300 K, then a restart in place with the gas at 1000 K: the front moves back to
       the 1000 K run's cell (no lock), per cell equal to a fresh 1000 K run.
 
-Every steady run is repeated with twice the iterations; the two must agree to 1e-12 (else unconverged).
+Every steady run is compared with a twin at 40 nx + 1 iterations - an odd gap, not a multiple of 3, so a cycle of
+period 2 or 3 shows - in T, f and chi, cell by cell, to 1e-12 (else it is not a fixed point); O2 at nx = 480 holds
+its MUSCL front band to the measured cycle amplitude instead.
 """
 import importlib.util
 import math
@@ -166,19 +172,39 @@ def stream(label, nx, Tg, phase=N.PHASE, closure='MK', order='first-order', T0=T
     return case
 
 
-def steady(rep, label, builder, **kw):
-    """A steady run and its twice-as-long twin; the solution, or None (FAIL recorded) if it failed or moved."""
+#: a MUSCL nucleation front's cycle, measured at nx = 480 (O2): 60 cells, f 2.9e-3, chi 0.40
+FRONT_BAND = (64, 5.0e-3, 0.49)
+
+
+def steady(rep, label, builder, band=None, **kw):
+    """A steady run at 20·nx iterations and its twin at 40·nx + 1, an odd gap and not a multiple of 3, so that a cycle of
+    period 2 or 3 shows; T (relative), f and chi compared cell by cell to 1e-12. The second run's solution, or None (FAIL
+    recorded) if a run failed or the two differ. band = (after, df, dchi): the first nucleated cell and the `after` cells
+    downstream of it may cycle (a MUSCL nucleation front, plan 1.4 (e)); there f and chi are held to df and dchi, T to
+    1e-12 as everywhere."""
     nx = kw['nx']
     base = kw.pop('iters', None) or 20 * nx
     one = N.attempt(rep, label, stream(label, iters=base, **kw))
     if one is None:
         return None
-    two = N.attempt(rep, label + ' (x2)', stream(label + '-x2', iters=2 * base, **kw))
+    two = N.attempt(rep, label + ' (twin)', stream(label + '-twin', iters=2 * base + 1, **kw))
     if two is None:
         return None
-    iT = N.columns(kw.get('closure', 'MK'))['T']
-    moved = max(abs(a - b) / abs(b) for a, b in zip(one['var'][iT], two['var'][iT]))
-    rep.check(moved <= 1.0e-12, '%s: converged (T moves %.1e relative from %d to %d iterations)' % (label, moved, base, 2 * base))
+    closure = kw.get('closure', 'MK')
+    a, b = cells(one, closure), cells(two, closure)
+    fr = first_nucleated(b)
+    inside = set(range(fr - 1, min(fr + band[0], nx))) if band is not None and fr is not None else set()
+    dT = max(abs(x[0] - y[0]) / abs(y[0]) for x, y in zip(a, b))
+    out = [max([abs(a[i][k] - b[i][k]) for i in range(nx) if i not in inside] or [0.0]) for k in (1, 2)]
+    ok = dT <= 1.0e-12 and max(out) <= 1.0e-12
+    text = '%s: a fixed point (T, f, chi move %.1e, %.1e, %.1e from %d to %d iterations' % (
+        label, dT, out[0], out[1], base, 2 * base + 1)
+    if inside:
+        inb = [max(abs(a[i][k] - b[i][k]) for i in inside) for k in (1, 2)]
+        ok = ok and inb[0] <= band[1] and inb[1] <= band[2]
+        text += ' outside cells %d-%d; inside, f %.1e (at most %.0e) and chi %.2f (at most %.2f)' % (
+            min(inside) + 1, max(inside) + 1, inb[0], band[1], inb[1], band[2])
+    rep.check(ok, text + ')')
     return two
 
 
@@ -253,7 +279,8 @@ def o2(rep):
     errs, fronts = [], {}
     for nx in (120, 240, 480):
         print('   O2  MUSCL, nx = %d' % nx)
-        sol = steady(rep, 'O2-%d' % nx, stream, nx=nx, Tg=600.0, order='MUSCL')
+        sol = steady(rep, 'O2-%d' % nx, stream, band=FRONT_BAND if nx == 480 else None, nx=nx, Tg=600.0,
+                     order='MUSCL')
         if sol is None:
             return fronts
         dx = LX / nx
