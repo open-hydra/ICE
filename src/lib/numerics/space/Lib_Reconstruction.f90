@@ -69,9 +69,10 @@ contains
   end subroutine state_reconstruction
 
 
-  !> A solidifying family: the limiter sees T_liq = e/c_l, continuous through the recalescence, so a nucleation front is
-  !  not a jump; each face's (T, f) is re-derived from its (T_liq, chi) before the check (no check_prim reads T or f
-  !  today, so the order is not observable). An empty stencil and the first-order fallback take the physical cells.
+  !> A solidifying family: the limiter sees T_liq = e/c_l, continuous through the recalescence, so T_liq has no jump at
+  !  a nucleation front (chi, which still jumps, decides a face in the band); each face's (T, f) is re-derived from its
+  !  (T_liq, chi) before the check, and a non-finite T_liq stays so, for check_prim reads T and f for NaN. An empty
+  !  stencil and the first-order fallback take the physical cells.
   subroutine solid_reconstruction(prev, local, next, next2, dl0, dl1, dl2, dll, dlr, priml, primr, beta, mat)
     use ICE_Lib_Limiters
     use ICE_Lib_Model

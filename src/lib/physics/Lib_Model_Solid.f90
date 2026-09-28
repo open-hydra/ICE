@@ -3,6 +3,7 @@
 !> -f*L(T); after every conversion the phase follows from the energy and chi (ICE_Lib_Solidification::solid_state).
 module ICE_Lib_Solid
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+  use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use ICE_Config_Types_m,     only: condensed_phase_t
   use ICE_Lib_Properties,     only: mat_cp_const
   use ICE_Lib_Solidification, only: solid_de, solid_state
@@ -175,12 +176,14 @@ contains
   end subroutine to_liquid_temperature
 
   !> A reconstructed face back to primitives: (T, f) from its (T_liq, chi) as for a cell; chi keeps its limited value.
+  !  A non-finite T_liq (a NaN in the stencil) is left as it is, so check_prim's NaN test still sees it.
   pure subroutine from_liquid_temperature(prim, mat)
     real(kind=R8), intent(inout) :: prim(:)
     type(condensed_phase_t), intent(in) :: mat
     real(kind=R8) :: T, f, chiOut
     integer :: nb
     nb = size(prim) - 2
+    if (.not. ieee_is_finite(prim(nb-1))) return
     call solid_state(prim(nb-1), min(max(prim(nb+2), 0._R8), 1._R8), mat_cp_const(mat), mat%cpSol, mat%Tmelt, &
                      mat%Tnuc, mat%hFus, T, f, chiOut)
     prim(nb+1) = f
@@ -192,7 +195,8 @@ contains
   end subroutine from_liquid_temperature
 
   !> T, f and chi of the converted cell from T_liq = e/c_l (unfloored) and the transported chi. A liquid content keeps
-  !  the base's primitives; the base's vacuum branch carries no phase.
+  !  the base's primitives; the base's vacuum branch carries no phase, nor does a non-finite energy, whose temperature
+  !  stays the base's (non-finite) one.
   pure subroutine phase_prims(prim, cons, nb, Tliq, mat)
     real(kind=R8), intent(inout) :: prim(:)
     real(kind=R8), intent(in)    :: cons(:), Tliq
@@ -200,7 +204,7 @@ contains
     type(condensed_phase_t), intent(in) :: mat
     real(kind=R8) :: chi, T, f, chiOut
     prim(nb+1:nb+2) = 0._R8
-    if (cons(1) < eps) return
+    if (cons(1) < eps .or. .not. ieee_is_finite(Tliq)) return
     chi = min(max(cons(nb+2)/(prim(1)+eps), 0._R8), 1._R8)
     call solid_state(Tliq, chi, mat_cp_const(mat), mat%cpSol, mat%Tmelt, mat%Tnuc, mat%hFus, T, f, chiOut)
     prim(nb+2) = chiOut

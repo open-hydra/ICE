@@ -1,11 +1,12 @@
 !> Unit test of ICE_Lib_Solidification (IGLOO's solid-box material; a hypercooled variant with f0 > 1; a cold solid
 !> whose energy is negative): the energy against IGLOO's hSolid on its three branches, the recalescence conserving
 !> the energy, the nucleation threshold, melting at T-melt, the injection rule, the plateau rate, the ranges, the
-!> nucleated fraction's events and its majority threshold; then (U9) the closure wrappers of ICE_Lib_Solid and (U12-U15)
-!> the reconstruction of a solidifying family. Prints every assertion and exits non-zero if any failed.
+!> nucleated fraction's events and its majority threshold; then (U9) the closure wrappers of ICE_Lib_Solid, (U12-U15)
+!> the reconstruction of a solidifying family and (U16) a NaN staying a NaN. Prints every assertion and exits non-zero
+!> if any failed.
 program test_solidification
   use, intrinsic :: iso_fortran_env, only: R8 => real64, I8 => int64
-  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_is_nan, ieee_value, ieee_quiet_nan
   use ICE_Lib_Solidification
   use ICE_Lib_Solid
   use ICE_Lib_MK,          only: prim_2_cons_MK, cons_2_prim_MK, flux_make_MK, source_make_MK, check_prim_MK
@@ -14,7 +15,7 @@ program test_solidification
   use ICE_Lib_Riemann,     only: assign_riemann, riemann
   use ICE_Lib_Model,          only: check_prim
   use ICE_Lib_Limiters,       only: assign_limiter, limiter
-  use ICE_Lib_Reconstruction, only: state_reconstruction
+  use ICE_Lib_Reconstruction, only: state_reconstruction, bad_recon
   use ICE_Config_Types_m,  only: condensed_phase_t
   implicit none
   real(R8), parameter :: cl = 1250._R8, cs = 600._R8, hf = 1.07e6_R8, Tm = 2327._R8, hf2 = 4.e5_R8
@@ -37,6 +38,7 @@ program test_solidification
   call test_majority()
   call test_wrappers()
   call test_reconstruction()
+  call test_nan()
 
   if (nfail > 0) then
     write(*,'(A,I0,A)') 'test_solidification: ', nfail, ' FAILED'
@@ -386,7 +388,7 @@ contains
   !> U12-U15: the reconstruction of a solidifying family (van Leer, unit spacing). U12 a liquid stencil gives the faces
   !> of the ordinary reconstruction bit for bit (at temperatures where c_l T / c_l is not T); U13 across a nucleation front
   !> each face holds the energy of its reconstructed T_liq and the phase solid_state gives it; U14 a cold solid (negative
-  !> T_liq) gets second-order faces at its physical temperature; U15 no check_prim reads T or f.
+  !> T_liq) gets second-order faces at its physical temperature; U15 check_prim reads T and f only for NaN.
   subroutine test_reconstruction()
     type(condensed_phase_t) :: mat, cold
     real(R8), parameter :: T12(4) = [2400.1234567891_R8, 2390.9876543219_R8, 2000.3141592653_R8, 1990.2718281828_R8], &
@@ -465,7 +467,7 @@ contains
     call check(abs(fl(5) - 395._R8) <= 1.e-9_R8 .and. abs(fr(5) - 395._R8) <= 1.e-9_R8 .and. fl(7) == 1._R8 &
                .and. fr(7) == 1._R8, trim(msg))
 
-    ! U15: no check_prim reads T or f, so the back-transform's place in the halving loop has no effect today
+    ! U15: check_prim reads T and f only for NaN, so the back-transform's place in the halving loop shows only as that
     ok = .true.
     do k = 1, 3
       nb = merge(6, merge(7, 12, k == 2), k == 1)
@@ -482,8 +484,50 @@ contains
       case (3); ok = ok .and. check_prim_AG(c(1:nb+2,1)) .and. check_prim_AG(gl(1:nb+2))
       end select
     enddo
-    call check(ok, 'U15 check_prim (MK, IG, AG) accepts T = -1e3 K and f = 5: it reads neither')
+    call check(ok, 'U15 check_prim (MK, IG, AG) accepts T = -1e3 K and f = 5: it reads T and f only for NaN')
   end subroutine test_reconstruction
+
+
+  !> U16: a NaN stays a NaN, so check_prim's NaN test and the stops behind it fire. A face whose T_liq is NaN (with
+  !> chi = 1, where the lever rule would run) keeps a NaN temperature; a stencil whose next cell has a NaN f (a ghost
+  !> filled without its f) ends in report_stencil; a cell with a NaN energy converts to a NaN temperature.
+  subroutine test_nan()
+    type(condensed_phase_t) :: mat
+    real(R8) :: nan, fc(8), c(8,4), fl(8), fr(8), pr(8), cn(8)
+    logical  :: face_nan, stopped, cell_nan
+    integer  :: j
+    character(len=220) :: msg
+
+    mat%cs_al = cl; mat%rho_al = 2950._R8; mat%Tmelt = Tm; mat%Tnuc = Tn; mat%hFus = hf; mat%cpSol = cs
+    mat%solidSelect = 1; mat%solid = .true.
+    nan = ieee_value(1._R8, ieee_quiet_nan)
+    check_prim => check_prim_MK
+    call assign_limiter('vanleer')
+
+    fc = [2.95_R8, 10._R8, 0._R8, 0._R8, nan, 1.e8_R8, 0.5_R8, 1._R8]
+    call from_liquid_temperature(fc, mat)
+    face_nan = ieee_is_nan(fc(5))
+
+    do j = 1, 4
+      c(:,j) = [2.95_R8, 10._R8, 0._R8, 0._R8, Tm, 1.e8_R8, 0.5_R8 + 0.1_R8*j, 1._R8]
+    enddo
+    c(7,3) = nan
+    bad_recon = .false.
+    call state_reconstruction(c(:,1), c(:,2), c(:,3), c(:,4), 1._R8, 1._R8, 1._R8, 0.5_R8, 0.5_R8, fl, fr, 1._R8, &
+                              mat, .true.)
+    stopped = bad_recon
+    bad_recon = .false.
+
+    pr = [2.95_R8, 10._R8, 0._R8, 0._R8, Tm, 1.e8_R8, 0.5_R8, 1._R8]
+    cn = prim_2_cons_MK_S(pr, mat); cn(5) = nan
+    pr = cons_2_prim_MK_S(cn, mat)
+    cell_nan = ieee_is_nan(pr(5))
+
+    write(msg,'(A,ES10.3,A,F6.3,A,L1,A,ES10.3,A,F6.3,A)') 'U16 NaN in, NaN out: a NaN T_liq face gives T = ', fc(5), &
+      ', f = ', fc(7), '; a NaN f in the stencil stops it: ', stopped, '; a NaN-energy cell T = ', pr(5), ', f = ', &
+      pr(7), ' (a NaN, not the solid at eps)'
+    call check(face_nan .and. stopped .and. cell_nan, trim(msg))
+  end subroutine test_nan
 
 
   !> Bitwise equality of two arrays of reals.
