@@ -21,8 +21,8 @@ liquid); chi is the inflow's between T_nuc and T_m, 1 below, 0 above. It is ICE'
   O3  IG/Rusanov, MUSCL nx = 240: the front of O2 within a cell and chi < 1/2 in every cell upstream of it. The
       Rusanov leak is c/(2u + c) = 5e-5 at the inlet's P = 1e-6; the cell upstream of the front holds more, 0.2
       (MK/Saurel as well): a fixed point of the RK2 step at CFL 0.8 that no steady state of the spatial scheme has.
-      RK3, or RK2 at CFL 0.4, cycles there instead (period 2 or 3; forward Euler with MUSCL at CFL 0.8 diverges even
-      without solidification); first order converges.
+      RK3, or RK2 at CFL 0.4, cycles there instead, over 2, 3 or more iterations (forward Euler with MUSCL at CFL 0.8
+      diverges even without solidification); first order converges.
   O3b IG/Rusanov above the no-flip bound: O1's stream scaled to u = 0.1 m/s (box 1.5e-3 m), where the inlet's
       P = 1e-6 gives c = sqrt(3P/rho_p) = 2.5u and 4u; first order against the driver's own Rusanov model.
   O4  a solid injected at 1500 K into a 3000 K gas, h-fus = 4e5: solid, melting at T_m, liquid - the melting law;
