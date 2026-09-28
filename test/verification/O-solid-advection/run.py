@@ -16,9 +16,10 @@ liquid); chi is the inflow's between T_nuc and T_m, 1 below, 0 above. It is ICE'
       exit within the solid's first-order bound. Every nx must be a fixed point: the family reconstructs
       T_liq = e/c_l, continuous through the recalescence, so the front does not depend on its own cell's phase
       (reconstructing T instead, nx = 480 cycles with period 2, the front cell's chi 0.6/1.0 and an f ripple of 2.9e-3).
-  O3  IG/Rusanov, MUSCL nx = 240: the front of O2 within a cell and chi < 1/2 in every cell upstream of it. The
-      Rusanov leak is c/(2u + c) = 5e-5 at the inlet's P = 1e-6, and with T_liq reconstructed nothing else reaches
-      upstream (reconstructing T, the cell upstream of the front held 0.2).
+  O3  IG/Rusanov, MUSCL nx = 240: the front of O2 within a cell and chi at most 1e-4 in every cell upstream of it.
+      At the inlet's P = 1e-6 the Rusanov leak is c/(2u + c) = 5.04e-5 at first order and 2.52e-5 with MUSCL and van
+      Leer (measured here), and with T_liq reconstructed nothing else reaches upstream (reconstructing T, the cell
+      upstream of the front held 0.2).
   O3b IG/Rusanov above the no-flip bound: O1's stream scaled to u = 0.1 m/s (box 1.5e-3 m), where the inlet's
       P = 1e-6 gives c = sqrt(3P/rho_p) = 2.5u and 4u; first order against the driver's own Rusanov model.
   O4  a solid injected at 1500 K into a 3000 K gas, h-fus = 4e5: solid, melting at T_m, liquid - the melting law;
@@ -347,8 +348,8 @@ def o3(rep, front_mk):
     fr = first_nucleated(cs)
     up = max([c[2] for c in cs[:fr - 1]] or [0.0]) if fr else float('nan')
     print('       front cell %s (MK %s), max chi upstream %.3e' % (fr, front_mk, up))
-    rep.check(fr is not None and front_mk is not None and abs(fr - front_mk) <= 1 and up < 0.5,
-              'O3: front within a cell of MK\'s, chi < 1/2 upstream of it')
+    rep.check(fr is not None and front_mk is not None and abs(fr - front_mk) <= 1 and up <= 1.0e-4,
+              'O3: front within a cell of MK\'s, chi at most 1e-4 upstream of it (the Rusanov leak)')
 
 
 def o3b(rep):
