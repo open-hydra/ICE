@@ -29,7 +29,7 @@ contains
 
     bad_recon = .false.
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, p, ncond, mat_of, riemann, obj_time_scheme, obj_condensed), &
+    !$OMP SHARED(grid, p, ncond, mat_of, solid_of, riemann, obj_time_scheme, obj_condensed), &
     !$OMP PRIVATE(n, b, f, i, j, k, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, &
     !$OMP         dir, normal, area, dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th, &
     !$OMP         beta_val, priml, primr, flux, v)
@@ -87,7 +87,8 @@ contains
                                   grid%blk(b)%cond_phase(p)%prim(1:ncond(p),i,j,k),       &
                                   grid%blk(b)%cond_phase(p)%prim(1:ncond(p),ip,jp,kp),    &
                                   dl0, dl1, dl2, dll, dlr,                                 &
-                                  priml(1:ncond(p)), primr(1:ncond(p)), beta_val)
+                                  priml(1:ncond(p)), primr(1:ncond(p)), beta_val,        &
+                                  obj_condensed(mat_of(p)), solid_of(p))
 
         flux(1:ncond(p)) = riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal, obj_condensed(mat_of(p))) * area
 
@@ -107,7 +108,8 @@ contains
                                   grid%blk(b)%cond_phase(p)%prim(1:ncond(p),ig,jg,kg),    &
                                   grid%blk(b)%cond_phase(p)%prim(1:ncond(p),ig2,jg2,kg2), &
                                   dl0, dl1, dl2, dll, dlr,                                 &
-                                  priml(1:ncond(p)), primr(1:ncond(p)), beta_val)
+                                  priml(1:ncond(p)), primr(1:ncond(p)), beta_val,        &
+                                  obj_condensed(mat_of(p)), solid_of(p))
 
         flux(1:ncond(p)) = - riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal, obj_condensed(mat_of(p))) * area
 

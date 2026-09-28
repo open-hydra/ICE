@@ -14,6 +14,7 @@ module ICE_Lib_Solid
   public :: prim_2_cons_MK_S, cons_2_prim_MK_S, flux_make_MK_S, source_make_MK_S
   public :: prim_2_cons_IG_S, cons_2_prim_IG_S, flux_make_IG_S, source_make_IG_S
   public :: prim_2_cons_AG_S, cons_2_prim_AG_S, flux_make_AG_S, source_make_AG_S
+  public :: to_liquid_temperature, from_liquid_temperature
 
   !> The bases' own guard, so T_liq is their temperature bit for bit
   real(kind=R8), parameter :: eps = 1e-25
@@ -161,6 +162,34 @@ contains
     if (prim(nb+1) /= 0._R8) source(nb-1) = source(nb-1) - force(1)*solid_de(prim(nb-1), prim(nb+1), &
                                             mat_cp_const(mat), mat%cpSol, mat%hFus, mat%Tmelt)
   end subroutine latent_source
+
+  !> The reconstruction's form of a solidifying family's primitives: T_liq = e/c_l = T + solid_de(T, f)/c_l in the
+  !  temperature slot, continuous through the recalescence; a liquid keeps its T bit for bit.
+  pure subroutine to_liquid_temperature(prim, mat)
+    real(kind=R8), intent(inout) :: prim(:)
+    type(condensed_phase_t), intent(in) :: mat
+    integer :: nb
+    nb = size(prim) - 2
+    prim(nb-1) = prim(nb-1) + solid_de(prim(nb-1), prim(nb+1), mat_cp_const(mat), mat%cpSol, mat%hFus, mat%Tmelt) &
+                              / mat_cp_const(mat)
+  end subroutine to_liquid_temperature
+
+  !> A reconstructed face back to primitives: (T, f) from its (T_liq, chi) as for a cell; chi keeps its limited value.
+  pure subroutine from_liquid_temperature(prim, mat)
+    real(kind=R8), intent(inout) :: prim(:)
+    type(condensed_phase_t), intent(in) :: mat
+    real(kind=R8) :: T, f, chiOut
+    integer :: nb
+    nb = size(prim) - 2
+    call solid_state(prim(nb-1), min(max(prim(nb+2), 0._R8), 1._R8), mat_cp_const(mat), mat%cpSol, mat%Tmelt, &
+                     mat%Tnuc, mat%hFus, T, f, chiOut)
+    prim(nb+1) = f
+    if (f > 0._R8) then
+      prim(nb-1) = max(T, eps)
+    else
+      prim(nb-1) = T
+    endif
+  end subroutine from_liquid_temperature
 
   !> T, f and chi of the converted cell from T_liq = e/c_l (unfloored) and the transported chi. A liquid content keeps
   !  the base's primitives; the base's vacuum branch carries no phase.

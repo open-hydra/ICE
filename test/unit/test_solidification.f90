@@ -1,17 +1,20 @@
 !> Unit test of ICE_Lib_Solidification (IGLOO's solid-box material; a hypercooled variant with f0 > 1; a cold solid
 !> whose energy is negative): the energy against IGLOO's hSolid on its three branches, the recalescence conserving
 !> the energy, the nucleation threshold, melting at T-melt, the injection rule, the plateau rate, the ranges, the
-!> nucleated fraction's events and its majority threshold; then (U9) the closure wrappers of ICE_Lib_Solid. Prints every
-!> assertion and exits non-zero if any failed.
+!> nucleated fraction's events and its majority threshold; then (U9) the closure wrappers of ICE_Lib_Solid and (U12-U15)
+!> the reconstruction of a solidifying family. Prints every assertion and exits non-zero if any failed.
 program test_solidification
   use, intrinsic :: iso_fortran_env, only: R8 => real64, I8 => int64
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
   use ICE_Lib_Solidification
   use ICE_Lib_Solid
-  use ICE_Lib_MK,          only: prim_2_cons_MK, cons_2_prim_MK, flux_make_MK, source_make_MK
-  use ICE_Lib_IG,          only: prim_2_cons_IG, cons_2_prim_IG, flux_make_IG, source_make_IG
-  use ICE_Lib_AG,          only: prim_2_cons_AG, cons_2_prim_AG, flux_make_AG, source_make_AG
+  use ICE_Lib_MK,          only: prim_2_cons_MK, cons_2_prim_MK, flux_make_MK, source_make_MK, check_prim_MK
+  use ICE_Lib_IG,          only: prim_2_cons_IG, cons_2_prim_IG, flux_make_IG, source_make_IG, check_prim_IG
+  use ICE_Lib_AG,          only: prim_2_cons_AG, cons_2_prim_AG, flux_make_AG, source_make_AG, check_prim_AG
   use ICE_Lib_Riemann,     only: assign_riemann, riemann
+  use ICE_Lib_Model,          only: check_prim
+  use ICE_Lib_Limiters,       only: assign_limiter, limiter
+  use ICE_Lib_Reconstruction, only: state_reconstruction
   use ICE_Config_Types_m,  only: condensed_phase_t
   implicit none
   real(R8), parameter :: cl = 1250._R8, cs = 600._R8, hf = 1.07e6_R8, Tm = 2327._R8, hf2 = 4.e5_R8
@@ -33,6 +36,7 @@ program test_solidification
   call test_memory()
   call test_majority()
   call test_wrappers()
+  call test_reconstruction()
 
   if (nfail > 0) then
     write(*,'(A,I0,A)') 'test_solidification: ', nfail, ' FAILED'
@@ -377,6 +381,109 @@ contains
                                       ' K (390 K)'
     call check(abs(bk(5) - 390._R8) <= 1.e-9_R8 .and. bk(7) == 1._R8 .and. bk(8) == 1._R8, trim(msg))
   end subroutine test_wrappers
+
+
+  !> U12-U15: the reconstruction of a solidifying family (van Leer, unit spacing). U12 a liquid stencil gives the faces
+  !> of the ordinary reconstruction bit for bit (at temperatures where c_l T / c_l is not T); U13 across a nucleation front
+  !> each face holds the energy of its reconstructed T_liq and the phase solid_state gives it; U14 a cold solid (negative
+  !> T_liq) gets second-order faces at its physical temperature; U15 no check_prim reads T or f.
+  subroutine test_reconstruction()
+    type(condensed_phase_t) :: mat, cold
+    real(R8), parameter :: T12(4) = [2400.1234567891_R8, 2390.9876543219_R8, 2000.3141592653_R8, 1990.2718281828_R8], &
+                           T13(4) = [1875._R8, 1868._R8, Tm, Tm], &
+                           f13(4) = [0._R8, 0._R8, 0.55_R8, 0.57_R8]
+    real(R8) :: c(14,4), fl(14), fr(14), gl(14), gr(14), tl(4), el, er, xl, xr, T, f, chi
+    logical  :: bit, ok
+    integer  :: k, nb, iT, j
+    character(len=200) :: msg
+
+    mat%cs_al = cl; mat%rho_al = 2950._R8; mat%Tmelt = Tm; mat%Tnuc = Tn; mat%hFus = hf; mat%cpSol = cs
+    mat%solidSelect = 1; mat%solid = .true.
+    call assign_limiter('vanleer')
+
+    ! U12: liquid states (f = 0; chi 0 and 0.3 in the band, or above T_m), MK, IG and AG
+    bit = .true.
+    do k = 1, 3
+      nb = merge(6, merge(7, 12, k == 2), k == 1)
+      iT = nb - 1
+      select case (k)
+      case (1); check_prim => check_prim_MK
+      case (2); check_prim => check_prim_IG
+      case (3); check_prim => check_prim_AG
+      end select
+      c = 0._R8
+      do j = 1, 4
+        c(1:4,j) = [2.95_R8 - 0.1_R8*j, 10._R8 + j, 0.5_R8*j, -0.2_R8*j]
+        if (k == 2) c(5,j) = 1.e-6_R8*j
+        if (k == 3) c(5:10,j) = [1.e-6_R8*j, 0._R8, 0._R8, 2.e-6_R8, 0._R8, 1.e-6_R8]
+        c(iT,j) = T12(j); c(nb,j) = 1.e8_R8
+        c(nb+2,j) = merge(0._R8, 0.3_R8, j <= 2)
+      enddo
+      call state_reconstruction(c(1:nb+2,1), c(1:nb+2,2), c(1:nb+2,3), c(1:nb+2,4), 1._R8, 1._R8, 1._R8, 0.5_R8, &
+                                0.5_R8, fl(1:nb+2), fr(1:nb+2), 1._R8, mat, .true.)
+      call state_reconstruction(c(1:nb+2,1), c(1:nb+2,2), c(1:nb+2,3), c(1:nb+2,4), 1._R8, 1._R8, 1._R8, 0.5_R8, &
+                                0.5_R8, gl(1:nb+2), gr(1:nb+2), 1._R8, mat, .false.)
+      bit = bit .and. same(fl(1:nb+2), gl(1:nb+2)) .and. same(fr(1:nb+2), gr(1:nb+2))
+    enddo
+    call check(bit, 'U12 a liquid stencil (MK, IG, AG) gives the ordinary faces bit for bit')
+
+    ! U13: liquid 1875 and 1868 K, then plateau cells at T_m (f 0.55, 0.57, chi = 1), MK
+    check_prim => check_prim_MK
+    c = 0._R8
+    do j = 1, 4
+      c(1:6,j) = [2.95_R8, 10._R8, 0._R8, 0._R8, T13(j), 1.e8_R8]
+      c(7,j) = f13(j); c(8,j) = merge(0._R8, 1._R8, j <= 2)
+      tl(j) = c(5,j) + solid_de(c(5,j), c(7,j), cl, cs, hf, Tm)/cl
+    enddo
+    call state_reconstruction(c(1:8,1), c(1:8,2), c(1:8,3), c(1:8,4), 1._R8, 1._R8, 1._R8, 0.5_R8, 0.5_R8, &
+                              fl(1:8), fr(1:8), 1._R8, mat, .true.)
+    xl = tl(2) + limiter(tl(3) - tl(2), tl(2) - tl(1))*0.5_R8
+    xr = tl(3) - limiter(tl(4) - tl(3), tl(3) - tl(2))*0.5_R8
+    el = abs(cl*fl(5) + solid_de(fl(5), fl(7), cl, cs, hf, Tm) - cl*xl)
+    er = abs(cl*fr(5) + solid_de(fr(5), fr(7), cl, cs, hf, Tm) - cl*xr)
+    ok = el <= etol .and. er <= etol .and. min(tl(2), tl(3)) <= xl .and. xl <= max(tl(2), tl(3)) &
+         .and. min(tl(2), tl(3)) <= xr .and. xr <= max(tl(2), tl(3))
+    call solid_state(xl, fl(8), cl, cs, Tm, Tn, hf, T, f, chi)
+    ok = ok .and. abs(fl(5) - T) <= Ttol .and. abs(fl(7) - f) <= 4._R8*spacing(1._R8)
+    call solid_state(xr, fr(8), cl, cs, Tm, Tn, hf, T, f, chi)
+    ok = ok .and. abs(fr(5) - T) <= Ttol .and. abs(fr(7) - f) <= 4._R8*spacing(1._R8)
+    write(msg,'(A,F9.4,A,F8.6,A,F4.2,A,F9.4,A,F8.6,A,F4.2,A,ES9.2,A)') 'U13 front faces: left T ', fl(5), ' f ', fl(7), &
+      ' chi ', fl(8), ', right T ', fr(5), ' f ', fr(7), ' chi ', fr(8), '; energy off ', max(el, er), &
+      ' J/kg, each (T, f) = solid_state(T_liq face, chi face)'
+    call check(ok .and. fl(7) == 0._R8 .and. fr(7) > 0._R8, trim(msg))
+
+    ! U14: U5's cold solid (c_l = c_s = 1380, h_fus 1.09e6) at 380, 390, 400, 410 K: T_liq from -410 to -380 K
+    cold = mat; cold%cs_al = 1380._R8; cold%cpSol = 1380._R8; cold%hFus = 1.09e6_R8
+    c = 0._R8
+    do j = 1, 4
+      c(1:8,j) = [2.95_R8, 10._R8, 0._R8, 0._R8, 370._R8 + 10._R8*j, 1.e8_R8, 1._R8, 1._R8]
+    enddo
+    call state_reconstruction(c(1:8,1), c(1:8,2), c(1:8,3), c(1:8,4), 1._R8, 1._R8, 1._R8, 0.5_R8, 0.5_R8, &
+                              fl(1:8), fr(1:8), 1._R8, cold, .true.)
+    write(msg,'(A,F9.4,A,F9.4,A,F9.4,A)') 'U14 cold solid (T_liq ', c(5,2) - 1.09e6_R8/1380._R8, ' K): faces at ', &
+      fl(5), ' and ', fr(5), ' K (second order: 395 K; first order would be 390 and 400 K), f = 1'
+    call check(abs(fl(5) - 395._R8) <= 1.e-9_R8 .and. abs(fr(5) - 395._R8) <= 1.e-9_R8 .and. fl(7) == 1._R8 &
+               .and. fr(7) == 1._R8, trim(msg))
+
+    ! U15: no check_prim reads T or f, so the back-transform's place in the halving loop has no effect today
+    ok = .true.
+    do k = 1, 3
+      nb = merge(6, merge(7, 12, k == 2), k == 1)
+      iT = nb - 1
+      c = 0._R8
+      c(1:4,1) = [2.95_R8, 10._R8, 0._R8, 0._R8]
+      if (k == 2) c(5,1) = 1.e-6_R8
+      if (k == 3) c(5:10,1) = [1.e-6_R8, 0._R8, 0._R8, 1.e-6_R8, 0._R8, 1.e-6_R8]
+      c(iT,1) = 1500._R8; c(nb,1) = 1.e8_R8; c(nb+1,1) = 0.5_R8; c(nb+2,1) = 1._R8
+      gl(1:nb+2) = c(1:nb+2,1); gl(iT) = -1.e3_R8; gl(nb+1) = 5._R8
+      select case (k)
+      case (1); ok = ok .and. check_prim_MK(c(1:nb+2,1)) .and. check_prim_MK(gl(1:nb+2))
+      case (2); ok = ok .and. check_prim_IG(c(1:nb+2,1)) .and. check_prim_IG(gl(1:nb+2))
+      case (3); ok = ok .and. check_prim_AG(c(1:nb+2,1)) .and. check_prim_AG(gl(1:nb+2))
+      end select
+    enddo
+    call check(ok, 'U15 check_prim (MK, IG, AG) accepts T = -1e3 K and f = 5: it reads neither')
+  end subroutine test_reconstruction
 
 
   !> Bitwise equality of two arrays of reals.

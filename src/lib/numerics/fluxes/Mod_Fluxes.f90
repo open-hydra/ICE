@@ -61,7 +61,7 @@ contains
                             grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i:i+1,j,k),  &
                             ncond(p),                                                    &
                             grid%blk(b)%cond_phase(p)%beta(i,j,k),                     &
-                            obj_condensed(mat_of(p))                                    )
+                            obj_condensed(mat_of(p)), solid_of(p)                       )
 
       end do ; end do ; end do
       !$OMP END DO
@@ -83,7 +83,7 @@ contains
                             grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j:j+1,k),  &
                             ncond(p),                                                    &
                             grid%blk(b)%cond_phase(p)%beta(i,j,k),                     &
-                            obj_condensed(mat_of(p))                                    )
+                            obj_condensed(mat_of(p)), solid_of(p)                       )
 
       enddo ; enddo ; enddo
       !$OMP END DO
@@ -105,7 +105,7 @@ contains
                             grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k:k+1),  &
                             ncond(p),                                                    &
                             grid%blk(b)%cond_phase(p)%beta(i,j,k),                     &
-                            obj_condensed(mat_of(p))                                    )
+                            obj_condensed(mat_of(p)), solid_of(p)                       )
 
       enddo ; enddo ; enddo
       !$OMP END DO
@@ -122,7 +122,7 @@ contains
   end subroutine compute_flux
             
 
-  subroutine compute_flux_ (prim, length, normal, area, residual, nvar, beta, mat)
+  subroutine compute_flux_ (prim, length, normal, area, residual, nvar, beta, mat, solid)
     use ICE_Lib_Riemann
     use ICE_Config_Types_m, only: condensed_phase_t
     implicit none
@@ -134,6 +134,7 @@ contains
     integer(kind=I4),                      intent(in)    :: nvar
     real(kind=R8),                         intent(in)    :: beta
     type(condensed_phase_t),               intent(in)    :: mat
+    logical,                               intent(in)    :: solid
 
     real(kind=R8) :: dl0, dl1, dl2, dll, dlr
     real(kind=R8), dimension(size(prim(:,1))) :: prim_1, prim_4, flux
@@ -145,7 +146,7 @@ contains
     dlr = 0.5d0 * length(1)
 
     call state_reconstruction (prim(:,-1), prim(:,0), prim(:,1), prim(:,2), &
-                               dl0, dl1, dl2, dll, dlr, prim_1, prim_4, beta)
+                               dl0, dl1, dl2, dll, dlr, prim_1, prim_4, beta, mat, solid)
 
     flux = riemann (prim_1, prim_4, normal, mat)
     flux = flux * area
