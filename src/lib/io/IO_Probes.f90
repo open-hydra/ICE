@@ -127,7 +127,7 @@ contains
 
   subroutine Assign_Variables(probe, domain)
     use IR_Precision, only: str
-    use ICE_Global_m, only: ngroups, ncond
+    use ICE_Global_m, only: ngroups, ncond, nbase, solid_of
     implicit none
     type(obj_probe),       intent(inout), target :: probe
     type(ICE_domain_type), intent(in),    target :: domain
@@ -151,8 +151,13 @@ contains
         if (probe%names(v) == 'w_'//trim(str(.true.,p))) &
           probe%variables(v)%p => domain%blk(b)%cond_phase(p)%prim(4,i,j,k)
         if (probe%names(v) == 'T_'//trim(str(.true.,p))) &
-          probe%variables(v)%p => domain%blk(b)%cond_phase(p)%prim(ncond(p)-1,i,j,k)
+          probe%variables(v)%p => domain%blk(b)%cond_phase(p)%prim(nbase(p)-1,i,j,k)
         if (probe%names(v) == 'n_'//trim(str(.true.,p))) &
+          probe%variables(v)%p => domain%blk(b)%cond_phase(p)%prim(nbase(p),i,j,k)
+        if (.not. solid_of(p)) cycle
+        if (probe%names(v) == 'f_'//trim(str(.true.,p))) &
+          probe%variables(v)%p => domain%blk(b)%cond_phase(p)%prim(nbase(p)+1,i,j,k)
+        if (probe%names(v) == 'chi_'//trim(str(.true.,p))) &
           probe%variables(v)%p => domain%blk(b)%cond_phase(p)%prim(ncond(p),i,j,k)
       end do
     end do

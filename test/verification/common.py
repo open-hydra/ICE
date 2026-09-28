@@ -243,6 +243,12 @@ class Case(object):
         write_tec(self.dir / 'INPUT/part-ic.tec', names, self.xn, self.yn, self.zn,
                   [self.cells(f) for state in states for f in state], zone='B1-CD')
 
+    def write_ic(self, names, fields):
+        """INPUT/part-ic.tec for any closure layout: fields holds a constant or a function of x per name, in the
+        order the reader takes them (positional; the names are labels)."""
+        write_tec(self.dir / 'INPUT/part-ic.tec', names, self.xn, self.yn, self.zn,
+                  [self.cells(f) for f in fields], zone='B1-CD')
+
     def phase(self, *materials):
         """INPUT/part-phase.txt: the type word, then one "<name> <groups> [key=value ...]" line each."""
         (self.dir / 'INPUT/part-phase.txt').write_text('\n'.join(('condensed-dispersed phase',) + materials) + '\n')
@@ -350,9 +356,10 @@ def try_run(rep, fn, *args, **kw):
 
 
 def read_solution(path, zone=0):
-    """One zone (the first by default) of a Tecplot BLOCK output: {'time', 'nx', 'ny', 'var'[v][cell]}."""
+    """One zone (the first by default) of a Tecplot BLOCK output: {'time', 'nx', 'ny', 'names', 'var'[v][cell]}, the
+    names without x, y, z."""
     text = Path(path).read_text()
-    zones = re.split(r'^\s*ZONE', text, flags=re.IGNORECASE | re.MULTILINE)[1:]
+    head, *zones = re.split(r'^\s*ZONE', text, flags=re.IGNORECASE | re.MULTILINE)
     header, body = zones[zone].split('\n', 1)
     I, J, K = (int(re.search(r'\b%s\s*=\s*(\d+)' % a, header, re.IGNORECASE).group(1)) for a in 'IJK')
     stime = re.search(r'SOLUTIONTIME\s*=\s*([-+0-9.EDed]+)', header, re.IGNORECASE)
@@ -361,7 +368,7 @@ def read_solution(path, zone=0):
     nc = (I - 1) * (J - 1) * max(1, K - 1)
     nvar = (len(values) - 3 * nn) // nc
     out = {'time': float(stime.group(1)) if stime else None,
-           'nx': I - 1, 'ny': J - 1,
+           'nx': I - 1, 'ny': J - 1, 'names': re.findall(r'"([^"]*)"', head)[3:],
            'var': [values[3 * nn + v * nc: 3 * nn + (v + 1) * nc] for v in range(nvar)]}
     return out
 

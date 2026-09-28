@@ -41,14 +41,17 @@ test/
 │   ├── I-vortex-cloud/        # 2D cloud in a prescribed vortex, exact conformal map
 │   ├── J-tau-limit/           # Step bounded by the relaxation time, both modes; dilute cells left out
 │   ├── K-properties-table/    # Property table: interpolation, range, saturation, a varying cp
-│   └── L-materials/           # Several materials: table zones, model tokens, inlet records per family
+│   ├── L-materials/           # Several materials: table zones, model tokens, inlet records per family
+│   ├── N-solid-cooling/       # Solidification in a closed cell: supercooling, plateau, solid, melting
+│   └── O-solid-advection/     # Solidification in a steady stream: recursion, closed form, leak, no lock
 ├── fast/                      # Short invariant checks, no stored references
 │   ├── common.sh              # Shared helpers (short run, compare byte for byte)
 │   ├── openmp-equiv/          # 1 vs 4 threads bit-identical
 │   ├── refusals/              # Broken inputs and a diverging run must exit non-zero
 │   └── mpi-equiv/             # 1 vs 2 ranks bit-identical (connection and chimera)
 └── unit/                      # Programs linked against the library, no solver run
-    └── test_properties.f90    # Property table: grammar, checks, loading, lookup, energy, Psat
+    ├── test_properties.f90    # Property table: grammar, checks, loading, lookup, energy, Psat
+    └── test_solidification.f90 # Solidification functions and the closure wrappers
 ```
 
 Each case under `Doisneau/` is self-contained: `input.ini`, `INPUT/` (initial and

@@ -96,19 +96,21 @@ several, the groups must add up to the `[ICE-FamilyN]` count and the
 [property table](initial-conditions.md#property-table) must give one zone per material.
 
 `density`, `specific-heat`, `latent-heat`, `emissivity`, `vapour-molar-mass`,
-`boiling-temperature`, `vapour-specific-heat`, `lewis-number`, `vapour-mass-fraction` and
+`boiling-temperature` (alias `Tboil`), `vapour-specific-heat`, `lewis-number`, `vapour-mass-fraction` and
 `evaporation-coefficient` take one value per material, in the phase file's order
 (`emissivity = 0 0` for two materials); any other count stops the run.
 
 The tokens are the ones IGLOO reads. `evaporation`, `interface` and `alpha-e` set that
 material's evaporation model, interface and accommodation coefficient; `[ICE-Physics]
 evaporation`, `evaporation-interface` and `evaporation-coefficient` are the default of every
-material without the token. `liquid-conduction`, `boiling`, `combustion` and
-`solidification` accept only the value ICE implements (`ITC`, `clamp`, `none`, `off`), and
-IGLOO's other numeric keys (`k-liq`, `mu-liq`, `K-burn`, …) are read and ignored. An
-unknown key, a value that is not a number, or `interface = LK` with the d2-law stops the
-run. `evaporation-blowing` stays global. The setup prints each material's evaporation
-model.
+material without the token. `solidification = on` makes the material freeze and melt, with
+`T-melt`, `h-fus`, `T-nuc` and `cp-solid` (see [Solidification](../theory/physics.md#solidification)); it
+stops the run without a positive `h-fus` and `cp-solid`, with `T-nuc` at or above `T-melt`, together
+with evaporation, and with a `Cp` or `Density` column that varies. `liquid-conduction`, `boiling`
+and `combustion` accept only the value ICE implements (`ITC`, `clamp`, `none`), and IGLOO's other
+numeric keys (`k-liq`, `mu-liq`, `K-burn`, …) are read and ignored. An unknown key, a value that is
+not a number, or `interface = LK` with the d2-law stops the run. `evaporation-blowing` stays global.
+The setup prints each material's evaporation model and each solidifying material's values.
 
 ### Choosing the exchange models
 
@@ -123,7 +125,8 @@ convective heat exchange off explicitly; radiation stays under `emissivity`.
 `evaporation` defaults to `none`, and while it is `none` the vapour keys beside it are
 never read. Selecting a model makes `latent-heat`, `vapour-molar-mass` and
 `boiling-temperature` matter — those three set the saturation curve unless the property
-table carries a `Psat` column, and their defaults describe aluminium. `evaporation-interface` and `evaporation-blowing` are refinements of
+table carries a `Psat` column, and their defaults describe aluminium. `boiling-temperature`
+may be given as `Tboil`, the name IGLOO also accepts; giving both stops the run. `evaporation-interface` and `evaporation-blowing` are refinements of
 the selected model rather than models of their own:
 
 ```ini

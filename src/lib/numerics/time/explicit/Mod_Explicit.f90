@@ -61,7 +61,7 @@ contains
       call assign_all(p)
       if (len_trim(obj_time_scheme%riemann) == 0) then
         select case (trim(obj_time_scheme%model(p)))
-        case ('MK');     call assign_riemann('Saurel')
+        case ('MK');     call assign_riemann('Saurel', solid_of(p))
         case default;    call assign_riemann('Rusanov')
         end select
       else
@@ -73,7 +73,7 @@ contains
                          'use Rusanov or HLLE with IG and AG.'
           error stop 'ICE: Saurel with a non-MK family'
         endif
-        call assign_riemann(trim(obj_time_scheme%riemann))
+        call assign_riemann(trim(obj_time_scheme%riemann), solid_of(p))
       endif
       select case (trim(obj_time_scheme%solver_type))
       case ('euler'); nrk = 1
@@ -95,7 +95,7 @@ contains
         call compute_ghost(grid)
         call fill_second_ghost(grid)
 
-        call compute_bound(grid)
+        call compute_bound(grid, p)
 
         call compute_flux(grid, p)
 
@@ -118,6 +118,7 @@ contains
                               old=grid%blk(b)%cond_phase(p)%prim_old, &
                               dt=grid%blk(b)%cond_phase(p)%dt,        &
                               n=grid%blk(b)%dim, nc=ncond(p),         &
+                              iT=nbase(p)-1,                           &
                               average=average,                         &
                               total=obj_sim_param%residuotot)
       end do

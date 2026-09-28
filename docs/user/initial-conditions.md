@@ -19,6 +19,12 @@ variables of its closure:
 | IG | `rho_p` `u_p` `v_p` `w_p` `P_p` `T_p` `n_p` |
 | AG | `rho_p` `u_p` `v_p` `w_p` `P11_p` `P12_p` `P13_p` `P22_p` `P23_p` `P33_p` `T_p` `n_p` |
 
+A family of a solidifying material (see [Solidification](../theory/physics.md#solidification)) has two more
+variables after `n_p`: `f_p`, the frozen fraction, and `chi_p`, the nucleated fraction. An initial condition may leave
+them out for every solidifying family at once; they are then derived from `T_p` as IGLOO injects a particle, solid and
+nucleated at or below `T-nuc`, liquid above it. Any other variable count stops the run. An inlet injects the two
+fractions by the same rule.
+
 For two families, family 1's block is followed by family 2's. ICE names them with the
 family index appended — `rho_p1`, `u_p1`, … `rho_p2` — when it writes, but the reader
 goes by **position, not by name**: a file whose variables are in the wrong order is

@@ -11,10 +11,10 @@ module ICE_Mod_Diagnostic
 contains
 
 
-  subroutine Compute_Diagnostic(new, old, dt, n, nc, average, total)
+  subroutine Compute_Diagnostic(new, old, dt, n, nc, iT, average, total)
     use ICE_Global_m, only: gc, nres
     implicit none
-    integer,  intent(in)    :: n(3), nc
+    integer,  intent(in)    :: n(3), nc, iT
     real(R8), intent(in)    :: new(nc, 1-gc:n(1)+gc, 1-gc:n(2)+gc, 1-gc:n(3)+gc)
     real(R8), intent(in)    :: old(nc, 1-gc:n(1)+gc, 1-gc:n(2)+gc, 1-gc:n(3)+gc)
     real(R8), intent(in)    :: dt(n(1), n(2), n(3))
@@ -33,7 +33,7 @@ contains
     do i = 1, n(1)
       resn(1)   = abs(new(1,    i,j,k) - old(1,    i,j,k))
       resn(2:4) = abs(new(2:4,  i,j,k) - old(2:4,  i,j,k))
-      resn(5)   = abs(new(nc-1, i,j,k) - old(nc-1, i,j,k))
+      resn(5)   = abs(new(iT, i,j,k) - old(iT, i,j,k))
       residuo   = residuo + resn*resn
     end do; end do; end do
     !$omp end parallel

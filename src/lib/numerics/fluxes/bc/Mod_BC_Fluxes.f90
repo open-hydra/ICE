@@ -9,7 +9,7 @@ module ICE_Mod_BC_Fluxes
 
 contains
 
-  subroutine compute_bound (grid)
+  subroutine compute_bound (grid, p)
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Lib_Riemann
@@ -17,35 +17,34 @@ contains
     use ICE_Config_Types_m, only: obj_time_scheme, obj_condensed
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
-    integer(kind=I4) :: n, b, f, p, i, j, k
+    integer(kind=I4),      intent(in)    :: p
+    integer(kind=I4) :: n, b, f, i, j, k
     integer(kind=I4) :: ig, jg, kg, ig2, jg2, kg2, ip, jp, kp
     integer(kind=I4) :: dir
     real(kind=R8)    :: normal(3), area
     real(kind=R8)    :: dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th
     real(kind=R8)    :: beta_val
-    real(kind=R8)    :: priml(12), primr(12), flux(12)
+    real(kind=R8)    :: priml(ncond_max), primr(ncond_max), flux(ncond_max)
     integer(kind=I4) :: v
 
     bad_recon = .false.
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ngroups, ncond, mat_of, riemann, obj_time_scheme, obj_condensed), &
-    !$OMP PRIVATE(n, b, f, p, i, j, k, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, &
+    !$OMP SHARED(grid, p, ncond, mat_of, solid_of, riemann, obj_time_scheme, obj_condensed), &
+    !$OMP PRIVATE(n, b, f, i, j, k, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, &
     !$OMP         dir, normal, area, dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th, &
     !$OMP         beta_val, priml, primr, flux, v)
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
-      do p = 1, ngroups
 
-        !$OMP DO COLLAPSE (3)
-        do k = 1, grid%blk(b)%dim(3)
-        do j = 1, grid%blk(b)%dim(2)
-        do i = 1, grid%blk(b)%dim(1)
+      !$OMP DO COLLAPSE (3)
+      do k = 1, grid%blk(b)%dim(3)
+      do j = 1, grid%blk(b)%dim(2)
+      do i = 1, grid%blk(b)%dim(1)
 
-          grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = 0._R8
+        grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = 0._R8
 
-        enddo ; enddo ; enddo
-        !$OMP END DO
-      enddo
+      enddo ; enddo ; enddo
+      !$OMP END DO
     enddo
 
     !$OMP DO SCHEDULE (DYNAMIC)
@@ -56,7 +55,8 @@ contains
       b = grid%bc(n)%b
       if (.not. is_local_block(b)) cycle
       i = grid%bc(n)%i ; j = grid%bc(n)%j ; k = grid%bc(n)%k
-      p = grid%bc(n)%p ; f = grid%bc(n)%f
+      if (grid%bc(n)%p /= p) cycle
+      f = grid%bc(n)%f
 
       !> Nothing crosses a symmetry face of a pressureless cloud
       if (grid%bc(n)%type == 200 .and. trim(obj_time_scheme%model(p)) == 'MK') cycle
@@ -87,7 +87,8 @@ contains
                                   grid%blk(b)%cond_phase(p)%prim(1:ncond(p),i,j,k),       &
                                   grid%blk(b)%cond_phase(p)%prim(1:ncond(p),ip,jp,kp),    &
                                   dl0, dl1, dl2, dll, dlr,                                 &
-                                  priml(1:ncond(p)), primr(1:ncond(p)), beta_val)
+                                  priml(1:ncond(p)), primr(1:ncond(p)), beta_val,        &
+                                  obj_condensed(mat_of(p)), solid_of(p))
 
         flux(1:ncond(p)) = riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal, obj_condensed(mat_of(p))) * area
 
@@ -107,7 +108,8 @@ contains
                                   grid%blk(b)%cond_phase(p)%prim(1:ncond(p),ig,jg,kg),    &
                                   grid%blk(b)%cond_phase(p)%prim(1:ncond(p),ig2,jg2,kg2), &
                                   dl0, dl1, dl2, dll, dlr,                                 &
-                                  priml(1:ncond(p)), primr(1:ncond(p)), beta_val)
+                                  priml(1:ncond(p)), primr(1:ncond(p)), beta_val,        &
+                                  obj_condensed(mat_of(p)), solid_of(p))
 
         flux(1:ncond(p)) = - riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal, obj_condensed(mat_of(p))) * area
 

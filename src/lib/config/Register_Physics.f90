@@ -75,6 +75,10 @@ contains
                  'Clausius-Clapeyron saturation pressure; with a Psat column in the property table '// &
                  'it must lie in [Tmin, Tmax-1] of the table, where the column must give 0.5 to 2 atm'//'; one value per material', &
                  '> 0', .false., per_material=.true.)
+    ! Same target as boiling-temperature; Setup_Materials refuses the two together
+    call reg%add(section, 'Tboil', ini_condensed%Tboil, '2792.0', &
+                 'Alias of boiling-temperature, the name IGLOO also accepts; give one or the other, not both'// &
+                 '; one value per material', '> 0', .false., per_material=.true.)
     call reg%add(section, 'vapour-specific-heat', ini_condensed%cpv, '0.0', &
                  'Specific heat of the vapour [J/(kg K)]; 0 falls back to the gas cp'//'; one value per material', &
                  '>= 0', .false., per_material=.true.)

@@ -7,12 +7,14 @@
 #  first rows are refused while the input is read (a value outside its allowed
 #  list, a required model left unset in a coupled run, the heat name Chang, whose
 #  formula is JAXA3, a property table that is malformed or contradicts the INI,
-#  a Psat column an evaporation model cannot use, a phase file whose materials or
-#  model tokens ICE cannot honour);
+#  a Psat column an evaporation model cannot use, a key given together with its
+#  alias, a phase file whose materials or model tokens ICE cannot honour);
 #  the last one diverges at run time (a NaN source in one cell) and must be
 #  caught after the update. A solver that reports success on
-#  any of these would let a harness read a broken run as a pass. One row goes the
-#  other way: an INI value equal to the table's must be accepted.
+#  any of these would let a harness read a broken run as a pass. Four rows go the
+#  other way: an INI value equal to the table's must be accepted, the boiling
+#  temperature must be read under either of its names, and a solidifying material
+#  must be read, reported and written with its frozen and nucleated fractions.
 #===============================================================================
 set -uo pipefail
 
@@ -116,15 +118,17 @@ refuse Doisneau/MK "table: a value that is not a number" "sed -i '1000s/ [^ ]*\$
 accept Doisneau/MK "table: INI density equal to the constant column" \
        "sed -i '/^heat-transfer/a density = 2000' input.ini && sed -i 's/^iter-threshold .*/iter-threshold = 20/' input.ini" \
        "material 1: density 2.00000E+03 (constant)"
-# Refuse/MK is coupled, so its evaporation model is read. psat_table writes its material (cp 1000,
-# density 2000, as its INI sets) as a table with a Psat column: 1e6 - T Pa ("decreasing") or
-# T Pa ("linear", 0.03 atm at the default boiling temperature, 2792 K)
+# Refuse/MK and NoExchange/MK are coupled, so their evaporation model is read. psat_table writes
+# their material (cp 1000, density 2000, as their INIs set) as a table with a Psat column: 1e6 - T Pa
+# ("decreasing"), T Pa ("linear", 0.03 atm at the default boiling temperature, 2792 K) or
+# 101.325 T Pa ("1atm", one atmosphere at 1000 K)
 psat_table() {
   awk -v mode="$1" 'BEGIN {
     print "TITLE = \"Mass Thermodynamic Properties\""
     print "VARIABLES = \"Temperature\", \"Cp\", \"Density\", \"Enthalpy\", \"Psat\""
     print "ZONE T=\"A\""; print "I=5000, F=POINT"
-    for (T = 1; T <= 5000; T++) printf "%.1f 1000.0 2000.0 %.1f %.6e\n", T, 1000*T, (mode == "decreasing" ? 1e6 - T : T)
+    for (T = 1; T <= 5000; T++) printf "%.1f 1000.0 2000.0 %.1f %.6e\n", T, 1000*T, \
+      (mode == "decreasing" ? 1e6 - T : (mode == "1atm" ? 101.325*T : T))
   }' > INPUT/part-properties.dat
 }
 evap_on="sed -i '/^heat-transfer/a evaporation = CEM' input.ini"
@@ -132,6 +136,19 @@ refuse Refuse/MK   "Psat: decreasing, with evaporation" "psat_table decreasing &
        "Psat column: a pressure that decreases with T"
 refuse Refuse/MK   "Psat: far from 1 atm at the boiling temperature" "psat_table linear && $evap_on" \
        "Psat column: psat(boiling-temperature) is not within a factor 2 of one atmosphere"
+# Tboil is the alias of boiling-temperature (IGLOO's name): one or the other, even with equal values.
+# Without the alias Tboil is an unknown key: the run stops, but not with this text.
+refuse Doisneau/MK "boiling temperature: key and alias both given" \
+       "sed -i '/^heat-transfer/a boiling-temperature = 373.15\nTboil = 373.15' input.ini" \
+       "give boiling-temperature or its alias Tboil, not both"
+# The alias is read, not only accepted: the "1atm" column gives 1.2 atm at 1200 K under either name,
+# and at the default 2792 K (2.792 atm) the run would be refused.
+accept NoExchange/MK "boiling temperature: key read" \
+       "psat_table 1atm && $evap_on && sed -i '/^heat-transfer/a boiling-temperature = 1200' input.ini" \
+       "psat(boiling-temperature) = 1.20000E+00 atm"
+accept NoExchange/MK "boiling temperature: alias Tboil read" \
+       "psat_table 1atm && $evap_on && sed -i '/^heat-transfer/a Tboil = 1200' input.ini" \
+       "psat(boiling-temperature) = 1.20000E+00 atm"
 # Materials come from the phase file: "<name> <groups> [key=value ...]" per line. two_mat declares
 # a second material and a second family; the tokens are read for every material, coupled or not.
 two_mat="printf 'condensed-dispersed phase\nA 1\nB 1\n' > INPUT/part-phase.txt && printf '\n[ICE-Family2]\nclosure = MK\n' >> input.ini"
@@ -150,8 +167,35 @@ refuse Doisneau/MK "tokens: an unknown evaporation model" "tokens evaporation=LE
        "Wrong evaporation model input ---> LEB;Choose one of the following"
 refuse Doisneau/MK "tokens: combustion is not modelled" "tokens combustion=Beckstead" \
        "Wrong combustion input ---> Beckstead;- none"
-refuse Doisneau/MK "tokens: solidification is not modelled" "tokens solidification=on" \
-       "Wrong solidification input ---> on;- off"
+# Solidification, from the tokens as IGLOO reads them; "valid" is the solid-box material's line
+valid='solidification=on h-fus=1.07e6 cp-solid=600'
+accept Doisneau/MK "solidification: read and reported" "tokens '$valid' && sed -i 's/^iter-threshold .*/iter-threshold = 20/' input.ini" \
+       " - Solid   --> material 1 (A)"
+solid_out=$WORK/$(echo "solidification: read and reported" | tr -c 'A-Za-z0-9\n' '_')/OUTPUT/part-field.tec
+if grep -qF '"n_p1""f_p1""chi_p1"' "$solid_out" 2>/dev/null; then
+  echo "[fast] PASS: solidification: f_p1 and chi_p1 follow n_p1 in the output"
+else
+  echo "[fast] FAIL: solidification: the output does not name f_p1 and chi_p1 after n_p1"; fail=1
+fi
+refuse Doisneau/MK "solidification: a value that is not on/off" "tokens solidification=maybe" \
+       "Wrong solidification input ---> maybe;- on;- off"
+refuse Doisneau/MK "solidification: heat of fusion missing" "tokens 'solidification=on cp-solid=600'" \
+       "solidification=on requires h-fus > 0"
+refuse Doisneau/MK "solidification: solid heat capacity missing" "tokens 'solidification=on h-fus=1.07e6'" \
+       "solidification=on requires cp-solid > 0"
+refuse Doisneau/MK "solidification: nucleation above melting" "tokens '$valid T-nuc=2400'" \
+       "solidification=on requires T-nuc < T-melt"
+refuse Doisneau/MK "solidification: with evaporation" "tokens '$valid evaporation=CEM'" \
+       "solidification=on is exclusive with evaporation"
+refuse Doisneau/MK "solidification: a varying cp" \
+       "tokens '$valid' && python3 -c \"L=open('INPUT/part-properties.dat').read().split(chr(10))[:4]; L+=['%.1f %.10g 2000.0 %.10g' % (T, 1500+0.1*T, 1500*T+0.05*T*T) for T in range(1, 5001)]; open('INPUT/part-properties.dat','w').write(chr(10).join(L)+chr(10))\"" \
+       "solidification=on requires a constant-cp material"
+refuse Doisneau/MK "solidification: a varying density" \
+       "tokens '$valid' && python3 -c \"L=open('INPUT/part-properties.dat').read().split(chr(10))[:4]; L+=['%.1f 1500.0 %.10g %.10g' % (T, 2000+0.1*T, 1500*T) for T in range(1, 5001)]; open('INPUT/part-properties.dat','w').write(chr(10).join(L)+chr(10))\"" \
+       "solidification=on requires a constant-density material"
+refuse Doisneau/MK "solidification: an IC of the wrong width" \
+       "tokens '$valid' && python3 -c \"import re; L=open('INPUT/part-ic.tec').read().rstrip(chr(10)).split(chr(10)); I,J,K=[int(re.search(r'\\b%s\\s*=\\s*(\\d+)' % c, L[1]).group(1)) for c in 'IJK']; n=(I-1)*(J-1)*(K-1); open('INPUT/part-ic.tec','w').write(chr(10).join(L+L[-n:])+chr(10))\"" \
+       "the initial condition holds 7 variables per cell"
 refuse Doisneau/MK "tokens: only the infinite-conductivity liquid" "tokens liquid-conduction=P2T" \
        "Wrong liquid-conduction input ---> P2T;- ITC"
 refuse Doisneau/MK "tokens: only the boiling clamp" "tokens boiling=ZGR" \

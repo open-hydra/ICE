@@ -221,6 +221,12 @@ contains
         if (any(obj_condensed(:)%evapSelect /= 0)) &
           write(*,'(A)') " - Blowing --> "//trim(obj_time_scheme%blowing)
       end if
+      do m = 1, nmat
+        if (obj_condensed(m)%solid) &
+          write(*,'(A,I0,A,F0.2,A,F0.2,A,ES12.5,A,F0.2,A)') " - Solid   --> material ", m, " ("// &
+            trim(obj_condensed(m)%name)//"): T-melt ", obj_condensed(m)%Tmelt, " K, T-nuc ", obj_condensed(m)%Tnuc, &
+            " K, h-fus ", obj_condensed(m)%hFus, " J/kg, cp-solid ", obj_condensed(m)%cpSol, " J/(kg K)"
+      enddo
 
     end subroutine print_simulation_info
 
