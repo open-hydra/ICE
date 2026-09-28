@@ -392,7 +392,7 @@ The fixed-point test is what a reconstruction of $T_p$ fails: the limiter then s
 front cell alternates between liquid and nucleated, or its $\chi$ and the $f$ of the cells after it cycle (O2 at
 $n_x$ = 480, period 2). With $T_\ell$ reconstructed, O2's stream is a fixed point for RK2 and RK3, CFL 0.4 and 0.8, and
 $n_x$ = 240 and 480, with the front in the cell of $x_n$ and the same exit temperature for every scheme and CFL number:
-905.4689 K at $n_x$ = 240 and 906.1498 K at 480.
+905.4689 K at $n_x$ = 240 and 906.1498 K at 480. A first-order reconstruction is not needed for a steady nucleation front.
 
 ## Material properties
 

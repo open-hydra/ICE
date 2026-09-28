@@ -232,7 +232,8 @@ both of its switches.
 In a steady stream the nucleation front and both melting points are located within one cell. The reconstruction
 works on $T_\ell$ in place of $T_p$ ([Reconstruction](numerics.md#reconstruction)): $T_\ell$ is continuous where a
 content nucleates, since the recalescence keeps its energy, so the limiter sees no jump at the nucleation front, and in
-every configuration measured a steady run converges there with MUSCL as at first order. Three approximations remain. A cell where contents of
+every configuration measured a steady run converges there with MUSCL as at first order: `space-reconstruction =
+first-order` is not needed for that. Three approximations remain. A cell where contents of
 different histories meet ($0 < \chi < 1$) holds one state, decided by the majority; carrying the nucleated and the
 liquid parts as two populations would lift it. At the nucleation front the liquid and the nucleated state of the
 front cell can both be steady when its inflow lies in a narrow window, which puts the front one cell earlier or later.
