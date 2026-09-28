@@ -40,6 +40,11 @@ $$
 
 where $s$ are the one-sided slopes on the non-uniform mesh, $\phi$ the limiter and $\beta$ the shock-detector weight described below.
 
+A family of a solidifying material reconstructs, in place of $T_p$, its liquid-branch temperature $T_\ell = e/c_l$,
+which is continuous where the content nucleates, and takes each face's $T_p$ and $f$ from the face's $T_\ell$ and
+$\chi$ by the rule of a cell ([Solidification](physics.md#solidification)); a liquid face is unchanged, and a cold solid,
+whose $T_\ell$ is negative, gets its physical temperature back.
+
 ### Limiters
 
 Several options are available to compute $\phi$:

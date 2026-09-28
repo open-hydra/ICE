@@ -382,23 +382,17 @@ multiple of 3 so that a cycle of period 2 or 3 shows, in $T_p$, $f$ and $\chi$ c
 |---|---|---|---|
 | O0 | `T-melt = 200` (every cell liquid), MUSCL; MK/Saurel and IG/Rusanov | the plain run's blocks byte for byte, $f$ and $\chi$ all zero | identical |
 | O1 | first order, $n_x$ = 120, gas 600 K | every cell on the recursion (front cell 31, exit 914.2832 K) and the energy balance | $T$ $1.3\times10^{-14}$, $f$ $3\times10^{-15}$; balance $3\times10^{-15}$ |
-| O2 | MUSCL, $n_x$ = 120, 240, 480 | the front in the cell of $x_n$ = 37.805 mm; $T_p = T_m$ exactly and $\chi = 1$ on the plateau; the liquid error falling at first order (the inlet state is held at the ghost-cell centre, half a cell upstream of the face) | fronts 31, 61, 121; liquid errors 10.5, 5.3, 2.6 K; $n_x$ = 480 a period-2 cycle at the front (below), held to its amplitude |
-| O3 | IG/Rusanov, MUSCL, $n_x$ = 240 | the front of O2, $\chi < \tfrac12$ upstream | front 61; $\chi$ 0.2 in the cell upstream, a fixed point of the RK2 step at CFL 0.8 |
+| O2 | MUSCL, $n_x$ = 120, 240, 480 | the front in the cell of $x_n$ = 37.805 mm; $T_p = T_m$ exactly and $\chi = 1$ on the plateau; the liquid error falling at first order (the inlet state is held at the ghost-cell centre, half a cell upstream of the face) | fronts 31, 61, 121; exits 904.1445, 905.4689, 906.1498 K; liquid errors 10.5, 5.3, 2.6 K; every $n_x$ a fixed point |
+| O3 | IG/Rusanov, MUSCL, $n_x$ = 240 | the front of O2, $\chi < \tfrac12$ upstream | front 61; $\chi$ at most $2.5\times10^{-5}$ upstream, the Rusanov leak |
 | O3b | IG/Rusanov, first order, O1's stream at 0.1 m/s where the inlet's $P$ gives $c$ = 2.5 $u$ and 4 $u$ | every cell on an independent Rusanov model of $e$ and $\chi$; the front one and two cells above the upwind one | fronts 30 and 29; $T$ $7\times10^{-14}$, $1.5\times10^{-13}$ |
 | O4 | a solid at 1500 K into a 3000 K gas, `h-fus = 4e5`, from an empty domain; MK and IG, $n_x$ = 120, 240 | the melting recursion: solid to $T_m$, the plateau, the liquid; no cell with $f > 0$ above $T_m$ | first mush and liquid cells 34/74 and 66/147, exits 2608.6368 and 2610.1672 K; MK $10^{-14}$, IG $2\times10^{-7}$ |
 | O5 | a steady run with the gas at 300 K, then restarted in place with the gas at 1000 K | the front moves back to the 1000 K run's cell: no lock | fronts 26, then 42; per cell $3\times10^{-14}$ from a fresh run |
 
-With MUSCL a nucleation front need not be a fixed point of the pseudo-time step. On O2's stream, RK2 at CFL 0.8
-settles at $n_x$ = 120 and 240 but cycles with period 2 at 480: the front cell's $\chi$ alternates between 0.6 and 1
-(nucleated both times) and an $f$ ripple of $2.9\times10^{-3}$ dies out over the next 60 cells, $T_p$ unchanged. RK3,
-and RK2 at CFL 0.4, cycle at the front at $n_x$ = 240 and 480, the front cell turning liquid and nucleated in turn, over
-two, three or more iterations. In every cycle measured the density residual stays zero (the temperature residual
-stalls only where the front cell changes phase), and the solid region and the exit are steady (to $10^{-9}$ where
-compared cell by cell). First-order reconstruction converged in every
-configuration measured (MK and IG, Euler and RK2), and so did the melting points with MUSCL, the temperature being
-continuous there. O2 at $n_x$ = 480 holds the front cell and the 64 after it to the measured amplitude ($f$ within
-$5\times10^{-3}$, $\chi$ within 0.49, so the front cell stays nucleated), every other cell and $T_p$ everywhere to
-$10^{-12}$.
+The fixed-point test is what a reconstruction of $T_p$ fails: the limiter then sees the recalescence jump, and the
+front cell alternates between liquid and nucleated, or its $\chi$ and the $f$ of the cells after it cycle (O2 at
+$n_x$ = 480, period 2). With $T_\ell$ reconstructed, O2's stream is a fixed point for RK2 and RK3, CFL 0.4 and 0.8, and
+$n_x$ = 240 and 480, with the front in the cell of $x_n$ and the same exit temperature for every scheme and CFL number:
+905.4689 K at $n_x$ = 240 and 906.1498 K at 480.
 
 ## Material properties
 

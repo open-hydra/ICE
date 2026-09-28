@@ -229,16 +229,14 @@ is the nucleation switch, which happens at the end of a stage: the plateau is sh
 $\pi d_p k_g Nu\,(T_m - T_{nuc})\,\Delta t/(m h_{fus})$ in $f$. Melting has none, the heat rate being continuous through
 both of its switches.
 
-In a steady stream the nucleation front and both melting points are located within one cell. With first-order
-reconstruction a steady run converges there. With MUSCL the nucleation front need not settle: the front cell can
-alternate between liquid and nucleated from one pseudo-time iteration to the next, in a cycle of two, three or more
-iterations depending on the time scheme and the CFL number, or stay nucleated while its $\chi$ and the $f$ of the
-cells after it cycle. The first kind stalls the temperature residual (the last column of
-`<prefix>residual-history.dat`); the second shows in no residual ICE writes, and the density residual printed on the
-shell sees neither, the mass flux not depending on the phase. The cycle stays at the front: the $f$ it sends
-downstream dies out on the plateau, and the solid region and the exit are steady. The melting points, where the
-temperature is continuous, converge with MUSCL too. Where a converged steady state matters, use
-`space-reconstruction = first-order`, which converged in every configuration measured.
+In a steady stream the nucleation front and both melting points are located within one cell. The reconstruction
+works on $T_\ell$ in place of $T_p$ ([Reconstruction](numerics.md#reconstruction)): $T_\ell$ is continuous where a
+content nucleates, since the recalescence keeps its energy, so the limiter sees no jump at the nucleation front, and in
+every configuration measured a steady run converges there with MUSCL as at first order. Three approximations remain. A cell where contents of
+different histories meet ($0 < \chi < 1$) holds one state, decided by the majority; carrying the nucleated and the
+liquid parts as two populations would lift it. At the nucleation front the liquid and the nucleated state of the
+front cell can both be steady when its inflow lies in a narrow window, which puts the front one cell earlier or later.
+In a time-accurate run nucleation happens at the end of a stage (above).
 
 The Rusanov and HLLE fluxes leak $\chi$ upstream of a sharp front: $c/(2u + c)$ into the first cell with Rusanov,
 nothing with HLLE while $c \le u$ and $(c - u)/(c + u)$ above, where $u$ is the flow speed and $c$ the closure's signal
