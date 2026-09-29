@@ -26,7 +26,9 @@ then keep a stored reference so a change is caught.
 | [Chimera Overset](chimera.md) | 2D | IG | Overset interpolation between overlapping non-matching blocks | The same case on a single block, plus a matched-resolution control | `Doisneau/IG-chimera` |
 | [Multi-block and MPI](multiblock-mpi.md) | 2D | IG | Block connections and the rank decomposition | The single block; and 1 to 4 ranks against each other | `Doisneau/IG-split4` |
 | [Berthon Riemann Problems](berthon.md) | 1D | AG | Shocks, contacts and rarefactions of the Gaussian system | Analytical wave patterns | `Berthon/SCS`, `Berthon/RCS`, `Berthon/RCR` |
-| [Code Verification](verification.md) | 1D, 2D | MK | Drag and heat relaxation, periodic advection, every drag and Nusselt correlation, every evaporation model, and clouds transported through uniform, straining and rotating carrier fields | Closed forms and independent RK4 integrations | `verification/A` … `verification/I` |
+| [Axisymmetric Wedge](axisymmetry.md) | 2D-axi | MK, IG, AG | The wedge side faces and the axis face of an axisymmetric mesh, and the hoop pressure | Exact stationary states | `Axis/MK`, `Axis/IG`, `Axis/AG` |
+| [Gaussian Closures](gaussian-closures.md) | 1D, 2D | IG, AG | The pressure work in the energy flux, the directional wave speed of Rusanov and of the time step, the reflected pressure tensor at a symmetry plane | A uniform temperature, the exact γ = 3 Riemann solution, momentum conservation | `Thermal/IG`, `Thermal/AG`, `Riemann/AG`, `Reflect/AG` |
+| [Code Verification](verification.md) | 1D, 2D | MK | Drag and heat relaxation, periodic advection, every drag and Nusselt correlation, every evaporation model, the property table, several materials side by side, and clouds transported through uniform, straining and rotating carrier fields | Closed forms and independent RK4 integrations | `verification/A` … `verification/L` |
 
 Read together they cover: every closure, all three source terms and every one of
 their correlations — twelve drag laws, seven Nusselt laws and five evaporation models —
@@ -36,8 +38,8 @@ and every way a block can talk to another one.
 ### What is not covered
 
 Restart, probes, grid sequencing and implicit residual smoothing have no case. Nor does
-any three-dimensional configuration — every case here is 1-D or 2-D — or any run with
-more than one family. Evaporation is covered only at zero slip, where the Sherwood and
+any three-dimensional configuration — every case here is 1-D or 2-D — and several
+families run side by side only in the uniform clouds of `verification/L`. Evaporation is covered only at zero slip, where the Sherwood and
 Nusselt corrections are inactive; the convective branch of each model is not verified.
 
 ## Running them

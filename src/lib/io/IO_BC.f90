@@ -2,15 +2,14 @@ module ICE_IO_BC
   use iso_fortran_env, only: I4 => int32, R8 => real64
   use ICE_Global_m,         only: ICE_phase_prefix
   use ICE_Advanced_Types_m, only: ICE_domain_type, ICE_bc_type
-
   implicit none
   private
+
   public :: Setup_BC, Print_BC_Summary
 
-  integer :: nconn = 0, nsym = 0, nio = 0, next = 0, nchim = 0
+  integer :: nconn = 0, nsym = 0, nio = 0, next = 0, nchim = 0, naxi = 0
 
 contains
-
 
   !> Read the BC file of one grid level, written by ATLAS BCB: INPUT/<prefix>bc.txt
   !  for the fine level and INPUT/<prefix>bc<level>.txt for a coarse multigrid level.
@@ -18,28 +17,35 @@ contains
   !
   !      b  i  j  k  f  code
   !
+  !> Header per boundary cell:
+  !
+  !      b  i  j  k  f  code
+  !
   !  followed by a code-dependent payload. ICE's bc array holds one entry per
-  !  (cell, group). How the records map onto it depends on how many copies of the
-  !  boundary table the file carries, which ATLAS decides from the phase file:
+  !  (cell, group). The file has either:
   !
-  !    one copy    a single-population phase, or a file written before populations
-  !                existed. The record is fanned out over every group -- one set of
-  !                injection data for all families, which is what every older case has.
-  !    one copy    per (material, population) pair, in that order, block by block:
-  !    per group   ATLAS_BCB::write_dp_bc loops materials and populations inside its
-  !                block loop. Copy c then belongs to family c and nothing is shared.
+  !    one copy   a single-population phase, or a file written before populations
+  !               existed. The record is fanned out over every group -- one set of
+  !               injection data for all families.
   !
-  !  Any other count is a mismatch between the phase file the BC file was written from
-  !  and the [ICE-Family*] sections of this run, and stops the setup: binding the wrong
-  !  copy to a family would inject the wrong size class with no other symptom.
+  !    one copy   per (material, population) pair, in ATLAS order, block by block:
+  !    per group  ATLAS_BCB::write_dp_bc loops materials and populations inside its
+  !               block loop. Copy c then belongs to family c and nothing is shared.
   !
-  !  bc%type stores the ATLAS code as is:
+  !  With multiple copies, Setup_BC therefore walks block by block and expects
+  !  the same boundary-cell order in every copy. Any other count is a mismatch
+  !  between the phase file used to write the BC file and this run's groups; it
+  !  stops setup rather than binding a family's data to the wrong copy.
+
   !
-  !      0        null                   no ghost, no boundary flux
+  !      0        planar 2-D face        ghost = copy of the interior cell, no boundary flux
   !      101/201  connection / periodic
   !      102      chimera
-  !      200      axisymmetry            no ghost, no boundary flux
+  !      200      wedge side face        ghosts mirrored; boundary flux for IG/AG (the hoop
+  !                                      pressure), none for MK
   !      300      symmetry
+  !      301      dispersed-phase wall   treated as 300: the symmetry ghost already absorbs
+  !                                      particles moving toward the face and mirrors receding ones
   !      400      extrapolation
   !      401-403  inlet (see Read payload below)
   subroutine Setup_BC(grid, level)
@@ -59,25 +65,28 @@ contains
     real(R8)    :: massflux, velocity, temperature, radius, alpha, beta
     character(len=32) :: alpha_tok, beta_tok
     integer(I4) :: nchi(2), s, nzero_chim
-    integer(I4),  allocatable :: donorID(:,:)
-    real(R8),     allocatable :: weight(:)
+    integer(I4), allocatable :: donorID(:,:)
+    real(R8), allocatable :: weight(:)
 
     bc  => grid%bc
     nbc => grid%n_bf
-    nconn = 0; nsym = 0; nio = 0; next = 0; nchim = 0
+
+    nconn = 0; nsym = 0; nio = 0; next = 0; nchim = 0; naxi = 0
 
     if (ngroups <= 0) error stop 'Setup_BC: ngroups not set'
     if (mod(size(bc), ngroups) /= 0) error stop 'Setup_BC: bc array is not a multiple of ngroups'
+
     ncell = size(bc) / ngroups
     nzero_chim = 0
-
     nrec = Count_BC_Records(level)
+
     if (mod(nrec, ncell) /= 0) then
       write(*,'(A,I0,A,I0,A)') '  [ICE::Setup_BC] the BC file holds ', nrec, &
         ' records, which is not a whole number of copies of the ', ncell, &
         ' boundary cells of this mesh'
       error stop
     endif
+
     ncopy = nrec / ncell
 
     if (ncopy /= 1 .and. ncopy /= ngroups) then
@@ -90,17 +99,20 @@ contains
     endif
 
     open(newunit=unitfile, file=trim(bc_filename(level)), status='old', iostat=ios)
+
     if (ios /= 0) then
       write(*,'(A)') '  [ICE::Setup_BC] boundary-condition file not found: '//trim(bc_filename(level))
       error stop 'BC file not found'
     endif
 
     nbmax = 0
+
     do b = 1, grid%nb
       nbmax = max(nbmax, 2*(grid%blk(b)%dim(2)*grid%blk(b)%dim(3)    &
                           + grid%blk(b)%dim(1)*grid%blk(b)%dim(3)    &
                           + grid%blk(b)%dim(1)*grid%blk(b)%dim(2)))
     enddo
+
     allocate(key(4, nbmax))
 
     nbc = 0
@@ -114,13 +126,10 @@ contains
       nbb = 2*(grid%blk(b)%dim(2)*grid%blk(b)%dim(3)    &
              + grid%blk(b)%dim(1)*grid%blk(b)%dim(3)    &
              + grid%blk(b)%dim(1)*grid%blk(b)%dim(2))
-
       do c = 1, ncopy
         do r = 1, nbb
-
           n    = cellbase + r
           nrec = nrec + 1
-
           read(unitfile,*,iostat=ios) hb, hi, hj, hk, hf, code
           if (ios /= 0) then
             write(*,'(A,I0)') '  [ICE::Setup_BC] error reading BC header record ', nrec
@@ -165,7 +174,6 @@ contains
           !> Payload dispatch. Count_BC_Records walks the same rules to work out how
           !  many copies the file holds: a code added here needs adding there too.
           select case (code)
-
             case (101, 201)          ! connection / periodic
               nconn = nconn + 1
               read(unitfile,*,iostat=ios) cs(1:9)
@@ -189,9 +197,9 @@ contains
               endif
 
             case (200)               ! axisymmetry, no payload
-              continue
+              naxi = naxi + 1
 
-            case (300)               ! symmetry, no payload
+            case (300, 301)          ! symmetry / dispersed-phase wall, no payload
               nsym = nsym + 1
 
             case (400)               ! extrapolation, no payload
@@ -220,7 +228,6 @@ contains
               write(*,'(A,I0,A,I0)') '  [ICE::Setup_BC] unsupported ATLAS BC code ', code, &
                                      ' at record ', nrec
               error stop
-
           end select
 
           if (ios /= 0) then
@@ -239,7 +246,6 @@ contains
           else
             pfirst = c ; plast = c
           endif
-
           do p = pfirst, plast
             idx = (n-1)*ngroups + p
             bc(idx)%b = hb; bc(idx)%i = hi; bc(idx)%j = hj; bc(idx)%k = hk; bc(idx)%f = hf
@@ -263,47 +269,51 @@ contains
               bc(idx)%volume_fraction = weight
             endif
           enddo
-
         enddo
       enddo
-
       cellbase = cellbase + nbb
     enddo
 
     close(unitfile)
 
     if (nzero_chim > 0) then
-      write(*,'(A,I0,A)') '  [ICE::Setup_BC] ', nzero_chim, ' chimera records have a ghost layer '// &
-        'whose donor weights sum to ~0 (no donor found by ATLAS BCB). Fix the BC file before running.'
+      write(*,'(A,I0,A)') '  [ICE::Setup_BC] ', nzero_chim, &
+        ' chimera records have a ghost layer whose donor weights sum to ~0 (no donor found by ATLAS BCB). '// &
+        'Fix the BC file before running.'
       error stop
     endif
 
-    if (mpi_is_root) call Print_BC_Summary()
+    if (mpi_is_root) then
+      call Print_BC_Summary()
+      call Check_Phase_Groups(ngroups)
+    endif
 
   end subroutine Setup_BC
 
 
-  !> How many records does the BC file hold? Walked with the same payload rules as
-  !  Setup_BC, storing nothing: the count divided by the mesh's boundary cells is the
-  !  number of copies of the table, which has to be known before the records can be
-  !  attributed to families. A malformed file is left for Setup_BC to report in full.
+  !> How many records does the BC file hold? Walk the payload with the same rules as
+  !  Setup_BC, storing nothing. The count divided by the mesh's boundary cells is the
+  !  number of copies of the table, which has to be known before records can be
+  !  attributed to families.
   integer(I4) function Count_BC_Records(level) result(nrec)
     implicit none
     integer(I4), intent(in) :: level
     integer(I4) :: unitfile, ios, s, nskip
     integer(I4) :: hb, hi, hj, hk, hf, code, nchi(2)
-    real(R8)    :: first          !< first value of a payload line, read only to skip it
+    real(R8)    :: first
 
     nrec = 0
+
     open(newunit=unitfile, file=trim(bc_filename(level)), status='old', iostat=ios)
     if (ios /= 0) error stop 'BC file not found'
 
     do
       read(unitfile,*,iostat=ios) hb, hi, hj, hk, hf, code
       if (ios /= 0) exit
-      nrec = nrec + 1
 
+      nrec = nrec + 1
       nskip = 0
+
       select case (code)
       case (101, 201, 401:403)
         nskip = 1
@@ -317,6 +327,7 @@ contains
         read(unitfile,*,iostat=ios) first
         if (ios /= 0) exit
       enddo
+
       if (ios /= 0) exit
     enddo
 
@@ -324,6 +335,48 @@ contains
 
   end function Count_BC_Records
 
+  !> ATLAS writes INPUT/<prefix>phase.txt for the condensed phase ICE solves: one line per material,
+  !  "<name> <groups> [key=value ...]". ICE takes its group count from [ICE-Family*] and never
+  !  opened this file, so a mismatch can go unnoticed. Warn when the two disagree.
+  !  The file is optional (standalone ICE cases may not carry it): absent = silent.
+  subroutine Check_Phase_Groups(ngroups)
+
+    implicit none
+
+    integer(I4), intent(in) :: ngroups
+    integer(I4) :: u, ios, ng, nsum, nmat
+    character(len=512) :: line
+    character(len=64)  :: name
+
+    open(newunit=u, file='INPUT/'//trim(ICE_phase_prefix)//'phase.txt', status='old', action='read', iostat=ios)
+    if (ios /= 0) return
+
+    read(u, '(A)', iostat=ios) line
+    nsum = 0
+    nmat = 0
+
+    do
+      read(u, '(A)', iostat=ios) line
+      if (ios /= 0) exit
+      if (len_trim(line) == 0) cycle
+      read(line, *, iostat=ios) name, ng
+      if (ios /= 0) cycle
+      nmat = nmat + 1
+      nsum = nsum + ng
+    enddo
+
+    close(u)
+
+    if (nmat == 0) return
+
+    if (nsum /= ngroups) then
+      write(*,'(A,I0,A,I0,A)') '  [WARNING] INPUT/'//trim(ICE_phase_prefix)//'phase.txt declares ', nsum, &
+        ' population(s) over ', nmat, ' material(s), but [ICE-Family*] defines '
+      write(*,'(A,I0,A)') '            ', ngroups, ' group(s). The bc.txt carries one record block per (material,'// &
+        ' population); the counts should agree.'
+    endif
+
+  end subroutine Check_Phase_Groups
 
   !> Direction token. ATLAS writes the literal `normal` when the injection direction is the
   !  face normal. ICE's convention for that is alpha = beta = 0, which Lib_Ghost detects and
@@ -337,28 +390,28 @@ contains
     character(len=len(tok)) :: t
 
     t = adjustl(tok)
+
     if (index(trim(t), 'normal') > 0) then
       val = 0._R8
-    else
-      read(t, *, iostat=ios_loc) val
-      if (ios_loc /= 0) val = 0._R8
-    endif
+      else
+        read(t, *, iostat=ios_loc) val
+        if (ios_loc /= 0) val = 0._R8
+      endif
 
-  end function Parse_Dir_Token
-
+    end function Parse_Dir_Token
 
   subroutine Print_BC_Summary()
     implicit none
-    write(*,*)
-    write(*,'(A)') ' Boundary Conditions:'
-    if (nconn > 0) write(*,'(A,T35,I0)') '   Connection',    nconn
-    if (nsym  > 0) write(*,'(A,T35,I0)') '   Symmetry',      nsym
-    if (nio   > 0) write(*,'(A,T35,I0)') '   Inflow',        nio
-    if (next  > 0) write(*,'(A,T35,I0)') '   Extrapolation', next
-    if (nchim > 0) write(*,'(A,T35,I0)') '   Chimera',       nchim
-    write(*,*)
+      write(*,*)
+      write(*,'(A)') ' Boundary Conditions:'
+      if (nconn > 0) write(*,'(A,T35,I0)') '   Connection',    nconn
+      if (nsym  > 0) write(*,'(A,T35,I0)') '   Symmetry',      nsym
+      if (naxi  > 0) write(*,'(A,T35,I0)') '   Axisymmetry',   naxi
+      if (nio   > 0) write(*,'(A,T35,I0)') '   Inflow',        nio
+      if (next  > 0) write(*,'(A,T35,I0)') '   Extrapolation', next
+      if (nchim > 0) write(*,'(A,T35,I0)') '   Chimera',       nchim
+      write(*,*)
   end subroutine Print_BC_Summary
-
 
   !> Which file a level reads. ATLAS BCB writes <prefix>bc.txt for the fine level and
   !  <prefix>bc<level>.txt for each coarse one -- write_ig_bc, write_sp_bc and
@@ -371,14 +424,12 @@ contains
     character(len=256)      :: fname
     character(len=16)       :: lvl
 
-    if (level <= 1) then
-      fname = 'INPUT/'//trim(ICE_phase_prefix)//'bc.txt'
-    else
-      write(lvl,'(I0)') level
-      fname = 'INPUT/'//trim(ICE_phase_prefix)//'bc'//trim(lvl)//'.txt'
-    endif
-
+      if (level <= 1) then
+        fname = 'INPUT/'//trim(ICE_phase_prefix)//'bc.txt'
+      else
+        write(lvl,'(I0)') level
+        fname = 'INPUT/'//trim(ICE_phase_prefix)//'bc'//trim(lvl)//'.txt'
+      endif
   end function bc_filename
-
 
 end module ICE_IO_BC

@@ -14,6 +14,7 @@ module ICE_Config_Types_m
     character(len=llen) :: error_message
     character(len=llen) :: description
     ! USER-DEFINED INPUTS
+    character(len=llen) :: phase ! ATLAS name of the condensed phase this solver reads ('' = keep prefix)
     logical   :: newrun          ! Restart flag (true = new run)
     real(R8)  :: res_threshold   ! Min residual to stop execution
     real(R8)  :: time_threshold  ! Max physical time to stop execution
@@ -94,7 +95,8 @@ module ICE_Config_Types_m
     character(len=llen) :: description
     ! USER-DEFINED INPUTS (global)
     real(R8) :: cfl            ! CFL stability parameter
-    real(R8) :: dt_max         ! Ceiling on the time step, before the CFL factor
+    real(R8) :: dt_max         ! Ceiling on the time step, after the CFL factor
+    real(R8) :: tau_factor     ! Time-step ceiling as a multiple of the particle relaxation time [-]; 0 = off
     integer  :: cfl_rampa_iter ! Iteration at which CFL ramp starts
     logical  :: time_accurate  ! Time-accurate integration flag
     character(len=llen) :: solver_type   ! Time integrator: '1'=Euler, '2'=RK2, '3'=RK3
@@ -186,10 +188,14 @@ module ICE_Config_Types_m
   !! ------------------------------------------------------
   !! Condensed Phase (ICE-specific) -----------------------
   !! ------------------------------------------------------
-  type :: condensed_phase_t
+  type, public :: condensed_phase_t
     character(len=llen) :: warning_message
     character(len=llen) :: error_message
     character(len=llen) :: description
+    character(len=64)   :: name = 'A'   ! Material name, from the phase file
+    ! Evaporation model and interface of this material: the [ICE-Physics] default or its tokens
+    character(len=16)   :: evapWord = 'none', intfWord = 'VLE'
+    integer             :: evapSelect = 0, intfSelect = 0
     ! USER-DEFINED INPUTS
     real(R8) :: rho_al = 2700._R8    ! Particle density            [kg/m^3]
     real(R8) :: cs_al  = 1598._R8    ! Particle specific heat      [J/(kg K)]
@@ -202,13 +208,27 @@ module ICE_Config_Types_m
     real(R8) :: Yinf   = 0._R8       ! Far-field vapour mass fraction [-]
     real(R8) :: Tboil  = 2792._R8    ! Boiling temperature at 1 atm [K]
     real(R8) :: alphaE = 1._R8       ! Evaporation (accommodation) coefficient [-]
-    ! Packed form of the above, built by Assign_Setup and handed to Lib_Evaporation
+    ! Solidification, from the phase-file tokens (IGLOO's defaults); T-nuc <= 0 means 0.8 T-melt
+    integer  :: solidSelect = 0
+    logical  :: solid = .false.
+    real(R8) :: Tmelt = 2327._R8     ! Melting temperature         [K]
+    real(R8) :: hFus  = 0._R8        ! Heat of fusion              [J/kg]
+    real(R8) :: Tnuc  = 0._R8        ! Nucleation temperature      [K]
+    real(R8) :: cpSol = 0._R8        ! Solid specific heat         [J/(kg K)]
+    ! Packed form of the above, built by Setup_Materials and handed to Lib_Evaporation
     real(R8) :: ep(nep) = 0._R8
     ! Table-based properties rho(T) and cs(T) (optional, loaded by Load_Table)
     logical                   :: use_table = .false.
     integer                   :: T_min = 0, T_max = 0
     real(R8), allocatable     :: rho_tab(:)   ! indexed T_min:T_max
     real(R8), allocatable     :: cs_tab(:)    ! indexed T_min:T_max
+    real(R8), allocatable     :: h_tab(:)     ! indexed T_min:T_max
+    real(R8), allocatable     :: e_tab(:)     ! h_tab - h_off, indexed T_min:T_max
+    real(R8), allocatable     :: psat_tab(:)  ! saturation pressure [Pa], indexed T_min:T_max
+    logical                   :: use_psat = .false.  ! the evaporation models take psat_tab
+    logical                   :: rho_varies = .false., cs_varies = .false.
+    character(len=8)          :: h_datum = 'none'  ! 'relative' (Enthalpy) or 'absolute' (Enthalpy_abs)
+    real(R8)                  :: h_off = 0._R8     ! h at 0 K along the first table segment [J/kg]
   end type condensed_phase_t
   !! ------------------------------------------------------
   !! ------------------------------------------------------
@@ -226,6 +246,7 @@ module ICE_Config_Types_m
   type(irs_t),                     public :: obj_irs
   type(space_scheme_t),            public :: obj_space_scheme
   type(multigrid_t),               public :: obj_multigrid
-  type(condensed_phase_t),         public :: obj_condensed
+  type(condensed_phase_t),         public :: ini_condensed        ! the [ICE-Physics] values
+  type(condensed_phase_t), allocatable, public :: obj_condensed(:)  ! one per material
 
 end module ICE_Config_Types_m

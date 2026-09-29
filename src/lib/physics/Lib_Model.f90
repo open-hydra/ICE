@@ -5,7 +5,9 @@ module ICE_Lib_Model
   use ICE_Lib_AG
   use ICE_Lib_Drag
   use ICE_Lib_Heat
-  use ICE_Config_Types_m, only: obj_time_scheme
+  use ICE_Config_Types_m, only: obj_time_scheme, condensed_phase_t
+  use ICE_Global_m,       only: solid_of
+  use ICE_Lib_Solid
   implicit none
   private
   public :: assign_prim_2_cons
@@ -13,6 +15,7 @@ module ICE_Lib_Model
   public :: assign_check_prim
   public :: assign_pressure_make
   public :: assign_sound_make
+  public :: assign_wavespeed_make
   public :: assign_flux_make
   public :: assign_source_make
   public :: assign_all
@@ -23,22 +26,27 @@ module ICE_Lib_Model
   procedure(check_prim_if), pointer, public    :: check_prim
   procedure(pressure_make_if), pointer, public :: pressure_make
   procedure(sound_make_if), pointer, public    :: sound_make
+  procedure(wavespeed_make_if), pointer, public :: wavespeed_make
   procedure(flux_make_if), pointer, public     :: flux_make
   procedure(source_make_if), pointer, public   :: source_make
 
   !> Abstract interface relative to the "model" procedure
   abstract interface
-  function prim_2_cons_if(prim) result(cons)
+  function prim_2_cons_if(prim, mat) result(cons)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+    import :: condensed_phase_t
     implicit none
     real(kind=R8), intent(in) :: prim(:)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: cons(size(prim))
   end function prim_2_cons_if
 
-  function cons_2_prim_if(cons) result(prim)
+  function cons_2_prim_if(cons, mat) result(prim)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+    import :: condensed_phase_t
     implicit none
     real(kind=R8), intent(in) :: cons(:)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: prim(size(cons))
   end function cons_2_prim_if
 
@@ -63,17 +71,28 @@ module ICE_Lib_Model
     real(kind=R8)             :: sound
   end function sound_make_if
 
-  function flux_make_if(prim, normal) result(flux)
+  function wavespeed_make_if(prim, normal) result(speed)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
     real(kind=R8), intent(in) :: prim(:), normal(3)
+    real(kind=R8)             :: speed
+  end function wavespeed_make_if
+
+  function flux_make_if(prim, normal, mat) result(flux)
+    use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+    import :: condensed_phase_t
+    implicit none
+    real(kind=R8), intent(in) :: prim(:), normal(3)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: flux(size(prim))
   end function flux_make_if
 
-  function source_make_if(prim,force) result(source)
+  function source_make_if(prim,force,mat) result(source)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+    import :: condensed_phase_t
     implicit none
     real(kind=R8), intent(in) :: prim(:), force(6)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)             :: source(size(prim))
   end function source_make_if
   end interface
@@ -94,6 +113,13 @@ contains
     case ('AG')
       prim_2_cons => prim_2_cons_AG
     end select
+    if (solid_of(phase)) then
+      select case (trim(obj_time_scheme%model(phase)))
+      case ('MK'); prim_2_cons => prim_2_cons_MK_S
+      case ('IG'); prim_2_cons => prim_2_cons_IG_S
+      case ('AG'); prim_2_cons => prim_2_cons_AG_S
+      end select
+    endif
 
   end subroutine assign_prim_2_cons
 
@@ -109,6 +135,13 @@ contains
     case ('AG')
       cons_2_prim => cons_2_prim_AG
     end select
+    if (solid_of(phase)) then
+      select case (trim(obj_time_scheme%model(phase)))
+      case ('MK'); cons_2_prim => cons_2_prim_MK_S
+      case ('IG'); cons_2_prim => cons_2_prim_IG_S
+      case ('AG'); cons_2_prim => cons_2_prim_AG_S
+      end select
+    endif
 
   end subroutine assign_cons_2_prim
 
@@ -157,6 +190,21 @@ contains
 
   end subroutine assign_sound_make
 
+  subroutine assign_wavespeed_make(phase)
+    implicit none
+    integer(kind=I4), intent(in) :: phase
+
+    select case (trim(obj_time_scheme%model(phase)))
+    case ('MK')
+      wavespeed_make => wavespeed_make_MK
+    case ('IG')
+      wavespeed_make => wavespeed_make_IG
+    case ('AG')
+      wavespeed_make => wavespeed_make_AG
+    end select
+
+  end subroutine assign_wavespeed_make
+
   subroutine assign_flux_make(phase)
     implicit none
     integer(kind=I4), intent(in) :: phase
@@ -169,6 +217,13 @@ contains
     case ('AG')
       flux_make => flux_make_AG
     end select
+    if (solid_of(phase)) then
+      select case (trim(obj_time_scheme%model(phase)))
+      case ('MK'); flux_make => flux_make_MK_S
+      case ('IG'); flux_make => flux_make_IG_S
+      case ('AG'); flux_make => flux_make_AG_S
+      end select
+    endif
 
   end subroutine assign_flux_make
 
@@ -184,6 +239,13 @@ contains
     case ('AG')
       source_make => source_make_AG
     end select
+    if (solid_of(phase)) then
+      select case (trim(obj_time_scheme%model(phase)))
+      case ('MK'); source_make => source_make_MK_S
+      case ('IG'); source_make => source_make_IG_S
+      case ('AG'); source_make => source_make_AG_S
+      end select
+    endif
 
   end subroutine assign_source_make
 
@@ -196,6 +258,7 @@ contains
     call assign_check_prim (phase)
     call assign_pressure_make (phase)
     call assign_sound_make (phase)
+    call assign_wavespeed_make (phase)
     call assign_flux_make (phase)
     call assign_source_make (phase)
 

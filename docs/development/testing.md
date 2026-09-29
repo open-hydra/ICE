@@ -13,6 +13,14 @@ test/
 │   ├── IG-chimera/            # Two overlapping non-matching blocks (ATLAS 102)
 │   ├── IG-split4/             # Four blocks joined by connections (ATLAS 101)
 │   └── plot_vv.py             # Regenerates the V&V figures from the case outputs
+├── NoExchange/MK/             # Coupled slab with drag = NoDrag, heat-transfer = NoHeat: state kept bit for bit
+├── Axis/                      # One-degree wedge about x: side faces 200, axis face 300
+│   ├── MK/                    # Pressureless cloud along x: stationary field, boundary census
+│   └── IG/  AG/               # Uniform cloud at rest in a closed wedge: stays at rest (hoop pressure)
+├── Thermal/                   # Expanding blob in a closed box at uniform T
+│   └── IG/  AG/               # T stays uniform: the pressure work in the energy flux
+├── Riemann/AG/                # Anisotropic Sod tube against the exact gamma = 3 solution
+├── Reflect/AG/                # Sheared blob on a code-200 symmetry plane: x-momentum conserved
 ├── Berthon/                   # 1D Riemann problems for the AG closure
 │   ├── SCS/  RCS/  RCR/       # Shock-contact-shock, rarefaction-contact-shock, ...
 │   ├── SCS-hlle/              # SCS again through the HLLE flux
@@ -30,16 +38,26 @@ test/
 │   ├── F-evaporation/         # All 5 evaporation models against the d-squared law
 │   ├── G-cloud-translation/   # Transport + drag together, against exact translation
 │   ├── H-linear-strain/       # Straining gas, exact affine map + small-St asymptote
-│   └── I-vortex-cloud/        # 2D cloud in a prescribed vortex, exact conformal map
-└── fast/                      # Short invariant checks, no stored references
-    ├── common.sh              # Shared helpers (short run, compare byte for byte)
-    ├── openmp-equiv/          # 1 vs 4 threads bit-identical
-    └── mpi-equiv/             # 1 vs 2 ranks bit-identical (connection and chimera)
+│   ├── I-vortex-cloud/        # 2D cloud in a prescribed vortex, exact conformal map
+│   ├── J-tau-limit/           # Step bounded by the relaxation time, both modes; dilute cells left out
+│   ├── K-properties-table/    # Property table: interpolation, range, saturation, a varying cp
+│   ├── L-materials/           # Several materials: table zones, model tokens, inlet records per family
+│   ├── N-solid-cooling/       # Solidification in a closed cell: supercooling, plateau, solid, melting
+│   └── O-solid-advection/     # Solidification in a steady stream: recursion, closed form, leak, no lock
+├── fast/                      # Short invariant checks, no stored references
+│   ├── common.sh              # Shared helpers (short run, compare byte for byte)
+│   ├── openmp-equiv/          # 1 vs 4 threads bit-identical
+│   ├── refusals/              # Broken inputs and a diverging run must exit non-zero
+│   └── mpi-equiv/             # 1 vs 2 ranks bit-identical (connection and chimera)
+└── unit/                      # Programs linked against the library, no solver run
+    ├── test_properties.f90    # Property table: grammar, checks, loading, lookup, energy, Psat
+    └── test_solidification.f90 # Solidification functions and the closure wrappers
 ```
 
 Each case under `Doisneau/` is self-contained: `input.ini`, `INPUT/` (initial and
 boundary conditions, particle properties), `MESH/`, a stored `reference/` solution, a
-`verify.py` that compares the run against it (L2 norm of density, tolerance $10^{-4}$),
+`verify.py` that compares the run against it (L2 norm of the density, tolerance $10^{-4}$, and
+of the number density relative to its own scale, held to the same tolerance over the density's RMS),
 and an `ICE.sh` run script. The cases and what they verify are described in
 [Verification & Validation](../vv/index.md).
 
@@ -49,8 +67,17 @@ own: its `verify.py` compares six fields against the analytical wave pattern in
 wrote its initial and boundary conditions. See
 [Berthon Riemann Problems](../vv/berthon.md).
 
+The cases under `Axis/` and `NoExchange/` carry no stored reference: each keeps the
+generator of its inputs (`make_case.py`) and a `verify.py` that checks an exact property
+of the run. The `Axis/` run scripts keep the solver's log in `logfile`, which their
+`verify.py` reads.
+
 The fast tests own no data: they copy one of the `Doisneau` cases, shorten it to 200
 iterations, and run it twice under different parallel settings.
+
+The unit tests call the library's routines directly and run no case. Each writes the
+small files it reads into its own directory in the build tree, `build/test/unit/<name>/`,
+and prints one line per assertion.
 
 The verification cases own no data either: each `run.py` writes its own mesh, initial
 condition, boundary conditions and `input.ini` into a scratch `work/` directory, runs
@@ -77,6 +104,7 @@ running `./ICE.sh solve` by hand does.
 | `fast` | Short runs of hard invariants (no stored reference); a few seconds each |
 | `validation` | Full case compared against its stored reference solution |
 | `verification` | Compared against a solution that does not come from ICE (closed form or independent integration) |
+| `unit` | A program linked against the library that asserts what its routines return |
 | `needs-mpi` | Needs an MPI build; registered only when `USE_MPI=ON` |
 | `sources`, `transport`, `implementation` | What part of the solver a case covers |
 | `MK`, `IG`, `AG`, `chimera`, `connection`, `1D`, `2D` | What configuration it covers |
@@ -115,7 +143,7 @@ ICE_PREPUSH_JOBS=2 git push
 
 ## Adding a case
 
-Decide first which kind it is, because the two are registered differently and carry
+Decide first which kind it is, because the kinds are registered differently and carry
 different weight.
 
 ### A validation case
@@ -145,8 +173,18 @@ something. Prefer one whenever the problem admits an exact answer.
 2. Register it with `ice_add_verification`, labelled `verification` plus its coverage,
    and add `fast` if it runs in a few seconds.
 
-Either way, document what the case checks and what tolerance it uses on a
-[V&V page](../vv/index.md) — a tolerance with no recorded reasoning is one nobody can
-tighten later.
+### A unit test
+
+It asserts a routine's contract directly, without a run: a parser, a check, a lookup.
+Use one when the contract is a routine's and a case would reach it only indirectly.
+
+1. Add `test/unit/test_<name>.f90`, a program that `use`s the library modules, prints
+   `OK` or `FAIL` with a description for every assertion, and ends with `error stop 1`
+   if any failed.
+2. Register it with `ice_add_unit_test(<Name> unit/test_<name>.f90 "fast;unit;implementation")`.
+
+For a validation or verification case, document what it checks and what tolerance it
+uses on a [V&V page](../vv/index.md) — a tolerance with no recorded reasoning is one
+nobody can tighten later.
 
 ---

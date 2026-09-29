@@ -2,14 +2,18 @@ module ICE_Lib_Ghost
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   use ICE_Global_m
   use ICE_Advanced_Types_m
-  use ICE_Config_Types_m, only: obj_condensed, obj_time_scheme
+  use ICE_Config_Types_m, only: obj_time_scheme, obj_condensed, condensed_phase_t
+  use ICE_Lib_Properties, only : mat_rho
   use ICE_Mod_Metrics, only : delthe
   use ICE_Lib_MK, only : prim_2_cons_MK, cons_2_prim_MK
   use ICE_Lib_IG, only : prim_2_cons_IG, cons_2_prim_IG
-  use ICE_Lib_AG, only : prim_2_cons_AG, cons_2_prim_AG
+  use ICE_Lib_AG, only : prim_2_cons_AG, cons_2_prim_AG, mirror_tensor_AG
   use ICE_Mod_MPI, only : is_local_block
   use ICE_Mod_GhostExchange, only : exchange_ghost_prim
   use ICE_Mod_Timers,        only : timer_comm_begin, timer_comm_end
+  use ICE_Lib_Solidification, only : solidPhaseAtInjection
+  use ICE_Lib_Solid, only : prim_2_cons_MK_S, cons_2_prim_MK_S, prim_2_cons_IG_S, cons_2_prim_IG_S, &
+                           prim_2_cons_AG_S, cons_2_prim_AG_S
 
   implicit none
   private
@@ -24,7 +28,7 @@ contains
     integer(kind=I4) :: bm, pm, im, jm, km, fm
     integer(kind=I4) :: ig, jg, kg
     integer(kind=I4) :: bs, is, js, ks, fs
-    integer(kind=I4) :: ic, jc, kc
+    integer(kind=I4) :: ic, jc, kc, ph
     real(kind=R8)    :: area, normal(1:3), velocity(1:3), veln
 
     !> Remote cells read below (connection sources, chimera donors) from their owners
@@ -33,7 +37,7 @@ contains
     call timer_comm_end()
 
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ncond, obj_condensed, obj_time_scheme), &
+    !$OMP SHARED(grid, ncond, nbase, solid_of, mat_of, obj_time_scheme, obj_condensed), &
     !$OMP PRIVATE(ii, i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, area, normal, velocity, veln)
     !$OMP DO SCHEDULE (dynamic, 64)
     do ii = 1, grid%n_local_bc
@@ -63,8 +67,9 @@ contains
           grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bs)%cond_phase(pm)%prim(1:ncond(pm),is,js,ks)
 
 
-        case (300) !> symmetry - Use extrapolation when the particles are moving towards the wall. Otherwise, symmetry
-                   !>             Symmetry is enforced on face 3 which is usually the symmetry axis
+        case (200, 300, 301) !> symmetry (300), the dispersed-phase wall ATLAS tags 301 and the wedge side
+                             !>  face (200): a 300/301 face extrapolates particles moving towards it and
+                             !>  mirrors the others; 200 and face 3, usually the axis, always mirror
           if (fm <= 2) then
             ic = im - mod(fm,2)
             normal = grid%blk(bm)%dir(1)%f(ic,jm,km)%N
@@ -80,11 +85,17 @@ contains
 
           velocity = grid%blk(bm)%cond_phase(pm)%prim(2:4,im,jm,km)
           veln     = dot_product(velocity,normal)
-          if (veln*real(1-2*mod(fm,2))<=0._R8 .or. fm==3) then
+          if (grid%bc(i)%type == 200 .or. veln*real(1-2*mod(fm,2))<=0._R8 .or. fm==3) then
             velocity = velocity - 2._R8*veln*normal
+            if (nbase(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig,jg,kg) = &
+              mirror_tensor_AG(grid%blk(bm)%cond_phase(pm)%prim(5:10,im,jm,km), normal)
           endif
 
           grid%blk(bm)%cond_phase(pm)%prim(2:4,ig,jg,kg) = velocity(1:3)
+
+
+        case (0) !> planar 2-D face: copy of the interior cell
+          grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),im,jm,km)
 
 
         case (401:403) !> inflow
@@ -116,6 +127,8 @@ contains
             grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),im,jm,km)
             velocity = velocity - 2._R8*veln*normal
             grid%blk(bm)%cond_phase(pm)%prim(2:4,ig,jg,kg) = velocity(1:3)
+            if (nbase(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig,jg,kg) = &
+              mirror_tensor_AG(grid%blk(bm)%cond_phase(pm)%prim(5:10,im,jm,km), normal)
 
 
           !> Injection boundary condition
@@ -141,7 +154,7 @@ contains
               !> Density
               prim(1,ig,jg,kg) = grid%bc(i)%massflux/(1._R8-grid%bc(i)%massflux) * grid%blk(bm)%gas_phase%prim(1,im,jm,km) / grid%bc(i)%velocity
               !> Temperature
-              prim(ncond(pm)-1,ig,jg,kg) = grid%bc(i)%temperature * grid%blk(bm)%gas_phase%prim(5,im,jm,km)
+              prim(nbase(pm)-1,ig,jg,kg) = grid%bc(i)%temperature * grid%blk(bm)%gas_phase%prim(5,im,jm,km)
 
             !> Direct assignement of massflux, velocity, and temperature.
             elseif (grid%bc(i)%type == 402) then
@@ -153,7 +166,7 @@ contains
               veln = dot_product(prim(2:4,ig,jg,kg),normal)
               prim(1,ig,jg,kg) = grid%bc(i)%massflux / abs(veln)
               !> Temperature
-              prim(ncond(pm)-1,ig,jg,kg) = grid%bc(i)%temperature
+              prim(nbase(pm)-1,ig,jg,kg) = grid%bc(i)%temperature
 
             !> Direct assignement of massflux and temperature. Velocity is computed from the gas phase
             elseif (grid%bc(i)%type == 403) then
@@ -166,12 +179,20 @@ contains
               veln = dot_product(prim(2:4,ig,jg,kg),normal)
               prim(1,ig,jg,kg) = grid%bc(i)%massflux / abs(veln)
               !> Temperature
-              prim(ncond(pm)-1,ig,jg,kg) = grid%bc(i)%temperature
+              prim(nbase(pm)-1,ig,jg,kg) = grid%bc(i)%temperature
 
             endif
 
-            !> N particles
-            prim(ncond(pm),ig,jg,kg) =  prim(1,ig,jg,kg) / obj_condensed%rho_al / (4._R8/3._R8*pi*grid%bc(i)%radius**3._I4)
+            !> N particles, with the condensed density at the inlet temperature
+            prim(nbase(pm),ig,jg,kg) =  prim(1,ig,jg,kg) / mat_rho(obj_condensed(mat_of(pm)), prim(nbase(pm)-1,ig,jg,kg)) / &
+                                        (4._R8/3._R8*pi*grid%bc(i)%radius**3._I4)
+
+            !> Frozen fraction at injection by IGLOO's rule; injected solid is nucleated
+            if (solid_of(pm)) then
+              call solidPhaseAtInjection(prim(nbase(pm)-1,ig,jg,kg), obj_condensed(mat_of(pm))%Tmelt, &
+                                         obj_condensed(mat_of(pm))%Tnuc, ph, prim(nbase(pm)+1,ig,jg,kg))
+              prim(ncond(pm),ig,jg,kg) = prim(nbase(pm)+1,ig,jg,kg)
+            endif
 
             !> Pseudo pressure
             select case (trim(obj_time_scheme%model(pm)))
@@ -193,7 +214,7 @@ contains
 
 
         case (102) !> chimera: first ghost layer from its donors
-          call ghost_chimera(grid%blk, grid%bc(i), 1)
+          call ghost_chimera(grid%blk, grid%bc(i), 1, obj_condensed(mat_of(pm)))
 
 
       end select
@@ -214,15 +235,18 @@ contains
     integer(kind=I4) :: ig2, jg2, kg2
     integer(kind=I4) :: ip, jp, kp
     integer(kind=I4) :: bs, is, js, ks, fs
+    integer(kind=I4) :: ic, jc, kc
+    real(kind=R8)    :: normal(1:3), velocity(1:3)
 
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ncond), &
-    !$OMP PRIVATE(ii, i, bm, pm, im, jm, km, fm, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, bs, is, js, ks, fs)
+    !$OMP SHARED(grid, ncond, nbase, mat_of, obj_condensed), &
+    !$OMP PRIVATE(ii, i, bm, pm, im, jm, km, fm, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, bs, is, js, ks, fs, &
+    !$OMP         ic, jc, kc, normal, velocity)
     !$OMP DO SCHEDULE(dynamic, 64)
     do ii = 1, grid%n_local_bc
       i = grid%local_bc_idx(ii)
 
-      if (grid%bc(i)%type == 0 .or. grid%bc(i)%type == 200) cycle
+      if (grid%bc(i)%type == 0) cycle
 
       bm = grid%bc(i)%b
       im = grid%bc(i)%i ; jm = grid%bc(i)%j ; km = grid%bc(i)%k
@@ -242,7 +266,25 @@ contains
             grid%blk(bs)%cond_phase(pm)%prim(1:ncond(pm),is,js,ks)
 
         case (102) !> chimera: second ghost layer from its own donors
-          call ghost_chimera(grid%blk, grid%bc(i), 2)
+          call ghost_chimera(grid%blk, grid%bc(i), 2, obj_condensed(mat_of(pm)))
+
+        case (200) !> wedge side face: the second ghost mirrors the second interior cell
+          ip = im + guide(fm,1) ; jp = jm + guide(fm,2) ; kp = km + guide(fm,3)
+          if (fm <= 2) then
+            ic = im - mod(fm,2)
+            normal = grid%blk(bm)%dir(1)%f(ic,jm,km)%N
+          elseif (fm <= 4) then
+            jc = jm - mod(fm,2)
+            normal = grid%blk(bm)%dir(2)%f(im,jc,km)%N
+          else
+            kc = km - mod(fm,2)
+            normal = grid%blk(bm)%dir(3)%f(im,jm,kc)%N
+          endif
+          grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig2,jg2,kg2) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ip,jp,kp)
+          velocity = grid%blk(bm)%cond_phase(pm)%prim(2:4,ip,jp,kp)
+          grid%blk(bm)%cond_phase(pm)%prim(2:4,ig2,jg2,kg2) = velocity - 2._R8*dot_product(velocity,normal)*normal
+          if (nbase(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig2,jg2,kg2) = &
+            mirror_tensor_AG(grid%blk(bm)%cond_phase(pm)%prim(5:10,ip,jp,kp), normal)
 
         case default !> 2nd-order extrapolation: P(g2) = 3*P(g1) - 3*P(m) + P(m+1)
           ip = im + guide(fm,1) ; jp = jm + guide(fm,2) ; kp = km + guide(fm,3)
@@ -264,13 +306,14 @@ contains
   !> ATLAS BCB, cons(ghost) = sum_c w_c * cons(donor_c), as MOSE's Ghost_Chimera does.
   !> Donors are interior cells, so this only reads interior data and is safe inside
   !> the OMP loops over bc entries.
-  subroutine ghost_chimera(blk, bc, g)
+  subroutine ghost_chimera(blk, bc, g, mat)
     implicit none
     type(ICE_block_type), intent(inout) :: blk(:)
     type(ICE_bc_type),    intent(in)    :: bc
     integer(kind=I4),     intent(in)    :: g
+    type(condensed_phase_t), intent(in) :: mat
     integer(kind=I4) :: c, c1, c2, pm, nv, bs, is, js, ks, ig, jg, kg
-    real(kind=R8)    :: consg(12)
+    real(kind=R8)    :: consg(ncond_max)
 
     pm = bc%p
     nv = ncond(pm)
@@ -284,42 +327,60 @@ contains
     do c = c1, c2
       bs = bc%donorID(c,1) ; is = bc%donorID(c,2) ; js = bc%donorID(c,3) ; ks = bc%donorID(c,4)
       consg(1:nv) = consg(1:nv) + bc%volume_fraction(c) * &
-                    model_prim_2_cons(pm, blk(bs)%cond_phase(pm)%prim(1:nv,is,js,ks))
+                    model_prim_2_cons(pm, blk(bs)%cond_phase(pm)%prim(1:nv,is,js,ks), mat)
     enddo
 
     ig = bc%i - g*guide(bc%f,1) ; jg = bc%j - g*guide(bc%f,2) ; kg = bc%k - g*guide(bc%f,3)
-    blk(bc%b)%cond_phase(pm)%prim(1:nv,ig,jg,kg) = model_cons_2_prim(pm, consg(1:nv))
+    blk(bc%b)%cond_phase(pm)%prim(1:nv,ig,jg,kg) = model_cons_2_prim(pm, consg(1:nv), mat)
 
   end subroutine ghost_chimera
 
 
   !> Group-specific conversions. The model procedure pointers in ICE_Lib_Model are bound to
   !> one group at a time, while the ghost loops cover every group, so dispatch explicitly.
-  function model_prim_2_cons(p, prim) result(cons)
+  function model_prim_2_cons(p, prim, mat) result(cons)
     implicit none
     integer(kind=I4), intent(in) :: p
     real(kind=R8),    intent(in) :: prim(:)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)                :: cons(size(prim))
 
+    if (solid_of(p)) then
+      select case (trim(obj_time_scheme%model(p)))
+      case ('MK'); cons = prim_2_cons_MK_S(prim, mat)
+      case ('IG'); cons = prim_2_cons_IG_S(prim, mat)
+      case ('AG'); cons = prim_2_cons_AG_S(prim, mat)
+      end select
+      return
+    endif
     select case (trim(obj_time_scheme%model(p)))
-    case ('MK'); cons = prim_2_cons_MK(prim)
-    case ('IG'); cons = prim_2_cons_IG(prim)
-    case ('AG'); cons = prim_2_cons_AG(prim)
+    case ('MK'); cons = prim_2_cons_MK(prim, mat)
+    case ('IG'); cons = prim_2_cons_IG(prim, mat)
+    case ('AG'); cons = prim_2_cons_AG(prim, mat)
     end select
 
   end function model_prim_2_cons
 
 
-  function model_cons_2_prim(p, cons) result(prim)
+  function model_cons_2_prim(p, cons, mat) result(prim)
     implicit none
     integer(kind=I4), intent(in) :: p
     real(kind=R8),    intent(in) :: cons(:)
+    type(condensed_phase_t), intent(in) :: mat
     real(kind=R8)                :: prim(size(cons))
 
+    if (solid_of(p)) then
+      select case (trim(obj_time_scheme%model(p)))
+      case ('MK'); prim = cons_2_prim_MK_S(cons, mat)
+      case ('IG'); prim = cons_2_prim_IG_S(cons, mat)
+      case ('AG'); prim = cons_2_prim_AG_S(cons, mat)
+      end select
+      return
+    endif
     select case (trim(obj_time_scheme%model(p)))
-    case ('MK'); prim = cons_2_prim_MK(cons)
-    case ('IG'); prim = cons_2_prim_IG(cons)
-    case ('AG'); prim = cons_2_prim_AG(cons)
+    case ('MK'); prim = cons_2_prim_MK(cons, mat)
+    case ('IG'); prim = cons_2_prim_IG(cons, mat)
+    case ('AG'); prim = cons_2_prim_AG(cons, mat)
     end select
 
   end function model_cons_2_prim

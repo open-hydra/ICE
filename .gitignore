@@ -24,3 +24,9 @@ test/verification/figure-work
 
 # Python bytecode from the test drivers
 __pycache__/
+
+# Claude Code working files (local only)
+.claude/
+.claude-context/
+plan-bucket/
+CLAUDE.md

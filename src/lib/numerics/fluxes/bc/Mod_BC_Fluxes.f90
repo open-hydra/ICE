@@ -9,41 +9,42 @@ module ICE_Mod_BC_Fluxes
 
 contains
 
-  subroutine compute_bound (grid)
+  subroutine compute_bound (grid, p)
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Lib_Riemann
-    use ICE_Mod_Fluxes, only: state_reconstruction
+    use ICE_Mod_Fluxes, only: state_reconstruction, bad_recon
+    use ICE_Config_Types_m, only: obj_time_scheme, obj_condensed
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
-    integer(kind=I4) :: n, nn, b, f, p, i, j, k
+    integer(kind=I4),      intent(in)    :: p
+    integer(kind=I4) :: n, nn, b, f, i, j, k
     integer(kind=I4) :: ig, jg, kg, ig2, jg2, kg2, ip, jp, kp
     integer(kind=I4) :: dir
     real(kind=R8)    :: normal(3), area
     real(kind=R8)    :: dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th
     real(kind=R8)    :: beta_val
-    real(kind=R8)    :: priml(12), primr(12), flux(12)
+    real(kind=R8)    :: priml(ncond_max), primr(ncond_max), flux(ncond_max)
     integer(kind=I4) :: v
 
+    bad_recon = .false.
     !$OMP PARALLEL DEFAULT(NONE), &
     !$OMP SHARED(grid, ngroups, ncond, riemann), &
-    !$OMP PRIVATE(n, nn, b, f, p, i, j, k, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, &
+    !$OMP PRIVATE(n, nn, b, f, i, j, k, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, &
     !$OMP         dir, normal, area, dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th, &
     !$OMP         beta_val, priml, primr, flux, v)
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
-      do p = 1, ngroups
 
-        !$OMP DO COLLAPSE (3)
-        do k = 1, grid%blk(b)%dim(3)
-        do j = 1, grid%blk(b)%dim(2)
-        do i = 1, grid%blk(b)%dim(1)
+      !$OMP DO COLLAPSE (3)
+      do k = 1, grid%blk(b)%dim(3)
+      do j = 1, grid%blk(b)%dim(2)
+      do i = 1, grid%blk(b)%dim(1)
 
-          grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = 0._R8
+        grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = 0._R8
 
-        enddo ; enddo ; enddo
-        !$OMP END DO
-      enddo
+      enddo ; enddo ; enddo
+      !$OMP END DO
     enddo
 
     !> This rank's own boundary entries only; see build_local_bc_index.
@@ -51,11 +52,15 @@ contains
     do nn = 1, grid%n_local_bc
       n = grid%local_bc_idx(nn)
 
-      if (grid%bc(n)%type == 0 .or. grid%bc(n)%type == 200) cycle
+      if (grid%bc(n)%type == 0) cycle
 
       b = grid%bc(n)%b
       i = grid%bc(n)%i ; j = grid%bc(n)%j ; k = grid%bc(n)%k
-      p = grid%bc(n)%p ; f = grid%bc(n)%f
+      if (grid%bc(n)%p /= p) cycle
+      f = grid%bc(n)%f
+
+      !> Nothing crosses a symmetry face of a pressureless cloud
+      if (grid%bc(n)%type == 200 .and. trim(obj_time_scheme%model(p)) == 'MK') cycle
 
       !> Ghost and interior neighbor coordinates
       ig  = i -   guide(f,1) ; jg  = j -   guide(f,2) ; kg  = k -   guide(f,3)
@@ -83,9 +88,10 @@ contains
                                   grid%blk(b)%cond_phase(p)%prim(1:ncond(p),i,j,k),       &
                                   grid%blk(b)%cond_phase(p)%prim(1:ncond(p),ip,jp,kp),    &
                                   dl0, dl1, dl2, dll, dlr,                                 &
-                                  priml(1:ncond(p)), primr(1:ncond(p)), beta_val)
+                                  priml(1:ncond(p)), primr(1:ncond(p)), beta_val,        &
+                                  obj_condensed(mat_of(p)), solid_of(p))
 
-        flux(1:ncond(p)) = riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal) * area
+        flux(1:ncond(p)) = riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal, obj_condensed(mat_of(p))) * area
 
         case (2,4,6)
         !> Even faces: stencil (m-1, m, g1, g2) → priml=interior side, primr=ghost side
@@ -103,9 +109,10 @@ contains
                                   grid%blk(b)%cond_phase(p)%prim(1:ncond(p),ig,jg,kg),    &
                                   grid%blk(b)%cond_phase(p)%prim(1:ncond(p),ig2,jg2,kg2), &
                                   dl0, dl1, dl2, dll, dlr,                                 &
-                                  priml(1:ncond(p)), primr(1:ncond(p)), beta_val)
+                                  priml(1:ncond(p)), primr(1:ncond(p)), beta_val,        &
+                                  obj_condensed(mat_of(p)), solid_of(p))
 
-        flux(1:ncond(p)) = - riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal) * area
+        flux(1:ncond(p)) = - riemann(priml(1:ncond(p)), primr(1:ncond(p)), normal, obj_condensed(mat_of(p))) * area
 
       end select
 
@@ -118,6 +125,10 @@ contains
 
     enddo
     !$OMP END PARALLEL
+    if (bad_recon) then
+      write(*,'(A)') ' [ERROR] [ICE::compute_bound] unphysical state at first order on a boundary face'
+      error stop 1
+    endif
 
   end subroutine compute_bound
 

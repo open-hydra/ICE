@@ -38,6 +38,7 @@ src/lib/
 │   ├── Backend_INI.f90         # FiNeR wrapper; scans for families, probes, MG levels
 │   ├── Read_Ini.f90            # Scan, register, load, validate
 │   ├── Assign_Setup.f90        # Post-read derivations: closures, ncond, coupling
+│   ├── Setup_Materials.f90     # Materials of the phase file, their models, the property table
 │   └── Config_Types_m.f90      # The obj_* configuration objects
 ├── driver/
 │   ├── Procedures_m.f90        # The ICE_type facade: setup / solve / postprocess
@@ -50,7 +51,7 @@ src/lib/
 │   ├── IO_Solution.f90         # Solution and restart read/write via ORION
 │   ├── IO_BC.f90               # Parses the ATLAS boundary table
 │   ├── IO_Probes.f90
-│   └── Load_Table.f90          # Optional rho(T), cs(T) table
+│   └── Load_Table.f90          # Reads and checks the optional property table
 ├── numerics/
 │   ├── space/
 │   │   ├── Mod_Metrics.f90         # Areas, normals, volumes, dimensionality
@@ -75,6 +76,7 @@ src/lib/
 │   ├── Lib_Drag.f90            # Twelve drag correlations
 │   ├── Lib_Heat.f90            # Seven Nusselt correlations
 │   ├── Lib_Evaporation.f90     # Five evaporation models and their interface options
+│   ├── Lib_Properties.f90      # Density, cp, energy and saturation pressure of the material vs T
 │   └── Mod_Sources.f90         # Assembles the source vector
 └── diagnostic/
     └── Mod_Diagnostic.f90      # Residual norms and their output

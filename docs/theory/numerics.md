@@ -18,7 +18,10 @@ once at setup from the node coordinates and stored.
 Each block carries **two ghost layers** on every face. The dimensionality is inferred
 from the first block: a mesh with one cell in $k$ is 2-D, one cell in both $j$ and $k$
 is 1-D. Nothing has to be declared — the flux loops over a direction with a single
-cell simply do no work.
+cell simply do no work. A 2-D mesh whose two node planes make the same angle about the $x$
+axis at both ends of its first node line is an axisymmetric wedge of that angle: the ghost
+nodes beyond its side faces are then rotated by the angle, not extrapolated in a straight
+line.
 
 The interior faces of a block are swept in two passes, odd faces then even, so that two
 faces sharing a cell never accumulate into it at the same time. This is what makes the
@@ -36,6 +39,11 @@ $$
 $$
 
 where $s$ are the one-sided slopes on the non-uniform mesh, $\phi$ the limiter and $\beta$ the shock-detector weight described below.
+
+A family of a solidifying material reconstructs, in place of $T_p$, its liquid-branch temperature $T_\ell = e/c_l$,
+which is continuous where the content nucleates, and takes each face's $T_p$ and $f$ from the face's $T_\ell$ and
+$\chi$ by the rule of a cell ([Solidification](physics.md#solidification)); a liquid face is unchanged, and a cold solid,
+whose $T_\ell$ is negative, gets its physical temperature back.
 
 ### Limiters
 
@@ -67,6 +75,16 @@ $$
 
 So $\beta = 1$ in smooth flow, where the scheme is the plain MUSCL one, and falls to 0 at a shock, where it drops to first order.
 
+The weight is close to a switch, and that has two consequences. In a steady computation the
+cells near the threshold can keep switching from one iteration to the next, so the residual
+levels off instead of converging. And a face on a block boundary takes the weight of its own
+block's cell, while inside a block every face takes the weight of the cell on its low-index
+side, so a domain split into blocks switches some faces differently from the same domain in
+one block. The detector earns its place where a collision would otherwise go wrong: it keeps
+the MK delta shock of the [crossing jets](../vv/crossing-jets.md) from creeping upstream and
+the AG pressure tensor from reaching its floor where the jets cross. The IG crossing-jets
+cases run without it.
+
 ## Riemann solvers
 
 The face flux is a two-state flux solved via three possible schemes.
@@ -74,8 +92,10 @@ The face flux is a two-state flux solved via three possible schemes.
 | Name | Form | Applies to |
 |---|---|---|
 | **Saurel** | Sign of the mean normal velocity selects the donor state; there is no pressure and no sound speed to upwind against | MK only. It assembles the flux from the monokinetic variable layout, so ICE refuses it for IG and AG |
-| **Rusanov** | $\tfrac12(\mathbf F_L + \mathbf F_R) - \tfrac12 A\,(\mathbf U_R - \mathbf U_L)$, with $A$ the largest of $|u_n \pm a|$ on the two sides | Any closure; the default for IG and AG |
+| **Rusanov** | $\tfrac12(\mathbf F_L + \mathbf F_R) - \tfrac12 A\,(\mathbf U_R - \mathbf U_L)$, with $A$ the largest of $|u_n \pm a|$ on the two sides and $a$ the signal speed across the face: $\sqrt{3P/\rho_p}$ for IG, $\sqrt{3P_{nn}/\rho_p}$ for AG | Any closure; the default for IG and AG |
 | **HLLE** | Two-wave solver with Roe-averaged speed estimates, falling back to the upwind flux when both waves run the same way | Any closure with a sound speed |
+
+The time step uses the same directional speed, direction by direction.
 
 HLLE is less dissipative than Rusanov on a contact and is worth trying when a contact is being smeared, at the cost of a Roe average per face.
 
@@ -83,6 +103,11 @@ HLLE is less dissipative than Rusanov on a contact and is worth trying when a co
 
 Boundary fluxes are built from the ghost values, so every boundary type — connection, chimera, symmetry, extrapolation, inlet —
 reaches the flux loop through the same path. The ghost fill is described under [Boundary Conditions](../user/boundary-conditions.md).
+On the side faces of an axisymmetric wedge the ghost is the cell's mirror image, so the flux carries no mass, and for IG and
+AG the pressure on those faces is the hoop term of the radial momentum; MK has no flux there.
+
+A reconstructed state that is unphysical has its slopes halved until it is not. If it is still unphysical at first order —
+a ghost that nothing filled, a NaN in the stencil — ICE prints the stencil and stops with a non-zero status.
 
 ## Source terms
 

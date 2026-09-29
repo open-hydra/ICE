@@ -78,7 +78,7 @@ the master is newer, so a case always runs against the current build.
  - Space   --> MUSCL with MC flux limiter
  - Time    --> Explicit Runge-Kutta 2
  - Drag    --> Stokes
- - Heat    --> Ranz-Marshall
+ - Heat    --> Ranz-Marshall (Nu = 2 + 0.6 Re^0.5 Pr^1/3)
  - Evap    --> CEM
 
  Boundary Conditions:
@@ -129,7 +129,8 @@ independent — a case may be given in Tecplot ASCII and written in VTK.
 | `vtk ascii` / `vtk binary` / `vtk raw` | `part-field.vtm` plus one `.vts` per block under `vtk/` |
 
 The file holds the node coordinates followed by the primitive variables of every
-family, cell-centred, named `rho_p1`, `u_p1`, … `n_p1`, `rho_p2`, … The solution time
+family, cell-centred, named `rho_p1`, `u_p1`, … `n_p1`, `rho_p2`, …, a solidifying family adding `f_p1` and
+`chi_p1` after `n_p1` (a probe takes them as `f_1` and `chi_1`). The solution time
 is recorded in the zone header; in steady-state mode it carries the iteration count
 instead, negated.
 
@@ -172,4 +173,5 @@ Give either `position` (physical coordinates, and ICE finds the nearest cell) or
 
 If `ini-diter` is set, ICE re-reads `input.ini` every that many iterations, so
 thresholds and output frequencies can be changed while the run is in progress. Values
-that are consumed once at setup — the closures, the mesh, the scheme — are not affected.
+that are consumed once at setup — the closures, the mesh, the scheme, the materials and
+their properties — are not affected.

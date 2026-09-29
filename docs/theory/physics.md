@@ -50,6 +50,7 @@ Stokes value $\rho_{al}d_p^2/(18\mu_g)$, which is the identity
 | `Henderson` | Separate subsonic and supersonic fits, linearly bridged over $1 < Ma < 1.75$ | The bridge is continuous at both ends |
 | `Crowe` | Wen-Yu blended towards $C_d = 2$ by $Ma$, with a $\tanh(\log_{10} Re)$ function | |
 | `Hermsen` | Same structure as Crowe with a rational $Re$ function | |
+| `NoDrag` | $0$ | No momentum exchange; the relaxation time is infinite |
 
 Each correlation is a pure function of $(Re, Ma, \gamma, T_r)$; the choice travels as an
 integer, so nothing mutable is shared between threads. Every one of them is checked
@@ -70,10 +71,15 @@ per unit volume, which is the familiar $h A \Delta T$ with $h = Nu\,k_g/d_p$ sum
 | `Stokes` | $2$ | 2 |
 | `JAXA1` | $2.5\,Re^{0.15} + 0.04\,Re$ | 0 |
 | `JAXA2` | $2 + 0.37\,Re^{0.6}Pr^{1/3}$ | 2 |
-| `JAXA3` | $\left[\left(2+0.645\,Re^{1/2}Pr^{1/3}\right)^{-1} + \dfrac{3.42\,Ma}{Re\,Pr}\right]^{-1}$ | rarefaction-dependent |
-| `Chang` | $2 + 0.459\,Re^{0.55}Pr^{1/3}$ | 2 |
+| `JAXA3` | $2 + 0.459\,Re^{0.55}Pr^{1/3}$ (Chang) | 2 |
+| `JAXA4` | $\left[\left(2+0.654\,Re^{1/2}Pr^{1/3}\right)^{-1} + \dfrac{3.42\,Ma}{Re\,Pr}\right]^{-1}$ | rarefaction-dependent |
 | `Ranz-Marshall` | $2 + 0.6\,Re^{1/2}Pr^{1/3}$ | 2 |
 | `Kavanau-Drake` | $\dfrac{N}{1 + 3.42\,Ma\,N/(Re\,Pr)}$, $N = 2+0.459\,Re^{0.55}Pr^{0.33}$ | rarefaction-dependent |
+| `NoHeat` | $0$ | 0 (no convective exchange) |
+
+The `JAXA` names and their constants are IGLOO's, so a case that runs both solvers can name one law for both. In a
+coupled run the word `Chang` is refused with a pointer to `JAXA3`; the constant 0.654 of `JAXA4` is Shimada's (2006,
+eq. 50, after NASA SP-8039).
 
 ## Radiation
 
@@ -88,10 +94,14 @@ with $\sigma = 5.67\times10^{-8}$ W m⁻² K⁻⁴. The area factor is $2\pi R_p
 Particles evaporation provides a mass source term. Every model returns a rate $\dot m$ **per particle**, negative while the droplet loses mass. The source routine multiplies it by the number density, so the bulk density loses $n\dot m$ per unit volume, the energy equation loses both the
 enthalpy that mass carries away and the latent heat $L_v$ needed to vaporise it, and the momentum equation loses the momentum it carries. The number density has no source term at all: droplets shrink, they never disappear, and the radius follows from $\rho_p$ and $n$ as it always does.
 
+The model, the interface and the accommodation coefficient belong to the material: each takes its phase-file tokens, or the `[ICE-Physics]` default without them (see [Materials](../user/input.md#materials)), together with its own vapour properties.
+
 ### The surface state
 
-All five models share one surface condition. The saturation pressure is
-Clausius-Clapeyron, anchored at the boiling point rather than at a tabulated curve:
+All five models share one surface condition. The saturation pressure is the `Psat` column
+of the [property table](../user/initial-conditions.md#property-table) when it has a non-zero one, linear
+between the nodes and constant beyond its ends, and otherwise Clausius-Clapeyron, anchored at
+the boiling point:
 
 $$
 p_{sat}(T_p) = p_{atm}\,\exp\left[-\frac{L_v M_v}{\mathcal{R}}
@@ -99,9 +109,10 @@ p_{sat}(T_p) = p_{atm}\,\exp\left[-\frac{L_v M_v}{\mathcal{R}}
 $$
 
 with $M_v$ as the vapour molar mass, $T_{boil}$ the boiling-temperature, $L_v$ the latent-heat. The surface mole fraction is
-$X_s = p_{sat}/p$, clamped to 1 once $p_{sat}$ reaches the local gas pressure — the
-boiling regime. Converting to a mass fraction $Y_s$ against the gas molar mass gives
-the Spalding mass-transfer number
+$X_s = p_{sat}/p$, clamped to $1 - 10^{-12}$ once $p_{sat}$ reaches the local gas pressure — the
+boiling regime. The cap keeps $B_M$ finite, about $10^{12}\,M_v/M_g$, so every model returns a finite
+rate while the droplet boils (IGLOO clamps at the same value). Converting to a mass fraction $Y_s$ against the gas
+molar mass gives the Spalding mass-transfer number
 
 $$
 B_M = \frac{Y_s - Y_\infty}{1 - Y_s},
@@ -158,3 +169,97 @@ $f_2 \to 1$ as the rate vanishes.
     term — for any gas, any material and any droplet temperature. That combination
     holds $T_p$ fixed and reproduces the textbook $d^2$ law exactly, which is what
     [case F](../vv/verification.md#f-evaporation) uses as its sharpest check.
+
+## Solidification
+
+A material with `solidification = on` on its line of the phase file freezes and melts, as IGLOO's model 6 does: a
+molten droplet supercools, recalesces, freezes on a plateau at the melting point and cools as a solid, and a solid or
+a partly frozen droplet heated past the melting point melts there. The families of that material carry two more
+variables after $n_p$, the frozen fraction $f$ and the nucleated fraction $\chi$, both carried with the mass.
+
+### The energy
+
+The latent heat is part of the energy per unit mass,
+
+$$
+e(T, f) = c_l\,T - f\,L(T), \qquad L(T) = h_{fus} - (c_l - c_s)(T_m - T),
+$$
+
+with $c_l$ the material's constant specific heat (the liquid's), $c_s$ = `cp-solid`, $h_{fus}$ = `h-fus` and
+$T_m$ = `T-melt`: a fraction $f$ of solid and $1 - f$ of liquid at one temperature. On the liquid ($f = 0$), the
+plateau ($T = T_m$) and the solid ($f = 1$) it is IGLOO's enthalpy without its datum.
+
+### The phase of a cell
+
+After every update, $T_p$ and $f$ follow from the energy and $\chi$. With $T_\ell = e/c_l$, the temperature the content
+would have if it were all liquid:
+
+| Energy | $\chi$ | State |
+|---|---|---|
+| $T_\ell \ge T_m$ | any | liquid, $T_p = T_\ell$, $f = 0$; $\chi$ is cleared |
+| $T_\ell \le T_{nuc}$ | any | nucleated; $\chi$ is set to 1 |
+| $T_{nuc} < T_\ell < T_m$ | $\ge \tfrac12$ | nucleated; $\chi$ kept |
+| $T_{nuc} < T_\ell < T_m$ | $< \tfrac12$ | undercooled liquid, $T_p = T_\ell$, $f = 0$; $\chi$ kept |
+
+A nucleated content takes the lever rule at $T_m$: the plateau, $T_p = T_m$ with $f = c_l(T_m - T_\ell)/h_{fus}$,
+while that is below 1, and otherwise the solid at $T_p = T_m - \big(c_l(T_m - T_\ell) - h_{fus}\big)/c_s$ with $f = 1$.
+
+So a liquid supercools down to $T_{nuc}$ = `T-nuc` and then recalesces at constant energy, to the plateau with
+$f_0 = c_l(T_m - T_{nuc})/h_{fus}$ or, when $f_0 \ge 1$, straight to the solid; it freezes on the plateau at the rate the
+gas takes its heat, $h_{fus}\,\mathrm{d}f/\mathrm{d}t = -\dot q/\rho_p$, and cools as a solid. Heated, a nucleated content
+warms as a solid to $T_m$, melts on the plateau at the same rate, and is liquid again at $f = 0$: nothing is solid above
+$T_m$, and a melted content supercools again before it refreezes. The convective and radiative exchanges use the cell's
+temperature; the recalescence exchanges nothing with the gas, and the latent heat leaves or enters it through the
+plateau's exchange.
+
+### The nucleated fraction
+
+$\chi$ is the fraction of a cell's mass that has nucleated and not melted completely since. Nucleation sets it,
+complete melting clears it, and otherwise it is only carried with the mass, so a cell follows the history of what
+flows through it: liquid flowing into a cell that once nucleated replaces its content and returns it to the liquid,
+and the nucleation front moves wherever the gas moves it. The frozen fraction itself could not hold that memory: it
+is derived from the energy, so a nucleated cell would rebuild it every step and nucleate all the liquid that enters.
+A cell where particles of different histories meet ($0 < \chi < 1$) holds one state, decided by its energy and the
+majority.
+
+### Accuracy
+
+Along a single history, a closed cell, the formulation reproduces the particle model exactly. Its one time-step error
+is the nucleation switch, which happens at the end of a stage: the plateau is shifted by at most
+$\pi d_p k_g Nu\,(T_m - T_{nuc})\,\Delta t/(m h_{fus})$ in $f$. Melting has none, the heat rate being continuous through
+both of its switches.
+
+In a steady stream the nucleation front and both melting points are located within one cell. The reconstruction works
+on $T_\ell$ in place of $T_p$ ([Reconstruction](numerics.md#reconstruction)): $T_\ell$ is continuous where a content
+nucleates, since the recalescence keeps its energy, so $T_\ell$ has no jump at the nucleation front ($\chi$ still has
+one, and its limited value decides a face in the band), and in every configuration measured a steady run converges
+there with MUSCL as at first order: `space-reconstruction = first-order` is not needed for that. Three approximations
+remain. A cell where contents of different histories meet ($0 < \chi < 1$) holds one state, decided by the majority;
+carrying the nucleated and the liquid parts as two populations would lift it. At the nucleation front the liquid and
+the nucleated state of the front cell can both be steady when its inflow lies in a narrow window, which puts the front
+one cell earlier or later. In a time-accurate run nucleation happens at the end of a stage (above).
+
+The Rusanov and HLLE fluxes leak $\chi$ upstream of a sharp front. At first order Rusanov puts $c/(2u + c)$ into the
+first cell and HLLE nothing while $c \le u$ and $(c - u)/(c + u)$ above, where $u$ is the flow speed and $c$ the
+closure's signal speed; with MUSCL and the van Leer limiter the Rusanov leak is about half as large
+($2.5\times10^{-5}$ against $5.0\times10^{-5}$ at first order on the stream of the verification case O3). No cell
+flips while $c < 2u$ (Rusanov) or $c < 3u$ (HLLE); above that one or two cells upstream of the front are nucleated by
+the leak, and the tail decays, so the front moves by that much and no further. An IG or AG stream injected with the
+inlet's pseudo-pressure ($P = 10^{-6}$) is far below that bound unless its bulk density is tiny.
+
+### Inputs
+
+All on the material's line of the phase file, as IGLOO reads them:
+
+| Token | Meaning | Default |
+|---|---|---|
+| `solidification` | `on` or `off` | `off` |
+| `T-melt` | melting temperature $T_m$ [K] | 2327 |
+| `h-fus` | heat of fusion [J/kg] | required, > 0 |
+| `T-nuc` | nucleation temperature [K], below `T-melt` | 0.8 `T-melt` |
+| `cp-solid` | specific heat of the solid [J/(kg K)] | required, > 0 |
+
+The liquid's specific heat and the density are the material's, and must be constant: a `Cp` or `Density` column that
+varies stops the run, as does a material that also evaporates. The setup prints each solidifying material's values.
+For alumina the NIST-JANAF tables give $T_m$ = 2327 K, $h_{fus}$ = 1.09 MJ/kg, a liquid specific heat of
+1.89 kJ/(kg K) and a solid one of 1.36 kJ/(kg K) at the melting point; the default `T-nuc` is a nominal supercooling.

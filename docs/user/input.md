@@ -79,17 +79,54 @@ Each carries its own state; they share the mesh, the gas field and the numerical
 scheme, and do not interact. `closure` is required — a file with no family section
 stops the run.
 
+### Materials
+
+A family is made of one condensed material. `INPUT/<prefix>phase.txt`, which ATLAS writes,
+names the materials after its type line, one line each, `<name> <groups> [key=value ...]`:
+
+```
+condensed-dispersed phase
+A 1 evaporation=CEM
+B 2
+```
+
+The families map onto the materials in that order: here family 1 is material A and
+families 2 and 3 are material B. Without the file every family uses one material. With
+several, the groups must add up to the `[ICE-FamilyN]` count and the
+[property table](initial-conditions.md#property-table) must give one zone per material.
+
+`density`, `specific-heat`, `latent-heat`, `emissivity`, `vapour-molar-mass`,
+`boiling-temperature` (alias `Tboil`), `vapour-specific-heat`, `lewis-number`, `vapour-mass-fraction` and
+`evaporation-coefficient` take one value per material, in the phase file's order
+(`emissivity = 0 0` for two materials); any other count stops the run.
+
+The tokens are the ones IGLOO reads. `evaporation`, `interface` and `alpha-e` set that
+material's evaporation model, interface and accommodation coefficient; `[ICE-Physics]
+evaporation`, `evaporation-interface` and `evaporation-coefficient` are the default of every
+material without the token. `solidification = on` makes the material freeze and melt, with
+`T-melt`, `h-fus`, `T-nuc` and `cp-solid` (see [Solidification](../theory/physics.md#solidification)); it
+stops the run without a positive `h-fus` and `cp-solid`, with `T-nuc` at or above `T-melt`, together
+with evaporation, and with a `Cp` or `Density` column that varies. `liquid-conduction`, `boiling`
+and `combustion` accept only the value ICE implements (`ITC`, `clamp`, `none`), and IGLOO's other
+numeric keys (`k-liq`, `mu-liq`, `K-burn`, …) are read and ignored. An unknown key, a value that is
+not a number, or `interface = LK` with the d2-law stops the run. `evaporation-blowing` stays global.
+The setup prints each material's evaporation model and each solidifying material's values.
+
 ### Choosing the exchange models
 
-`drag`, `heat-transfer` and `evaporation` are set once in `[ICE-Physics]` and apply to
-every family. They are only consulted when the run is coupled (that is, when
+`drag` and `heat-transfer` are set once in `[ICE-Physics]` and apply to every family;
+`evaporation` is the default of every material (see [Materials](#materials)). They are only consulted when the run is coupled (that is, when
 `INPUT/gas.tec` exists); an uncoupled run ignores them, and a name none of them
-recognises stops the solver with the list of valid ones.
+recognises stops the solver with the list of valid ones. In a coupled run `drag` and
+`heat-transfer` are required: leaving either at its default `none` stops the solver with
+that list. `drag = NoDrag` and `heat-transfer = NoHeat` switch the momentum and the
+convective heat exchange off explicitly; radiation stays under `emissivity`.
 
 `evaporation` defaults to `none`, and while it is `none` the vapour keys beside it are
 never read. Selecting a model makes `latent-heat`, `vapour-molar-mass` and
-`boiling-temperature` matter — those three set the saturation curve, and their defaults
-describe aluminium. `evaporation-interface` and `evaporation-blowing` are refinements of
+`boiling-temperature` matter — those three set the saturation curve unless the property
+table carries a `Psat` column, and their defaults describe aluminium. `boiling-temperature`
+may be given as `Tboil`, the name IGLOO also accepts; giving both stops the run. `evaporation-interface` and `evaporation-blowing` are refinements of
 the selected model rather than models of their own:
 
 ```ini
@@ -141,4 +178,5 @@ residual — which for a genuinely unsteady problem may be immediately. Set
 
 If `ini-diter` is set, `input.ini` is re-read every that many iterations. Thresholds
 and output frequencies then take effect during a run; anything consumed once at setup
-does not.
+does not: the closures, the scheme, and the materials with their properties, models and
+property table.

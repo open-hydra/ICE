@@ -67,7 +67,7 @@ contains
     use ICE_Global_m, only: ndir
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
-    real(kind=R8) :: theta1, theta2, theta(2)
+    real(kind=R8) :: theta(2)
 
     if (grid%blk(1)%dim(3) > 1) then
       meshType = 3
@@ -76,11 +76,10 @@ contains
     else
       meshType = 2
       associate( node => grid%blk(1)%node, jm => grid%blk(1)%dim(2) )
-        theta1 = atan2( node(0,1,0)%c(3), node(0,1,0)%c(2) )
-        theta2 = atan2( node(0,jm,1)%c(3), node(0,jm,1)%c(2) )
+        theta(1) = atan2( node(0,jm,1)%c(3), node(0,jm,1)%c(2) ) - atan2( node(0,jm,0)%c(3), node(0,jm,0)%c(2) )
+        theta(2) = atan2( node(0,1,1)%c(3),  node(0,1,1)%c(2) )  - atan2( node(0,1,0)%c(3),  node(0,1,0)%c(2) )
       end associate
-      theta(2) = theta2 - theta1
-      if ( (theta(1) - theta(2)) < 1.d-5 ) then
+      if ( abs(theta(1) - theta(2)) < 1.d-5 .and. theta(1) /= 0.d0 ) then
         delthe = theta(1)
       else
         delthe = 0.d0
@@ -155,6 +154,7 @@ contains
     real(kind=R8)    :: d1(3), d2(3), d3(3), vx(8), vy(8), vz(8)
     real(kind=R8)    :: snixx, sniyy, snizz, snjxx, snjyy, snjzz, snkxx, snkyy, snkzz
     real(kind=R8)    :: scal, signi, signj, signk
+    logical          :: bad_vol
 
     im = b%dim(1) ; jm = b%dim(2) ; km = b%dim(3)
 
@@ -198,6 +198,7 @@ contains
 
     ! ------ Compute metrics ------
 
+    bad_vol = .false.
     !$omp parallel private (d1,d2,d3,i,j,k,snix,sniy,sniz,Ai,Aj,snjx,snjy,snjz,Ak,snkx,snky,snkz), &
     !$omp private (vx,vy,vz,vol)
 
@@ -262,12 +263,18 @@ contains
           + tvol(vx,vy,vz,5,8,6,2) + tvol(vx,vy,vz,5,7,8,3) &
           + tvol(vx,vy,vz,5,8,2,3)
       if (vol <= 0d0) then
+        !$omp critical (ICE_metrics_report)
         write(*,*) 'Negative volume in i,j,k', i, j, k
-        stop
+        bad_vol = .true.
+        !$omp end critical (ICE_metrics_report)
       endif
       b%vol(i,j,k) = vol
     end do ; end do ; end do
     !$omp end parallel
+    if (bad_vol) then
+      write(*,'(A)') ' [ERROR] [ICE::compute_metrics] non-positive cell volume'
+      error stop 1
+    endif
 
   end subroutine compute_metrics
 
