@@ -71,3 +71,7 @@ each block must be divisible by $2^{\texttt{levels}-1}$;.
 
 The run then **starts on the coarsest level** and works up. Each level is advanced for its own iterations, after which the solution is prolongated onto the next finer grid and the iteration counter restarts. There is no fine-to-coarse transfer during the solve: this is grid sequencing — a cheap way to get a good initial guess on the fine grid — not a multigrid cycle, and it does not accelerate the fine-level convergence once it is reached.
 
+The one fine-to-coarse transfer happens at setup, where the initial solution is restricted onto every level in turn so that the coarsest one starts from the initial condition rather than from nothing. Restriction is volume-weighted and done in conserved variables, so it conserves mass; prolongation is trilinear.
+
+A level is a complete grid and carries everything one needs: its own metrics, its own [boundary table](../user/input.md#grid-levels) and, under MPI, its own halo schedule. Block ownership is the exception — it is decided once on the fine grid and every level keeps it, since all levels have the same blocks in the same order.
+

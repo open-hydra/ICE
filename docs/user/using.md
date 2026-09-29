@@ -113,6 +113,9 @@ the least work so far. At startup it prints how even the split is:
 The result does not depend on the number of ranks: the solution is bit-for-bit the same
 as a serial run. See [Multi-block and MPI](../vv/multiblock-mpi.md).
 
+For how to choose the rank/thread split, where to place the threads, and how well ICE
+scales on one node and across three, see [Parallel Execution](parallel.md).
+
 ## Input and output formats
 
 Two keys, both a writer and a mode: `ic-format` names the format of

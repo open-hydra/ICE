@@ -1,5 +1,9 @@
 # Performance Notes
 
+This page is about what makes a single ICE process fast. For choosing a parallel
+configuration and for the measured scaling curves, see
+[Parallel Execution](../user/parallel.md).
+
 ## Where the time goes
 
 A step is dominated by the flux loop, which is swept once per direction per

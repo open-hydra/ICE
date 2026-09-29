@@ -115,6 +115,20 @@ level2-iter = 500
 block dimension must be divisible by 2. The run starts on the coarsest level; see
 [Grid sequencing](../theory/time-integration.md#grid-sequencing).
 
+Each level is a mesh in its own right and needs **its own boundary file**, because the
+records are per boundary cell and a coarse cell is not a fine one:
+
+| Level | File |
+|---|---|
+| 1 (fine) | `INPUT/<prefix>bc.txt` |
+| 2 | `INPUT/<prefix>bc2.txt` |
+| *n* | `INPUT/<prefix>bc<n>.txt` |
+
+ATLAS BCB writes all of them in one pass when `MG-levels` is set in its own
+`[ATLAS-Parameters]`, so the two settings have to agree. ICE checks each file's record
+count against that level's mesh and stops if they disagree, so a stale or missing file
+is reported rather than absorbed.
+
 ## Stopping conditions
 
 `iter-threshold`, `time-threshold` and `res-threshold` are independent, and the run

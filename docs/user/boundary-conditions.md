@@ -28,12 +28,29 @@ $$
 2\,(n_y n_z + n_x n_z + n_x n_y)
 $$
 
-records per block, covering every boundary cell of every face once, in any order. A
-record applies to all particle families.
+records per block per **copy** of the boundary table, covering every boundary cell of
+every face once.
 
 A header whose sixth column is neither `0` nor a three-digit code stops the run with
 the record number — which is what a file in an older, wider format looks like when it
 is read with this schema.
+
+### Populations
+
+A dispersed phase can carry several materials, each with several populations, declared
+in the ATLAS phase file as `<material> <npCP>`. ATLAS writes the whole boundary table
+once per (material, population) pair — block by block, the copies of a block together —
+and the copies differ only in the payload of their `401`–`403` records. ICE binds them
+to its `[ICE-Family*]` sections:
+
+| Copies in the file | What ICE does |
+|---|---|
+| 1 | The record applies to every family, which is what a single-population case and every case written before populations look like. The file may be in any order. |
+| one per family | Copy *c* belongs to family *c*. The order is what identifies a copy, so the file must keep ATLAS's: blocks in mesh order, the copies of a block together, each copy over the same cells in the same order. |
+| anything else | The setup stops. Neither reading is right, and binding the wrong copy to a family would inject the wrong size class with no other symptom. |
+
+So a phase with two materials, one of them in two populations, needs three
+`[ICE-Family*]` sections, and family 3 is the second material's single population.
 
 ## Supported codes
 
