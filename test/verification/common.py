@@ -161,17 +161,21 @@ def write_bc(path, nx, ny, nz, mode='extrapolation', inlets=None):
     """Write an ATLAS-format BC file for a single block.
 
     With ``inlets`` set, one complete BC table is written per family in
-    ATLAS material/population order.
+    ATLAS material/population order. Each inlet is a formatted payload
+    (inlet_payload) or a dict with the keys gp, v, T and r.
     """
+    def payload(spec):
+        if isinstance(spec, str):
+            return spec
+        return inlet_payload(spec['gp'], spec['v'], spec['T'], spec['r'])
+
     if inlets is None:
         rows = bc_rows(nx, ny, nz, mode)
     else:
         rows = [
             row
             for spec in inlets
-            for row in bc_rows(
-                nx, ny, nz, mode,
-                inlet=inlet_payload(spec['gp'], spec['v'], spec['T'], spec['r']))
+            for row in bc_rows(nx, ny, nz, mode, inlet=payload(spec))
         ]
 
     Path(path).write_text('\n'.join(rows) + '\n')
@@ -581,35 +585,21 @@ def try_run(rep, fn, *args, **kw):
 
 
 def read_solution(path, zone=0):
-
     """One zone (the first by default) of a Tecplot BLOCK output: {'time', 'nx', 'ny', 'names', 'var'[v][cell]}, the
-
-    names without x, y, z."""
-
+    names without x, y, z. The header's names may be quoted or bare."""
     text = Path(path).read_text()
-
-    head, *zones = re.split(r'^\s\*ZONE', text, flags=re.IGNORECASE | re.MULTILINE)
-
+    head, *zones = re.split(r'^\s*ZONE', text, flags=re.IGNORECASE | re.MULTILINE)
     header, body = zones[zone].split('\n', 1)
-
-    I, J, K = (int(re.search(r'\b%s\s\*=\s\*(\d+)' % a, header, re.IGNORECASE).group(1)) for a in 'IJK')
-
-    stime = re.search(r'SOLUTIONTIME\s\*=\s\*([-+0-9.EDed]+)', header, re.IGNORECASE)
-
+    I, J, K = (int(re.search(r'\b%s\s*=\s*(\d+)' % a, header, re.IGNORECASE).group(1)) for a in 'IJK')
+    stime = re.search(r'SOLUTIONTIME\s*=\s*([-+0-9.EDed]+)', header, re.IGNORECASE)
     values = [float(t) for t in body.split() if re.fullmatch(r'[-+0-9.Ee]+', t)]
-
     nn = I * J * K
-
     nc = (I - 1) * (J - 1) * max(1, K - 1)
-
     nvar = (len(values) - 3 * nn) // nc
-
+    names = re.findall(r'"([^"]*)"', head) or head.split('=', 1)[-1].split()
     out = {'time': float(stime.group(1)) if stime else None,
-
-           'nx': I - 1, 'ny': J - 1, 'names': re.findall(r'"([^"]\*)"', head)[3:],
-
+           'nx': I - 1, 'ny': J - 1, 'names': names[3:],
            'var': [values[3 * nn + v * nc: 3 * nn + (v + 1) * nc] for v in range(nvar)]}
-
     return out
 
 
