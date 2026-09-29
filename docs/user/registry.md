@@ -26,7 +26,8 @@ Required column says otherwise, and omitting one selects the default.
 | `shell-diter` | 10 | > 0 |  no | Shell update iter frequency |
 | `res-diter` | 10 | > 0 |  no | Residual history iter frequency |
 | `ini-diter` | 1000000000 | > 0 |  no | input.ini update iter frequency |
-| `gas-path` | INPUT/ |  |  no | Directory holding the coupling gas file gas.tec |
+| `gas-path` | INPUT/ |  |  no | Directory holding the coupling gas field, named gas.tec or gas.szplt according to ic-format |
+| `timers` | false | true, false |  no | Report wall-clock and core-cycle cost per iteration, split into source, flux, halo and collective terms |
 
 ## [ICE-Probes]
 
