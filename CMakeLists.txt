@@ -7,6 +7,27 @@ set(solver ICE)
 
 project (${solver} LANGUAGES Fortran)
 
+include(CTest)
+
+# The core-cycle counter (src/lib/diagnostic/ice_cycles.c) is the only C in the
+# tree: perf_event_open has no Fortran binding. It is optional, because a
+# toolchain that cannot link a C program must still be able to build ICE -- the
+# timers then report wall-clock only. Configure with -DICE_CYCLES=OFF to skip
+# it deliberately.
+OPTION(ICE_CYCLES "Count core-cycles per iteration (needs a working C compiler)" ON)
+set(ICE_HAVE_CYCLES OFF)
+IF(ICE_CYCLES)
+  include(CheckLanguage)
+  check_language(C)
+  IF(CMAKE_C_COMPILER)
+    enable_language(C)
+    set(ICE_HAVE_CYCLES ON)
+  ELSE()
+    message(STATUS "No working C compiler: core-cycle counting disabled, "
+                   "timers will report wall-clock only")
+  ENDIF()
+ENDIF()
+
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   set(CMAKE_VERBOSE_MAKEFILE FALSE)
