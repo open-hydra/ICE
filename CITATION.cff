@@ -1,9 +1,17 @@
-cff-version: 0.1.0-alpha
-title: "ICE"
+cff-version: 1.2.0
+title: "ICE: Integration of a Condensed phase via an Eulerian method"
 authors:
   - family-names: "Cocirla"
     given-names: "Gianluca"
+  - family-name: "Passarani"
+    given-name: "Giacomo"
+    affiliation: "Sapienza University of Rome"
+  - family-names: "Grossi"
+    given-names: "Marco"
+    affiliation: "Sapienza University of Rome"
+    orcid: "https://orcid.org/0000-0002-8487-1932"
 license: GPL-3.0
-url: ""
+repository-code: "https://github.com/open-hydra/ICE"
+url: "https://open-hydra.github.io/ICE/"
 doi: ""
 type: software
