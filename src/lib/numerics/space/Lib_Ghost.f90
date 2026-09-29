@@ -38,7 +38,7 @@ contains
 
     !$OMP PARALLEL DEFAULT(NONE), &
     !$OMP SHARED(grid, ncond, nbase, solid_of, mat_of, obj_time_scheme, obj_condensed), &
-    !$OMP PRIVATE(ii, i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, area, normal, velocity, veln)
+    !$OMP PRIVATE(ii, i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, ph, area, normal, velocity, veln)
     !$OMP DO SCHEDULE (dynamic, 64)
     do ii = 1, grid%n_local_bc
       i = grid%local_bc_idx(ii)

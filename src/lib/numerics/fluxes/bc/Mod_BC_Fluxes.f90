@@ -29,7 +29,7 @@ contains
 
     bad_recon = .false.
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ngroups, ncond, riemann), &
+    !$OMP SHARED(grid, p, ncond, mat_of, solid_of, riemann, obj_time_scheme, obj_condensed), &
     !$OMP PRIVATE(n, nn, b, f, i, j, k, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, &
     !$OMP         dir, normal, area, dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th, &
     !$OMP         beta_val, priml, primr, flux, v)
