@@ -41,7 +41,7 @@ contains
     grid%dtglobal = 1e+5
 
     do p = 1, ngroups
-      call assign_sound_make(p)
+      call assign_wavespeed_make(p)
       !$omp parallel
       call compute_dt(p, obj_time_scheme%cfl, obj_time_scheme%cfl_rampa_iter, &
                       obj_time_scheme%dt_max, obj_time_scheme%tau_factor, grid)
