@@ -5,10 +5,13 @@ module ICE_Wrap_Postprocess
   public :: ICE_postprocess
 
   integer,       private :: id_stampa = 0
-  character(80), private :: A_shell_format    = "('ICE  | Iter =', i9, ' | Global iter =', i9, ' | Density residual =', E13.6)"
-  character(68), private :: B_shell_format    = "('ICE  | Iter =', i9, ' | Time =', E13.6,  ' | Delta t =', E13.6)"
-  character(95), private :: A_shell_format_MG = "('ICE  Grid Level', i2, ' | Iter =', i9, ' | Global iter =', i9, ' | Density residual =', E13.6)"
-  character(83), private :: B_shell_format_MG = "('ICE  Grid Level', i2, ' | Iter =', i9, ' | Time =', E13.6,  ' | Delta t =', E13.6)"
+  !> len=* so the length comes from the literal. Both _MG strings were declared one
+  !> character short, which cut the closing parenthesis off the format and made every
+  !> shell line on a multigrid run a "syntax error in format" abort.
+  character(len=*), parameter, private :: A_shell_format    = "('ICE  | Iter =', i9, ' | Global iter =', i9, ' | Density residual =', E13.6)"
+  character(len=*), parameter, private :: B_shell_format    = "('ICE  | Iter =', i9, ' | Time =', E13.6,  ' | Delta t =', E13.6)"
+  character(len=*), parameter, private :: A_shell_format_MG = "('ICE  Grid Level', i2, ' | Iter =', i9, ' | Global iter =', i9, ' | Density residual =', E13.6)"
+  character(len=*), parameter, private :: B_shell_format_MG = "('ICE  Grid Level', i2, ' | Iter =', i9, ' | Time =', E13.6,  ' | Delta t =', E13.6)"
 
 contains
 
@@ -23,6 +26,7 @@ contains
     use ICE_Mod_Multigrid,     only: Prolongation
     use ICE_Read_Ini,          only: Read_Inifile_Runtime
     use ICE_Mod_MPI,           only: mpi_is_root
+    use ICE_Mod_Timers,        only: timer_report
     implicit none
     type(ICE_simulation_type), intent(inout) :: simulation
     character(llen) :: solfile, bckfile, dgsfile
@@ -95,6 +99,10 @@ contains
       ! Probes
       if (nprobes > 0) call Write_Probes_Data(simulation%domain(1)%iter, simulation%domain(1)%time)
 
+      ! Collective, so every rank calls it -- not inside the root guard below.
+      if (mod(simulation%domain(level)%iter, obj_io%shell_diter) == 0d0) &
+        call timer_report(simulation%domain(level)%iter)
+
       if (mpi_is_root) then
         if (mod(simulation%domain(level)%iter, obj_io%res_diter) == 0d0) &
           write(obj_io%unitRES, trim(obj_io%unitRES_format)) obj_sim_param%iter_general, &
@@ -149,6 +157,10 @@ contains
 
       ! Probes
       if (nprobes > 0) call Write_Probes_Data(simulation%domain(1)%iter, simulation%domain(1)%time)
+
+      ! Collective, so every rank calls it -- not inside the root guard below.
+      if (mod(simulation%domain(level)%iter, obj_io%shell_diter) == 0d0) &
+        call timer_report(simulation%domain(level)%iter)
 
       if (mpi_is_root) then
         if (mod(simulation%domain(level)%iter, obj_io%res_diter) == 0d0) &

@@ -16,7 +16,7 @@ contains
     use ICE_Mod_Fluxes, only: state_reconstruction
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
-    integer(kind=I4) :: n, b, f, p, i, j, k
+    integer(kind=I4) :: n, nn, b, f, p, i, j, k
     integer(kind=I4) :: ig, jg, kg, ig2, jg2, kg2, ip, jp, kp
     integer(kind=I4) :: dir
     real(kind=R8)    :: normal(3), area
@@ -27,7 +27,7 @@ contains
 
     !$OMP PARALLEL DEFAULT(NONE), &
     !$OMP SHARED(grid, ngroups, ncond, riemann), &
-    !$OMP PRIVATE(n, b, f, p, i, j, k, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, &
+    !$OMP PRIVATE(n, nn, b, f, p, i, j, k, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, &
     !$OMP         dir, normal, area, dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th, &
     !$OMP         beta_val, priml, primr, flux, v)
     do b = 1, grid%nb
@@ -46,13 +46,14 @@ contains
       enddo
     enddo
 
-    !$OMP DO SCHEDULE (DYNAMIC)
-    do n = 1, size(grid%bc)
+    !> This rank's own boundary entries only; see build_local_bc_index.
+    !$OMP DO SCHEDULE (DYNAMIC, 64)
+    do nn = 1, grid%n_local_bc
+      n = grid%local_bc_idx(nn)
 
       if (grid%bc(n)%type == 0 .or. grid%bc(n)%type == 200) cycle
 
       b = grid%bc(n)%b
-      if (.not. is_local_block(b)) cycle
       i = grid%bc(n)%i ; j = grid%bc(n)%j ; k = grid%bc(n)%k
       p = grid%bc(n)%p ; f = grid%bc(n)%f
 

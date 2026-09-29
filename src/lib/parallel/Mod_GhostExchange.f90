@@ -44,9 +44,12 @@ module ICE_Mod_GhostExchange
 
   integer, parameter :: halo_tag = 7101
 
-  type(ghost_schedule_type), public :: ghost_sched
+  type(ghost_schedule_type), allocatable, target, private :: mg_sched(:)
+  type(ghost_schedule_type), pointer,     public          :: ghost_sched => null()
 
   public :: build_ghost_schedule
+  public :: build_local_bc_index
+  public :: select_ghost_level
   public :: cleanup_ghost_schedule
   public :: exchange_ghost_prim
   public :: gather_prim_to_root
@@ -57,16 +60,49 @@ module ICE_Mod_GhostExchange
 contains
 
 
+  subroutine build_local_bc_index(grid)
+    use ICE_Advanced_Types_m
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer :: i, n
+
+    n = 0
+    do i = 1, size(grid%bc)
+      if (is_local_block(grid%bc(i)%b)) n = n + 1
+    end do
+
+    grid%n_local_bc = n
+    if (allocated(grid%local_bc_idx)) deallocate(grid%local_bc_idx)
+    allocate(grid%local_bc_idx(n))
+
+    n = 0
+    do i = 1, size(grid%bc)
+      if (is_local_block(grid%bc(i)%b)) then
+        n = n + 1
+        grid%local_bc_idx(n) = i
+      end if
+    end do
+
+  end subroutine build_local_bc_index
+
+
   !> Build the halo schedule from the BC list. Every rank scans the same list in the
   !> same order, so the cells a rank sends to a neighbour are listed in the order the
   !> neighbour expects them. Must be called after partition_blocks and Setup_BC.
-  subroutine build_ghost_schedule(grid)
+  subroutine build_ghost_schedule(grid, level)
     use ICE_Advanced_Types_m
+    use ICE_Config_Types_m, only: obj_multigrid
     implicit none
     type(ICE_domain_type), intent(in) :: grid
+    integer, intent(in)               :: level  !< Multigrid level this schedule serves
 #ifdef USE_MPI
     integer, allocatable :: send_per_rank(:), recv_per_rank(:), send_pos(:), recv_pos(:)
 #endif
+
+    if (.not. allocated(mg_sched)) allocate(mg_sched(max(1, obj_multigrid%MGL)))
+    if (level < 1 .or. level > size(mg_sched)) &
+      call mpi_abort_all('build_ghost_schedule: grid level outside 1..MG-levels')
+    ghost_sched => mg_sched(level)
 
     if (mpi_size_ <= 1) then
       ghost_sched%built = .true.
@@ -173,18 +209,38 @@ contains
   end subroutine build_ghost_schedule
 
 
-  !> Free persistent MPI requests.
+  !> Point the halo routines at one level's schedule. Call whenever the solver moves
+  !> between multigrid levels; build_ghost_schedule has to have run for that level.
+  subroutine select_ghost_level(level)
+    implicit none
+    integer, intent(in) :: level
+
+    if (.not. allocated(mg_sched)) return
+    if (level < 1 .or. level > size(mg_sched)) &
+      call mpi_abort_all('select_ghost_level: grid level outside 1..MG-levels')
+    ghost_sched => mg_sched(level)
+
+  end subroutine select_ghost_level
+
+
+  !> Free persistent MPI requests, on every level that built any.
   subroutine cleanup_ghost_schedule()
     implicit none
 #ifdef USE_MPI
-    call cleanup_persistent_requests()
+    integer :: m
+
+    if (.not. allocated(mg_sched)) return
+    do m = 1, size(mg_sched)
+      ghost_sched => mg_sched(m)
+      call cleanup_persistent_requests()
+    end do
+    ghost_sched => mg_sched(1)
 #endif
   end subroutine cleanup_ghost_schedule
 
 
   !> Bring the remote interior cells read by the ghost fill up to date. Call on every
-  !> rank before compute_ghost. The coarse multigrid levels carry no BCs, so there is
-  !> nothing to exchange on them.
+  !> rank before compute_ghost, with ghost_sched pointing at this grid's level.
   subroutine exchange_ghost_prim(grid)
     use ICE_Advanced_Types_m
     implicit none

@@ -12,12 +12,15 @@ contains
     use ICE_Config_Types_m,   only: obj_multigrid, obj_sim_param
     use ICE_Mod_Explicit,     only: Explicit_Step
     use ICE_Mod_Multigrid,    only: Prolongation
+    use ICE_Mod_GhostExchange, only: select_ghost_level
     implicit none
     type(ICE_simulation_type), intent(inout) :: simulation
     external :: External_Function
     integer :: lv
 
     lv = obj_multigrid%MG_level
+
+    call select_ghost_level(lv)
     call Explicit_Step(simulation%domain(lv))
 
     ! Coarse level exhausted its iteration budget → trigger level transition

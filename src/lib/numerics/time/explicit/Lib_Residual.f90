@@ -42,6 +42,7 @@ contains
     integer(kind=I4), intent(in)  :: p
     integer(kind=I4) :: b, i, j, k
 
+    !$OMP PARALLEL
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
 
@@ -59,6 +60,7 @@ contains
       !$omp end do
 
     enddo
+    !$OMP END PARALLEL
 
   end subroutine compute_residual
 

@@ -23,7 +23,7 @@ contains
     use ICE_Mod_Phase
     use ICE_Mod_Multigrid,  only: Setup_Multigrid
     use ICE_Mod_MPI,        only: mpi_is_root, partition_blocks
-    use ICE_Mod_GhostExchange, only: build_ghost_schedule
+    use ICE_Mod_GhostExchange, only: build_ghost_schedule, build_local_bc_index
     implicit none
     type(ICE_simulation_type), intent(inout)  :: sim
     type(orion_data), intent(inout), optional :: IOgas
@@ -74,14 +74,16 @@ contains
     ! Print simulation info onto the logfile/shell
     if (mpi_is_root) call print_simulation_info()
 
-    ! Setup boundaries (fine level only)
-    call Setup_BC(sim%domain(1))
+    ! Setup boundaries. Each grid level reads its own file: the fine level
+    ! <prefix>bc.txt, a coarse level <prefix>bc<level>.txt (see Setup_Multigrid).
+    call Setup_BC(sim%domain(1), 1)
 
     ! Distribute the blocks over the MPI ranks (every rank keeps the whole domain but
     ! updates only its own blocks) and build the halo exchange for the ghost fill
     call partition_blocks(sim%domain(1)%nb, &
                           [(product(sim%domain(1)%blk(b)%dim), b = 1, sim%domain(1)%nb)])
-    call build_ghost_schedule(sim%domain(1))
+    call build_ghost_schedule(sim%domain(1), 1)
+    call build_local_bc_index(sim%domain(1))
 
     ! Setup gaseous phase (fine level only)
     if (coupled) call setup_gas(sim%domain(1), sim%OCP)
@@ -89,7 +91,8 @@ contains
     ! Setup condensed phase (fine level)
     call setup_cond(sim%domain(1), sim%ODP(1))
 
-    ! With multigrid, allocate coarse grid levels and compute their metrics
+    ! With multigrid, build the coarse levels: grid, metrics, boundaries, halo
+    ! schedule and the initial solution restricted onto each of them.
     if (obj_multigrid%MGL > 1) then
       call Setup_Multigrid(sim)
       ! Start solver on coarsest level; level cycling is handled in Wrap_Solve

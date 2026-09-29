@@ -41,7 +41,12 @@ contains
     call reg%add(section, 'ini-diter',     obj_io%ini_diter,     &
                  '1000000000', 'input.ini update iter frequency', '> 0', .false.)
     call reg%add(section, 'gas-path',      obj_io%gaspath,       &
-                 'INPUT/',     'Directory holding the coupling gas file gas.tec', '', .false.)
+                 'INPUT/',     'Directory holding the coupling gas field, named gas.tec or '// \
+                 'gas.szplt according to ic-format', '', .false.)
+
+    call reg%add(section, 'timers',        obj_io%timers,        &
+                 'false',      'Report wall-clock and core-cycle cost per iteration, '// &
+                 'split into source, flux, halo and collective terms', 'true, false', .false.)
 
   end subroutine Register_IO_Fields
 

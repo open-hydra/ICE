@@ -9,6 +9,7 @@ module ICE_Lib_Ghost
   use ICE_Lib_AG, only : prim_2_cons_AG, cons_2_prim_AG
   use ICE_Mod_MPI, only : is_local_block
   use ICE_Mod_GhostExchange, only : exchange_ghost_prim
+  use ICE_Mod_Timers,        only : timer_comm_begin, timer_comm_end
 
   implicit none
   private
@@ -19,7 +20,7 @@ contains
   subroutine compute_ghost (grid)
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
-    integer(kind=I4) :: i
+    integer(kind=I4) :: i, ii
     integer(kind=I4) :: bm, pm, im, jm, km, fm
     integer(kind=I4) :: ig, jg, kg
     integer(kind=I4) :: bs, is, js, ks, fs
@@ -27,17 +28,19 @@ contains
     real(kind=R8)    :: area, normal(1:3), velocity(1:3), veln
 
     !> Remote cells read below (connection sources, chimera donors) from their owners
+    call timer_comm_begin()
     call exchange_ghost_prim(grid)
+    call timer_comm_end()
 
     !$OMP PARALLEL DEFAULT(NONE), &
     !$OMP SHARED(grid, ncond, obj_condensed, obj_time_scheme), &
-    !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, area, normal, velocity, veln)
-    !$OMP DO SCHEDULE (dynamic)
-    do i = 1, size(grid%bc)
+    !$OMP PRIVATE(ii, i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, area, normal, velocity, veln)
+    !$OMP DO SCHEDULE (dynamic, 64)
+    do ii = 1, grid%n_local_bc
+      i = grid%local_bc_idx(ii)
 
       !> Preliminary assignments
       bm = grid%bc(i)%b
-      if (.not. is_local_block(bm)) cycle
       im = grid%bc(i)%i
       jm = grid%bc(i)%j
       km = grid%bc(i)%k
@@ -205,7 +208,7 @@ contains
   subroutine fill_second_ghost(grid)
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
-    integer(kind=I4) :: i
+    integer(kind=I4) :: i, ii
     integer(kind=I4) :: bm, pm, im, jm, km, fm
     integer(kind=I4) :: ig, jg, kg
     integer(kind=I4) :: ig2, jg2, kg2
@@ -214,14 +217,14 @@ contains
 
     !$OMP PARALLEL DEFAULT(NONE), &
     !$OMP SHARED(grid, ncond), &
-    !$OMP PRIVATE(i, bm, pm, im, jm, km, fm, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, bs, is, js, ks, fs)
-    !$OMP DO SCHEDULE(dynamic)
-    do i = 1, size(grid%bc)
+    !$OMP PRIVATE(ii, i, bm, pm, im, jm, km, fm, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, bs, is, js, ks, fs)
+    !$OMP DO SCHEDULE(dynamic, 64)
+    do ii = 1, grid%n_local_bc
+      i = grid%local_bc_idx(ii)
 
       if (grid%bc(i)%type == 0 .or. grid%bc(i)%type == 200) cycle
 
       bm = grid%bc(i)%b
-      if (.not. is_local_block(bm)) cycle
       im = grid%bc(i)%i ; jm = grid%bc(i)%j ; km = grid%bc(i)%k
       pm = grid%bc(i)%p ; fm = grid%bc(i)%f
 

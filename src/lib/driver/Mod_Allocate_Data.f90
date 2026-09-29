@@ -86,6 +86,9 @@ contains
         blk%cond_phase(p)%RS2 = 0._R8
       end if
       blk%cond_phase(p)%beta = 1d0
+
+      blk%cond_phase(p)%source   = 0._R8
+      blk%cond_phase(p)%residual = 0._R8
     enddo
 
   end subroutine Allocate_Block

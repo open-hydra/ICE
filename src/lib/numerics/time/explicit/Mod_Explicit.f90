@@ -24,6 +24,10 @@ contains
     use ICE_Mod_Diagnostic, only: Compute_Diagnostic
     use ICE_Mod_MPI,        only: is_local_block, mpi_allreduce_min_r8, &
                                   mpi_allreduce_sum_r8_array, mpi_bcast_integer
+    use ICE_Mod_Timers,     only: timer_source_begin, timer_source_end,   &
+                                  timer_flux_begin,   timer_flux_end,     &
+                                  timer_halo_begin,   timer_halo_end,     &
+                                  timer_sync_begin,   timer_sync_end
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4) :: b, p, srk
@@ -36,16 +40,18 @@ contains
 
     grid%dtglobal = 1e+5
 
-    !$omp parallel
     do p = 1, ngroups
       call assign_sound_make(p)
+      !$omp parallel
       call compute_dt(p, obj_time_scheme%cfl, obj_time_scheme%cfl_rampa_iter, &
                       obj_time_scheme%dt_max, grid)
+      !$omp end parallel
     end do
-    !$omp end parallel
 
     !> Global time step: smallest over all ranks
+    call timer_sync_begin()
     call mpi_allreduce_min_r8(grid%dtglobal, dtlocal)
+    call timer_sync_end()
     grid%dtglobal = dtlocal
     if (obj_time_scheme%time_accurate) grid%time = grid%time + grid%dtglobal
 
@@ -87,14 +93,20 @@ contains
 
         call zero_residual(grid, p)
 
-        if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) &
+        if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) then
+          call timer_source_begin()
           call compute_source(grid, p)
+          call timer_source_end()
+        end if
 
+        call timer_halo_begin()
         call compute_ghost(grid)
         call fill_second_ghost(grid)
 
         call compute_bound(grid)
+        call timer_halo_end()
 
+        call timer_flux_begin()
         call compute_flux(grid, p)
 
         call compute_residual(grid, p)
@@ -102,6 +114,7 @@ contains
         if (obj_irs%enabled) call residual_smoothing(grid, p)
 
         call state_update(grid, p, srk)
+        call timer_flux_end()
 
       end do
 
@@ -120,7 +133,9 @@ contains
                               total=obj_sim_param%residuotot)
       end do
     end do
+    call timer_sync_begin()
     call mpi_allreduce_sum_r8_array(obj_sim_param%residuotot, nres)
+    call timer_sync_end()
     obj_sim_param%residuotot = sqrt(obj_sim_param%residuotot)
 
     iosim  = (mod(grid%iter, obj_io%sol_diter) == 0) &
@@ -144,7 +159,9 @@ contains
 
     !> Every rank sees the same residual and time, but take the decision from root
     !> so that all ranks leave the time loop together whatever the rounding.
+    call timer_sync_begin()
     call mpi_bcast_integer(obj_sim_param%TODO)
+    call timer_sync_end()
 
   end subroutine Explicit_Step
 

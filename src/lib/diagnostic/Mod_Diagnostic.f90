@@ -105,7 +105,7 @@ contains
       case('tecplot')
         IOfield%tec%format = trim(format(2))
         E_IO = tec_write_structured_multiblock(orion=IOfield,            &
-                 varnames=Dvarnames,                                     &
+                 varnames=Dvarnames, Nvars=6*ngroups,                    &
                  filename=trim(path)//trim(file)//io_extension(format))
       end select
 

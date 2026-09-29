@@ -70,8 +70,8 @@ contains
 
       !$OMP DO COLLAPSE (3)
       do k = 1, grid%blk(b)%dim(3)
-      do i = 1, grid%blk(b)%dim(1)
       do j = pass, grid%blk(b)%dim(2)-1, 2
+      do i = 1, grid%blk(b)%dim(1)
 
         call compute_flux_ (grid%blk(b)%cond_phase(p)%prim(1:ncond(p),i,j-1:j+2,k),    &
                             [grid%blk(b)%dl(i,j-1,k)%c(2), grid%blk(b)%dl(i,j,k)%c(2), &
@@ -90,9 +90,9 @@ contains
       do pass = 1, 2
 
       !$OMP DO COLLAPSE (3)
+      do k = pass, grid%blk(b)%dim(3)-1, 2
       do j = 1, grid%blk(b)%dim(2)
       do i = 1, grid%blk(b)%dim(1)
-      do k = pass, grid%blk(b)%dim(3)-1, 2
 
         call compute_flux_ (grid%blk(b)%cond_phase(p)%prim(1:ncond(p),i,j,k-1:k+2),    &
                             [grid%blk(b)%dl(i,j,k-1)%c(3), grid%blk(b)%dl(i,j,k)%c(3), &

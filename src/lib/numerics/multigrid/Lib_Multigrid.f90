@@ -38,31 +38,35 @@ contains
   ! Volume-weighted restriction: fine prim -> coarse prim, for one particle group.
   ! Works in prim space for non-conserved extras, converts to cons for conserved vars.
   subroutine fine2coarse_prim(p, fPrim, cPrim, fVol, cVol, fDim, cDim)
-    use ICE_Global_m,    only: ncond
+    use ICE_Global_m,    only: ncond, gc
     use ICE_Lib_Model,   only: prim_2_cons, cons_2_prim, assign_prim_2_cons, assign_cons_2_prim
     implicit none
     integer(I4), intent(in) :: p
     integer(I4), intent(in) :: fDim(3), cDim(3)
-    real(R8), intent(in)  :: fPrim(1:ncond(p), 0:fDim(1)+1, 0:fDim(2)+1, 0:fDim(3)+1)
-    real(R8), intent(out) :: cPrim(1:ncond(p), 0:cDim(1)+1, 0:cDim(2)+1, 0:cDim(3)+1)
+    real(R8), intent(in)  :: fPrim(1:ncond(p), 1-gc:fDim(1)+gc, 1-gc:fDim(2)+gc, 1-gc:fDim(3)+gc)
+    real(R8), intent(inout) :: cPrim(1:ncond(p), 1-gc:cDim(1)+gc, 1-gc:cDim(2)+gc, 1-gc:cDim(3)+gc)
     real(R8), intent(in)  :: fVol(1:fDim(1), 1:fDim(2), 1:fDim(3))
     real(R8), intent(in)  :: cVol(1:cDim(1), 1:cDim(2), 1:cDim(3))
     ! Local
     integer  :: i, j, k, i2, j2, k2, i2d, j2d, k2d
-    real(R8) :: fCons(1:ncond(p), 1:fDim(1), 1:fDim(2), 1:fDim(3))
-    real(R8) :: cCons(1:ncond(p), 1:cDim(1), 1:cDim(2), 1:cDim(3))
+    real(R8), allocatable :: fCons(:,:,:,:), cCons(:,:,:,:)
 
     call assign_prim_2_cons(p)
     call assign_cons_2_prim(p)
 
+    allocate(fCons(1:ncond(p), 1:fDim(1), 1:fDim(2), 1:fDim(3)))
+    allocate(cCons(1:ncond(p), 1:cDim(1), 1:cDim(2), 1:cDim(3)))
+
+    !$omp parallel
     !$omp do collapse(2)
     do k = 1, fDim(3)
     do j = 1, fDim(2)
     do i = 1, fDim(1)
       fCons(:,i,j,k) = prim_2_cons(fPrim(:,i,j,k))
     end do ; end do ; end do
+    !$omp end do
 
-    !$omp do collapse(2)
+    !$omp do collapse(2) private(i2, j2, k2, i2d, j2d, k2d)
     do k = 1, cDim(3)
     do j = 1, cDim(2)
     do i = 1, cDim(1)
@@ -85,6 +89,7 @@ contains
                        + fCons(:,i2, j2, k2 )*fVol(i2, j2, k2 )
       end if
     end do ; end do ; end do
+    !$omp end do
 
     !$omp do collapse(2)
     do k = 1, cDim(3)
@@ -93,23 +98,27 @@ contains
       cCons(:,i,j,k) = cCons(:,i,j,k) / cVol(i,j,k)
       cPrim(:,i,j,k) = cons_2_prim(cCons(:,i,j,k))
     end do ; end do ; end do
+    !$omp end do
+    !$omp end parallel
+
+    deallocate(fCons, cCons)
 
   end subroutine fine2coarse_prim
 
 
   ! Trilinear prolongation: coarse prim -> fine prim, for one particle group.
   subroutine coarse2fine_prim(p, fPrim, cPrim, fDim, cDim)
-    use ICE_Global_m, only: ncond
+    use ICE_Global_m, only: ncond, gc
     implicit none
     integer(I4), intent(in) :: p
     integer(I4), intent(in) :: fDim(3), cDim(3)
-    real(R8), intent(out) :: fPrim(1:ncond(p), 0:fDim(1)+1, 0:fDim(2)+1, 0:fDim(3)+1)
-    real(R8), intent(in)  :: cPrim(1:ncond(p), 0:cDim(1)+1, 0:cDim(2)+1, 0:cDim(3)+1)
+    real(R8), intent(inout) :: fPrim(1:ncond(p), 1-gc:fDim(1)+gc, 1-gc:fDim(2)+gc, 1-gc:fDim(3)+gc)
+    real(R8), intent(in)  :: cPrim(1:ncond(p), 1-gc:cDim(1)+gc, 1-gc:cDim(2)+gc, 1-gc:cDim(3)+gc)
     ! Local
     integer :: i, j, k, ii, jj, kk, counter
     integer :: i2, j2, k2, i2d, j2d, k2d, im, jm, km, ip, jp, kp
     integer :: mask(3), id(6)
-    real(R8) :: a1, a2, a3, a4, coeffs(8), interp(ncond(p))
+    real(R8) :: a1, a2, a3, a4, coeffs(8)
 
     a1 = 27.d0/64.d0 ; a2 = 9.d0/64.d0 ; a3 = 3.d0/64.d0 ; a4 = 1.d0/64.d0
     coeffs(1:8) = [ a1, a2, a2, a2, a3, a3, a3, a4 ]
@@ -119,7 +128,9 @@ contains
       coeffs(1:8) = [ a1, a2, a2, a4, a3, a4, a4, a4 ]
     end if
 
-    !$omp do collapse(2)
+    !$omp parallel
+    !$omp do collapse(2) private(counter, i2, j2, k2, i2d, j2d, k2d, &
+    !$omp                        im, jm, km, ip, jp, kp, mask, id)
     do k = 1, cDim(3)
     do j = 1, cDim(2)
     do i = 1, cDim(1)
@@ -158,21 +169,21 @@ contains
           if (counter==8) mask = [4,5,6]
         end if
 
-        interp = coeffs(1)*cPrim(:,i,j,k)                              &
-               + coeffs(2)*cPrim(:,id(mask(1)),j,k)                    &
-               + coeffs(3)*cPrim(:,i,id(mask(2)),k)                    &
-               + coeffs(4)*cPrim(:,i,j,id(mask(3)))                    &
-               + coeffs(5)*cPrim(:,id(mask(1)),id(mask(2)),k)          &
-               + coeffs(6)*cPrim(:,id(mask(1)),j,id(mask(3)))          &
-               + coeffs(7)*cPrim(:,i,id(mask(2)),id(mask(3)))          &
-               + coeffs(8)*cPrim(:,id(mask(1)),id(mask(2)),id(mask(3)))
-
-        fPrim(:,ii,jj,kk) = interp
+        fPrim(:,ii,jj,kk) = coeffs(1)*cPrim(:,i,j,k)                              &
+                          + coeffs(2)*cPrim(:,id(mask(1)),j,k)                    &
+                          + coeffs(3)*cPrim(:,i,id(mask(2)),k)                    &
+                          + coeffs(4)*cPrim(:,i,j,id(mask(3)))                    &
+                          + coeffs(5)*cPrim(:,id(mask(1)),id(mask(2)),k)          &
+                          + coeffs(6)*cPrim(:,id(mask(1)),j,id(mask(3)))          &
+                          + coeffs(7)*cPrim(:,i,id(mask(2)),id(mask(3)))          &
+                          + coeffs(8)*cPrim(:,id(mask(1)),id(mask(2)),id(mask(3)))
         counter = counter + 1
 
       end do ; end do ; end do
 
     end do ; end do ; end do
+    !$omp end do
+    !$omp end parallel
 
   end subroutine coarse2fine_prim
 
@@ -184,8 +195,9 @@ contains
     type(ICE_domain_type), intent(inout) :: Coarse
     integer :: b, i, j, k, i2, j2, k2
 
+    !$omp parallel
     do b = 1, Coarse%nb
-      !$omp do collapse(2)
+      !$omp do collapse(2) private(i2, j2, k2)
       do k = 0, Fine%blk(b)%dim(3), 2 - mod(Fine%blk(b)%dim(3), 2)
       do j = 0, Fine%blk(b)%dim(2), 2
       do i = 0, Fine%blk(b)%dim(1), 2
@@ -193,7 +205,9 @@ contains
         if (Fine%blk(b)%dim(3) == 1) k2 = k
         Coarse%blk(b)%node(i2,j2,k2)%c = Fine%blk(b)%node(i,j,k)%c
       end do ; end do ; end do
+      !$omp end do
     end do
+    !$omp end parallel
 
   end subroutine Coarse_Grid
 
