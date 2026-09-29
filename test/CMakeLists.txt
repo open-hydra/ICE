@@ -134,6 +134,17 @@ ice_add_case(NAME BerthonHLLE DIR Berthon/SCS-hlle LABELS "verification;AG;trans
 # Thread count must not change the answer: 1 vs 4 threads, bit-identical
 ice_add_fast_script(OpenMPEquiv fast/openmp-equiv "fast;implementation")
 
+# Which copy of the ATLAS boundary table belongs to which particle family: one
+# copy speaks for all of them, one copy per family speaks for its own, anything
+# else stops the setup. Builds its own cases, so it owns no data.
+ice_add_fast_script(PopulationBinding fast/populations "fast;implementation;bc")
+
+# Grid sequencing: the multigrid levels run, and neither the thread count nor the
+# rank count changes the answer. Nothing else in the suite sets MG-levels > 1, so
+# this is the only cover the restriction, the prolongation, the per-level boundary
+# tables and the per-level halo schedules have. Builds its own case.
+ice_add_fast_script(Multigrid fast/multigrid "fast;implementation;multigrid")
+
 # Rank count must not change the answer either. Needs an MPI build, so it is
 # registered only when there is one.
 if(USE_MPI)
@@ -144,4 +155,10 @@ if(USE_MPI)
     ice_add_fast_script(MPIEquivChimera fast/mpi-equiv "fast;implementation;chimera;needs-mpi")
     set_tests_properties(MPIEquivChimera PROPERTIES
         ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-chimera")
+
+    # The same multigrid case again, this time also across ranks: each level carries
+    # its own halo schedule, so a level switch has to move the exchange with it.
+    ice_add_fast_script(MPIEquivMultigrid fast/multigrid "fast;implementation;multigrid;needs-mpi")
+    set_tests_properties(MPIEquivMultigrid PROPERTIES
+        ENVIRONMENT "${_ICE_TEST_ENV};ICE_MG_RANKS=2")
 endif()

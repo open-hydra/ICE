@@ -62,14 +62,20 @@ def write_tec(path, names, xn, yn, zn, cellvars, zone='B1'):
     Path(path).write_text('\n'.join(head + body) + '\n')
 
 
-def write_bc(path, nx, ny, nz, mode='extrapolation'):
+def write_bc(path, nx, ny, nz, mode='extrapolation', inlets=None):
     """ATLAS-format BC file for a single block.
 
-    ICE reads exactly 2*(ny*nz + nx*nz + nx*ny) records, one per boundary face cell,
-    so every face has to be present - including the degenerate k faces, which get the
-    null code 0. 'periodic-x' closes faces 1 and 2 onto each other with code 201.
+    ICE reads exactly 2*(ny*nz + nx*nz + nx*ny) records per copy of the boundary
+    table, one per boundary face cell, so every face has to be present - including
+    the degenerate k faces, which get the null code 0. 'periodic-x' closes faces 1
+    and 2 onto each other with code 201.
+
+    `inlets` makes face 1 a code-402 inlet and turns the file into a
+    multi-population one: one (gp, v, T, r) dict per copy, written in the order
+    ATLAS writes its (material, population) copies, so copy c belongs to family c.
     """
-    rows = []
+    copies = inlets if inlets else [None]
+    table = []
 
     def header(i, j, k, f, code):
         return '%8d%8d%8d%8d%8d%8d' % (1, i, j, k, f, code)
@@ -79,21 +85,38 @@ def write_bc(path, nx, ny, nz, mode='extrapolation'):
         src, fs = (nx, 2) if f == 1 else (1, 1)
         return ['%8d%8d%8d%8d%8d%8d%8d%8d%8d' % (1, src, j, k, fs, 1, 0, 0, 1)]
 
+    def inlet(spec):
+        # ATLAS writes nine fields; ICE consumes the first six. `normal,` in the two
+        # angle columns is its way of saying "along the face normal".
+        return ['%14.5E%14.5E%16s%16s%14.5E%14.5E%14.5E %s%14.5E'
+                % (spec['gp'], spec['v'], 'normal,', 'normal,', spec['T'], spec['r'],
+                   0.0, 'Dirac', 0.0)]
+
     side = 201 if mode == 'periodic-x' else 400
     for f, (i0, j0, k0) in ((1, (1, None, None)), (2, (nx, None, None))):
         for k in range(1, nz + 1):
             for j in range(1, ny + 1):
-                rows.append(header(i0, j, k, f, side))
+                if f == 1 and inlets:
+                    table.append((header(i0, j, k, f, 402), 'inlet'))
+                    continue
+                table.append((header(i0, j, k, f, side), None))
                 if side == 201:
-                    rows += connection(i0, j, k, f)
+                    table.append((connection(i0, j, k, f), None))
     for f, j0 in ((3, 1), (4, ny)):
         for k in range(1, nz + 1):
             for i in range(1, nx + 1):
-                rows.append(header(i, j0, k, f, 400))
+                table.append((header(i, j0, k, f, 400), None))
     for f, k0 in ((5, 1), (6, nz)):
         for j in range(1, ny + 1):
             for i in range(1, nx + 1):
-                rows.append(header(i, j, k0, f, 0))
+                table.append((header(i, j, k0, f, 0), None))
+
+    rows = []
+    for spec in copies:
+        for entry, kind in table:
+            rows += entry if isinstance(entry, list) else [entry]
+            if kind == 'inlet':
+                rows += inlet(spec)
 
     Path(path).write_text('\n'.join(rows) + '\n')
 
@@ -148,12 +171,25 @@ class Case(object):
             return [value(x) for _ in range(self.ny) for x in self.xc]
         return [value] * (self.nx * self.ny)
 
-    def particles(self, rho, u, v, w, T, n):
-        """Write the condensed-phase initial condition (MK: rho, u, v, w, T, n)."""
-        write_tec(self.dir / 'INPUT/part-ic.tec',
-                  ['rp1', 'up1', 'vp1', 'wp1', 'Tp1', 'np1'],
-                  self.xn, self.yn, self.zn,
-                  [self.cells(f) for f in (rho, u, v, w, T, n)], zone='B1-CD')
+    def particles(self, rho, u, v, w, T, n, families=1, scales=None):
+        """Write the condensed-phase initial condition (MK: rho, u, v, w, T, n).
+
+        `families` repeats the same field for each [ICE-Family*] of the run: ICE reads
+        the families' variables one after the other, so the file simply carries as many
+        six-variable groups as there are families. `scales` multiplies the loading of
+        each one, which is how a case can be made exactly proportional between families.
+        """
+        names, values = [], []
+        scale = scales if scales else [1.0] * families
+        for p in range(1, families + 1):
+            names += ['%s%d' % (v, p) for v in ('rp', 'up', 'vp', 'wp', 'Tp', 'np')]
+            fields = [self.cells(f) for f in (rho, u, v, w, T, n)]
+            # rho and n carry the loading, so scaling both leaves the radius alone
+            for iv in (0, 5):
+                fields[iv] = [scale[p-1] * x for x in fields[iv]]
+            values += fields
+        write_tec(self.dir / 'INPUT/part-ic.tec', names,
+                  self.xn, self.yn, self.zn, values, zone='B1-CD')
 
     def gas(self, rho, u, v, w, T, R, gam, k, mu):
         """Write the frozen carrier phase. Its presence switches on one-way coupling."""
@@ -162,12 +198,12 @@ class Case(object):
                   self.xn, self.yn, self.zn,
                   [self.cells(f) for f in (rho, u, v, w, T, R, gam, k, mu, 0.0)], zone='B1-GAS')
 
-    def boundaries(self, mode='extrapolation'):
-        write_bc(self.dir / 'INPUT/part-bc.txt', self.nx, self.ny, self.nz, mode)
+    def boundaries(self, mode='extrapolation', inlets=None):
+        write_bc(self.dir / 'INPUT/part-bc.txt', self.nx, self.ny, self.nz, mode, inlets)
 
     def ini(self, t_end=None, iters=1000000000, cfl=0.8, rk='RK2', drag='Stokes',
             heat='Stokes', reconstruction='MUSCL', limiter='vanleer', rho_al=1000.0,
-            cs=900.0, dt_max=None, physics=None):
+            cs=900.0, dt_max=None, physics=None, closures=('MK',)):
         numerics = {'time-scheme': rk, 'cfl': cfl, 'time-accurate': True,
                     'space-reconstruction': reconstruction, 'flux-limiter': limiter}
         if dt_max is not None:
@@ -177,12 +213,14 @@ class Case(object):
         phys = {'drag': drag, 'heat-transfer': heat,
                 'density': rho_al, 'specific-heat': cs, 'emissivity': 0.0}
         phys.update(physics or {})
+        sections = {'ICE-Parameters': {'iter-threshold': iters,
+                                       'time-threshold': t_end if t_end is not None else 1e30,
+                                       'res-threshold': 0.0},
+                    'ICE-Numerics': numerics}
+        for p, closure in enumerate(closures, start=1):
+            sections['ICE-Family%d' % p] = {'closure': closure}
         write_ini(self.dir / 'input.ini', {
-            'ICE-Parameters': {'iter-threshold': iters,
-                               'time-threshold': t_end if t_end is not None else 1e30,
-                               'res-threshold': 0.0},
-            'ICE-Numerics': numerics,
-            'ICE-Family1': {'closure': 'MK'},
+            **sections,
             'ICE-Physics': phys,
             'ICE-IO': {'ic-format': 'tecplot ascii', 'sol-format': 'tecplot ascii',
                        'shell-diter': 1000000000, 'sol-diter': 1000000000,
