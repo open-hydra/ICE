@@ -35,5 +35,5 @@ if ctest --test-dir "${BUILD_DIR}" "${SELECT[@]}" \
     echo "[pre-push] All tests passed."
 else
     echo "[pre-push] Tests FAILED - push aborted."
-    exit
+    exit 1
 fi

@@ -38,7 +38,7 @@ jobs:
 
       - name: Check Python dependencies
         run: |
-          python -c "import numpy, scipy, matplotlib"
+          python -c "import numpy, matplotlib, sympy"
 
       - name: Configure
         run: |

@@ -83,7 +83,6 @@ contains
 
       blk%cond_phase(p)%prim     = ieee_value(1._R8, ieee_quiet_nan)
       blk%cond_phase(p)%prim_old = ieee_value(1._R8, ieee_quiet_nan)
-      blk%cond_phase(p)%source   = 0._R8
 
       blk%cond_phase(p)%tau      = ieee_value(1._R8, ieee_positive_inf)
 

@@ -32,9 +32,12 @@ threads as well as many small ones. Two details shape the scaling:
   accumulates into the cells on both sides of it. The barrier between the passes is
   what makes the result independent of the thread count, and it is also a
   synchronisation point per direction per stage.
-- The boundary flux loop is `SCHEDULE(DYNAMIC)` over boundary cells, whose cost varies
-  a great deal by type — a chimera cell blends several donors, an extrapolation cell
-  copies.
+- The boundary flux loop is `SCHEDULE(DYNAMIC, 64)` over the rank's own boundary
+  records, whose cost varies a great deal by type — a chimera cell blends several
+  donors, an extrapolation cell copies. A cell with three boundary records (a block
+  corner in 3-D) receives them in thread order, so a 3-D run is not bit-identical
+  across thread counts on this version (`test/fast/equiv3d`, measured 2026-09-30);
+  2-D runs are.
 
 Thread counts beyond a few hundred cells per thread stop paying: the loop bodies are
 short and the barriers are frequent.
@@ -51,10 +54,12 @@ follow directly:
   per rank therefore does not fall as ranks are added, which caps how many ranks fit on
   a node for a large mesh.
 
-The halo exchange runs once per Runge-Kutta stage and carries only the interior cells
-that a remote ghost cell reads. Its size is printed at startup as
+The halo exchange runs once per family per Runge-Kutta stage and carries the interior
+cells that a remote ghost cell reads — of every family, each time, since the ghost fill
+that follows it refills every family's ghosts. Its size is printed at startup as
 `MPI halo: N cells exchanged per ghost fill`. Persistent requests are set up once, so
-the per-stage cost is the start/wait pair plus the transfer.
+the per-fill cost is the start/wait pair plus the transfer, and the packing and
+unpacking, which run on one thread.
 
 Output is gathered to rank 0, which writes alone. For a large mesh written often, this
 is a serial section in an otherwise parallel run — lowering `sol-diter` is expensive in
@@ -64,9 +69,12 @@ a way the solve itself is not.
 
 ```bash
 ./install.sh build --compilers=gnu --use-openmp
-cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build --parallel
+cmake -B build -DCMAKE_BUILD_TYPE=TESTING -DCMAKE_Fortran_FLAGS=-g && cmake --build build --parallel
 ```
 
-`gprof`, `perf` and Intel VTune all work on the result. Note that the reported
+The build types are `RELEASE`, `TESTING` (`-O2`) and `DEBUG` (`-O0`, bounds checks);
+`RelWithDebInfo` is refused by `cmake/SetFortranFlags.cmake`. `gprof`, `perf` and
+Intel VTune all work on the result, and `[ICE-IO] timers = true` prints the per-phase
+and per-region wall times of the iteration. Note that the reported
 "Time of operation" in ICE's own output is CPU time divided by the thread count, not
 wall-clock, so it is not a substitute for timing the process.

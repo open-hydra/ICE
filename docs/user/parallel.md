@@ -211,7 +211,7 @@ physical cores per node and no hyperthreading.
   {% include "user/images/scaling-envelope.svg" %}
 </figure>
 
-| Cores | Nodes | MPI × OpenMP | Wall/iter | Efficiency | Ghost-credited |
+| Cores | Nodes | MPI × OpenMP | Wall/iter | Core-cycle efficiency | Ghost-credited |
 | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1 | 1 | `1 × 1` | 14.262 s | 100.0 % | 100.0 % |
 | 4 | 1 | `4 × 1` | 3.640 s | 97.2 % | 101.3 % |
@@ -223,7 +223,10 @@ physical cores per node and no hyperthreading.
 | 160 | 2 | `8 × 20` | 0.164 s | 79.1 % | 84.0 % |
 | 240 | 3 | `12 × 20` | 0.114 s | 75.3 % | 83.1 % |
 
-Efficiency stays above **93 % through a quarter node**, reaches **80 % at a full
+Both efficiency columns are core-cycle efficiencies, `C(1)/C(N)` (section 5), not
+wall-clock ones: in seconds the full node reaches 54 %, and the difference is the
+chip's clock, 3.83 GHz on one active core against 2.57 GHz on eighty. Core-cycle
+efficiency stays above **93 % through a quarter node**, reaches **80 % at a full
 node**, and is then flat across two and three nodes.
 
 **The two efficiency columns differ because the decomposition is real work.**
@@ -338,9 +341,12 @@ the decomposition:
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | GB/node | 5.7 | 10.7 | 20.1 | 35.6 | 72.7 | 112.4 |
 
-That is **~4.7 GB per rank** at 7 M cells, whatever the rank count. A 187 GB
-node therefore holds about **40 ranks** at this problem size, and pure MPI at a
-full node is impossible: `80 × 1` would need some 375 GB.
+That is **5.7 GB for a single rank and ~4.7 GB per rank** at 24 ranks, at 7 M
+cells, whatever the rank count (this table is from the campaign's first job,
+302763; the job behind the other tables recorded no memory, and none of its
+changes touched the allocation). A 187 GB node therefore holds about **40
+ranks** at this problem size, and pure MPI at a full node is impossible:
+`80 × 1` would need some 375 GB.
 
 This is why the rank count should be chosen on memory. It is also why more
 OpenMP threads per rank is the right answer when memory is tight — and, on the

@@ -17,9 +17,9 @@ program ICE_program
   call mpi_init_env()
 
 #if defined (_OPENMP)
-  !$omp parallel
-  obj_sim_param%nthreads = OMP_GET_NUM_THREADS()
-  !$omp end parallel
+  ! The size the pool will have, read once; the old parallel region had every
+  ! thread store the same value into one shared variable.
+  obj_sim_param%nthreads = OMP_GET_MAX_THREADS()
   if (mpi_is_root) then
     write(*,'(A)') ' Parallel execution'
     write(*,'(A)') ' OpenMP:'
