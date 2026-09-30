@@ -4,30 +4,73 @@ module ICE_Mod_Diagnostic
 
   implicit none
   private
-  public :: Compute_Diagnostic, Write_Diagnostic
+  public :: residual_norm, Write_Diagnostic
 
   character(len=llen), private :: Dvarnames = '"rho_p" "rhou_p" "rhov_p" "rhow_p" "rhoe_p" "dt"'
 
 contains
 
 
-  subroutine Compute_Diagnostic(new, old, dt, n, nc, iT, average, total)
+  !> The residual norm: the L2 norm of prim - prim_old in density, momentum and
+  !> energy over every cell, block and family of the domain. The sum runs in one
+  !> fixed order -- the cells of a block in k, j, i, then the blocks and families
+  !> in their order -- on every rank: a rank sums its own blocks, the per-block
+  !> partial sums are exchanged (one contributor per entry, so the exchange is
+  !> exact), and every rank adds them up in the same order. The thread count
+  !> and the rank count therefore do not change a bit of it, which a reduction
+  !> over threads and a sum over ranks did.
+  subroutine residual_norm(grid, total)
+    use ICE_Global_m,           only: ngroups, ncond, nbase, nres
+    use ICE_Advanced_Types_m,   only: ICE_domain_type
+    use ICE_Mod_MPI,            only: is_local_block, mpi_allreduce_sum_r8_array
+    use ICE_Mod_Timers,         only: timer_sync_begin, timer_sync_end
+    implicit none
+    type(ICE_domain_type), intent(in)  :: grid
+    real(R8),              intent(out) :: total(nres)
+    ! Local
+    real(R8), allocatable :: part(:,:)
+    integer :: b, p, m
+
+    allocate(part(nres, grid%nb*ngroups))
+    part = 0._R8
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      do p = 1, ngroups
+        m = (b-1)*ngroups + p
+        call residual_sq(grid%blk(b)%cond_phase(p)%prim, grid%blk(b)%cond_phase(p)%prim_old, &
+                         grid%blk(b)%dim, ncond(p), nbase(p)-1, part(:,m))
+      end do
+    end do
+
+    call timer_sync_begin()
+    call mpi_allreduce_sum_r8_array(part, nres*grid%nb*ngroups)
+    call timer_sync_end()
+
+    total = 0._R8
+    do b = 1, grid%nb
+      do p = 1, ngroups
+        total = total + part(:, (b-1)*ngroups + p)
+      end do
+    end do
+    total = sqrt(total)
+    deallocate(part)
+
+  end subroutine residual_norm
+
+
+  !> Sum of the squared changes of one family on one block, cells in k, j, i order.
+  subroutine residual_sq(new, old, n, nc, iT, residuo)
     use ICE_Global_m, only: gc, nres
     implicit none
-    integer,  intent(in)    :: n(3), nc, iT
-    real(R8), intent(in)    :: new(nc, 1-gc:n(1)+gc, 1-gc:n(2)+gc, 1-gc:n(3)+gc)
-    real(R8), intent(in)    :: old(nc, 1-gc:n(1)+gc, 1-gc:n(2)+gc, 1-gc:n(3)+gc)
-    real(R8), intent(in)    :: dt(n(1), n(2), n(3))
-    real(R8), intent(out)   :: average(nres)
-    real(R8), intent(inout) :: total(nres)
+    integer,  intent(in)  :: n(3), nc, iT
+    real(R8), intent(in)  :: new(nc, 1-gc:n(1)+gc, 1-gc:n(2)+gc, 1-gc:n(3)+gc)
+    real(R8), intent(in)  :: old(nc, 1-gc:n(1)+gc, 1-gc:n(2)+gc, 1-gc:n(3)+gc)
+    real(R8), intent(out) :: residuo(nres)
     ! Local
     integer  :: i, j, k
-    real(R8) :: resn(nres), residuo(nres)
+    real(R8) :: resn(nres)
 
     residuo = 0._R8
-
-    !$omp parallel
-    !$omp do private(resn) reduction(+:residuo) collapse(3)
     do k = 1, n(3)
     do j = 1, n(2)
     do i = 1, n(1)
@@ -36,12 +79,8 @@ contains
       resn(5)   = abs(new(iT, i,j,k) - old(iT, i,j,k))
       residuo   = residuo + resn*resn
     end do; end do; end do
-    !$omp end parallel
 
-    average = sqrt(residuo / real(n(1)*n(2)*n(3), R8))
-    total   = total + residuo
-
-  end subroutine Compute_Diagnostic
+  end subroutine residual_sq
 
 
   subroutine Write_Diagnostic(domain, IOfield, file)
