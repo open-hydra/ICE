@@ -22,7 +22,11 @@ function(add_fortran_executable target source)
 
 endfunction()
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+# Where the executables go. A cache entry, so that two configurations of one
+# tree (serial and MPI, release and strict floating point) can each keep their
+# own binary: with the plain variable every build wrote the same bin/ICE.
+set(ICE_BIN_DIR "${CMAKE_SOURCE_DIR}/bin" CACHE PATH "Directory that receives the ICE executables")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${ICE_BIN_DIR})
 
 add_fortran_executable(${solver} "main.f90")
 add_fortran_executable(DocGen "docgen.f90")

@@ -30,3 +30,5 @@ __pycache__/
 .claude-context/
 plan-bucket/
 CLAUDE.md
+bin-*
+ICE-commit.txt
