@@ -13,6 +13,7 @@ contains
     use ICE_Mod_Explicit,     only: Explicit_Step
     use ICE_Mod_Multigrid,    only: Prolongation
     use ICE_Mod_GhostExchange, only: select_ghost_level
+    use ICE_Mod_Timers,        only: timer_iter_begin, timer_iter_end
     implicit none
     type(ICE_simulation_type), intent(inout) :: simulation
     external :: External_Function
@@ -20,6 +21,7 @@ contains
 
     lv = obj_multigrid%MG_level
 
+    call timer_iter_begin()
     call select_ghost_level(lv)
     call Explicit_Step(simulation%domain(lv))
 
@@ -35,6 +37,7 @@ contains
       call Prolongation(Fine   = simulation%domain(lv-1), &
                         Coarse = simulation%domain(lv))
     end if
+    call timer_iter_end()
 
   end subroutine ICE_solve
 

@@ -27,7 +27,10 @@ contains
     use ICE_Mod_Timers,     only: timer_source_begin, timer_source_end,   &
                                   timer_flux_begin,   timer_flux_end,     &
                                   timer_halo_begin,   timer_halo_end,     &
-                                  timer_sync_begin,   timer_sync_end
+                                  timer_sync_begin,   timer_sync_end,     &
+                                  timer_region_begin, timer_region_end,   &
+                                  TR_DT, TR_COPY, TR_ZERO, TR_SOURCE, TR_GHOST1, TR_GHOST2, &
+                                  TR_BOUND, TR_FLUX, TR_RESID, TR_IRS, TR_UPDATE, TR_DIAG
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4) :: b, p, srk
@@ -40,6 +43,7 @@ contains
 
     grid%dtglobal = 1e+5
 
+    call timer_region_begin(TR_DT)
     do p = 1, ngroups
       call assign_wavespeed_make(p)
       !$omp parallel
@@ -47,6 +51,7 @@ contains
                       obj_time_scheme%dt_max, obj_time_scheme%tau_factor, grid)
       !$omp end parallel
     end do
+    call timer_region_end(TR_DT)
 
     !> Global time step: smallest over all ranks
     call timer_sync_begin()
@@ -55,10 +60,12 @@ contains
     grid%dtglobal = dtlocal
     if (obj_time_scheme%time_accurate) grid%time = grid%time + grid%dtglobal
 
+    call timer_region_begin(TR_COPY)
     !$omp parallel
     if (obj_time_scheme%time_accurate) call set_dt_global(grid)
     call state_copy(grid)
     !$omp end parallel
+    call timer_region_end(TR_COPY)
 
     do p = 1, ngroups
 
@@ -91,29 +98,49 @@ contains
 
       do srk = 1, nrk
 
+        call timer_region_begin(TR_ZERO)
         call zero_residual(grid, p)
+        call timer_region_end(TR_ZERO)
 
         if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) then
           call timer_source_begin()
+          call timer_region_begin(TR_SOURCE)
           call compute_source(grid, p)
+          call timer_region_end(TR_SOURCE)
           call timer_source_end()
         end if
 
         call timer_halo_begin()
+        call timer_region_begin(TR_GHOST1)
         call compute_ghost(grid)
+        call timer_region_end(TR_GHOST1)
+        call timer_region_begin(TR_GHOST2)
         call fill_second_ghost(grid)
+        call timer_region_end(TR_GHOST2)
 
+        call timer_region_begin(TR_BOUND)
         call compute_bound(grid, p)
+        call timer_region_end(TR_BOUND)
         call timer_halo_end()
 
         call timer_flux_begin()
+        call timer_region_begin(TR_FLUX)
         call compute_flux(grid, p)
+        call timer_region_end(TR_FLUX)
 
+        call timer_region_begin(TR_RESID)
         call compute_residual(grid, p)
+        call timer_region_end(TR_RESID)
 
-        if (obj_irs%enabled) call residual_smoothing(grid, p)
+        if (obj_irs%enabled) then
+          call timer_region_begin(TR_IRS)
+          call residual_smoothing(grid, p)
+          call timer_region_end(TR_IRS)
+        end if
 
+        call timer_region_begin(TR_UPDATE)
         call state_update(grid, p, srk)
+        call timer_region_end(TR_UPDATE)
         call timer_flux_end()
 
       end do
@@ -121,6 +148,7 @@ contains
     end do
 
     ! Compute global residual (L2 norm of prim - prim_old, over all blocks and groups)
+    call timer_region_begin(TR_DIAG)
     obj_sim_param%residuotot = 0._R8
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
@@ -134,6 +162,7 @@ contains
                               total=obj_sim_param%residuotot)
       end do
     end do
+    call timer_region_end(TR_DIAG)
     call timer_sync_begin()
     call mpi_allreduce_sum_r8_array(obj_sim_param%residuotot, nres)
     call timer_sync_end()

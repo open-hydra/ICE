@@ -11,6 +11,7 @@ module ICE_Mod_GhostExchange
   use iso_fortran_env, only: R8 => real64, I4 => int32
   use ICE_Mod_MPI
   use ICE_Global_m, only: ngroups, ncond, guide
+  use ICE_Mod_Timers, only: timer_region_begin, timer_region_end, TR_PACK, TR_WAIT, TR_UNPACK
 
   implicit none
   private
@@ -49,6 +50,7 @@ module ICE_Mod_GhostExchange
 
   public :: build_ghost_schedule
   public :: build_local_bc_index
+  public :: report_bc_mix
   public :: select_ghost_level
   public :: cleanup_ghost_schedule
   public :: exchange_ghost_prim
@@ -259,12 +261,14 @@ contains
         call check_mpi_error(ierr)
       end if
 
+      call timer_region_begin(TR_PACK)
       do n = 1, ghost_sched%n_send
         associate (c => ghost_sched%send_list(n))
           nv = ncond(c%p) ; off = c%off
           ghost_sched%send_buf(off+1:off+nv) = grid%blk(c%b)%cond_phase(c%p)%prim(1:nv, c%i, c%j, c%k)
         end associate
       end do
+      call timer_region_end(TR_PACK)
 
       if (ghost_sched%n_send_ranks > 0) then
         call MPI_STARTALL(ghost_sched%n_send_ranks, ghost_sched%send_req, ierr)
@@ -273,25 +277,71 @@ contains
 
       allocate(stats(MPI_STATUS_SIZE, max(1, ghost_sched%n_send_ranks, ghost_sched%n_recv_ranks)))
 
+      call timer_region_begin(TR_WAIT)
       if (ghost_sched%n_recv_ranks > 0) then
         call MPI_WAITALL(ghost_sched%n_recv_ranks, ghost_sched%recv_req, stats, ierr)
         call check_mpi_error(ierr)
       end if
+      call timer_region_end(TR_WAIT)
 
+      call timer_region_begin(TR_UNPACK)
       do n = 1, ghost_sched%n_recv
         associate (c => ghost_sched%recv_list(n))
           nv = ncond(c%p) ; off = c%off
           grid%blk(c%b)%cond_phase(c%p)%prim(1:nv, c%i, c%j, c%k) = ghost_sched%recv_buf(off+1:off+nv)
         end associate
       end do
+      call timer_region_end(TR_UNPACK)
 
+      call timer_region_begin(TR_WAIT)
       if (ghost_sched%n_send_ranks > 0) then
         call MPI_WAITALL(ghost_sched%n_send_ranks, ghost_sched%send_req, stats, ierr)
         call check_mpi_error(ierr)
       end if
+      call timer_region_end(TR_WAIT)
     end block
 #endif
   end subroutine exchange_ghost_prim
+
+
+  !> How many of this rank's boundary records carry each type. The face mix is
+  !> what compute_bound's cost follows -- a symmetry face is a reflection, a
+  !> connection a copy -- and a decomposition that balances cells does not
+  !> balance it; the decomposer's cost model is calibrated on these counts.
+  !> Printed once at set-up, when the timers are on, as max and sum over ranks.
+  subroutine report_bc_mix(grid)
+    use ICE_Advanced_Types_m
+    implicit none
+    type(ICE_domain_type), intent(in) :: grid
+    ! Type 0 is a face without a condition (the k faces of a 2-D case).
+    integer, parameter :: codes(11) = [0, 101, 102, 200, 201, 300, 301, 400, 401, 402, 403]
+    real(R8) :: cmax(12), csum(12)
+    integer  :: i, n, c, t
+    character(len=8) :: label(12)
+
+    cmax = 0.0_R8
+    do n = 1, grid%n_local_bc
+      i = grid%local_bc_idx(n)
+      t = 12
+      do c = 1, size(codes)
+        if (grid%bc(i)%type == codes(c)) then
+          t = c
+          exit
+        end if
+      end do
+      cmax(t) = cmax(t) + 1.0_R8
+    end do
+    csum = cmax
+    call mpi_allreduce_max_r8_array(cmax, 12)
+    call mpi_allreduce_sum_r8_array(csum, 12)
+    if (.not. mpi_is_root) return
+    do c = 1, size(codes)
+      write(label(c), '(I0)') codes(c)
+    end do
+    label(12) = 'other'
+    write(*,'(A,12(1X,A,1X,I0,A,I0))') ' ICE BCmix  |', &
+      (trim(label(c)), nint(cmax(c)), '/', nint(csum(c)), c = 1, 12)
+  end subroutine report_bc_mix
 
 
   !> Gather all blocks' prim interior data to rank 0 for I/O.

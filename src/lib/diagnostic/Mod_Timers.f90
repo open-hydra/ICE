@@ -11,13 +11,20 @@
 !>   * a split of the compute into `source`, `flux` and `halo`, which is what
 !>     says *where* an ICE iteration goes.
 !>
+!> Below those three phases sit the regions (`timer_region_begin/end`): the
+!> steps of `Explicit_Step` one by one, and the pack, wait and unpack of the
+!> halo exchange. They are what tells a per-block barrier from a serial copy,
+!> or a message from its packing, and they are printed as the `ICE Detail`
+!> line beside the phases. The phases keep their old extent, so a report from
+!> before the regions reads the same way.
+!>
 !> Times are reported as the **maximum** over the ranks, which is the critical
 !> path and therefore what sets the time to solution; the spread between the
 !> slowest and the mean rank is the load imbalance. Reporting the mean would
 !> hide exactly the effect a decomposition study is looking for.
 !>
-!> Everything is off unless `timers = true` is set in `[ICE-IO]`, so a
-!> production run pays nothing but a handful of `MPI_WTIME` calls.
+!> Everything is off unless `timers = true` is set in `[ICE-IO]`: with the
+!> switch off every entry point returns at once and no clock is read.
 module ICE_Mod_Timers
   use iso_fortran_env, only: R8 => real64, I4 => int32, I8 => int64
   use iso_c_binding,   only: c_int, c_int64_t
@@ -59,6 +66,20 @@ module ICE_Mod_Timers
   logical     :: cyc_ok    = .false.  !< counter available on this build/kernel
   integer(I8) :: c_win_beg = 0_I8     !< cycles at the start of the window
 
+  !> The regions of an iteration. `dt` to `diag` are the steps of Explicit_Step
+  !> in the order they run (each once per family and stage, `dt`, `copy` and
+  !> `diag` once per step); `pack`, `wait`, `unpack` are the parts of the halo
+  !> exchange, inside `ghost1`; `sync` is the three collectives, the same time
+  !> the `collective wait` figure reports.
+  integer, parameter, public :: TR_DT = 1, TR_COPY = 2, TR_ZERO = 3, TR_SOURCE = 4, &
+                                TR_GHOST1 = 5, TR_GHOST2 = 6, TR_BOUND = 7, TR_FLUX = 8, &
+                                TR_RESID = 9, TR_IRS = 10, TR_UPDATE = 11, TR_DIAG = 12, &
+                                TR_PACK = 13, TR_WAIT = 14, TR_UNPACK = 15, TR_SYNC = 16
+  integer, parameter, public :: NREG = 16
+  character(len=6), parameter :: reg_name(NREG) = [character(len=6) :: &
+    'dt', 'copy', 'zero', 'source', 'ghost1', 'ghost2', 'bound', 'flux', &
+    'resid', 'irs', 'update', 'diag', 'pack', 'wait', 'unpack', 'sync']
+
   !> Reduced timings for one window of iterations, per iteration.
   type :: stats_type
     real(R8) :: tmax = 0.0_R8       !< iteration time on the slowest rank
@@ -76,18 +97,22 @@ module ICE_Mod_Timers
     real(R8) :: source = 0.0_R8     !< source terms, max over ranks
     real(R8) :: flux = 0.0_R8       !< transport operator, max over ranks
     real(R8) :: halo = 0.0_R8       !< ghost and boundary fill, max over ranks
+    real(R8) :: reg(NREG) = 0.0_R8  !< the regions, max over ranks
   end type stats_type
 
   real(R8) :: t_iter_beg = 0.0_R8, t_comm_beg = 0.0_R8, t_sync_beg = 0.0_R8
   real(R8) :: t_src_beg  = 0.0_R8, t_flx_beg  = 0.0_R8, t_halo_beg = 0.0_R8
+  real(R8) :: t_reg_beg(NREG) = 0.0_R8
 
   real(R8) :: t_iter_acc = 0.0_R8, t_comm_acc = 0.0_R8, t_sync_acc = 0.0_R8
   real(R8) :: t_src_acc  = 0.0_R8, t_flx_acc  = 0.0_R8, t_halo_acc = 0.0_R8
+  real(R8) :: t_reg_acc(NREG) = 0.0_R8
   integer  :: n_iter_acc = 0
 
   real(R8) :: t_run_beg = 0.0_R8
   real(R8) :: t_run_iter = 0.0_R8, t_run_comm = 0.0_R8, t_run_sync = 0.0_R8
   real(R8) :: t_run_src  = 0.0_R8, t_run_flx  = 0.0_R8, t_run_halo = 0.0_R8
+  real(R8) :: t_run_reg(NREG) = 0.0_R8
   integer  :: n_run = 0
 
   !> Cells in the whole domain, for the throughput figure in the summary.
@@ -101,6 +126,7 @@ module ICE_Mod_Timers
   public :: timer_source_begin, timer_source_end
   public :: timer_flux_begin, timer_flux_end
   public :: timer_halo_begin, timer_halo_end
+  public :: timer_region_begin, timer_region_end
 
 contains
 
@@ -163,9 +189,11 @@ contains
 
     t_run_iter = 0.0_R8; t_run_comm = 0.0_R8; t_run_sync = 0.0_R8
     t_run_src  = 0.0_R8; t_run_flx  = 0.0_R8; t_run_halo = 0.0_R8
+    t_run_reg  = 0.0_R8
     n_run = 0
     t_iter_acc = 0.0_R8; t_comm_acc = 0.0_R8; t_sync_acc = 0.0_R8
     t_src_acc  = 0.0_R8; t_flx_acc  = 0.0_R8; t_halo_acc = 0.0_R8
+    t_reg_acc  = 0.0_R8
     n_iter_acc = 0
   end subroutine timer_run_begin
 
@@ -204,6 +232,7 @@ contains
     if (.not. on) return
     dt = timer_wtime() - t_sync_beg
     t_sync_acc = t_sync_acc + dt; t_run_sync = t_run_sync + dt
+    t_reg_acc(TR_SYNC) = t_reg_acc(TR_SYNC) + dt; t_run_reg(TR_SYNC) = t_run_reg(TR_SYNC) + dt
   end subroutine timer_sync_end
 
   subroutine timer_source_begin()
@@ -240,14 +269,30 @@ contains
     t_halo_acc = t_halo_acc + dt; t_run_halo = t_run_halo + dt
   end subroutine timer_halo_end
 
+  !> One region of the iteration; regions nest inside the phases and do not
+  !> overlap one another, so their sum is the time of the steps they name.
+  subroutine timer_region_begin(id)
+    integer, intent(in) :: id
+    if (on) t_reg_beg(id) = timer_wtime()
+  end subroutine timer_region_begin
+
+  subroutine timer_region_end(id)
+    integer, intent(in) :: id
+    real(R8) :: dt
+    if (.not. on) return
+    dt = timer_wtime() - t_reg_beg(id)
+    t_reg_acc(id) = t_reg_acc(id) + dt; t_run_reg(id) = t_run_reg(id) + dt
+  end subroutine timer_region_end
+
 
   !> Reduce the accumulators over the ranks. Collective: every rank must call
   !> it on the same iteration.
-  function reduce_times(t_iter, t_comm, t_sync, t_src, t_flx, t_hal, n) result(s)
+  function reduce_times(t_iter, t_comm, t_sync, t_src, t_flx, t_hal, t_reg, n) result(s)
     use ICE_Mod_MPI, only: mpi_size_, mpi_allreduce_sum_r8, &
                            mpi_allreduce_min_r8, mpi_allreduce_max_r8, &
-                           mpi_gather_r8
+                           mpi_allreduce_max_r8_array, mpi_gather_r8
     real(R8), intent(in) :: t_iter, t_comm, t_sync, t_src, t_flx, t_hal
+    real(R8), intent(in) :: t_reg(NREG)
     integer,  intent(in) :: n
     type(stats_type)     :: s
     real(R8) :: tsum, csum, ssum, t_work
@@ -268,6 +313,8 @@ contains
     call mpi_allreduce_max_r8(t_src,  s%source)
     call mpi_allreduce_max_r8(t_flx,  s%flux)
     call mpi_allreduce_max_r8(t_hal,  s%halo)
+    s%reg = t_reg
+    call mpi_allreduce_max_r8_array(s%reg, NREG)
 
     allocate(work(max(mpi_size_, 1)))
     work = 0.0_R8
@@ -297,6 +344,7 @@ contains
     s%source = s%source / real(ni, R8)
     s%flux   = s%flux   / real(ni, R8)
     s%halo   = s%halo   / real(ni, R8)
+    s%reg    = s%reg    / real(ni, R8)
   end function reduce_times
 
 
@@ -338,12 +386,13 @@ contains
     type(stats_type) :: s
     integer(I8) :: c_now, c_win
     real(R8)    :: cyc_iter, ghz
+    integer     :: r
 
     ! n_iter_acc == 0 means this window has already been reported; say nothing
     ! rather than print a window of zero iterations.
     if (.not. on .or. n_iter_acc == 0) return
     s = reduce_times(t_iter_acc, t_comm_acc, t_sync_acc, &
-                     t_src_acc, t_flx_acc, t_halo_acc, n_iter_acc)
+                     t_src_acc, t_flx_acc, t_halo_acc, t_reg_acc, n_iter_acc)
 
     ! Total core-cycles spent in this window, summed over every rank and the
     ! threads it owns. Divided by the iterations in the window this is the
@@ -381,6 +430,11 @@ contains
         ' %) | flux ', s%flux, ' s (', pct(s%flux, s%tmax), &
         ' %) | halo ', s%halo, ' s (', pct(s%halo, s%tmax), ' %)'
 
+      ! Seconds per iteration of every region, max over ranks; the harness
+      ! splits this line on blanks into name/value pairs.
+      write(*,'(A,16(1X,A,1X,ES10.3))') &
+        ' ICE Detail |', (trim(reg_name(r)), s%reg(r), r = 1, NREG)
+
       if (mpi_size_ > 1) &
         write(*,'(A,ES11.4,A,I0,A,ES11.4,A,I0,A,ES11.4,A,F7.1,A)') &
           ' ICE Ranks  | compute/iter max ', s%wmax, &
@@ -396,6 +450,7 @@ contains
 
     t_iter_acc = 0.0_R8; t_comm_acc = 0.0_R8; t_sync_acc = 0.0_R8
     t_src_acc  = 0.0_R8; t_flx_acc  = 0.0_R8; t_halo_acc = 0.0_R8
+    t_reg_acc  = 0.0_R8
     n_iter_acc = 0
   end subroutine timer_report
 
@@ -405,11 +460,12 @@ contains
     use ICE_Mod_MPI, only: mpi_is_root, mpi_size_
     type(stats_type) :: s
     real(R8) :: elapsed, cells_per_cs
+    integer  :: r
 
     if (.not. on) return
 
     s = reduce_times(t_run_iter, t_run_comm, t_run_sync, &
-                     t_run_src, t_run_flx, t_run_halo, n_run)
+                     t_run_src, t_run_flx, t_run_halo, t_run_reg, n_run)
     elapsed = timer_wtime() - t_run_beg
 
     if (mpi_is_root) then
@@ -434,6 +490,10 @@ contains
         write(*,'(A,T35,F7.1,A)') '   Compute spread over ranks', s%wspread, ' %'
       end if
       write(*,'(A,T35,ES12.5)')   '   Cells per rank-second', cells_per_cs
+      write(*,'(A)') '   Regions per iteration, max over ranks'
+      do r = 1, NREG
+        write(*,'(A,A,T35,ES12.5,A)') '     ', reg_name(r), s%reg(r), ' s'
+      end do
       write(*,'(A)') ' ========================================================================================='
       write(*,'(A)') ''
     end if

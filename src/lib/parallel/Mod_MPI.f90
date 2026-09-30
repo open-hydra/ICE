@@ -27,7 +27,7 @@ module ICE_Mod_MPI
   public :: mpi_gather_r8
   public :: partition_blocks
   public :: mpi_allreduce_sum_r8, mpi_allreduce_min_r8, mpi_allreduce_max_r8
-  public :: mpi_allreduce_sum_r8_array
+  public :: mpi_allreduce_sum_r8_array, mpi_allreduce_max_r8_array
   public :: mpi_reduce_sum_r8, mpi_reduce_sum_r8_array
   public :: mpi_allreduce_norm2
   public :: mpi_bcast_logical, mpi_bcast_integer
@@ -245,6 +245,18 @@ contains
     call check_mpi_error(ierr)
 #endif
   end subroutine mpi_allreduce_sum_r8_array
+
+
+  !> MPI_ALLREDUCE with MPI_MAX for an array of real(R8), in place.
+  subroutine mpi_allreduce_max_r8_array(arr, n)
+    integer, intent(in)     :: n
+    real(R8), intent(inout) :: arr(n)
+#ifdef USE_MPI
+    integer :: ierr
+    call MPI_ALLREDUCE(MPI_IN_PLACE, arr, n, MPI_DOUBLE_PRECISION, MPI_MAX, MPI_COMM_WORLD, ierr)
+    call check_mpi_error(ierr)
+#endif
+  end subroutine mpi_allreduce_max_r8_array
 
 
   !> Distributed L2 norm: local sum of squares + MPI_ALLREDUCE SUM + sqrt.

@@ -24,7 +24,9 @@ contains
     use ICE_Mod_Phase
     use ICE_Mod_Multigrid,  only: Setup_Multigrid
     use ICE_Mod_MPI,        only: mpi_is_root, partition_blocks
-    use ICE_Mod_GhostExchange, only: build_ghost_schedule, build_local_bc_index
+    use ICE_Mod_GhostExchange, only: build_ghost_schedule, build_local_bc_index, report_bc_mix
+    use ICE_Mod_Timers,     only: timer_run_begin
+    use iso_fortran_env,    only: int64
     implicit none
     type(ICE_simulation_type), intent(inout)  :: sim
     type(orion_data), intent(inout), optional :: IOgas
@@ -151,8 +153,30 @@ contains
 
     call Cpu_Time(obj_sim_param%cputime(1))
 
+    ! The timers start here, at the end of set-up, so that the loop cost
+    ! excludes the I/O and the partitioning, the cycle counters attach to the
+    ! OpenMP pool at its full size, and a coupled run -- hydra calls ICE%setup,
+    ! never ICE's own main -- gets them too.
+    if (obj_io%timers) call report_bc_mix(sim%domain(1))
+    call timer_run_begin(obj_io%timers, count_cells(sim))
+
 
   contains
+
+
+    !> Cells in the whole domain, for the throughput figure in the timer
+    !> summary. Ghost cells are excluded: they are work, but they are not part
+    !> of the problem being solved.
+    integer(int64) function count_cells(s) result(ntot)
+      type(ICE_simulation_type), intent(in) :: s
+      integer :: b
+      ntot = 0_int64
+      do b = 1, s%domain(1)%nb
+        associate (d => s%domain(1)%blk(b)%dim)
+          ntot = ntot + int(d(1), int64) * int(d(2), int64) * int(d(3), int64)
+        end associate
+      end do
+    end function count_cells
 
 
     subroutine Print_Header()
