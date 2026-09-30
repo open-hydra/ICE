@@ -220,7 +220,7 @@ ice_add_equiv3d(Equiv3DStage threads
     "fast;implementation;3D;openmp")
 
 # The full run (RK2, a signal crossing one block width), every cell compared.
-# RED until 2026-09-30 on 2, 3 and 8 threads, when a corner cell's three boundary
+# RED until 2026-09-30 on 2, 4 and 8 threads, when a corner cell's three boundary
 # records were accumulated with `!$OMP ATOMIC` in thread order; GREEN since the
 # boundary loop is owner-computes (Mod_BC_Fluxes).
 ice_add_equiv3d(Equiv3DThreads threads "" "fast;implementation;3D;openmp")
@@ -275,12 +275,11 @@ if(USE_MPI)
         ENVIRONMENT "${_ICE_TEST_ENV};ICE_MG_RANKS=2")
 
     # The 3-D box on 1 vs 2, 3, 4, 5 ranks (12 blocks: 5 is uneven) and 2 blocks on
-    # 3 ranks (one idle), the full run, every cell compared; then ranks x threads
-    # on one Euler stage with the corners masked.
+    # 3 ranks (one idle), the full run, every cell compared; then ranks x threads,
+    # the full run too (masked to one Euler stage until the owner-computes boundary
+    # loop of 2026-09-30 made the corners thread-invariant).
     ice_add_equiv3d(Equiv3DRanks ranks "" "fast;implementation;3D;needs-mpi")
-    ice_add_equiv3d(Equiv3DHybrid hybrid
-        "ICE_EQ_ITERS=1 ICE_EQ_MASK_CORNERS=1 ICE_EQ_EXTRA='--scheme euler'"
-        "fast;implementation;3D;openmp;needs-mpi")
+    ice_add_equiv3d(Equiv3DHybrid hybrid "" "fast;implementation;3D;openmp;needs-mpi")
 
     # The two-block solidifying stream of SolidAdvection (leg O6) on two ranks, against the serial runs
     ice_add_verification(SolidAdvectionMPI O-solid-advection "fast;verification;phase-change;needs-mpi")
