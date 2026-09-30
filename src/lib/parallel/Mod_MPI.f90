@@ -15,6 +15,12 @@ module ICE_Mod_MPI
   integer, public :: mpi_rank_ = 0        !< This process rank (0 in serial)
   integer, public :: mpi_size_ = 1        !< Total number of MPI processes
   logical, public :: mpi_is_root = .true.  !< True on rank 0
+#ifdef USE_MPI
+  integer, public :: ice_comm = MPI_COMM_WORLD  !< The communicator ICE runs on: the world, or the one a host hands to mpi_init_env
+#else
+  integer, public :: ice_comm = 0
+#endif
+  logical, private :: mpi_init_here = .false.  !< ICE called MPI_INIT itself, so it is ICE that finalizes
 
   ! --- Block-to-rank mapping ---
   integer, allocatable, public :: block_owner(:)     !< block_owner(b) = rank owning block b
@@ -38,8 +44,12 @@ contains
 
 
   !> Initialize MPI environment with thread support. Call early in main program.
-  !> Uses MPI_THREAD_FUNNELED: only master thread makes MPI calls.
-  subroutine mpi_init_env()
+  !> Uses MPI_THREAD_FUNNELED: only master thread makes MPI calls. A host program
+  !> that has initialized MPI itself may pass the communicator ICE is to run on
+  !> (every collective and message of ICE then stays inside it); the default is
+  !> MPI_COMM_WORLD. Errors abort the world either way.
+  subroutine mpi_init_env(comm)
+    integer, intent(in), optional :: comm
 #ifdef USE_MPI
     integer :: ierr, provided
     logical :: already
@@ -52,10 +62,12 @@ contains
         write(*,'(A)') ' ERROR: MPI does not support the required threading level (MPI_THREAD_FUNNELED)'
         call MPI_ABORT(MPI_COMM_WORLD, 1, ierr)
       end if
+      mpi_init_here = .true.
     end if
-    call MPI_COMM_RANK(MPI_COMM_WORLD, mpi_rank_, ierr)
+    if (present(comm)) ice_comm = comm
+    call MPI_COMM_RANK(ice_comm, mpi_rank_, ierr)
     call check_mpi_error(ierr)
-    call MPI_COMM_SIZE(MPI_COMM_WORLD, mpi_size_, ierr)
+    call MPI_COMM_SIZE(ice_comm, mpi_size_, ierr)
     call check_mpi_error(ierr)
     mpi_is_root = (mpi_rank_ == 0)
 #else
@@ -66,12 +78,13 @@ contains
   end subroutine mpi_init_env
 
 
-  !> Finalize MPI environment. Call at end of main program.
+  !> Finalize MPI environment. Call at end of main program. MPI is finalized only
+  !> when mpi_init_env initialized it (a host program that did finalizes itself).
   subroutine mpi_finalize_env()
 #ifdef USE_MPI
     integer :: ierr
-    call MPI_BARRIER(MPI_COMM_WORLD, ierr)
-    call MPI_FINALIZE(ierr)
+    call MPI_BARRIER(ice_comm, ierr)
+    if (mpi_init_here) call MPI_FINALIZE(ierr)
 #endif
   end subroutine mpi_finalize_env
 
@@ -181,7 +194,7 @@ contains
     real(R8), intent(out) :: global_val
 #ifdef USE_MPI
     integer :: ierr
-    call MPI_ALLREDUCE(local_val, global_val, 1, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+    call MPI_ALLREDUCE(local_val, global_val, 1, MPI_DOUBLE_PRECISION, MPI_SUM, ice_comm, ierr)
     call check_mpi_error(ierr)
 #else
     global_val = local_val
@@ -195,7 +208,7 @@ contains
     real(R8), intent(out) :: global_val
 #ifdef USE_MPI
     integer :: ierr
-    call MPI_ALLREDUCE(local_val, global_val, 1, MPI_DOUBLE_PRECISION, MPI_MIN, MPI_COMM_WORLD, ierr)
+    call MPI_ALLREDUCE(local_val, global_val, 1, MPI_DOUBLE_PRECISION, MPI_MIN, ice_comm, ierr)
     call check_mpi_error(ierr)
 #else
     global_val = local_val
@@ -213,7 +226,7 @@ contains
 #ifdef USE_MPI
     integer :: ierr
     call MPI_GATHER(local_val, 1, MPI_DOUBLE_PRECISION, &
-                    arr, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+                    arr, 1, MPI_DOUBLE_PRECISION, 0, ice_comm, ierr)
     call check_mpi_error(ierr)
 #else
     arr(1) = local_val
@@ -226,7 +239,7 @@ contains
     real(R8), intent(out) :: global_val
 #ifdef USE_MPI
     integer :: ierr
-    call MPI_ALLREDUCE(local_val, global_val, 1, MPI_DOUBLE_PRECISION, MPI_MAX, MPI_COMM_WORLD, ierr)
+    call MPI_ALLREDUCE(local_val, global_val, 1, MPI_DOUBLE_PRECISION, MPI_MAX, ice_comm, ierr)
     call check_mpi_error(ierr)
 #else
     global_val = local_val
@@ -241,7 +254,7 @@ contains
     real(R8), intent(inout) :: arr(n)
 #ifdef USE_MPI
     integer :: ierr
-    call MPI_ALLREDUCE(MPI_IN_PLACE, arr, n, MPI_DOUBLE_PRECISION, MPI_SUM, MPI_COMM_WORLD, ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE, arr, n, MPI_DOUBLE_PRECISION, MPI_SUM, ice_comm, ierr)
     call check_mpi_error(ierr)
 #endif
   end subroutine mpi_allreduce_sum_r8_array
@@ -253,7 +266,7 @@ contains
     real(R8), intent(inout) :: arr(n)
 #ifdef USE_MPI
     integer :: ierr
-    call MPI_ALLREDUCE(MPI_IN_PLACE, arr, n, MPI_DOUBLE_PRECISION, MPI_MAX, MPI_COMM_WORLD, ierr)
+    call MPI_ALLREDUCE(MPI_IN_PLACE, arr, n, MPI_DOUBLE_PRECISION, MPI_MAX, ice_comm, ierr)
     call check_mpi_error(ierr)
 #endif
   end subroutine mpi_allreduce_max_r8_array
@@ -282,9 +295,9 @@ contains
 #ifdef USE_MPI
     integer :: ierr
     if (mpi_rank_ == 0) then
-      call MPI_REDUCE(MPI_IN_PLACE, val, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+      call MPI_REDUCE(MPI_IN_PLACE, val, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, ice_comm, ierr)
     else
-      call MPI_REDUCE(val, val, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+      call MPI_REDUCE(val, val, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, ice_comm, ierr)
     end if
     call check_mpi_error(ierr)
 #endif
@@ -300,9 +313,9 @@ contains
 #ifdef USE_MPI
     integer :: ierr
     if (mpi_rank_ == 0) then
-      call MPI_REDUCE(MPI_IN_PLACE, arr, n, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+      call MPI_REDUCE(MPI_IN_PLACE, arr, n, MPI_DOUBLE_PRECISION, MPI_SUM, 0, ice_comm, ierr)
     else
-      call MPI_REDUCE(arr, arr, n, MPI_DOUBLE_PRECISION, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
+      call MPI_REDUCE(arr, arr, n, MPI_DOUBLE_PRECISION, MPI_SUM, 0, ice_comm, ierr)
     end if
     call check_mpi_error(ierr)
 #endif
@@ -314,7 +327,7 @@ contains
     logical, intent(inout) :: val
 #ifdef USE_MPI
     integer :: ierr
-    call MPI_BCAST(val, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(val, 1, MPI_LOGICAL, 0, ice_comm, ierr)
     call check_mpi_error(ierr)
 #endif
   end subroutine mpi_bcast_logical
@@ -325,7 +338,7 @@ contains
     integer, intent(inout) :: val
 #ifdef USE_MPI
     integer :: ierr
-    call MPI_BCAST(val, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(val, 1, MPI_INTEGER, 0, ice_comm, ierr)
     call check_mpi_error(ierr)
 #endif
   end subroutine mpi_bcast_integer

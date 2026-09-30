@@ -64,8 +64,12 @@ refills that family's ghosts only (a record of family p reads p's cells alone, s
 families are independent). The size printed at startup, `MPI halo: N cells exchanged
 per ghost fill`, is the sum over the families — what the set-up fill exchanges; a stage
 of family p moves p's share of it. One schedule and one message tag per family and
-grid level; persistent requests are set up once, so the per-fill cost is the start/wait
-pair plus the transfer, and the packing and unpacking, which run on one thread. A
+grid level; a cell that several records read (a block edge seen from two faces, a
+chimera donor of several receivers) is listed once per message — the set-up prints how
+many records were merged, when any were; persistent requests are set up once, so the
+per-fill cost is the start/wait pair plus the transfer, and the packing and unpacking,
+which run on one thread. Every collective and message of ICE goes through `ice_comm`
+(`Mod_MPI`), the world unless a host program passes its own to `mpi_init_env`. A
 consequence for anything that reads a ghost cell outside the stage loop (nothing in the
 solver does; a probe placed on a ghost row would): at the end of a step family p's
 ghosts hold the values of p's last stage, no longer refreshed by the later families'

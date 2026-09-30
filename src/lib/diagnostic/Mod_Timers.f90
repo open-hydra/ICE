@@ -30,6 +30,7 @@ module ICE_Mod_Timers
   use iso_c_binding,   only: c_int, c_int64_t
 #ifdef USE_MPI
   use mpi
+  use ICE_Mod_MPI, only: ice_comm
 #endif
 
   implicit none
@@ -360,7 +361,7 @@ contains
     local = real(c, R8)
 #ifdef USE_MPI
     call MPI_ALLREDUCE(local, g, 1, MPI_DOUBLE_PRECISION, MPI_SUM, &
-                       MPI_COMM_WORLD, ierr)
+                       ice_comm, ierr)
     total = g
 #else
     total = local

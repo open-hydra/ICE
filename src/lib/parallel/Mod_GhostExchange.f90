@@ -22,6 +22,11 @@ module ICE_Mod_GhostExchange
     integer :: off = 0        !< Offset of its first value in the send/recv buffer
   end type halo_cell_type
 
+  !> The cells of one block a rank run has already listed (unique_cells).
+  type :: mask_type
+    logical, allocatable :: seen(:,:,:)
+  end type mask_type
+
   !> Contiguous run of cells exchanged with one remote rank (one message).
   type :: rank_group_type
     integer :: rank  = -1  !< Remote MPI rank
@@ -214,7 +219,7 @@ contains
     integer :: p
 #ifdef USE_MPI
     integer, allocatable :: send_per_rank(:), recv_per_rank(:), send_pos(:), recv_pos(:)
-    integer :: ns_total
+    integer :: ns_total, ndup
 #endif
 
     if (.not. allocated(mg_sched)) allocate(mg_sched(max(1, obj_multigrid%MGL), ngroups))
@@ -232,7 +237,7 @@ contains
     end if
 
 #ifdef USE_MPI
-    ns_total = 0
+    ns_total = 0 ; ndup = 0
     do p = 1, ngroups
       ghost_sched => mg_sched(level, p)
       ghost_sched%group = p
@@ -277,8 +282,17 @@ contains
           end if
         end do
 
+        ! A cell read by several records (a block edge seen from two faces, a donor
+        ! of several receivers) crosses once: keep the first occurrence in each
+        ! rank's run. Both ends of a message hold the same run in the same order,
+        ! so the same rule on both keeps them matched.
+        ndup = ndup + ghost_sched%n_send
+        call unique_cells(ghost_sched%send_list, send_per_rank, ghost_sched%n_send)
+        ndup = ndup - ghost_sched%n_send
+        call unique_cells(ghost_sched%recv_list, recv_per_rank, ghost_sched%n_recv)
+
         ! Each rank must receive exactly what its neighbours send it
-        call MPI_ALLTOALL(send_per_rank, 1, MPI_INTEGER, expect, 1, MPI_INTEGER, MPI_COMM_WORLD, ierr)
+        call MPI_ALLTOALL(send_per_rank, 1, MPI_INTEGER, expect, 1, MPI_INTEGER, ice_comm, ierr)
         call check_mpi_error(ierr)
         nbad = count(expect /= recv_per_rank)
         if (nbad > 0) call mpi_abort_all('build_ghost_schedule: send and receive lists disagree')
@@ -294,7 +308,7 @@ contains
         call init_persistent_requests()
 
         ns = ghost_sched%n_send
-        call MPI_ALLREDUCE(MPI_IN_PLACE, ns, 1, MPI_INTEGER, MPI_SUM, MPI_COMM_WORLD, ierr)
+        call MPI_ALLREDUCE(MPI_IN_PLACE, ns, 1, MPI_INTEGER, MPI_SUM, ice_comm, ierr)
         ns_total = ns_total + ns
 
         deallocate(send_per_rank, recv_per_rank, expect, send_pos, recv_pos)
@@ -303,7 +317,15 @@ contains
     end do
     ! The sum over the families: what a set-up fill exchanges; a stage of
     ! family p exchanges p's share of it.
-    if (mpi_is_root) write(*,'(A,I0,A)') '  MPI halo: ', ns_total, ' cells exchanged per ghost fill'
+    block
+      use mpi
+      integer :: ierr
+      call MPI_ALLREDUCE(MPI_IN_PLACE, ndup, 1, MPI_INTEGER, MPI_SUM, ice_comm, ierr)
+    end block
+    if (mpi_is_root) then
+      write(*,'(A,I0,A)') '  MPI halo: ', ns_total, ' cells exchanged per ghost fill'
+      if (ndup > 0) write(*,'(A,I0,A)') '  MPI halo: ', ndup, ' records that read a cell already sent, merged'
+    end if
     ghost_sched => mg_sched(level, 1)
 #endif
 
@@ -335,6 +357,45 @@ contains
         end if
       end if
     end subroutine add_cell
+
+
+    !> Keep the first occurrence of every cell in each rank's run of list, in
+    !> place; per_rank and n become the unique counts. The mask covers a block's
+    !> interior and both ghost layers (a connection of a one-cell block reads its
+    !> own ghost) and is cleared run by run, so the cost is linear in the list.
+    subroutine unique_cells(list, per_rank, n)
+      type(halo_cell_type), intent(inout) :: list(:)
+      integer, intent(inout) :: per_rank(0:)
+      integer, intent(inout) :: n
+      type(mask_type), allocatable :: m(:)
+      integer :: r, a, c, w, kept, b
+
+      allocate(m(grid%nb))
+      w = 0 ; a = 1
+      do r = 0, size(per_rank) - 1
+        kept = 0
+        do c = a, a + per_rank(r) - 1
+          b = list(c)%b
+          if (.not. allocated(m(b)%seen)) then
+            allocate(m(b)%seen(-1:grid%blk(b)%dim(1)+2, -1:grid%blk(b)%dim(2)+2, -1:grid%blk(b)%dim(3)+2))
+            m(b)%seen = .false.
+          end if
+          if (any([list(c)%i, list(c)%j, list(c)%k] < -1) .or. &
+              any([list(c)%i, list(c)%j, list(c)%k] > grid%blk(b)%dim(1:3) + 2)) &
+            call mpi_abort_all('build_ghost_schedule: a halo cell outside its block and its ghost layers')
+          if (m(b)%seen(list(c)%i, list(c)%j, list(c)%k)) cycle
+          m(b)%seen(list(c)%i, list(c)%j, list(c)%k) = .true.
+          w = w + 1 ; kept = kept + 1
+          list(w) = list(c)
+        end do
+        do c = w - kept + 1, w
+          m(list(c)%b)%seen(list(c)%i, list(c)%j, list(c)%k) = .false.
+        end do
+        a = a + per_rank(r)
+        per_rank(r) = kept
+      end do
+      n = w
+    end subroutine unique_cells
 #endif
 
   end subroutine build_ghost_schedule
@@ -409,7 +470,6 @@ contains
     block
       use mpi
       integer :: n, nv, off, ierr
-      integer, allocatable :: stats(:,:)
 
       if (ghost_sched%n_recv_ranks > 0) then
         call MPI_STARTALL(ghost_sched%n_recv_ranks, ghost_sched%recv_req, ierr)
@@ -430,11 +490,9 @@ contains
         call check_mpi_error(ierr)
       end if
 
-      allocate(stats(MPI_STATUS_SIZE, max(1, ghost_sched%n_send_ranks, ghost_sched%n_recv_ranks)))
-
       call timer_region_begin(TR_WAIT)
       if (ghost_sched%n_recv_ranks > 0) then
-        call MPI_WAITALL(ghost_sched%n_recv_ranks, ghost_sched%recv_req, stats, ierr)
+        call MPI_WAITALL(ghost_sched%n_recv_ranks, ghost_sched%recv_req, MPI_STATUSES_IGNORE, ierr)
         call check_mpi_error(ierr)
       end if
       call timer_region_end(TR_WAIT)
@@ -450,7 +508,7 @@ contains
 
       call timer_region_begin(TR_WAIT)
       if (ghost_sched%n_send_ranks > 0) then
-        call MPI_WAITALL(ghost_sched%n_send_ranks, ghost_sched%send_req, stats, ierr)
+        call MPI_WAITALL(ghost_sched%n_send_ranks, ghost_sched%send_req, MPI_STATUSES_IGNORE, ierr)
         call check_mpi_error(ierr)
       end if
       call timer_region_end(TR_WAIT)
@@ -549,7 +607,7 @@ contains
           if (.not. is_local_block(b)) then
             nreq = nreq + 1
             call MPI_IRECV(buf(blk_offset(b,1)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           block_owner(b), b, MPI_COMM_WORLD, reqs(nreq), ierr)
+                           block_owner(b), b, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -569,7 +627,7 @@ contains
             end do
             nreq = nreq + 1
             call MPI_ISEND(buf(blk_offset(b,1)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           0, b, MPI_COMM_WORLD, reqs(nreq), ierr)
+                           0, b, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -660,7 +718,7 @@ contains
           if (.not. is_local_block(b)) then
             nreq = nreq + 1
             call MPI_IRECV(buf(blk_offset(b,1)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           block_owner(b), b, MPI_COMM_WORLD, reqs(nreq), ierr)
+                           block_owner(b), b, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -685,7 +743,7 @@ contains
             end do
             nreq = nreq + 1
             call MPI_ISEND(buf(blk_offset(b,1)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           0, b, MPI_COMM_WORLD, reqs(nreq), ierr)
+                           0, b, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -783,7 +841,7 @@ contains
             end do
             nreq = nreq + 1
             call MPI_ISEND(buf(blk_offset(b)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           block_owner(b), b, MPI_COMM_WORLD, reqs(nreq), ierr)
+                           block_owner(b), b, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -793,7 +851,7 @@ contains
           if (is_local_block(b)) then
             nreq = nreq + 1
             call MPI_IRECV(buf(blk_offset(b)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           0, b, MPI_COMM_WORLD, reqs(nreq), ierr)
+                           0, b, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -835,7 +893,7 @@ contains
     block
       use mpi
       integer :: ierr
-      call MPI_BARRIER(MPI_COMM_WORLD, ierr)
+      call MPI_BARRIER(ice_comm, ierr)
       call check_mpi_error(ierr)
     end block
 #endif
@@ -855,7 +913,7 @@ contains
     do r = 1, ghost_sched%n_recv_ranks
       associate (g => ghost_sched%recv_groups(r))
         call MPI_RECV_INIT(ghost_sched%recv_buf(g%off+1), g%len, MPI_DOUBLE_PRECISION, &
-                           g%rank, halo_tag + ghost_sched%group, MPI_COMM_WORLD, ghost_sched%recv_req(r), ierr)
+                           g%rank, halo_tag + ghost_sched%group, ice_comm, ghost_sched%recv_req(r), ierr)
         call check_mpi_error(ierr)
       end associate
     end do
@@ -863,7 +921,7 @@ contains
     do r = 1, ghost_sched%n_send_ranks
       associate (g => ghost_sched%send_groups(r))
         call MPI_SEND_INIT(ghost_sched%send_buf(g%off+1), g%len, MPI_DOUBLE_PRECISION, &
-                           g%rank, halo_tag + ghost_sched%group, MPI_COMM_WORLD, ghost_sched%send_req(r), ierr)
+                           g%rank, halo_tag + ghost_sched%group, ice_comm, ghost_sched%send_req(r), ierr)
         call check_mpi_error(ierr)
       end associate
     end do
