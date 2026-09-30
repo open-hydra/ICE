@@ -7,25 +7,21 @@ module ICE_Mod_Fluxes
   private
   public :: compute_flux, state_reconstruction, bad_recon
 
-  !> The tile of one thread: the cells (i = 1..ni, j = j1..j2, k = k1..k2) of a
-  !> block, a range of k-planes (the r-th of the block's nkr ranges) by a slab of
-  !> j-rows. The slab is cut so that a thread's two plane buffers stay within
-  !> plane_budget bytes whatever the plane size -- on a 192 x 192 plane with eight
-  !> variables a whole plane is 2.4 MB per buffer, and twenty threads of them per
-  !> socket overflow the L3 -- and the ranges then bring the tile count up to the
-  !> thread count. Every thread builds the same list from the block's dimensions.
+  !> The tile of one thread: the cells (i = 1..ni, j = j1..j2, k = k1..k2) of a block.
+  !> Deep blocks are cut into ranges of whole k-planes; shallow ones (fewer planes
+  !> than threads) into pieces of a plane, so that a thin block still spreads over
+  !> the threads. Every thread builds the same list from the block's dimensions.
   type :: tile_type
-    integer :: k1 = 0, k2 = 0, j1 = 0, j2 = 0, r = 0
+    integer :: k1 = 0, k2 = 0, j1 = 0, j2 = 0
   end type tile_type
 
-  !> Bytes a thread's pair of plane buffers may take (two of nc x ni x jslab reals).
-  integer, parameter :: plane_budget = 524288
-
-  !> A k-face between two k-ranges is read by both: by the tile owning the cell
+  !> A k-face between two tiles is read by both: by the tile owning the cell
   !> below it and by the one owning the cell above. It is computed once, by the
-  !> owner of the cell below, into a shared plane per range boundary. Grown to the
-  !> largest block that needed it; freed with the program.
-  real(R8), allocatable, private :: seam(:,:,:,:)
+  !> owner of the cell below, into a shared array -- one plane per tile when the
+  !> tiles are ranges of planes (`seam`), every k-face of the block when they are
+  !> pieces of a plane (`kface`). Grown to the largest block that needed them;
+  !> freed with the program.
+  real(R8), allocatable, private :: kface(:,:,:,:), seam(:,:,:,:)
 
 contains
 
@@ -45,43 +41,47 @@ contains
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
-    integer(kind=I4) :: b, i, j, k, t, nt, nthreads, ni, nj, nk, nc, ni_max, js_max, nkr, jslab, jj
+    integer(kind=I4) :: b, i, j, k, t, nt, nthreads, ni, nj, nk, nc, ni_max, nj_max
+    logical          :: deep
     !> tiles is each thread's inside the region; the serial pass before it uses its
     !> own tiles0: ifx 2023.1 reports "already allocated" at the first allocation of a
     !> PRIVATE copy whose original was allocated and freed before the region.
     type(tile_type), allocatable :: tiles(:), tiles0(:)
-    !> Per-thread face buffers, sized once per region to the largest local block and
-    !> the widest slab: the i-faces of a line, the j-faces below (jlo) and above (jhi)
-    !> a row, the k-faces below (klo) and above (khi) a plane of the tile's slab.
-    !> Moving up a row or a plane swaps the index: the faces above become the faces
-    !> below.
+    !> Per-thread face buffers, sized once per region to the largest local block:
+    !> the i-faces of a line, the j-faces below (jlo) and above (jhi) a row, the
+    !> k-faces below (klo) and above (khi) a plane (deep blocks only). Moving up a
+    !> row or a plane swaps the index: the faces above become the faces below.
     real(R8), allocatable :: fi(:,:), gj(:,:,:), hk(:,:,:,:)
     integer(kind=I4) :: jlo, jhi, klo, khi, sw
 
     nc = ncond(p)
     bad_recon = .false.
     !> The tiling is decided by the thread count the region will have at most, so
-    !> that the shared seam planes every local block needs can be grown here, once,
-    !> instead of by a SINGLE (and its barrier) per block.
+    !> that the shared seam or k-face planes every local block needs can be grown
+    !> here, once, instead of by a SINGLE (and its barrier) per block.
     nthreads = 1
     !$ nthreads = omp_get_max_threads()
-    ni_max = 0 ; js_max = 0
+    ni_max = 0 ; nj_max = 0
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
       ni = grid%blk(b)%dim(1) ; nj = grid%blk(b)%dim(2) ; nk = grid%blk(b)%dim(3)
-      call make_tiles(ni, nj, nk, nc, nthreads, tiles0, nkr, jslab)
-      ni_max = max(ni_max, ni) ; js_max = max(js_max, jslab)
-      if (nkr > 1) call grow(seam, nc, ni, nj, nkr - 1)
+      ni_max = max(ni_max, ni) ; nj_max = max(nj_max, nj)
+      call make_tiles(ni, nj, nk, nthreads, tiles0, deep)
+      if (deep) then
+        call grow(seam, nc, ni, nj, size(tiles0))
+      else if (nk > 1) then
+        call grow(kface, nc, ni, nj, nk)
+      end if
     end do
     if (allocated(tiles0)) deallocate(tiles0)
-    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b, i, j, k, t, nt, ni, nj, nk, nkr, jslab, jj, tiles, &
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b, i, j, k, t, nt, ni, nj, nk, deep, tiles, &
     !$OMP                                  fi, gj, hk, jlo, jhi, klo, khi, sw)
-    allocate(fi(nc, 0:ni_max), gj(nc, ni_max, 0:1), hk(nc, ni_max, js_max, 0:1))
+    allocate(fi(nc, 0:ni_max), gj(nc, ni_max, 0:1), hk(nc, ni_max, nj_max, 0:1))
     jlo = 0 ; jhi = 1 ; klo = 0 ; khi = 1
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
       ni = grid%blk(b)%dim(1) ; nj = grid%blk(b)%dim(2) ; nk = grid%blk(b)%dim(3)
-      call make_tiles(ni, nj, nk, nc, nthreads, tiles, nkr, jslab)
+      call make_tiles(ni, nj, nk, nthreads, tiles, deep)
       nt = size(tiles)
 
       !> The shock-detector weight of every cell, before any face reads it: a face
@@ -109,19 +109,29 @@ contains
         !$OMP END DO
       end if
 
-      !> The k-faces shared between the k-ranges, once, by the owner of the cell
-      !> below each: the top faces of the last plane of every range but the top one,
-      !> each tile its own slab of them.
-      if (nkr > 1) then
+      !> The k-faces shared between tiles, once, by the owner of the cell below
+      !> each: the top faces of every tile's last plane (deep block), or every
+      !> k-face of the block (shallow block).
+      if (deep) then
         !$OMP DO SCHEDULE (STATIC)
         do t = 1, nt
           k = tiles(t)%k2
           if (k < nk) then
-            do j = tiles(t)%j1, tiles(t)%j2
+            do j = 1, nj
             do i = 1, ni
-              call face_flux(grid%blk(b), p, nc, 3, i, j, k, seam(1:nc,i,j,tiles(t)%r))
+              call face_flux(grid%blk(b), p, nc, 3, i, j, k, seam(1:nc,i,j,t))
             enddo ; enddo
           end if
+        enddo
+        !$OMP END DO
+      else if (nk > 1) then
+        !$OMP DO SCHEDULE (STATIC)
+        do t = 1, nt
+          do k = tiles(t)%k1, min(tiles(t)%k2, nk-1)
+          do j = tiles(t)%j1, tiles(t)%j2
+          do i = 1, ni
+            call face_flux(grid%blk(b), p, nc, 3, i, j, k, kface(1:nc,i,j,k))
+          enddo ; enddo ; enddo
         enddo
         !$OMP END DO
       end if
@@ -130,36 +140,23 @@ contains
       do t = 1, nt
         do k = tiles(t)%k1, tiles(t)%k2
 
-          !> The k-faces below this plane come from the plane before it -- the
-          !> previous range's seam at the tile's first plane, carried afterwards --
-          !> and those above it are computed here, except at the range's last
-          !> plane, where they are its own seam.
-          if (nk > 1) then
-            if (k == tiles(t)%k1 .and. k > 1) then
-              do j = tiles(t)%j1, tiles(t)%j2
-                jj = j - tiles(t)%j1 + 1
-                hk(1:nc,1:ni,jj,klo) = seam(1:nc,1:ni,j,tiles(t)%r-1)
-              enddo
-            end if
+          !> Deep block: the k-faces below this plane come from the plane before it
+          !> -- the previous tile's seam at the tile's first plane, carried
+          !> afterwards -- and those above it are computed here, except at the
+          !> tile's last plane, where they are its own seam.
+          if (deep) then
+            if (k == tiles(t)%k1 .and. k > 1) hk(1:nc,1:ni,1:nj,klo) = seam(1:nc,1:ni,1:nj,t-1)
             if (k == tiles(t)%k2) then
-              if (k < nk) then
-                do j = tiles(t)%j1, tiles(t)%j2
-                  jj = j - tiles(t)%j1 + 1
-                  hk(1:nc,1:ni,jj,khi) = seam(1:nc,1:ni,j,tiles(t)%r)
-                enddo
-              end if
+              if (k < nk) hk(1:nc,1:ni,1:nj,khi) = seam(1:nc,1:ni,1:nj,t)
             else
-              do j = tiles(t)%j1, tiles(t)%j2
-                jj = j - tiles(t)%j1 + 1
-                do i = 1, ni
-                  call face_flux(grid%blk(b), p, nc, 3, i, j, k, hk(1:nc,i,jj,khi))
-                enddo
-              enddo
+              do j = 1, nj
+              do i = 1, ni
+                call face_flux(grid%blk(b), p, nc, 3, i, j, k, hk(1:nc,i,j,khi))
+              enddo ; enddo
             end if
           end if
 
           do j = tiles(t)%j1, tiles(t)%j2
-            jj = j - tiles(t)%j1 + 1
 
             !> The j-faces below this row: from the row before it, computed at the
             !> tile's first row and carried afterwards.
@@ -199,13 +196,21 @@ contains
                   if (j < nj) r = r - gj(1:nc,i,jhi)
                 end if
                 ! direction 3
-                if (nk > 1) then
+                if (deep) then
                   if (mod(k,2) == 1) then
-                    if (k < nk) r = r - hk(1:nc,i,jj,khi)
-                    if (k > 1)  r = r + hk(1:nc,i,jj,klo)
+                    if (k < nk) r = r - hk(1:nc,i,j,khi)
+                    if (k > 1)  r = r + hk(1:nc,i,j,klo)
                   else
-                    r = r + hk(1:nc,i,jj,klo)
-                    if (k < nk) r = r - hk(1:nc,i,jj,khi)
+                    r = r + hk(1:nc,i,j,klo)
+                    if (k < nk) r = r - hk(1:nc,i,j,khi)
+                  end if
+                else if (nk > 1) then
+                  if (mod(k,2) == 1) then
+                    if (k < nk) r = r - kface(1:nc,i,j,k)
+                    if (k > 1)  r = r + kface(1:nc,i,j,k-1)
+                  else
+                    r = r + kface(1:nc,i,j,k-1)
+                    if (k < nk) r = r - kface(1:nc,i,j,k)
                   end if
                 end if
               end associate
@@ -218,7 +223,7 @@ contains
           enddo
 
           ! the faces above this plane are the faces below the next one
-          if (nk > 1 .and. k < nk) then
+          if (deep .and. k < nk) then
             sw = klo ; klo = khi ; khi = sw
           end if
         enddo
@@ -248,31 +253,46 @@ contains
   end subroutine grow
 
 
-  !> The tiles of a block for nthreads threads: nkr ranges of whole k-planes by
-  !> slabs of jslab rows. The slab keeps a thread's two plane buffers (nc x ni x
-  !> jslab reals each) within plane_budget; the ranges bring the tile count to the
-  !> thread count, one plane at least each. The list is range-major, so a thread's
-  !> contiguous share of it stays inside one range as far as it can.
-  subroutine make_tiles(ni, nj, nk, nc, nthreads, tiles, nkr, jslab)
-    integer, intent(in) :: ni, nj, nk, nc, nthreads
+  !> The tiles of a block for nthreads threads. Deep (nk >= nthreads, or a 2-D block
+  !> whose planes outnumber the threads in j): contiguous ranges of whole k-planes.
+  !> Otherwise pieces of a plane, about two per thread, so a shallow block still
+  !> spreads; a 2-D block (nk = 1) is always cut this way, along j.
+  subroutine make_tiles(ni, nj, nk, nthreads, tiles, deep)
+    integer, intent(in) :: ni, nj, nk, nthreads
     type(tile_type), allocatable, intent(out) :: tiles(:)
-    integer, intent(out) :: nkr, jslab
-    integer :: njs, r, s, k, kk, j, jj
+    logical, intent(out) :: deep
+    integer :: t, nt, k, kk, per_plane, rows, j, jj
 
-    jslab = max(1, min(nj, plane_budget / (2 * nc * ni * 8)))
-    njs   = (nj + jslab - 1) / jslab
-    nkr   = max(1, min(nk, (nthreads + njs - 1) / njs))
-    allocate(tiles(nkr * njs))
-    kk = 0
-    do r = 1, nkr
-      k = (nk - kk) / (nkr - r + 1)               ! planes left, shared evenly
-      do s = 1, njs
-        j  = (s - 1) * jslab + 1
-        jj = min(j + jslab - 1, nj)
-        tiles((r - 1) * njs + s) = tile_type(kk + 1, kk + k, j, jj, r)
+    deep = (nk >= nthreads)
+    if (deep) then
+      nt = min(nthreads, nk)
+      allocate(tiles(nt))
+      kk = 0
+      do t = 1, nt
+        k = (nk - kk) / (nt - t + 1)               ! planes left, shared evenly
+        tiles(t) = tile_type(kk + 1, kk + k, 1, nj)
+        kk = kk + k
       end do
-      kk = kk + k
-    end do
+    else
+      per_plane = max(1, (2*nthreads + nk - 1) / nk) ! pieces per plane
+      per_plane = min(per_plane, nj)
+      rows = (nj + per_plane - 1) / per_plane       ! rows per piece
+      nt = 0
+      do k = 1, nk
+        do j = 1, nj, rows
+          nt = nt + 1
+        end do
+      end do
+      allocate(tiles(nt))
+      t = 0
+      do k = 1, nk
+        do j = 1, nj, rows
+          t = t + 1
+          jj = min(j + rows - 1, nj)
+          tiles(t) = tile_type(k, k, j, jj)
+        end do
+      end do
+    end if
   end subroutine make_tiles
 
 
