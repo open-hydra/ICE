@@ -68,7 +68,8 @@ grid level; a cell that several records read (a block edge seen from two faces, 
 chimera donor of several receivers) is listed once per message — the set-up prints how
 many records were merged, when any were; persistent requests are set up once, so the
 per-fill cost is the start/wait pair plus the transfer, and the packing and unpacking,
-which run on one thread. Every collective and message of ICE goes through `ice_comm`
+which the threads share (every cell owns a slice of the buffer). Every collective and
+message of ICE goes through `ice_comm`
 (`Mod_MPI`), the world unless a host program passes its own to `mpi_init_env`. A
 consequence for anything that reads a ghost cell outside the stage loop (nothing in the
 solver does; a probe placed on a ghost row would): at the end of a step family p's

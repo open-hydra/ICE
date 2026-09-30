@@ -476,13 +476,17 @@ contains
         call check_mpi_error(ierr)
       end if
 
+      ! Every cell owns a slice of the buffer, so the threads write disjoint ranges;
+      ! the MPI calls stay on the thread that calls this routine (FUNNELED).
       call timer_region_begin(TR_PACK)
+      !$OMP PARALLEL DO DEFAULT(NONE) SHARED(ghost_sched, grid, ncond) PRIVATE(n, nv, off) SCHEDULE(STATIC)
       do n = 1, ghost_sched%n_send
         associate (c => ghost_sched%send_list(n))
           nv = ncond(c%p) ; off = c%off
           ghost_sched%send_buf(off+1:off+nv) = grid%blk(c%b)%cond_phase(c%p)%prim(1:nv, c%i, c%j, c%k)
         end associate
       end do
+      !$OMP END PARALLEL DO
       call timer_region_end(TR_PACK)
 
       if (ghost_sched%n_send_ranks > 0) then
@@ -497,13 +501,17 @@ contains
       end if
       call timer_region_end(TR_WAIT)
 
+      ! A received cell is listed once (unique_cells) and belongs to one source
+      ! rank, so the threads write disjoint cells.
       call timer_region_begin(TR_UNPACK)
+      !$OMP PARALLEL DO DEFAULT(NONE) SHARED(ghost_sched, grid, ncond) PRIVATE(n, nv, off) SCHEDULE(STATIC)
       do n = 1, ghost_sched%n_recv
         associate (c => ghost_sched%recv_list(n))
           nv = ncond(c%p) ; off = c%off
           grid%blk(c%b)%cond_phase(c%p)%prim(1:nv, c%i, c%j, c%k) = ghost_sched%recv_buf(off+1:off+nv)
         end associate
       end do
+      !$OMP END PARALLEL DO
       call timer_region_end(TR_UNPACK)
 
       call timer_region_begin(TR_WAIT)
