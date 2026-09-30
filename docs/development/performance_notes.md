@@ -28,16 +28,20 @@ it costs nothing in stability.
 Threading is over the cells of a block, not over blocks, so a single large block
 threads as well as many small ones. Two details shape the scaling:
 
-- The interior flux loop is swept in two passes, odd faces then even, because a face
-  accumulates into the cells on both sides of it. The barrier between the passes is
-  what makes the result independent of the thread count, and it is also a
-  synchronisation point per direction per stage.
-- The boundary flux loop is `SCHEDULE(DYNAMIC, 64)` over the rank's own boundary
-  records, whose cost varies a great deal by type — a chimera cell blends several
-  donors, an extrapolation cell copies. A cell with three boundary records (a block
-  corner in 3-D) receives them in thread order, so a 3-D run is not bit-identical
-  across thread counts on this version (`test/fast/equiv3d`, measured 2026-09-30);
-  2-D runs are.
+- The interior flux loop gathers: each thread owns a tile of the block (a range of
+  whole k-planes when the block has at least as many planes as threads, pieces of a
+  plane otherwise), computes every face flux of its tile once into private line, row
+  and plane buffers, and applies the two faces of each direction to each cell in the
+  order the earlier odd-then-even scatter passes gave them — so the residual is bit
+  for bit the scatter form's, and independent of the thread count. Per block and stage
+  there are three worksharing loops (the shock-detector pass, the faces on the tile
+  seams, the sweep) where the scatter form had a pass per parity per direction.
+- The boundary flux loop is `SCHEDULE(DYNAMIC, 16)` over the rank's boundary cells of
+  the family, each cell accumulating its records in table order on one thread — a
+  block corner in 3-D carries three — so 2-D and 3-D runs are bit-identical across
+  thread counts (`test/fast/equiv3d`: RED on the record-parallel `ATOMIC` loop, GREEN
+  since 2026-09-30). The cost per cell varies a great deal by type: a chimera cell
+  blends several donors, an extrapolation cell copies.
 
 Thread counts beyond a few hundred cells per thread stop paying: the loop bodies are
 short and the barriers are frequent.
