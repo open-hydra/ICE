@@ -55,11 +55,17 @@ follow directly:
   a node for a large mesh.
 
 The halo exchange runs once per family per Runge-Kutta stage and carries the interior
-cells that a remote ghost cell reads — of every family, each time, since the ghost fill
-that follows it refills every family's ghosts. Its size is printed at startup as
-`MPI halo: N cells exchanged per ghost fill`. Persistent requests are set up once, so
-the per-fill cost is the start/wait pair plus the transfer, and the packing and
-unpacking, which run on one thread.
+cells that a remote ghost cell of that family reads; the ghost fill that follows it
+refills that family's ghosts only (a record of family p reads p's cells alone, so the
+families are independent). The size printed at startup, `MPI halo: N cells exchanged
+per ghost fill`, is the sum over the families — what the set-up fill exchanges; a stage
+of family p moves p's share of it. One schedule and one message tag per family and
+grid level; persistent requests are set up once, so the per-fill cost is the start/wait
+pair plus the transfer, and the packing and unpacking, which run on one thread. A
+consequence for anything that reads a ghost cell outside the stage loop (nothing in the
+solver does; a probe placed on a ghost row would): at the end of a step family p's
+ghosts hold the values of p's last stage, no longer refreshed by the later families'
+stages.
 
 Output is gathered to rank 0, which writes alone. For a large mesh written often, this
 is a serial section in an otherwise parallel run — lowering `sol-diter` is expensive in

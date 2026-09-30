@@ -28,11 +28,17 @@ compares the raw-binary VTK payload byte for byte.
             target of the owner-computes rewrite.
   ranks     1 rank against 2, 3, 4 and 5 (12 blocks, so 5 is uneven), and a
             2x1x1 layout on 3 ranks (more ranks than blocks). Needs an MPI build.
+            The case carries the three families, so this is also the halo's
+            per-family gate: measured RED on 2026-09-30 with the exchange stubbed
+            to use family 1's schedule for every family (the `family` leg is
+            single-rank and stayed green under that stub).
   hybrid    (2 ranks, 2 threads), (3, 4) and (4, 3) against 1x1. Needs both.
   family    the MK+IG+AG run against each family run alone (`--solo K`): the
             families are independent within a step and dt-max binds every cell,
             so family K in company must equal family K alone, value for value.
-            RED if the ghost fill or the halo skips a family.
+            RED if the ghost fill skips a family: measured on 2026-09-30 with
+            the per-family fill stubbed to family 1's records for every family
+            (NaN within the step). The halo's leg is `ranks`.
 
 Every leg first checks the banner: a serial binary reports no thread count, and
 `OMP_NUM_THREADS` is then ignored, so the run would compare a file with itself.

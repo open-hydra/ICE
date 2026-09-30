@@ -88,6 +88,8 @@ module ICE_Advanced_Types_m
     integer                              :: n_local_bs = 0
     integer, dimension(:), allocatable  :: local_bs_idx
     type(ICE_bc_cells_type), dimension(:), allocatable :: bcells   ! one per family
+    ! The same records grouped by family: family p is local_bc_grp(grp_first(p):grp_first(p+1)-1)
+    integer, dimension(:), allocatable  :: local_bc_grp, grp_first
   end type ICE_domain_type
 
   type :: ICE_simulation_type

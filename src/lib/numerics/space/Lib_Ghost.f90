@@ -21,10 +21,14 @@ module ICE_Lib_Ghost
 
 contains
 
-  subroutine compute_ghost (grid)
+  !> The first ghost layer of family p (the stage of one family), or of every
+  !> family when p is absent (set-up). Records of one family only depend on that
+  !> family's cells, so the fills of the families are independent.
+  subroutine compute_ghost (grid, p)
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
-    integer(kind=I4) :: i, ii
+    integer(kind=I4), intent(in), optional :: p
+    integer(kind=I4) :: i, ii, lo, hi
     integer(kind=I4) :: bm, pm, im, jm, km, fm
     integer(kind=I4) :: ig, jg, kg
     integer(kind=I4) :: bs, is, js, ks, fs
@@ -33,15 +37,17 @@ contains
 
     !> Remote cells read below (connection sources, chimera donors) from their owners
     call timer_comm_begin()
-    call exchange_ghost_prim(grid)
+    call exchange_ghost_prim(grid, p)
     call timer_comm_end()
 
+    call family_range(grid, p, lo, hi)
+
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ncond, nbase, solid_of, mat_of, obj_time_scheme, obj_condensed), &
+    !$OMP SHARED(grid, lo, hi, ncond, nbase, solid_of, mat_of, obj_time_scheme, obj_condensed), &
     !$OMP PRIVATE(ii, i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, ph, area, normal, velocity, veln)
     !$OMP DO SCHEDULE (dynamic, 64)
-    do ii = 1, grid%n_local_bc
-      i = grid%local_bc_idx(ii)
+    do ii = lo, hi
+      i = grid%local_bc_grp(ii)
 
       !> Preliminary assignments
       bm = grid%bc(i)%b
@@ -226,10 +232,11 @@ contains
   end subroutine compute_ghost
 
 
-  subroutine fill_second_ghost(grid)
+  subroutine fill_second_ghost(grid, p)
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
-    integer(kind=I4) :: i, ii
+    integer(kind=I4), intent(in), optional :: p
+    integer(kind=I4) :: i, ii, lo, hi
     integer(kind=I4) :: bm, pm, im, jm, km, fm
     integer(kind=I4) :: ig, jg, kg
     integer(kind=I4) :: ig2, jg2, kg2
@@ -238,13 +245,15 @@ contains
     integer(kind=I4) :: ic, jc, kc
     real(kind=R8)    :: normal(1:3), velocity(1:3)
 
+    call family_range(grid, p, lo, hi)
+
     !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, ncond, nbase, mat_of, obj_condensed), &
+    !$OMP SHARED(grid, lo, hi, ncond, nbase, mat_of, obj_condensed), &
     !$OMP PRIVATE(ii, i, bm, pm, im, jm, km, fm, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, bs, is, js, ks, fs, &
     !$OMP         ic, jc, kc, normal, velocity)
     !$OMP DO SCHEDULE(dynamic, 64)
-    do ii = 1, grid%n_local_bc
-      i = grid%local_bc_idx(ii)
+    do ii = lo, hi
+      i = grid%local_bc_grp(ii)
 
       if (grid%bc(i)%type == 0) cycle
 
@@ -385,5 +394,18 @@ contains
 
   end function model_cons_2_prim
 
+
+  !> The range of local_bc_grp holding family p's records, or every record.
+  subroutine family_range(grid, p, lo, hi)
+    implicit none
+    type(ICE_domain_type), intent(in) :: grid
+    integer(kind=I4), intent(in), optional :: p
+    integer(kind=I4), intent(out) :: lo, hi
+    if (present(p)) then
+      lo = grid%grp_first(p) ; hi = grid%grp_first(p+1) - 1
+    else
+      lo = 1 ; hi = grid%n_local_bc
+    end if
+  end subroutine family_range
 
 end module ICE_Lib_Ghost

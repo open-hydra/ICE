@@ -31,8 +31,9 @@ module ICE_Mod_GhostExchange
     integer :: len   =  0  !< Message length (reals)
   end type rank_group_type
 
-  !> Communication schedule for the fine-grid BC list.
+  !> Communication schedule of one family on one grid level.
   type :: ghost_schedule_type
+    integer :: group = 1                  !< the family, and the message tag offset
     integer :: n_send = 0, n_recv = 0
     type(halo_cell_type), allocatable :: send_list(:), recv_list(:)
     integer :: n_send_ranks = 0, n_recv_ranks = 0
@@ -45,8 +46,11 @@ module ICE_Mod_GhostExchange
 
   integer, parameter :: halo_tag = 7101
 
-  type(ghost_schedule_type), allocatable, target, private :: mg_sched(:)
+  !> One schedule per (level, family): a stage of family p fills only p's ghosts,
+  !> so only p's cells cross. ghost_sched points at the one being used.
+  type(ghost_schedule_type), allocatable, target, private :: mg_sched(:,:)
   type(ghost_schedule_type), pointer,     public          :: ghost_sched => null()
+  integer, private :: level_cur = 1
 
   public :: build_ghost_schedule
   public :: build_local_bc_index
@@ -84,6 +88,33 @@ contains
         grid%local_bc_idx(n) = i
       end if
     end do
+
+    ! The same records grouped by family, in table order inside each group: a
+    ! stage of family p fills p's ghosts only, and reads its range of this list.
+    if (allocated(grid%local_bc_grp)) deallocate(grid%local_bc_grp)
+    if (allocated(grid%grp_first))    deallocate(grid%grp_first)
+    allocate(grid%local_bc_grp(max(n, 1)), grid%grp_first(ngroups + 1))
+    block
+      integer, allocatable :: pos(:)
+      integer :: p
+      allocate(pos(ngroups))
+      pos = 0
+      do i = 1, n
+        p = grid%bc(grid%local_bc_idx(i))%p
+        pos(p) = pos(p) + 1
+      end do
+      grid%grp_first(1) = 1
+      do p = 1, ngroups
+        grid%grp_first(p+1) = grid%grp_first(p) + pos(p)
+      end do
+      pos = grid%grp_first(1:ngroups)
+      do i = 1, n
+        p = grid%bc(grid%local_bc_idx(i))%p
+        grid%local_bc_grp(pos(p)) = grid%local_bc_idx(i)
+        pos(p) = pos(p) + 1
+      end do
+      deallocate(pos)
+    end block
 
     ! One list of boundary cells per family, each cell with its records in the
     ! order of the table. compute_bound then accumulates a cell's boundary
@@ -170,95 +201,111 @@ contains
   end subroutine collect_boundary_cells
 
 
-  !> Build the halo schedule from the BC list. Every rank scans the same list in the
-  !> same order, so the cells a rank sends to a neighbour are listed in the order the
-  !> neighbour expects them. Must be called after partition_blocks and Setup_BC.
+  !> Build the halo schedules of one grid level, one per family, from the BC list.
+  !> Every rank scans the same list in the same order, so the cells a rank sends to
+  !> a neighbour are listed in the order the neighbour expects them. Must be called
+  !> after partition_blocks and Setup_BC.
   subroutine build_ghost_schedule(grid, level)
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m, only: obj_multigrid
     implicit none
     type(ICE_domain_type), intent(in) :: grid
     integer, intent(in)               :: level  !< Multigrid level this schedule serves
+    integer :: p
 #ifdef USE_MPI
     integer, allocatable :: send_per_rank(:), recv_per_rank(:), send_pos(:), recv_pos(:)
+    integer :: ns_total
 #endif
 
-    if (.not. allocated(mg_sched)) allocate(mg_sched(max(1, obj_multigrid%MGL)))
-    if (level < 1 .or. level > size(mg_sched)) &
+    if (.not. allocated(mg_sched)) allocate(mg_sched(max(1, obj_multigrid%MGL), ngroups))
+    if (level < 1 .or. level > size(mg_sched, 1)) &
       call mpi_abort_all('build_ghost_schedule: grid level outside 1..MG-levels')
-    ghost_sched => mg_sched(level)
+    level_cur = level
+    ghost_sched => mg_sched(level, 1)
 
     if (mpi_size_ <= 1) then
-      ghost_sched%built = .true.
+      do p = 1, ngroups
+        mg_sched(level, p)%group = p
+        mg_sched(level, p)%built = .true.
+      end do
       return
     end if
 
 #ifdef USE_MPI
-    block
-      use mpi
-      integer :: pass, n, c, fs, r, ierr
-      integer :: ns, nbad
-      integer, allocatable :: expect(:)
+    ns_total = 0
+    do p = 1, ngroups
+      ghost_sched => mg_sched(level, p)
+      ghost_sched%group = p
+      block
+        use mpi
+        integer :: pass, n, c, fs, r, ierr
+        integer :: ns, nbad
+        integer, allocatable :: expect(:)
 
-      allocate(send_per_rank(0:mpi_size_-1), recv_per_rank(0:mpi_size_-1), expect(0:mpi_size_-1))
-      allocate(send_pos(0:mpi_size_-1), recv_pos(0:mpi_size_-1))
+        allocate(send_per_rank(0:mpi_size_-1), recv_per_rank(0:mpi_size_-1), expect(0:mpi_size_-1))
+        allocate(send_pos(0:mpi_size_-1), recv_pos(0:mpi_size_-1))
 
-      ! Pass 1 counts cells per remote rank, pass 2 places them grouped by rank,
-      ! keeping BC order inside each group.
-      do pass = 1, 2
-        send_per_rank = 0 ; recv_per_rank = 0
-        do n = 1, size(grid%bc)
-          select case (grid%bc(n)%type)
-          case (101, 201)
-            fs = grid%bc(n)%fs
-            call add_cell(pass, grid%bc(n), grid%bc(n)%bs, grid%bc(n)%is, grid%bc(n)%js, grid%bc(n)%ks)
-            call add_cell(pass, grid%bc(n), grid%bc(n)%bs, grid%bc(n)%is + guide(fs,1), &
-                          grid%bc(n)%js + guide(fs,2), grid%bc(n)%ks + guide(fs,3))
-          case (102)
-            do c = 1, sum(grid%bc(n)%ni)
-              call add_cell(pass, grid%bc(n), grid%bc(n)%donorID(c,1), grid%bc(n)%donorID(c,2), &
-                            grid%bc(n)%donorID(c,3), grid%bc(n)%donorID(c,4))
+        ! Pass 1 counts cells per remote rank, pass 2 places them grouped by rank,
+        ! keeping BC order inside each group. Only this family's records.
+        do pass = 1, 2
+          send_per_rank = 0 ; recv_per_rank = 0
+          do n = 1, size(grid%bc)
+            if (grid%bc(n)%p /= p) cycle
+            select case (grid%bc(n)%type)
+            case (101, 201)
+              fs = grid%bc(n)%fs
+              call add_cell(pass, grid%bc(n), grid%bc(n)%bs, grid%bc(n)%is, grid%bc(n)%js, grid%bc(n)%ks)
+              call add_cell(pass, grid%bc(n), grid%bc(n)%bs, grid%bc(n)%is + guide(fs,1), &
+                            grid%bc(n)%js + guide(fs,2), grid%bc(n)%ks + guide(fs,3))
+            case (102)
+              do c = 1, sum(grid%bc(n)%ni)
+                call add_cell(pass, grid%bc(n), grid%bc(n)%donorID(c,1), grid%bc(n)%donorID(c,2), &
+                              grid%bc(n)%donorID(c,3), grid%bc(n)%donorID(c,4))
+              end do
+            end select
+          end do
+
+          if (pass == 1) then
+            ghost_sched%n_send = sum(send_per_rank)
+            ghost_sched%n_recv = sum(recv_per_rank)
+            allocate(ghost_sched%send_list(ghost_sched%n_send), ghost_sched%recv_list(ghost_sched%n_recv))
+            send_pos(0) = 0 ; recv_pos(0) = 0
+            do r = 1, mpi_size_-1
+              send_pos(r) = send_pos(r-1) + send_per_rank(r-1)
+              recv_pos(r) = recv_pos(r-1) + recv_per_rank(r-1)
             end do
-          end select
+          end if
         end do
 
-        if (pass == 1) then
-          ghost_sched%n_send = sum(send_per_rank)
-          ghost_sched%n_recv = sum(recv_per_rank)
-          allocate(ghost_sched%send_list(ghost_sched%n_send), ghost_sched%recv_list(ghost_sched%n_recv))
-          send_pos(0) = 0 ; recv_pos(0) = 0
-          do r = 1, mpi_size_-1
-            send_pos(r) = send_pos(r-1) + send_per_rank(r-1)
-            recv_pos(r) = recv_pos(r-1) + recv_per_rank(r-1)
-          end do
-        end if
-      end do
+        ! Each rank must receive exactly what its neighbours send it
+        call MPI_ALLTOALL(send_per_rank, 1, MPI_INTEGER, expect, 1, MPI_INTEGER, MPI_COMM_WORLD, ierr)
+        call check_mpi_error(ierr)
+        nbad = count(expect /= recv_per_rank)
+        if (nbad > 0) call mpi_abort_all('build_ghost_schedule: send and receive lists disagree')
 
-      ! Each rank must receive exactly what its neighbours send it
-      call MPI_ALLTOALL(send_per_rank, 1, MPI_INTEGER, expect, 1, MPI_INTEGER, MPI_COMM_WORLD, ierr)
-      call check_mpi_error(ierr)
-      nbad = count(expect /= recv_per_rank)
-      if (nbad > 0) call mpi_abort_all('build_ghost_schedule: send and receive lists disagree')
+        call build_rank_groups(ghost_sched%send_list, ghost_sched%n_send, send_per_rank, &
+                               ghost_sched%send_groups, ghost_sched%n_send_ranks)
+        call build_rank_groups(ghost_sched%recv_list, ghost_sched%n_recv, recv_per_rank, &
+                               ghost_sched%recv_groups, ghost_sched%n_recv_ranks)
 
-      call build_rank_groups(ghost_sched%send_list, ghost_sched%n_send, send_per_rank, &
-                             ghost_sched%send_groups, ghost_sched%n_send_ranks)
-      call build_rank_groups(ghost_sched%recv_list, ghost_sched%n_recv, recv_per_rank, &
-                             ghost_sched%recv_groups, ghost_sched%n_recv_ranks)
+        allocate(ghost_sched%send_buf(max(1, sum(ghost_sched%send_groups(:)%len))))
+        allocate(ghost_sched%recv_buf(max(1, sum(ghost_sched%recv_groups(:)%len))))
 
-      allocate(ghost_sched%send_buf(max(1, sum(ghost_sched%send_groups(:)%len))))
-      allocate(ghost_sched%recv_buf(max(1, sum(ghost_sched%recv_groups(:)%len))))
+        call init_persistent_requests()
 
-      call init_persistent_requests()
+        ns = ghost_sched%n_send
+        call MPI_ALLREDUCE(MPI_IN_PLACE, ns, 1, MPI_INTEGER, MPI_SUM, MPI_COMM_WORLD, ierr)
+        ns_total = ns_total + ns
 
-      ns = ghost_sched%n_send
-      call MPI_ALLREDUCE(MPI_IN_PLACE, ns, 1, MPI_INTEGER, MPI_SUM, MPI_COMM_WORLD, ierr)
-      if (mpi_is_root) write(*,'(A,I0,A)') '  MPI halo: ', ns, ' cells exchanged per ghost fill'
-
-      deallocate(send_per_rank, recv_per_rank, expect, send_pos, recv_pos)
-    end block
+        deallocate(send_per_rank, recv_per_rank, expect, send_pos, recv_pos)
+      end block
+      ghost_sched%built = .true.
+    end do
+    ! The sum over the families: what a set-up fill exchanges; a stage of
+    ! family p exchanges p's share of it.
+    if (mpi_is_root) write(*,'(A,I0,A)') '  MPI halo: ', ns_total, ' cells exchanged per ghost fill'
+    ghost_sched => mg_sched(level, 1)
 #endif
-
-    ghost_sched%built = .true.
 
 #ifdef USE_MPI
   contains
@@ -293,45 +340,71 @@ contains
   end subroutine build_ghost_schedule
 
 
-  !> Point the halo routines at one level's schedule. Call whenever the solver moves
+  !> Point the halo routines at one level's schedules. Call whenever the solver moves
   !> between multigrid levels; build_ghost_schedule has to have run for that level.
   subroutine select_ghost_level(level)
     implicit none
     integer, intent(in) :: level
 
     if (.not. allocated(mg_sched)) return
-    if (level < 1 .or. level > size(mg_sched)) &
+    if (level < 1 .or. level > size(mg_sched, 1)) &
       call mpi_abort_all('select_ghost_level: grid level outside 1..MG-levels')
-    ghost_sched => mg_sched(level)
+    level_cur = level
+    ghost_sched => mg_sched(level, 1)
 
   end subroutine select_ghost_level
 
 
-  !> Free persistent MPI requests, on every level that built any.
+  !> Free persistent MPI requests, on every level and family that built any.
   subroutine cleanup_ghost_schedule()
     implicit none
 #ifdef USE_MPI
-    integer :: m
+    integer :: m, p
 
     if (.not. allocated(mg_sched)) return
-    do m = 1, size(mg_sched)
-      ghost_sched => mg_sched(m)
-      call cleanup_persistent_requests()
+    do m = 1, size(mg_sched, 1)
+      do p = 1, size(mg_sched, 2)
+        ghost_sched => mg_sched(m, p)
+        call cleanup_persistent_requests()
+      end do
     end do
-    ghost_sched => mg_sched(1)
+    ghost_sched => mg_sched(1, 1)
 #endif
   end subroutine cleanup_ghost_schedule
 
 
-  !> Bring the remote interior cells read by the ghost fill up to date. Call on every
-  !> rank before compute_ghost, with ghost_sched pointing at this grid's level.
-  subroutine exchange_ghost_prim(grid)
+  !> Bring the remote interior cells read by the ghost fill up to date: family p's
+  !> when p is given (the stage of one family), every family's otherwise (set-up).
+  !> Call on every rank before compute_ghost, on the level select_ghost_level chose.
+  subroutine exchange_ghost_prim(grid, p)
     use ICE_Advanced_Types_m
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
+    integer, intent(in), optional        :: p
+    integer :: q
 
     if (mpi_size_ <= 1) return
     if (size(grid%bc) == 0) return
+    if (present(p)) then
+      call exchange_family(grid, p)
+    else
+      do q = 1, ngroups
+        call exchange_family(grid, q)
+      end do
+    end if
+    ghost_sched => mg_sched(level_cur, 1)
+  end subroutine exchange_ghost_prim
+
+
+  !> The exchange of one family: start the receives, pack, start the sends, wait,
+  !> unpack. The schedule of (level_cur, p) is used.
+  subroutine exchange_family(grid, p)
+    use ICE_Advanced_Types_m
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer, intent(in)                  :: p
+
+    ghost_sched => mg_sched(level_cur, p)
 #ifdef USE_MPI
     block
       use mpi
@@ -383,7 +456,7 @@ contains
       call timer_region_end(TR_WAIT)
     end block
 #endif
-  end subroutine exchange_ghost_prim
+  end subroutine exchange_family
 
 
   !> How many of this rank's boundary records carry each type. The face mix is
@@ -782,7 +855,7 @@ contains
     do r = 1, ghost_sched%n_recv_ranks
       associate (g => ghost_sched%recv_groups(r))
         call MPI_RECV_INIT(ghost_sched%recv_buf(g%off+1), g%len, MPI_DOUBLE_PRECISION, &
-                           g%rank, halo_tag, MPI_COMM_WORLD, ghost_sched%recv_req(r), ierr)
+                           g%rank, halo_tag + ghost_sched%group, MPI_COMM_WORLD, ghost_sched%recv_req(r), ierr)
         call check_mpi_error(ierr)
       end associate
     end do
@@ -790,7 +863,7 @@ contains
     do r = 1, ghost_sched%n_send_ranks
       associate (g => ghost_sched%send_groups(r))
         call MPI_SEND_INIT(ghost_sched%send_buf(g%off+1), g%len, MPI_DOUBLE_PRECISION, &
-                           g%rank, halo_tag, MPI_COMM_WORLD, ghost_sched%send_req(r), ierr)
+                           g%rank, halo_tag + ghost_sched%group, MPI_COMM_WORLD, ghost_sched%send_req(r), ierr)
         call check_mpi_error(ierr)
       end associate
     end do

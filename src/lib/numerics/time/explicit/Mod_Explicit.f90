@@ -115,10 +115,10 @@ contains
 
         call timer_halo_begin()
         call timer_region_begin(TR_GHOST1)
-        call compute_ghost(grid)
+        call compute_ghost(grid, p)
         call timer_region_end(TR_GHOST1)
         call timer_region_begin(TR_GHOST2)
-        call fill_second_ghost(grid)
+        call fill_second_ghost(grid, p)
         call timer_region_end(TR_GHOST2)
 
         call timer_region_begin(TR_BOUND)
