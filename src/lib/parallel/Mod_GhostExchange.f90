@@ -85,7 +85,89 @@ contains
       end if
     end do
 
+    ! One list of boundary cells per family, each cell with its records in the
+    ! order of the table. compute_bound then accumulates a cell's boundary
+    ! fluxes from one thread in one fixed order: an edge or corner cell carries
+    ! two or three records, and (a+b)+c is not (a+c)+b.
+    if (allocated(grid%bcells)) deallocate(grid%bcells)
+    allocate(grid%bcells(ngroups))
+    do i = 1, ngroups
+      call collect_boundary_cells(grid, i, grid%bcells(i))
+    end do
+
   end subroutine build_local_bc_index
+
+
+  !> The boundary cells of family p on this rank, block by block in cell order,
+  !> each with its records in table order. Type-0 records (no condition) are
+  !> left out. Linear in the records and the cells of the owned blocks.
+  subroutine collect_boundary_cells(grid, p, cells)
+    use ICE_Advanced_Types_m
+    implicit none
+    type(ICE_domain_type),   intent(in)    :: grid
+    integer,                 intent(in)    :: p
+    type(ICE_bc_cells_type), intent(inout) :: cells
+    integer, allocatable :: head(:,:,:), tail(:,:,:), next(:)
+    integer :: b, nn, n, i, j, k, c, r, ncell, nrec
+
+    ! Pass 1 counts, pass 2 fills; the chains are rebuilt per block each pass.
+    nrec = 0 ; ncell = 0
+    allocate(next(max(grid%n_local_bc, 1)))
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      allocate(head(grid%blk(b)%dim(1), grid%blk(b)%dim(2), grid%blk(b)%dim(3)))
+      head = 0
+      do nn = 1, grid%n_local_bc
+        n = grid%local_bc_idx(nn)
+        if (grid%bc(n)%b /= b .or. grid%bc(n)%p /= p .or. grid%bc(n)%type == 0) cycle
+        nrec = nrec + 1
+        if (head(grid%bc(n)%i, grid%bc(n)%j, grid%bc(n)%k) == 0) ncell = ncell + 1
+        head(grid%bc(n)%i, grid%bc(n)%j, grid%bc(n)%k) = 1
+      end do
+      deallocate(head)
+    end do
+
+    cells%n = ncell
+    if (allocated(cells%first)) deallocate(cells%first)
+    if (allocated(cells%rec))   deallocate(cells%rec)
+    allocate(cells%first(ncell + 1), cells%rec(max(nrec, 1)))
+
+    c = 0 ; r = 0
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      allocate(head(grid%blk(b)%dim(1), grid%blk(b)%dim(2), grid%blk(b)%dim(3)))
+      allocate(tail(grid%blk(b)%dim(1), grid%blk(b)%dim(2), grid%blk(b)%dim(3)))
+      head = 0 ; tail = 0
+      do nn = 1, grid%n_local_bc
+        n = grid%local_bc_idx(nn)
+        if (grid%bc(n)%b /= b .or. grid%bc(n)%p /= p .or. grid%bc(n)%type == 0) cycle
+        i = grid%bc(n)%i ; j = grid%bc(n)%j ; k = grid%bc(n)%k
+        next(nn) = 0
+        if (head(i,j,k) == 0) then
+          head(i,j,k) = nn
+        else
+          next(tail(i,j,k)) = nn
+        end if
+        tail(i,j,k) = nn
+      end do
+      do k = 1, grid%blk(b)%dim(3)
+      do j = 1, grid%blk(b)%dim(2)
+      do i = 1, grid%blk(b)%dim(1)
+        if (head(i,j,k) == 0) cycle
+        c = c + 1
+        cells%first(c) = r + 1
+        nn = head(i,j,k)
+        do while (nn /= 0)
+          r = r + 1
+          cells%rec(r) = grid%local_bc_idx(nn)
+          nn = next(nn)
+        end do
+      end do ; end do ; end do
+      deallocate(head, tail)
+    end do
+    cells%first(ncell + 1) = r + 1
+    deallocate(next)
+  end subroutine collect_boundary_cells
 
 
   !> Build the halo schedule from the BC list. Every rank scans the same list in the

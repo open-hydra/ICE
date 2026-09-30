@@ -18,45 +18,34 @@ contains
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4),      intent(in)    :: p
-    integer(kind=I4) :: n, nn, b, f, i, j, k
+    integer(kind=I4) :: n, c, r, b, f, i, j, k
     integer(kind=I4) :: ig, jg, kg, ig2, jg2, kg2, ip, jp, kp
     integer(kind=I4) :: dir
     real(kind=R8)    :: normal(3), area
     real(kind=R8)    :: dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th
     real(kind=R8)    :: beta_val
     real(kind=R8)    :: priml(ncond_max), primr(ncond_max), flux(ncond_max)
-    integer(kind=I4) :: v
 
+    !> The residual was zeroed by zero_residual at the start of the stage and
+    !> nothing has written it since, so the boundary fluxes are its first terms.
     bad_recon = .false.
     !$OMP PARALLEL DEFAULT(NONE), &
     !$OMP SHARED(grid, p, ncond, mat_of, solid_of, riemann, obj_time_scheme, obj_condensed), &
-    !$OMP PRIVATE(n, nn, b, f, i, j, k, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, &
+    !$OMP PRIVATE(n, c, r, b, f, i, j, k, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, &
     !$OMP         dir, normal, area, dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th, &
-    !$OMP         beta_val, priml, primr, flux, v)
-    do b = 1, grid%nb
-      if (.not. is_local_block(b)) cycle
+    !$OMP         beta_val, priml, primr, flux)
 
-      !$OMP DO COLLAPSE (3)
-      do k = 1, grid%blk(b)%dim(3)
-      do j = 1, grid%blk(b)%dim(2)
-      do i = 1, grid%blk(b)%dim(1)
-
-        grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = 0._R8
-
-      enddo ; enddo ; enddo
-      !$OMP END DO
-    enddo
-
-    !> This rank's own boundary entries only; see build_local_bc_index.
-    !$OMP DO SCHEDULE (DYNAMIC, 64)
-    do nn = 1, grid%n_local_bc
-      n = grid%local_bc_idx(nn)
-
-      if (grid%bc(n)%type == 0) cycle
+    !> One iteration per boundary cell of this rank (see build_local_bc_index),
+    !> its records in the order of the table: an edge or corner cell receives its
+    !> two or three fluxes from one thread in one fixed order, whatever the thread
+    !> count, and no accumulation is shared.
+    !$OMP DO SCHEDULE (DYNAMIC, 16)
+    do c = 1, grid%bcells(p)%n
+    do r = grid%bcells(p)%first(c), grid%bcells(p)%first(c+1) - 1
+      n = grid%bcells(p)%rec(r)
 
       b = grid%bc(n)%b
       i = grid%bc(n)%i ; j = grid%bc(n)%j ; k = grid%bc(n)%k
-      if (grid%bc(n)%p /= p) cycle
       f = grid%bc(n)%f
 
       !> Nothing crosses a symmetry face of a pressureless cloud
@@ -116,13 +105,10 @@ contains
 
       end select
 
-      !> Edge and corner cells carry one entry per boundary face, handled by different
-      !> threads: accumulate atomically.
-      do v = 1, ncond(p)
-        !$OMP ATOMIC
-        grid%blk(b)%cond_phase(p)%residual(v,i,j,k) = grid%blk(b)%cond_phase(p)%residual(v,i,j,k) + flux(v)
-      enddo
+      grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = &
+        grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) + flux(1:ncond(p))
 
+    enddo
     enddo
     !$OMP END PARALLEL
     if (bad_recon) then

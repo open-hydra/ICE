@@ -220,10 +220,10 @@ ice_add_equiv3d(Equiv3DStage threads
     "fast;implementation;3D;openmp")
 
 # The full run (RK2, a signal crossing one block width), every cell compared.
-# Measured RED on 2026-09-30 on 2, 3 and 8 threads: a corner cell's three
-# boundary records are accumulated with `!$OMP ATOMIC` in thread order
-# (Mod_BC_Fluxes). Not in the fast tier until the boundary loop is owner-computes.
-ice_add_equiv3d(Equiv3DThreads threads "" "implementation;3D;openmp")
+# RED until 2026-09-30 on 2, 3 and 8 threads, when a corner cell's three boundary
+# records were accumulated with `!$OMP ATOMIC` in thread order; GREEN since the
+# boundary loop is owner-computes (Mod_BC_Fluxes).
+ice_add_equiv3d(Equiv3DThreads threads "" "fast;implementation;3D;openmp")
 
 # Each family alone against the three together: the ghost fill and the halo
 # must carry every family.
