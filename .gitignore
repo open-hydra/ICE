@@ -1,7 +1,7 @@
 # Building file
 CMakePresets.json
 build
-build-*
+/build-*
 
 # Docs output
 site
@@ -30,5 +30,5 @@ __pycache__/
 .claude-context/
 plan-bucket/
 CLAUDE.md
-bin-*
+/bin-*
 ICE-commit.txt
