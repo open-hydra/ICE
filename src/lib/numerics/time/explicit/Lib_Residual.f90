@@ -28,8 +28,7 @@ contains
         grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = 0._R8
 
       enddo ; enddo ; enddo
-      !$OMP END DO
-
+      !$OMP END DO nowait
     enddo
     !$OMP END PARALLEL
 
@@ -57,8 +56,7 @@ contains
                                grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) )
 
       enddo ; enddo ; enddo
-      !$omp end do
-
+      !$omp end do nowait
     enddo
     !$OMP END PARALLEL
 

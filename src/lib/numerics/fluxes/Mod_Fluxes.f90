@@ -37,13 +37,16 @@ contains
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m,     only: obj_space_scheme, obj_condensed
     use ICE_Lib_Shock_Detector, only: SD_rho
-    !$ use omp_lib,             only: omp_get_num_threads, omp_get_thread_num
+    !$ use omp_lib,             only: omp_get_max_threads
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
     integer(kind=I4) :: b, i, j, k, t, nt, nthreads, ni, nj, nk, nc, ni_max, nj_max
     logical          :: deep
-    type(tile_type), allocatable :: tiles(:)
+    !> tiles is each thread's inside the region; the serial pass before it uses its
+    !> own tiles0: ifx 2023.1 reports "already allocated" at the first allocation of a
+    !> PRIVATE copy whose original was allocated and freed before the region.
+    type(tile_type), allocatable :: tiles(:), tiles0(:)
     !> Per-thread face buffers, sized once per region to the largest local block:
     !> the i-faces of a line, the j-faces below (jlo) and above (jhi) a row, the
     !> k-faces below (klo) and above (khi) a plane (deep blocks only). Moving up a
@@ -53,15 +56,26 @@ contains
 
     nc = ncond(p)
     bad_recon = .false.
+    !> The tiling is decided by the thread count the region will have at most, so
+    !> that the shared seam or k-face planes every local block needs can be grown
+    !> here, once, instead of by a SINGLE (and its barrier) per block.
+    nthreads = 1
+    !$ nthreads = omp_get_max_threads()
     ni_max = 0 ; nj_max = 0
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
-      ni_max = max(ni_max, grid%blk(b)%dim(1)) ; nj_max = max(nj_max, grid%blk(b)%dim(2))
+      ni = grid%blk(b)%dim(1) ; nj = grid%blk(b)%dim(2) ; nk = grid%blk(b)%dim(3)
+      ni_max = max(ni_max, ni) ; nj_max = max(nj_max, nj)
+      call make_tiles(ni, nj, nk, nthreads, tiles0, deep)
+      if (deep) then
+        call grow(seam, nc, ni, nj, size(tiles0))
+      else if (nk > 1) then
+        call grow(kface, nc, ni, nj, nk)
+      end if
     end do
-    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b, i, j, k, t, nt, nthreads, ni, nj, nk, deep, tiles, &
+    if (allocated(tiles0)) deallocate(tiles0)
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b, i, j, k, t, nt, ni, nj, nk, deep, tiles, &
     !$OMP                                  fi, gj, hk, jlo, jhi, klo, khi, sw)
-    nthreads = 1
-    !$ nthreads = omp_get_num_threads()
     allocate(fi(nc, 0:ni_max), gj(nc, ni_max, 0:1), hk(nc, ni_max, nj_max, 0:1))
     jlo = 0 ; jhi = 1 ; klo = 0 ; khi = 1
     do b = 1, grid%nb
@@ -99,13 +113,6 @@ contains
       !> each: the top faces of every tile's last plane (deep block), or every
       !> k-face of the block (shallow block).
       if (deep) then
-        !$OMP SINGLE
-        if (allocated(seam)) then
-          if (size(seam,1) < nc .or. size(seam,2) < ni .or. size(seam,3) < nj .or. size(seam,4) < nt) &
-            deallocate(seam)
-        end if
-        if (.not. allocated(seam)) allocate(seam(nc, ni, nj, nt))
-        !$OMP END SINGLE
         !$OMP DO SCHEDULE (STATIC)
         do t = 1, nt
           k = tiles(t)%k2
@@ -118,13 +125,6 @@ contains
         enddo
         !$OMP END DO
       else if (nk > 1) then
-        !$OMP SINGLE
-        if (allocated(kface)) then
-          if (size(kface,1) < nc .or. size(kface,2) < ni .or. size(kface,3) < nj .or. size(kface,4) < nk) &
-            deallocate(kface)
-        end if
-        if (.not. allocated(kface)) allocate(kface(nc, ni, nj, nk))
-        !$OMP END SINGLE
         !$OMP DO SCHEDULE (STATIC)
         do t = 1, nt
           do k = tiles(t)%k1, min(tiles(t)%k2, nk-1)
@@ -240,6 +240,17 @@ contains
     endif
 
   end subroutine compute_flux
+
+
+  !> Grow a shared plane array to hold at least n1 x n2 x n3 x n4 (never shrunk).
+  subroutine grow(a, n1, n2, n3, n4)
+    real(R8), allocatable, intent(inout) :: a(:,:,:,:)
+    integer, intent(in) :: n1, n2, n3, n4
+    if (allocated(a)) then
+      if (size(a,1) < n1 .or. size(a,2) < n2 .or. size(a,3) < n3 .or. size(a,4) < n4) deallocate(a)
+    end if
+    if (.not. allocated(a)) allocate(a(n1, n2, n3, n4))
+  end subroutine grow
 
 
   !> The tiles of a block for nthreads threads. Deep (nk >= nthreads, or a 2-D block

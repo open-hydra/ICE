@@ -24,7 +24,7 @@ contains
         do i = 1, grid%blk(b)%dim(1)
           grid%blk(b)%cond_phase(p)%prim_old(:,i,j,k) = grid%blk(b)%cond_phase(p)%prim(:,i,j,k)
         end do ; enddo ; enddo
-        !$omp end do
+        !$omp end do nowait
       enddo
     enddo
 
@@ -69,7 +69,7 @@ contains
         endif
 
       end do ; end do ; end do
-      !$OMP END DO
+      !$OMP END DO nowait
     enddo
     !$OMP END PARALLEL
     if (bad_state) then

@@ -38,8 +38,7 @@ contains
                               obj_condensed(mat_of(p)), nbase(p)         )
   
       enddo ; enddo ; enddo
-      !$OMP END DO
-
+      !$OMP END DO nowait
     enddo
     !$OMP END PARALLEL
 
