@@ -38,6 +38,22 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   OPTION(USE_MPI    "Use the MPI library for parallelization" OFF)
   OPTION(USE_OPENMP "Use OpenMP for parallelization"          OFF)
 
+  # Interprocedural optimisation across the modules. The flux path reaches the
+  # reconstruction, the limiter and the Riemann solver through procedures of
+  # other files, which -O3 alone never inlines. Off by default, because it moves
+  # the last bits of the fields and the references were made without it;
+  # measured 6-10 % off the flux region at one thread (ifx 2023.1, 2026-09-30).
+  OPTION(ICE_ENABLE_IPO "Interprocedural optimisation (moves round-off: re-baseline)" OFF)
+  if (ICE_ENABLE_IPO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT ice_ipo_ok OUTPUT ice_ipo_msg LANGUAGES Fortran)
+    if (ice_ipo_ok)
+      set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+    else()
+      message(WARNING "ICE_ENABLE_IPO: not supported by this toolchain: ${ice_ipo_msg}")
+    endif()
+  endif()
+
   # This INCLUDE statement executes code that sets the compile flags for DEBUG,
   # RELEASE, and TESTING. You should review this file and make sure the flags
   # are to your liking.
