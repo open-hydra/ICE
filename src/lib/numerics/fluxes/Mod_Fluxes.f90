@@ -41,19 +41,29 @@ contains
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
-    integer(kind=I4) :: b, i, j, k, t, nt, nthreads, ni, nj, nk, nc
+    integer(kind=I4) :: b, i, j, k, t, nt, nthreads, ni, nj, nk, nc, ni_max, nj_max
     logical          :: deep
     type(tile_type), allocatable :: tiles(:)
-    !> Per-thread face buffers: the i-faces of a line, the j-faces below and above a
-    !> row, the k-faces below and above a plane (deep blocks only).
-    real(R8), allocatable :: fi(:,:), gj_lo(:,:), gj_hi(:,:), hk_lo(:,:,:), hk_hi(:,:,:)
+    !> Per-thread face buffers, sized once per region to the largest local block:
+    !> the i-faces of a line, the j-faces below (jlo) and above (jhi) a row, the
+    !> k-faces below (klo) and above (khi) a plane (deep blocks only). Moving up a
+    !> row or a plane swaps the index: the faces above become the faces below.
+    real(R8), allocatable :: fi(:,:), gj(:,:,:), hk(:,:,:,:)
+    integer(kind=I4) :: jlo, jhi, klo, khi, sw
 
     nc = ncond(p)
     bad_recon = .false.
+    ni_max = 0 ; nj_max = 0
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      ni_max = max(ni_max, grid%blk(b)%dim(1)) ; nj_max = max(nj_max, grid%blk(b)%dim(2))
+    end do
     !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b, i, j, k, t, nt, nthreads, ni, nj, nk, deep, tiles, &
-    !$OMP                                  fi, gj_lo, gj_hi, hk_lo, hk_hi)
+    !$OMP                                  fi, gj, hk, jlo, jhi, klo, khi, sw)
     nthreads = 1
     !$ nthreads = omp_get_num_threads()
+    allocate(fi(nc, 0:ni_max), gj(nc, ni_max, 0:1), hk(nc, ni_max, nj_max, 0:1))
+    jlo = 0 ; jhi = 1 ; klo = 0 ; khi = 1
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
       ni = grid%blk(b)%dim(1) ; nj = grid%blk(b)%dim(2) ; nk = grid%blk(b)%dim(3)
@@ -126,9 +136,6 @@ contains
         !$OMP END DO
       end if
 
-      allocate(fi(nc, 0:ni), gj_lo(nc, ni), gj_hi(nc, ni))
-      if (deep) allocate(hk_lo(nc, ni, nj), hk_hi(nc, ni, nj))
-
       !$OMP DO SCHEDULE (STATIC)
       do t = 1, nt
         do k = tiles(t)%k1, tiles(t)%k2
@@ -138,13 +145,13 @@ contains
           !> afterwards -- and those above it are computed here, except at the
           !> tile's last plane, where they are its own seam.
           if (deep) then
-            if (k == tiles(t)%k1 .and. k > 1) hk_lo(:,:,:) = seam(1:nc,1:ni,1:nj,t-1)
+            if (k == tiles(t)%k1 .and. k > 1) hk(1:nc,1:ni,1:nj,klo) = seam(1:nc,1:ni,1:nj,t-1)
             if (k == tiles(t)%k2) then
-              if (k < nk) hk_hi(:,:,:) = seam(1:nc,1:ni,1:nj,t)
+              if (k < nk) hk(1:nc,1:ni,1:nj,khi) = seam(1:nc,1:ni,1:nj,t)
             else
               do j = 1, nj
               do i = 1, ni
-                call face_flux(grid%blk(b), p, nc, 3, i, j, k, hk_hi(1:nc,i,j))
+                call face_flux(grid%blk(b), p, nc, 3, i, j, k, hk(1:nc,i,j,khi))
               enddo ; enddo
             end if
           end if
@@ -155,12 +162,12 @@ contains
             !> tile's first row and carried afterwards.
             if (j == tiles(t)%j1 .and. j > 1) then
               do i = 1, ni
-                call face_flux(grid%blk(b), p, nc, 2, i, j-1, k, gj_lo(1:nc,i))
+                call face_flux(grid%blk(b), p, nc, 2, i, j-1, k, gj(1:nc,i,jlo))
               enddo
             end if
             if (j < nj) then
               do i = 1, ni
-                call face_flux(grid%blk(b), p, nc, 2, i, j, k, gj_hi(1:nc,i))
+                call face_flux(grid%blk(b), p, nc, 2, i, j, k, gj(1:nc,i,jhi))
               enddo
             end if
 
@@ -182,20 +189,20 @@ contains
                 end if
                 ! direction 2
                 if (mod(j,2) == 1) then
-                  if (j < nj) r = r - gj_hi(1:nc,i)
-                  if (j > 1)  r = r + gj_lo(1:nc,i)
+                  if (j < nj) r = r - gj(1:nc,i,jhi)
+                  if (j > 1)  r = r + gj(1:nc,i,jlo)
                 else
-                  r = r + gj_lo(1:nc,i)
-                  if (j < nj) r = r - gj_hi(1:nc,i)
+                  r = r + gj(1:nc,i,jlo)
+                  if (j < nj) r = r - gj(1:nc,i,jhi)
                 end if
                 ! direction 3
                 if (deep) then
                   if (mod(k,2) == 1) then
-                    if (k < nk) r = r - hk_hi(1:nc,i,j)
-                    if (k > 1)  r = r + hk_lo(1:nc,i,j)
+                    if (k < nk) r = r - hk(1:nc,i,j,khi)
+                    if (k > 1)  r = r + hk(1:nc,i,j,klo)
                   else
-                    r = r + hk_lo(1:nc,i,j)
-                    if (k < nk) r = r - hk_hi(1:nc,i,j)
+                    r = r + hk(1:nc,i,j,klo)
+                    if (k < nk) r = r - hk(1:nc,i,j,khi)
                   end if
                 else if (nk > 1) then
                   if (mod(k,2) == 1) then
@@ -209,18 +216,23 @@ contains
               end associate
             enddo
 
-            if (j < nj) gj_lo(:,:) = gj_hi(:,:)
+            ! the faces above this row are the faces below the next one
+            if (j < nj) then
+              sw = jlo ; jlo = jhi ; jhi = sw
+            end if
           enddo
 
-          if (deep .and. k < nk) hk_lo(:,:,:) = hk_hi(:,:,:)
+          ! the faces above this plane are the faces below the next one
+          if (deep .and. k < nk) then
+            sw = klo ; klo = khi ; khi = sw
+          end if
         enddo
       enddo
       !$OMP END DO
 
-      deallocate(fi, gj_lo, gj_hi)
-      if (deep) deallocate(hk_lo, hk_hi)
       deallocate(tiles)
     enddo
+    deallocate(fi, gj, hk)
     !$OMP END PARALLEL
     if (bad_recon) then
       write(*,'(A)') ' [ERROR] [ICE::compute_flux] unphysical state at first order on an interior face'
