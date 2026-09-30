@@ -290,10 +290,11 @@ tree (`5575f65`) with the pages left where the serial first touch put them
 against the pages explicitly interleaved across sockets: interleaving cost
 **3.7×** the wall time at `1 × 80` and **1.28×** at `1 × 40`. On the
 pre-wave binary (job 303351, same node), the same comparison cost only
-8.0–9.5 % — the interleaving penalty grew with the kernel change, because the
-hot data are exactly those per-thread plane buffers, which a thread allocates
+8.0–9.5 % — the interleaving penalty grew with the kernel change, likely
+because the hot data are the per-thread plane buffers, which a thread allocates
 inside the region and which interleaving spreads across sockets instead of
-leaving local. "One rank per socket" ([§2](#2-selecting-a-parallel-configuration))
+leaving local (a hypothesis: shrinking those buffers, job 303439, did not move
+the plain `1 × 80` time). "One rank per socket" ([§2](#2-selecting-a-parallel-configuration))
 remains the right default for this reason.
 
 Until the single-rank leg is understood, prefer a multi-rank layout
@@ -555,5 +556,5 @@ Results under `results/<job>.tsv`; raw per-repetition logs under
 | 303418 | `5575f65`, same binary as 303417 | wn09 | NUMA: plain (first-touch) vs. interleaved pages at `1 × 40` and `1 × 80`. |
 | 303439 | `3d43d0e` (+ C5b, slab tiles) | wn[05-07] | Reduced matrix: C5b neutral at 1 × 80 (0.338 s), −31/−40 % on the 20-thread socket legs, many-blocks leg doubled → C5b reverted (`461eb4f`). |
 | 303482 | `461eb4f` (+ C3, parallel first touch) | wn[05-07] | Reduced matrix: C3 changed nothing (1 × 80 0.3373 s) → reverted. |
-| 303484 | `461eb4f` (final solver code) | 3 nodes | Greedy vs. halo-objective cuts (ATLAS MDB) at R12, R16, R20, R24 — §6. (303478, its first submission, ran the reverted C5b binary and was cancelled.) |
-| 303485 | `461eb4f` (final solver code) | 3 nodes | The full nine-point matrix on the final tree — running when this page was written. (303481, its first submission, was cancelled for the same reason.) |
+| 303484 | `461eb4f` (the final solver code plus C3, measured neutral and reverted afterwards) | 3 nodes | Greedy vs. halo-objective cuts (ATLAS MDB) at R12, R16, R20, R24 — §6. (303478, its first submission, ran the reverted C5b binary and was cancelled.) |
+| 303485 | `461eb4f` (the final solver code plus C3, measured neutral and reverted afterwards) | 3 nodes | The full nine-point matrix on the final tree — running when this page was written. (303481, its first submission, was cancelled for the same reason.) |
