@@ -28,14 +28,19 @@ it costs nothing in stability.
 Threading is over the cells of a block, not over blocks, so a single large block
 threads as well as many small ones. Two details shape the scaling:
 
-- The interior flux loop gathers: each thread owns a tile of the block (a range of
-  whole k-planes when the block has at least as many planes as threads, pieces of a
-  plane otherwise), computes every face flux of its tile once into private line, row
-  and plane buffers, and applies the two faces of each direction to each cell in the
-  order the earlier odd-then-even scatter passes gave them — so the residual is bit
-  for bit the scatter form's, and independent of the thread count. Per block and stage
-  there are three worksharing loops (the shock-detector pass, the faces on the tile
-  seams, the sweep) where the scatter form had a pass per parity per direction.
+- The interior flux loop gathers: each thread owns a tile of the block — a range of
+  k-planes by a slab of j-rows, the slab cut so that the thread's two plane buffers
+  stay within 512 kB whatever the plane size (`plane_budget` in `Mod_Fluxes.f90`), the
+  ranges bringing the tile count to the thread count — computes every face flux of its
+  tile once into private line, row and plane buffers, and applies the two faces of
+  each direction to each cell in the order the earlier odd-then-even scatter passes
+  gave them — so the residual is bit for bit the scatter form's, and independent of
+  the thread count and of the tiling. Per block and stage there are three worksharing
+  loops (the shock-detector pass, the k-faces on the range boundaries, the sweep)
+  where the scatter form had a pass per parity per direction. The slab matters: with
+  whole-plane buffers, one rank of 80 threads on a 192³ block held 94 MB of them per
+  socket against 27.5 MB of L3 and ran the sweep slower than the scatter form did
+  (monolith, 2026-09-30), while four ranks of 20 on 96×96 planes did not.
 - The boundary flux loop is `SCHEDULE(DYNAMIC, 16)` over the rank's boundary cells of
   the family, each cell accumulating its records in table order on one thread — a
   block corner in 3-D carries three — so 2-D and 3-D runs are bit-identical across
