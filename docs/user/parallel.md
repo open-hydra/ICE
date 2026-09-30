@@ -256,12 +256,12 @@ column when asking "how well does the parallelisation itself hold up".
 
 ### Since the baseline: the 2026-09-30 optimization wave
 
-None of this session's fixes has a full nine-point matrix yet: job 303439,
-which would produce one for the tree including the fix below, was still
-running when this page was written. What exists is a reduced matrix at the
-four points that matter most — job 303417, tree `5575f65` (C4a + C4b, threaded
-halo pack/unpack and per-region flux buffers), run on the same three nodes
-(wn[05-07]) as the baseline above, so the comparison is clean:
+The full nine-point matrix on the final tree is job 303485 (running when this
+page was written; its numbers replace the baseline table above when it lands).
+What exists is a reduced matrix at the four points that matter most — job
+303417, tree `5575f65` (C4a + C4b, threaded halo pack/unpack and per-region
+flux buffers), run on the same three nodes (wn[05-07]) as the baseline above,
+so the comparison is clean:
 
 | Cores | Layout | 303350 (baseline) | 303417 (wave) | Change |
 | ---: | --- | ---: | ---: | ---: |
@@ -271,13 +271,18 @@ halo pack/unpack and per-region flux buffers), run on the same three nodes
 | 80 | `1 × 80` | 0.3241 s | 0.3368 s | +3.9 % |
 
 Every multi-rank point got faster. The single-rank, 80-thread point got
-**slower**, and the cause is the same gather-form flux kernel that made the
-rest faster: with one rank of 80 threads spanning all four sockets, its
-per-thread plane buffers add up to 94 MB per socket against 27.5 MB of L3, so
-the kernel thrashes cache on one 192³ block in a way it does not on the four
-96×96×192 blocks a `4 × 20` layout gives it — see
-[Performance Notes](../development/performance_notes.md#openmp) for the
-mechanism.
+**slower**, and its cause is **open**: two candidate fixes were built, proven
+byte-identical and measured on the same nodes, and neither moved it. Slab
+tiles that keep the flux kernel's per-thread plane buffers inside the cache
+(job 303439) took 6 % off the sweep but left the leg at 0.338 s, cost 31–40 %
+on the 20-thread socket legs through an unbalanced tile count and doubled the
+many-blocks leg, so they were reverted; a parallel first touch of the block
+fields (job 303482) changed nothing at all (0.3373 s) and was reverted too —
+the kernel's automatic NUMA balancing very likely places the pages within the
+first iterations already. On the current tree the leg pays about 25 % more in
+the per-cell streaming phases and 12 % more in the flux sweep than `4 × 20`
+does for the same cells; a memory-access profile of `omp-C80-1x80` is the next
+step.
 
 Interleaving memory pages does **not** fix this, and makes it markedly worse on
 the current kernel. Job 303418 measured `1 × 80` and `1 × 40` on the wave's
@@ -291,14 +296,18 @@ inside the region and which interleaving spreads across sockets instead of
 leaving local. "One rank per socket" ([§2](#2-selecting-a-parallel-configuration))
 remains the right default for this reason.
 
-A fix is committed on top of the wave: `C5b` retiles the flux loop into
-k-range × j-slab tiles sized to keep a thread's plane buffers under a fixed
-cache budget (`plane_budget` in `Mod_Fluxes.f90`; see
-[Performance Notes](../development/performance_notes.md#openmp)). Its
-full-matrix measurement (job 303439) had not finished when this page was
-written — its result is not reported here. Until that measurement lands,
-treat `1 × 80` as unverified on the current tree and prefer a multi-rank
-layout (`4 × 20` or more) on one node.
+Until the single-rank leg is understood, prefer a multi-rank layout
+(`4 × 20` or more) on one node: it is 11 % faster than the baseline where
+`1 × 80` is 4 % slower.
+
+**Decomposition quality** (job 303484, greedy cuts of the campaign against
+the halo-objective cuts of ATLAS MDB's search, same binary): at 12 ranks the
+two are equal (0.1004 vs. 0.1006 s at `12 × 20`; the halo is a few per cent of
+the iteration there), at 16 ranks equal within noise, at 24 ranks the search's
+cut is 3.4 % faster in pure MPI (`24 × 1`, 0.656 → 0.633 s) and 4.3 % faster at
+`4 × 20` with six blocks per rank (0.320 → 0.306 s, exchange wait 6.3 → 3.3 %),
+and 20 ranks — which the greedy cutter could not balance — run at 87 % wall
+efficiency on the search's 5×2×2 cut.
 
 ---
 
@@ -544,5 +553,7 @@ Results under `results/<job>.tsv`; raw per-repetition logs under
 | 303402 | `e7cdef7` (+ C1, C9a, C9b) | wn[04-06] | Reduced matrix. Source of the halo breakdown's "after" column. |
 | 303417 | `5575f65` (+ C4a, C4b) | wn[05-07], same nodes as 303350 | Reduced matrix: the wave's before/after at the four points in §6, plus `blk-C80-1x80-R24`. |
 | 303418 | `5575f65`, same binary as 303417 | wn09 | NUMA: plain (first-touch) vs. interleaved pages at `1 × 40` and `1 × 80`. |
-| 303439 | `3d43d0e` (+ C5b, the flux-tiling fix) | wn[05-07] | Reduced matrix meant to measure the C5b fix — still running when this page was written; no result reported here. |
-| 303478 | `3d43d0e`, same tree as 303439 | 3 nodes | Greedy vs. halo-aware mesh cuts (ATLAS MDB) — queued when this page was written; no result reported here. |
+| 303439 | `3d43d0e` (+ C5b, slab tiles) | wn[05-07] | Reduced matrix: C5b neutral at 1 × 80 (0.338 s), −31/−40 % on the 20-thread socket legs, many-blocks leg doubled → C5b reverted (`461eb4f`). |
+| 303482 | `461eb4f` (+ C3, parallel first touch) | wn[05-07] | Reduced matrix: C3 changed nothing (1 × 80 0.3373 s) → reverted. |
+| 303484 | `461eb4f` (final solver code) | 3 nodes | Greedy vs. halo-objective cuts (ATLAS MDB) at R12, R16, R20, R24 — §6. (303478, its first submission, ran the reverted C5b binary and was cancelled.) |
+| 303485 | `461eb4f` (final solver code) | 3 nodes | The full nine-point matrix on the final tree — running when this page was written. (303481, its first submission, was cancelled for the same reason.) |
