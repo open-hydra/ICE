@@ -256,12 +256,31 @@ column when asking "how well does the parallelisation itself hold up".
 
 ### Since the baseline: the 2026-09-30 optimization wave
 
-The full nine-point matrix on the final tree is job 303485 (running when this
-page was written; its numbers replace the baseline table above when it lands).
-What exists is a reduced matrix at the four points that matter most — job
-303417, tree `5575f65` (C4a + C4b, threaded halo pack/unpack and per-region
-flux buffers), run on the same three nodes (wn[05-07]) as the baseline above,
+The full nine-point matrix on the final tree is job 303485 (tree `461eb4f`,
+the final solver code plus one change measured neutral and reverted
+afterwards), run on the same three nodes (wn[05-07]) as the baseline above,
 so the comparison is clean:
+
+| Cores | Nodes | MPI × OpenMP | 303350 wall/iter | 303485 wall/iter | Change | 303350 core-cycle eff. | 303485 core-cycle eff. |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1 | `1 × 1` | 14.52 s | 13.13 s | -9.5 % | 100.0 % | 100.0 % |
+| 4 | 1 | `4 × 1` | 3.721 s | 3.335 s | -10.4 % | 97.5 % | 98.4 % |
+| 8 | 1 | `4 × 2` | 1.913 s | 1.726 s | -9.8 % | 95.7 % | 95.9 % |
+| 16 | 1 | `4 × 4` | 1.011 s | 0.9046 s | -10.6 % | 95.1 % | 96.2 % |
+| 20 | 1 | `4 × 5` | 0.8233 s | 0.7422 s | -9.9 % | 95.5 % | 95.9 % |
+| 40 | 1 | `4 × 10` | 0.4753 s | 0.4278 s | -10.0 % | 89.2 % | 89.4 % |
+| 80 | 1 | `4 × 20` | 0.3336 s | 0.2952 s | -11.5 % | 80.8 % | 82.1 % |
+| 160 | 2 | `8 × 20` | 0.1671 s | 0.1475 s | -11.7 % | 80.5 % | 82.4 % |
+| 240 | 3 | `12 × 20` | 0.1174 s | 0.1006 s | -14.3 % | 76.5 % | 80.6 % |
+
+Core-cycle efficiency is anchor cycles over cycles per iteration, each job
+against its own anchor. The multi-rank points gained 9.5–14.5 % in time and
+1.3–4.1 points of core-cycle efficiency (the halo work of
+[§9](#9-scaling-across-nodes) is where the three-node point gained most);
+pure MPI at 24 ranks went from 86.8 % to 90.0 %, the 16 × 5 layout from
+81.0 % to 83.3 %, one socket of 20 threads from 94.1 % to 92.9 % (0.837 →
+0.767 s). The same matrix, at the four points first measured with the reduced
+job 303417 (tree `5575f65`, the same nodes):
 
 | Cores | Layout | 303350 (baseline) | 303417 (wave) | Change |
 | ---: | --- | ---: | ---: | ---: |
@@ -557,4 +576,4 @@ Results under `results/<job>.tsv`; raw per-repetition logs under
 | 303439 | `3d43d0e` (+ C5b, slab tiles) | wn[05-07] | Reduced matrix: C5b neutral at 1 × 80 (0.338 s), −31/−40 % on the 20-thread socket legs, many-blocks leg doubled → C5b reverted (`461eb4f`). |
 | 303482 | `461eb4f` (+ C3, parallel first touch) | wn[05-07] | Reduced matrix: C3 changed nothing (1 × 80 0.3373 s) → reverted. |
 | 303484 | `461eb4f` (the final solver code plus C3, measured neutral and reverted afterwards) | 3 nodes | Greedy vs. halo-objective cuts (ATLAS MDB) at R12, R16, R20, R24 — §6. (303478, its first submission, ran the reverted C5b binary and was cancelled.) |
-| 303485 | `461eb4f` (the final solver code plus C3, measured neutral and reverted afterwards) | 3 nodes | The full nine-point matrix on the final tree — running when this page was written. (303481, its first submission, was cancelled for the same reason.) |
+| 303485 | `461eb4f` (the final solver code plus C3, measured neutral and reverted afterwards) | wn[05-07], same nodes as 303350 | The full nine-point matrix on the final tree, 63 runs — the second table of §6 and the before/after of every leg. (303481, its first submission, was cancelled for the same reason as 303478.) |
