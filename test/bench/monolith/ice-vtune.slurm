@@ -61,20 +61,27 @@ profile () {
   fi
 }
 
+if [ -z "${ICE_VTUNE_COLLECT:-}" ]; then
 echo "=== plain timing of the three legs, no profiler ==="
 ice_run "plain-1x80"      INPUT     1 80 1 "$(spread 80)" 1
 ice_run "plain-1x20"      INPUT     1 20 1 "$(spread 20)" 1
 ice_run "plain-1x80-R24"  INPUT-R24 1 80 1 "$(spread 80)" 1
+fi
 
-for col in hotspots threading; do
+# ICE_VTUNE_COLLECT selects the collections (default: all three); each has its
+# own knob for software sampling (hotspots: sampling-mode, threading:
+# sampling-and-waits; memory-access is hardware sampling by nature).
+for col in ${ICE_VTUNE_COLLECT:-hotspots threading memory-access}; do
   echo "=== $col ==="
-  profile 1x80      INPUT     80 $col -knob sampling-mode=sw
-  profile 1x20      INPUT     20 $col -knob sampling-mode=sw
-  profile 1x80-R24  INPUT-R24 80 $col -knob sampling-mode=sw
+  case $col in
+    hotspots)      knob="-knob sampling-mode=sw" ;;
+    threading)     knob="-knob sampling-and-waits=sw" ;;
+    memory-access) knob="-knob analyze-mem-objects=false" ;;   # hardware counters: may be refused
+    *) echo "unknown collection $col"; continue ;;
+  esac
+  profile 1x80      INPUT     80 $col $knob
+  profile 1x20      INPUT     20 $col $knob
+  profile 1x80-R24  INPUT-R24 80 $col $knob
 done
-
-echo "=== memory-access (hardware counters: may be refused on this node) ==="
-profile 1x80      INPUT     80 memory-access -knob analyze-mem-objects=false
-profile 1x80-R24  INPUT-R24 80 memory-access -knob analyze-mem-objects=false
 
 echo "ICE-VTUNE DONE"
