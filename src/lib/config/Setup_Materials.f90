@@ -157,11 +157,11 @@ contains
       character(len=*), intent(in) :: tokens
       character(len=256) :: tok, key, value
       real(R8) :: x
-      integer  :: k, e, ios
+      integer  :: k, kn, e, ios
 
       k = 1
       do
-        call next_field(tokens, k, tok, k)
+        call next_field(tokens, k, tok, kn); k = kn
         if (len_trim(tok) == 0) exit
         e = index(tok, '=')
         if (e < 2) call refuse(material_label(m)//': "'//trim(tok)//'" is not a key=value token')
@@ -240,7 +240,7 @@ contains
     character(len=256)  :: tok
     character(len=23)   :: key
     real(R8) :: x
-    integer  :: i, m, n, k, err, aerr, ios
+    integer  :: i, m, n, k, kn, err, aerr, ios
 
     call Open_Ini(fini)
     do i = 1, size(vector_keys)
@@ -263,7 +263,7 @@ contains
       if (nmat == 1) cycle
       k = 1
       do m = 1, nmat
-        call next_field(buf, k, tok, k)
+        call next_field(buf, k, tok, kn); k = kn
         read(tok, *, iostat=ios) x
         if (ios /= 0 .or. index(tok, ',') > 0) call refuse('['//trim(codename)//'-Physics] '// &
           trim(key)//': "'//trim(tok)//'" is not a real number')
@@ -314,11 +314,11 @@ contains
   integer function count_fields(line)
     character(len=*), intent(in) :: line
     character(len=256) :: f
-    integer :: k
+    integer :: k, kn
     count_fields = 0
     k = 1
     do
-      call next_field(line, k, f, k)
+      call next_field(line, k, f, kn); k = kn
       if (len_trim(f) == 0) exit
       count_fields = count_fields + 1
     enddo
