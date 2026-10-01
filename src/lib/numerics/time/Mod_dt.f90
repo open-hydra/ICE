@@ -27,8 +27,9 @@ contains
     tau_limit = (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) .and. tau_factor > 0._R8
 
     !> Per-thread minimum, merged once below: updating grid%dtglobal inside the
-    !> worksharing loop would race between threads.
-    dtmin = grid%dtglobal
+    !> worksharing loop would race between threads, and so would reading it here
+    !> while another thread merges (the blocks carry no barrier between them).
+    dtmin = huge(dtmin)
 
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
@@ -68,8 +69,7 @@ contains
         dtmin = min (dtmin, grid%blk(b)%cond_phase(p)%dt(i,j,k))
 
       enddo ; enddo ; enddo
-      !$omp end do
-
+      !$omp end do nowait
     enddo
 
     !$omp critical (ice_dtglobal)
@@ -124,8 +124,7 @@ contains
           grid%blk(b)%cond_phase(p)%dt(i,j,k) = grid%dtglobal
         
         end do ; end do ; end do
-        !$omp end do
-
+        !$omp end do nowait
       enddo
     enddo  
   

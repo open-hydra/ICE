@@ -53,6 +53,14 @@ module ICE_Advanced_Types_m
     type(ICE_cond_phase_type), dimension(:),  allocatable :: cond_phase
   end type ICE_block_type
 
+  !> The boundary cells of one family that this rank owns, each with its records
+  !> in the order of the boundary table: cell c holds rec(first(c):first(c+1)-1).
+  !> Built by build_local_bc_index; read by compute_bound.
+  type :: ICE_bc_cells_type
+    integer                            :: n = 0
+    integer, dimension(:), allocatable :: first, rec
+  end type ICE_bc_cells_type
+
   type, extends(bc_type) :: ICE_bc_type
     integer  :: p                                       ! Particle group index
     real(R8) :: massflux, velocity, temperature
@@ -79,6 +87,9 @@ module ICE_Advanced_Types_m
     integer, dimension(:), allocatable  :: local_bc_idx
     integer                              :: n_local_bs = 0
     integer, dimension(:), allocatable  :: local_bs_idx
+    type(ICE_bc_cells_type), dimension(:), allocatable :: bcells   ! one per family
+    ! The same records grouped by family: family p is local_bc_grp(grp_first(p):grp_first(p+1)-1)
+    integer, dimension(:), allocatable  :: local_bc_grp, grp_first
   end type ICE_domain_type
 
   type :: ICE_simulation_type

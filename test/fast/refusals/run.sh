@@ -172,7 +172,8 @@ valid='solidification=on h-fus=1.07e6 cp-solid=600'
 accept Doisneau/MK "solidification: read and reported" "tokens '$valid' && sed -i 's/^iter-threshold .*/iter-threshold = 20/' input.ini" \
        " - Solid   --> material 1 (A)"
 solid_out=$WORK/$(echo "solidification: read and reported" | tr -c 'A-Za-z0-9\n' '_')/OUTPUT/part-field.tec
-if grep -qF '"n_p1""f_p1""chi_p1"' "$solid_out" 2>/dev/null; then
+# The names are quoted or bare, spaced or not, by the writer in use
+if grep -qE 'n_p1"? *"?f_p1"? *"?chi_p1' "$solid_out" 2>/dev/null; then
   echo "[fast] PASS: solidification: f_p1 and chi_p1 follow n_p1 in the output"
 else
   echo "[fast] FAIL: solidification: the output does not name f_p1 and chi_p1 after n_p1"; fail=1
@@ -194,7 +195,7 @@ refuse Doisneau/MK "solidification: a varying density" \
        "tokens '$valid' && python3 -c \"L=open('INPUT/part-properties.dat').read().split(chr(10))[:4]; L+=['%.1f 1500.0 %.10g %.10g' % (T, 2000+0.1*T, 1500*T) for T in range(1, 5001)]; open('INPUT/part-properties.dat','w').write(chr(10).join(L)+chr(10))\"" \
        "solidification=on requires a constant-density material"
 refuse Doisneau/MK "solidification: an IC of the wrong width" \
-       "tokens '$valid' && python3 -c \"import re; L=open('INPUT/part-ic.tec').read().rstrip(chr(10)).split(chr(10)); I,J,K=[int(re.search(r'\\b%s\\s*=\\s*(\\d+)' % c, L[1]).group(1)) for c in 'IJK']; n=(I-1)*(J-1)*(K-1); open('INPUT/part-ic.tec','w').write(chr(10).join(L+L[-n:])+chr(10))\"" \
+       "tokens '$valid' && python3 -c \"import re; L=open('INPUT/part-ic.tec').read().rstrip(chr(10)).split(chr(10)); I,J,K=[int(re.search(r'\\b%s\\s*=\\s*(\\d+)' % c, L[1]).group(1)) for c in 'IJK']; n=(I-1)*(J-1)*(K-1); L[0]=L[0].rstrip()+' '+chr(34)+'xp1'+chr(34); L[1]=L[1].replace('[4-9]','[4-10]'); open('INPUT/part-ic.tec','w').write(chr(10).join(L+L[-n:])+chr(10))\"" \
        "the initial condition holds 7 variables per cell"
 refuse Doisneau/MK "tokens: only the infinite-conductivity liquid" "tokens liquid-conduction=P2T" \
        "Wrong liquid-conduction input ---> P2T;- ITC"

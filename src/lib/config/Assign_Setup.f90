@@ -13,15 +13,13 @@ contains
     use ICE_Lib_Limiters,  only: assign_limiter
     use ICE_Lib_Drag,      only: assign_drag
     use ICE_Lib_Heat,      only: assign_heat
+    use ICE_IO_Solution,   only: io_extension
     use ICE_Lib_Evaporation, only: assign_evaporation, assign_interface, assign_blowing
     implicit none
     integer :: p
     logical :: gas_present
 
     ! --- Condensed phase to read: [ICE-Parameters] phase = <ATLAS phase name> ---
-    ! Sets the prefix of every INPUT/OUTPUT file this solver touches (IO_BC, Load_Table,
-    ! IO_Solution, Wrap_Postprocess). Absent keeps the prefix already in force: a parent app
-    ! (hydra-MI2) may have set it, and standalone runs keep the 'part-' default.
     if (len_trim(adjustl(obj_sim_param%phase)) > 0) then
       obj_sim_param%phase = adjustl(obj_sim_param%phase)
       if (index(trim(obj_sim_param%phase), '-') > 0) then
@@ -31,13 +29,15 @@ contains
       ICE_phase_prefix = trim(obj_sim_param%phase)//'-'
     endif
 
-    ! --- Detect one-way coupling from gas file presence ---
-    inquire(file='INPUT/gas.tec', exist=gas_present)
-    obj_sim_param%owcoupled = gas_present
-
     ! --- Parse format strings into arrays ---
     call parse(obj_io%ini_format, ' ', obj_io%ini_fmt)
     call parse(obj_io%sol_format, ' ', obj_io%sol_fmt)
+
+    ! --- Detect one-way coupling from gas file presence ---
+    ! The name follows `gas-path` and `ic-format`, as the reader does.
+    inquire(file=trim(obj_io%gaspath)//'gas'//io_extension(obj_io%ini_fmt), &
+            exist=gas_present)
+    obj_sim_param%owcoupled = gas_present
 
     ! --- Shock detector ---
     obj_space_scheme%SD = (trim(obj_space_scheme%shock_detector) == 'Jameson')
@@ -50,10 +50,6 @@ contains
       end if
       call assign_limiter(obj_space_scheme%flux_limiter)
     else
-      !> A first-order reconstruction is a zero slope, which the IORD limiter
-      !  expresses. state_reconstruction calls the limiter whatever the
-      !  reconstruction, so one must always be assigned. IORD is not an input: it is
-      !  what `space-reconstruction = first-order` means.
       call assign_limiter('IORD')
     end if
 

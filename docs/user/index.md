@@ -12,9 +12,17 @@ Everything you need to configure and run ICE simulations.
 
     ---
 
-    Case layout, running in parallel, output and restarting
+    Case layout, running, output and restarting
 
     [:octicons-arrow-right-24: Using ICE](using.md)
+
+-   :material-chip:{ .lg .middle } __Parallel Execution__
+
+    ---
+
+    Choosing ranks and threads, placement, and how ICE scales
+
+    [:octicons-arrow-right-24: Parallel execution](parallel.md)
 
 -   :material-file-cog:{ .lg .middle } __Input File__
 

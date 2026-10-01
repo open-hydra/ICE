@@ -49,11 +49,12 @@ module ICE_Config_Types_m
     integer             :: sol_diter, shell_diter, ini_diter, res_diter
     real(R8)            :: sol_dtime
     logical             :: sol_overwrite
+    logical             :: timers            ! Per-iteration wall/cycle instrumentation
     character(len=llen) :: ini_format        ! Initial condition format, e.g. 'tecplot ascii'
     character(len=clen) :: ini_fmt(2)        ! Parsed: (reader, mode), set by Assign_Setup
     character(len=llen) :: sol_format        ! e.g. 'tecplot ascii'
     character(len=clen) :: sol_fmt(2)        ! Parsed: (writer, mode), set by Assign_Setup
-    character(4)        :: extension
+    character(8)        :: extension  ! '.tec', '.vtm' or '.szplt' -- 4 truncated the last
     character(len=hlen) :: gaspath           ! Gas-phase solution path (restart/coupling)
     integer             :: init              ! Initialisation flag
     ! Useful variables

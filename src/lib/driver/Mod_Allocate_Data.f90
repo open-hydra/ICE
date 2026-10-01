@@ -80,12 +80,12 @@ contains
       allocate( blk%cond_phase(p)%prim_old (1:ncond(p), 1-gc:ni+gc, 1-gc:nj+gc, 1-gc:nk+gc) )
       allocate( blk%cond_phase(p)%source   (1:ncond(p), 1:ni, 1:nj, 1:nk) )
       allocate( blk%cond_phase(p)%residual (1:ncond(p), 1:ni, 1:nj, 1:nk) )
-      !> Ghosts that no BC fills must never be read: a NaN makes such a read loud
+
       blk%cond_phase(p)%prim     = ieee_value(1._R8, ieee_quiet_nan)
       blk%cond_phase(p)%prim_old = ieee_value(1._R8, ieee_quiet_nan)
-      blk%cond_phase(p)%source   = 0._R8
-      !> No relaxation known yet, so no limit on the first step
+
       blk%cond_phase(p)%tau      = ieee_value(1._R8, ieee_positive_inf)
+
       if (obj_irs%enabled) then
         allocate( blk%cond_phase(p)%RS1 (1:ncond(p), 0:ni+1, 0:nj+1, 0:nk+1) )
         allocate( blk%cond_phase(p)%RS2 (1:ncond(p), 0:ni+1, 0:nj+1, 0:nk+1) )
@@ -93,6 +93,9 @@ contains
         blk%cond_phase(p)%RS2 = 0._R8
       end if
       blk%cond_phase(p)%beta = 1d0
+
+      blk%cond_phase(p)%source   = 0._R8
+      blk%cond_phase(p)%residual = 0._R8
     enddo
 
   end subroutine Allocate_Block

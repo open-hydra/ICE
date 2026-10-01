@@ -24,7 +24,9 @@ contains
     use ICE_Mod_Phase
     use ICE_Mod_Multigrid,  only: Setup_Multigrid
     use ICE_Mod_MPI,        only: mpi_is_root, partition_blocks
-    use ICE_Mod_GhostExchange, only: build_ghost_schedule
+    use ICE_Mod_GhostExchange, only: build_ghost_schedule, build_local_bc_index, report_bc_mix
+    use ICE_Mod_Timers,     only: timer_run_begin
+    use iso_fortran_env,    only: int64
     implicit none
     type(ICE_simulation_type), intent(inout)  :: sim
     type(orion_data), intent(inout), optional :: IOgas
@@ -75,14 +77,16 @@ contains
     ! Print simulation info onto the logfile/shell
     if (mpi_is_root) call print_simulation_info()
 
-    ! Setup boundaries (fine level only)
-    call Setup_BC(sim%domain(1))
+    ! Setup boundaries. Each grid level reads its own file: the fine level
+    ! <prefix>bc.txt, a coarse level <prefix>bc<level>.txt (see Setup_Multigrid).
+    call Setup_BC(sim%domain(1), 1)
 
     ! Distribute the blocks over the MPI ranks (every rank keeps the whole domain but
     ! updates only its own blocks) and build the halo exchange for the ghost fill
     call partition_blocks(sim%domain(1)%nb, &
                           [(product(sim%domain(1)%blk(b)%dim), b = 1, sim%domain(1)%nb)])
-    call build_ghost_schedule(sim%domain(1))
+    call build_ghost_schedule(sim%domain(1), 1)
+    call build_local_bc_index(sim%domain(1))
 
     ! Setup gaseous phase (fine level only)
     if (coupled) call setup_gas(sim%domain(1), sim%OCP)
@@ -90,7 +94,8 @@ contains
     ! Setup condensed phase (fine level)
     call setup_cond(sim%domain(1), sim%ODP(1))
 
-    ! With multigrid, allocate coarse grid levels and compute their metrics
+    ! With multigrid, build the coarse levels: grid, metrics, boundaries, halo
+    ! schedule and the initial solution restricted onto each of them.
     if (obj_multigrid%MGL > 1) then
       call Setup_Multigrid(sim)
       ! Start solver on coarsest level; level cycling is handled in Wrap_Solve
@@ -148,8 +153,30 @@ contains
 
     call Cpu_Time(obj_sim_param%cputime(1))
 
+    ! The timers start here, at the end of set-up, so that the loop cost
+    ! excludes the I/O and the partitioning, the cycle counters attach to the
+    ! OpenMP pool at its full size, and a coupled run -- hydra calls ICE%setup,
+    ! never ICE's own main -- gets them too.
+    if (obj_io%timers) call report_bc_mix(sim%domain(1))
+    call timer_run_begin(obj_io%timers, count_cells(sim))
+
 
   contains
+
+
+    !> Cells in the whole domain, for the throughput figure in the timer
+    !> summary. Ghost cells are excluded: they are work, but they are not part
+    !> of the problem being solved.
+    integer(int64) function count_cells(s) result(ntot)
+      type(ICE_simulation_type), intent(in) :: s
+      integer :: b
+      ntot = 0_int64
+      do b = 1, s%domain(1)%nb
+        associate (d => s%domain(1)%blk(b)%dim)
+          ntot = ntot + int(d(1), int64) * int(d(2), int64) * int(d(3), int64)
+        end associate
+      end do
+    end function count_cells
 
 
     subroutine Print_Header()

@@ -21,14 +21,20 @@ contains
     use ICE_Mod_Fluxes
     use ICE_Lib_Residual
     use ICE_Lib_IRS,        only: residual_smoothing
-    use ICE_Mod_Diagnostic, only: Compute_Diagnostic
-    use ICE_Mod_MPI,        only: is_local_block, mpi_allreduce_min_r8, &
-                                  mpi_allreduce_sum_r8_array, mpi_bcast_integer
+    use ICE_Mod_Diagnostic, only: residual_norm
+    use ICE_Mod_MPI,        only: is_local_block, mpi_allreduce_min_r8
+    use ICE_Mod_Timers,     only: timer_source_begin, timer_source_end,   &
+                                  timer_flux_begin,   timer_flux_end,     &
+                                  timer_halo_begin,   timer_halo_end,     &
+                                  timer_sync_begin,   timer_sync_end,     &
+                                  timer_region_begin, timer_region_end,   &
+                                  TR_DT, TR_COPY, TR_ZERO, TR_SOURCE, TR_GHOST1, TR_GHOST2, &
+                                  TR_BOUND, TR_FLUX, TR_RESID, TR_IRS, TR_UPDATE, TR_DIAG
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
-    integer(kind=I4) :: b, p, srk
-    real(R8)         :: average(5), dtlocal
-    logical          :: endsim, iosim
+    integer(kind=I4) :: p, srk
+    real(R8)         :: dtlocal
+    logical          :: endsim, iosim, need_norm
 
     grid%iter                    = grid%iter + 1
     obj_sim_param%iter_from_call = obj_sim_param%iter_from_call + 1
@@ -36,25 +42,33 @@ contains
 
     grid%dtglobal = 1e+5
 
-    !$omp parallel
+    call timer_region_begin(TR_DT)
     do p = 1, ngroups
-      !$omp single
       call assign_wavespeed_make(p)
-      !$omp end single
+      !$omp parallel
       call compute_dt(p, obj_time_scheme%cfl, obj_time_scheme%cfl_rampa_iter, &
                       obj_time_scheme%dt_max, obj_time_scheme%tau_factor, grid)
+      !$omp end parallel
     end do
-    !$omp end parallel
+    call timer_region_end(TR_DT)
 
-    !> Global time step: smallest over all ranks
-    call mpi_allreduce_min_r8(grid%dtglobal, dtlocal)
-    grid%dtglobal = dtlocal
-    if (obj_time_scheme%time_accurate) grid%time = grid%time + grid%dtglobal
+    !> Global time step: smallest over all ranks. Only a time-accurate run reads
+    !  it (set_dt_global, the time, the shell line); a steady run steps each cell
+    !  by its own dt and would pay the collective for nothing.
+    if (obj_time_scheme%time_accurate) then
+      call timer_sync_begin()
+      call mpi_allreduce_min_r8(grid%dtglobal, dtlocal)
+      call timer_sync_end()
+      grid%dtglobal = dtlocal
+      grid%time = grid%time + grid%dtglobal
+    end if
 
+    call timer_region_begin(TR_COPY)
     !$omp parallel
     if (obj_time_scheme%time_accurate) call set_dt_global(grid)
     call state_copy(grid)
     !$omp end parallel
+    call timer_region_end(TR_COPY)
 
     do p = 1, ngroups
 
@@ -87,44 +101,67 @@ contains
 
       do srk = 1, nrk
 
+        call timer_region_begin(TR_ZERO)
         call zero_residual(grid, p)
+        call timer_region_end(TR_ZERO)
 
-        if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) &
+        if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) then
+          call timer_source_begin()
+          call timer_region_begin(TR_SOURCE)
           call compute_source(grid, p)
+          call timer_region_end(TR_SOURCE)
+          call timer_source_end()
+        end if
 
-        call compute_ghost(grid)
-        call fill_second_ghost(grid)
+        call timer_halo_begin()
+        call timer_region_begin(TR_GHOST1)
+        call compute_ghost(grid, p)
+        call timer_region_end(TR_GHOST1)
+        call timer_region_begin(TR_GHOST2)
+        call fill_second_ghost(grid, p)
+        call timer_region_end(TR_GHOST2)
 
+        call timer_region_begin(TR_BOUND)
         call compute_bound(grid, p)
+        call timer_region_end(TR_BOUND)
+        call timer_halo_end()
 
+        call timer_flux_begin()
+        call timer_region_begin(TR_FLUX)
         call compute_flux(grid, p)
+        call timer_region_end(TR_FLUX)
 
+        call timer_region_begin(TR_RESID)
         call compute_residual(grid, p)
+        call timer_region_end(TR_RESID)
 
-        if (obj_irs%enabled) call residual_smoothing(grid, p)
+        if (obj_irs%enabled) then
+          call timer_region_begin(TR_IRS)
+          call residual_smoothing(grid, p)
+          call timer_region_end(TR_IRS)
+        end if
 
+        call timer_region_begin(TR_UPDATE)
         call state_update(grid, p, srk)
+        call timer_region_end(TR_UPDATE)
+        call timer_flux_end()
 
       end do
 
     end do
 
-    ! Compute global residual (L2 norm of prim - prim_old, over all blocks and groups)
-    obj_sim_param%residuotot = 0._R8
-    do b = 1, grid%nb
-      if (.not. is_local_block(b)) cycle
-      do p = 1, ngroups
-        call Compute_Diagnostic(new=grid%blk(b)%cond_phase(p)%prim,     &
-                              old=grid%blk(b)%cond_phase(p)%prim_old, &
-                              dt=grid%blk(b)%cond_phase(p)%dt,        &
-                              n=grid%blk(b)%dim, nc=ncond(p),         &
-                              iT=nbase(p)-1,                           &
-                              average=average,                         &
-                              total=obj_sim_param%residuotot)
-      end do
-    end do
-    call mpi_allreduce_sum_r8_array(obj_sim_param%residuotot, nres)
-    obj_sim_param%residuotot = sqrt(obj_sim_param%residuotot)
+    !> The residual norm, only on a step that reads it: the stop test, the
+    !  residual file, the shell line, the last step. Every key can change at run
+    !  time, so the conditions are evaluated here, every step.
+    need_norm = (obj_multigrid%MG_level == 1 .and. obj_sim_param%res_threshold > 0._R8) &
+           .or. due(grid%iter, obj_io%res_diter) .or. due(grid%iter, obj_io%shell_diter) &
+           .or. (obj_sim_param%iter_from_call >= grid%itermax)                          &
+           .or. (grid%time >= obj_sim_param%time_threshold)
+    if (need_norm) then
+      call timer_region_begin(TR_DIAG)
+      call residual_norm(grid, obj_sim_param%residuotot)
+      call timer_region_end(TR_DIAG)
+    end if
 
     iosim  = (mod(grid%iter, obj_io%sol_diter) == 0) &
          .or. (grid%time >= obj_sim_param%time_from_call + obj_io%sol_dtime)
@@ -145,11 +182,18 @@ contains
       obj_sim_param%TODO = 1
     end if
 
-    !> Every rank sees the same residual and time, but take the decision from root
-    !> so that all ranks leave the time loop together whatever the rounding.
-    call mpi_bcast_integer(obj_sim_param%TODO)
+    !> Every rank took this decision from the same numbers: the iteration count,
+    !  the time after the dt minimum, and a residual norm summed in one order on
+    !  every rank. Nothing needs to be broadcast.
 
   end subroutine Explicit_Step
+
+
+  !> Iteration `iter` is one at which something happens every `every` steps.
+  pure logical function due(iter, every)
+    integer, intent(in) :: iter, every
+    due = (every > 0) .and. (mod(iter, every) == 0)
+  end function due
 
 
 end module ICE_Mod_Explicit

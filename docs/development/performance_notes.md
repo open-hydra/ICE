@@ -1,5 +1,9 @@
 # Performance Notes
 
+This page is about what makes a single ICE process fast. For choosing a parallel
+configuration and for the measured scaling curves, see
+[Parallel Execution](../user/parallel.md).
+
 ## Where the time goes
 
 A step is dominated by the flux loop, which is swept once per direction per
@@ -24,13 +28,20 @@ it costs nothing in stability.
 Threading is over the cells of a block, not over blocks, so a single large block
 threads as well as many small ones. Two details shape the scaling:
 
-- The interior flux loop is swept in two passes, odd faces then even, because a face
-  accumulates into the cells on both sides of it. The barrier between the passes is
-  what makes the result independent of the thread count, and it is also a
-  synchronisation point per direction per stage.
-- The boundary flux loop is `SCHEDULE(DYNAMIC)` over boundary cells, whose cost varies
-  a great deal by type — a chimera cell blends several donors, an extrapolation cell
-  copies.
+- The interior flux loop gathers: each thread owns a tile of the block (a range of
+  whole k-planes when the block has at least as many planes as threads, pieces of a
+  plane otherwise), computes every face flux of its tile once into private line, row
+  and plane buffers, and applies the two faces of each direction to each cell in the
+  order the earlier odd-then-even scatter passes gave them — so the residual is bit
+  for bit the scatter form's, and independent of the thread count. Per block and stage
+  there are three worksharing loops (the shock-detector pass, the faces on the tile
+  seams, the sweep) where the scatter form had a pass per parity per direction.
+- The boundary flux loop is `SCHEDULE(DYNAMIC, 16)` over the rank's boundary cells of
+  the family, each cell accumulating its records in table order on one thread — a
+  block corner in 3-D carries three — so 2-D and 3-D runs are bit-identical across
+  thread counts (`test/fast/equiv3d`: RED on the record-parallel `ATOMIC` loop, GREEN
+  since 2026-09-30). The cost per cell varies a great deal by type: a chimera cell
+  blends several donors, an extrapolation cell copies.
 
 Thread counts beyond a few hundred cells per thread stop paying: the loop bodies are
 short and the barriers are frequent.
@@ -47,10 +58,23 @@ follow directly:
   per rank therefore does not fall as ranks are added, which caps how many ranks fit on
   a node for a large mesh.
 
-The halo exchange runs once per Runge-Kutta stage and carries only the interior cells
-that a remote ghost cell reads. Its size is printed at startup as
-`MPI halo: N cells exchanged per ghost fill`. Persistent requests are set up once, so
-the per-stage cost is the start/wait pair plus the transfer.
+The halo exchange runs once per family per Runge-Kutta stage and carries the interior
+cells that a remote ghost cell of that family reads; the ghost fill that follows it
+refills that family's ghosts only (a record of family p reads p's cells alone, so the
+families are independent). The size printed at startup, `MPI halo: N cells exchanged
+per ghost fill`, is the sum over the families — what the set-up fill exchanges; a stage
+of family p moves p's share of it. One schedule and one message tag per family and
+grid level; a cell that several records read (a block edge seen from two faces, a
+chimera donor of several receivers) is listed once per message — the set-up prints how
+many records were merged, when any were; persistent requests are set up once, so the
+per-fill cost is the start/wait pair plus the transfer, and the packing and unpacking,
+which the threads share (every cell owns a slice of the buffer). Every collective and
+message of ICE goes through `ice_comm`
+(`Mod_MPI`), the world unless a host program passes its own to `mpi_init_env`. A
+consequence for anything that reads a ghost cell outside the stage loop (nothing in the
+solver does; a probe placed on a ghost row would): at the end of a step family p's
+ghosts hold the values of p's last stage, no longer refreshed by the later families'
+stages.
 
 Output is gathered to rank 0, which writes alone. For a large mesh written often, this
 is a serial section in an otherwise parallel run — lowering `sol-diter` is expensive in
@@ -60,9 +84,12 @@ a way the solve itself is not.
 
 ```bash
 ./install.sh build --compilers=gnu --use-openmp
-cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build --parallel
+cmake -B build -DCMAKE_BUILD_TYPE=TESTING -DCMAKE_Fortran_FLAGS=-g && cmake --build build --parallel
 ```
 
-`gprof`, `perf` and Intel VTune all work on the result. Note that the reported
+The build types are `RELEASE`, `TESTING` (`-O2`) and `DEBUG` (`-O0`, bounds checks);
+`RelWithDebInfo` is refused by `cmake/SetFortranFlags.cmake`. `gprof`, `perf` and
+Intel VTune all work on the result, and `[ICE-IO] timers = true` prints the per-phase
+and per-region wall times of the iteration. Note that the reported
 "Time of operation" in ICE's own output is CPU time divided by the thread count, not
 wall-clock, so it is not a substitute for timing the process.

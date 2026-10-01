@@ -16,6 +16,7 @@ module ICE_IO_Solution
   !> Concrete procedure pointing to one of the subroutine realizations
   procedure(r_solution_if), pointer, public :: read_ic
   procedure(w_solution_if), pointer, public :: write_solution
+  public :: io_extension
 
   !> Abstract interface relative to the finite-rate reactions source procedure
   abstract interface
@@ -80,7 +81,9 @@ contains
     if (.not. obj_sim_param%newrun) obj_io%ini_fmt = obj_io%sol_fmt
     obj_io%extension = io_extension(obj_io%ini_fmt)
 
-    if (obj_sim_param%owcoupled) gasinit = trim(obj_io%gaspath)//'gas.tec'
+    !> The gas field follows `ic-format` like every other input.
+    if (obj_sim_param%owcoupled) &
+      gasinit = trim(obj_io%gaspath)//'gas'//trim(obj_io%extension)
 
     if (obj_sim_param%newrun) then
       condinit = 'INPUT/'//trim(ICE_phase_prefix)//'ic'//trim(obj_io%extension)
@@ -118,28 +121,28 @@ contains
     obj_io%Ovarnames = ' '
     Onvar = 0
     do p = 1, ngroups
-      obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"rho_p'//trim(str(.true.,p))//'"'
-      obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"u_p'//trim(str(.true.,p))//'"'
-      obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"v_p'//trim(str(.true.,p))//'"'
-      obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"w_p'//trim(str(.true.,p))//'"'
+      obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "rho_p'//trim(str(.true.,p))//'"'
+      obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "u_p'//trim(str(.true.,p))//'"'
+      obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "v_p'//trim(str(.true.,p))//'"'
+      obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "w_p'//trim(str(.true.,p))//'"'
       select case (trim(obj_time_scheme%model(p)))
       case ('MK')
       case ('IG')
-        obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"P_p'//trim(str(.true.,p))//'"'
+        obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "P_p'//trim(str(.true.,p))//'"'
       case ('AG')
-        obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"P11_p'//trim(str(.true.,p))//'"'
-        obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"P12_p'//trim(str(.true.,p))//'"'
-        obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"P13_p'//trim(str(.true.,p))//'"'
-        obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"P22_p'//trim(str(.true.,p))//'"'
-        obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"P23_p'//trim(str(.true.,p))//'"'
-        obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"P33_p'//trim(str(.true.,p))//'"'
+        obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "P11_p'//trim(str(.true.,p))//'"'
+        obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "P12_p'//trim(str(.true.,p))//'"'
+        obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "P13_p'//trim(str(.true.,p))//'"'
+        obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "P22_p'//trim(str(.true.,p))//'"'
+        obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "P23_p'//trim(str(.true.,p))//'"'
+        obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "P33_p'//trim(str(.true.,p))//'"'
       end select
       Onvar = Onvar + ncond(p)
-      obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"T_p'//trim(str(.true.,p))//'"'
-      obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"n_p'//trim(str(.true.,p))//'"'
+      obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "T_p'//trim(str(.true.,p))//'"'
+      obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "n_p'//trim(str(.true.,p))//'"'
       if (solid_of(p)) then
-        obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"f_p'//trim(str(.true.,p))//'"'
-        obj_io%Ovarnames = trim(obj_io%Ovarnames)//'"chi_p'//trim(str(.true.,p))//'"'
+        obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "f_p'//trim(str(.true.,p))//'"'
+        obj_io%Ovarnames = trim(obj_io%Ovarnames)//' "chi_p'//trim(str(.true.,p))//'"'
       end if
     end do
 
@@ -241,7 +244,7 @@ contains
     if (present(IOfield_gas)) then
       select case (trim(obj_io%ini_fmt(1)))
       case ('tecplot')
-        IOfield_gas%tec%format = 'ascii'
+        IOfield_gas%tec%format = obj_io%ini_fmt(2)
         error = tec_read_structured_multiblock(orion=IOfield_gas, filename=trim(gasinit))
       case ('vtk')
         IOfield_gas%tec%format = obj_io%ini_fmt(2)
@@ -253,7 +256,7 @@ contains
 
     select case (trim(obj_io%ini_fmt(1)))
     case ('tecplot')
-      IOfield_cond%tec%format = 'ascii'
+      IOfield_cond%tec%format = obj_io%ini_fmt(2)
       error = tec_read_structured_multiblock(orion=IOfield_cond, filename=trim(condinit))
     case ('vtk')
       IOfield_cond%tec%format = obj_io%ini_fmt(2)

@@ -28,8 +28,7 @@ contains
         grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = 0._R8
 
       enddo ; enddo ; enddo
-      !$OMP END DO
-
+      !$OMP END DO nowait
     enddo
     !$OMP END PARALLEL
 
@@ -42,6 +41,7 @@ contains
     integer(kind=I4), intent(in)  :: p
     integer(kind=I4) :: b, i, j, k
 
+    !$OMP PARALLEL
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
 
@@ -56,9 +56,9 @@ contains
                                grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) )
 
       enddo ; enddo ; enddo
-      !$omp end do
-
+      !$omp end do nowait
     enddo
+    !$OMP END PARALLEL
 
   end subroutine compute_residual
 

@@ -179,9 +179,55 @@ ice_add_case(NAME ReflectAG DIR Reflect/AG LABELS "fast;verification;AG;2D")
 # Thread count must not change the answer: 1 vs 4 threads, bit-identical
 ice_add_fast_script(OpenMPEquiv fast/openmp-equiv "fast;implementation")
 
+# Which copy of the ATLAS boundary table belongs to which particle family: one
+# copy speaks for all of them, one copy per family speaks for its own, anything
+# else stops the setup. Builds its own cases, so it owns no data.
+ice_add_fast_script(PopulationBinding fast/populations "fast;implementation;bc")
+
+# Grid sequencing: the multigrid levels run, and neither the thread count nor the
+# rank count changes the answer. Nothing else in the suite sets MG-levels > 1, so
+# this is the only cover the restriction, the prolongation, the per-level boundary
+# tables and the per-level halo schedules have. Builds its own case.
+ice_add_fast_script(Multigrid fast/multigrid "fast;implementation;multigrid")
+
 # A run that cannot proceed must stop with a non-zero status (broken inputs, a
 # required model left unset in a coupled run, a NaN after the update).
 ice_add_fast_script(Refusals fast/refusals "fast;implementation;refusal")
+
+# The 3-D gates: a generated 24x16x12 box in 3x2x2 blocks with an MK, an IG and
+# an AG family, compared on the raw-binary VTK payload (test/fast/equiv3d/run.py).
+# The binary under test is this build's own, so a serial build is reported as a
+# SKIP by the driver (exit 77) instead of passing on a comparison of a file with
+# itself, which is what OpenMPEquiv does on such a build.
+function(ice_add_equiv3d NAME MODE ENV)
+    add_test(
+        NAME    ${NAME}
+        COMMAND bash -c "ICE_BIN=$<TARGET_FILE:${solver}> ICE_EQ_MODE=${MODE} ${ENV} python3 -B run.py"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/test/fast/equiv3d"
+    )
+    set_tests_properties(${NAME} PROPERTIES
+        LABELS           "${ARGN}"
+        TIMEOUT          900
+        SKIP_RETURN_CODE 77
+        ENVIRONMENT      "${_ICE_TEST_ENV}"
+    )
+endfunction()
+
+# One Euler stage, 1 vs 2, 3, 4 and 8 threads, the eight corner cells of every
+# block masked: everything but the corners is thread-invariant.
+ice_add_equiv3d(Equiv3DStage threads
+    "ICE_EQ_ITERS=1 ICE_EQ_MASK_CORNERS=1 ICE_EQ_EXTRA='--scheme euler'"
+    "fast;implementation;3D;openmp")
+
+# The full run (RK2, a signal crossing one block width), every cell compared.
+# RED until 2026-09-30 on 2, 4 and 8 threads, when a corner cell's three boundary
+# records were accumulated with `!$OMP ATOMIC` in thread order; GREEN since the
+# boundary loop is owner-computes (Mod_BC_Fluxes).
+ice_add_equiv3d(Equiv3DThreads threads "" "fast;implementation;3D;openmp")
+
+# Each family alone against the three together: the ghost fill and the halo
+# must carry every family.
+ice_add_equiv3d(FamilyHalo3D family "" "fast;implementation;3D;multifamily")
 
 # Unit tests: programs linked against the library, each run in its own directory
 function(ice_add_unit_test NAME SOURCE)
@@ -221,6 +267,19 @@ if(USE_MPI)
     ice_add_fast_script(MPIEquivChimera fast/mpi-equiv "fast;implementation;chimera;needs-mpi")
     set_tests_properties(MPIEquivChimera PROPERTIES
         ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-chimera")
+
+    # The same multigrid case again, this time also across ranks: each level carries
+    # its own halo schedule, so a level switch has to move the exchange with it.
+    ice_add_fast_script(MPIEquivMultigrid fast/multigrid "fast;implementation;multigrid;needs-mpi")
+    set_tests_properties(MPIEquivMultigrid PROPERTIES
+        ENVIRONMENT "${_ICE_TEST_ENV};ICE_MG_RANKS=2")
+
+    # The 3-D box on 1 vs 2, 3, 4, 5 ranks (12 blocks: 5 is uneven) and 2 blocks on
+    # 3 ranks (one idle), the full run, every cell compared; then ranks x threads,
+    # the full run too (masked to one Euler stage until the owner-computes boundary
+    # loop of 2026-09-30 made the corners thread-invariant).
+    ice_add_equiv3d(Equiv3DRanks ranks "" "fast;implementation;3D;needs-mpi")
+    ice_add_equiv3d(Equiv3DHybrid hybrid "" "fast;implementation;3D;openmp;needs-mpi")
 
     # The two-block solidifying stream of SolidAdvection (leg O6) on two ranks, against the serial runs
     ice_add_verification(SolidAdvectionMPI O-solid-advection "fast;verification;phase-change;needs-mpi")

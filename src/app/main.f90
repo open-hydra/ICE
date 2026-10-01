@@ -17,9 +17,9 @@ program ICE_program
   call mpi_init_env()
 
 #if defined (_OPENMP)
-  !$omp parallel
-  obj_sim_param%nthreads = OMP_GET_NUM_THREADS()
-  !$omp end parallel
+  ! The size the pool will have, read once; the old parallel region had every
+  ! thread store the same value into one shared variable.
+  obj_sim_param%nthreads = OMP_GET_MAX_THREADS()
   if (mpi_is_root) then
     write(*,'(A)') ' Parallel execution'
     write(*,'(A)') ' OpenMP:'
@@ -37,7 +37,9 @@ program ICE_program
   end if
 #endif
 
-  ! Solving with ICE
+  ! Solving with ICE. The timers (when [ICE-IO] timers is on) start at the end
+  ! of ICE%setup, time every ICE%solve, and report from ICE%postprocess: the
+  ! same three calls hydra makes, so a coupled run is timed the same way.
   call ICE%setup(simulation)
 
   obj_sim_param%TODO = 1
