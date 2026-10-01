@@ -46,14 +46,37 @@ threads as well as many small ones. Two details shape the scaling:
 Thread counts beyond a few hundred cells per thread stop paying: the loop bodies are
 short and the barriers are frequent.
 
-Two measurement knobs, both without effect on the result: the step's worksharing loops
-are `SCHEDULE(RUNTIME)`, so `OMP_SCHEDULE` (e.g. `dynamic,4096`, `guided`) chooses the
-schedule of a run — unset, it is static, as the loops were written; `ICE_TILES_PER_THREAD`
-multiplies the flux kernel's tile count (default 1) so that a dynamic schedule has tiles
-to balance (the shared seam planes grow with it: one per tile). A VTune profile of one
-rank of 80 threads on the 192³ case (monolith, 2026-10-01) found 24 % of the CPU time
-spinning — at the barriers of the static loops and at the fork barrier between regions —
-against 8 % with 20 threads; these knobs measure how much of it a schedule recovers.
+The two loop classes of the step are scheduled differently, and neither choice touches a
+result (which thread sweeps a cell is not arithmetic):
+
+- the **flux kernel's tile loops** are `SCHEDULE(DYNAMIC, 1)` over `ICE_TILES_PER_THREAD`
+  tiles per thread (default 4), because the particle cloud fills only part of the domain
+  and equal cell counts are not equal work: with one static tile per thread a rank of 80
+  threads spent 24 % of the sweep's CPU time at its barrier (VTune, monolith, 2026-10-01).
+  The kernel takes its deep tiling (private plane buffers) only while the threads' buffers
+  together fit `plane_buffer_budget` (16 MiB); above it, the shallow tiling computes every
+  k-face once into the shared array.
+- the **per-cell loops** (`zero_residual`, `compute_source`, `compute_residual`,
+  `state_update`, `state_copy`, `set_dt_global`, `compute_dt`) are `SCHEDULE(RUNTIME)`, and
+  ICE sets that schedule itself at set-up: static. `OMP_SCHEDULE` therefore has no effect on
+  ICE (a dynamic schedule on these loops dispatches per cell and cost up to 25× at 80
+  threads); `ICE_OMP_SCHEDULE=<kind>[,<chunk>]` is the measurement override.
+
+On the 192³ case at one rank of 80 threads (monolith, job 303746, steady state over the last
+30 of 60 iterations, two runs each) the two together run 0.303 s per iteration against 0.343
+for the kernel before them: −12 %.
+
+**First touch.** `Allocate_Block` writes the block fields (`prim`, `prim_old`, `tau`, `beta`,
+`source`, `residual`) from a static parallel loop over the k-planes, so each plane's pages
+start on the socket of the thread that sweeps it. Written serially, a whole block starts on
+the master's socket: a rank of 80 threads over four sockets then streams one socket's memory
+(the whole footprint bound to one node runs 4.15 s per iteration instead of 0.35, job 303745),
+and until the kernel's NUMA balancer has moved ~1.7 GB — 45 to 60 s — the iteration costs
+6–10× its steady value; on a busy node it may never recover (0.38 s instead of 0.30). With
+the parallel first touch every run is flat from its first iteration (jobs 303746). Ranks of
+20 threads pinned to one socket do not need it, which is why the multi-rank layouts never
+showed the effect. The windows of the `ICE Timing` lines show it; a last-window number does
+not.
 
 ## MPI
 

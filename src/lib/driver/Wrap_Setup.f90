@@ -27,7 +27,7 @@ contains
     use ICE_Mod_GhostExchange, only: build_ghost_schedule, build_local_bc_index, report_bc_mix
     use ICE_Mod_Timers,     only: timer_run_begin
     use iso_fortran_env,    only: int64
-    !$ use omp_lib,         only: omp_set_schedule, omp_sched_static
+    !$ use omp_lib,         only: omp_set_schedule, omp_sched_static, omp_sched_dynamic, omp_sched_guided
     implicit none
     type(ICE_simulation_type), intent(inout)  :: sim
     type(orion_data), intent(inout), optional :: IOgas
@@ -158,22 +158,40 @@ contains
     ! excludes the I/O and the partitioning, the cycle counters attach to the
     ! OpenMP pool at its full size, and a coupled run -- hydra calls ICE%setup,
     ! never ICE's own main -- gets them too.
-    !> The step's worksharing loops are SCHEDULE(RUNTIME): OMP_SCHEDULE picks the
-    !> schedule of a run (a measurement knob); unset, it is static, as the loops
-    !> were written. ICE_TILES_PER_THREAD multiplies the flux kernel's tile count
-    !> so that a dynamic schedule has tiles to balance (default 1: one per thread).
-    !> Neither changes a result: which thread sweeps a cell is not arithmetic.
+    !> The step's per-cell loops are SCHEDULE(RUNTIME) and ICE sets that schedule
+    !> itself: static. OMP_SCHEDULE therefore has no effect on ICE (a dynamic
+    !> schedule on these loops dispatches per cell and cost up to 25x at 80
+    !> threads); ICE_OMP_SCHEDULE=<kind>[,<chunk>] is the measurement override.
+    !> ICE_TILES_PER_THREAD sets the flux kernel's tiles per thread (default 4:
+    !> its tile loops are scheduled dynamically). Neither changes a result: which
+    !> thread sweeps a cell is not arithmetic.
     block
       character(len=32) :: env
-      integer :: status, ios
-      call get_environment_variable('OMP_SCHEDULE', env, status=status)
-      !$ if (status /= 0) call omp_set_schedule(omp_sched_static, 0)
+      integer :: status, ios, chunk
+      !$ call omp_set_schedule(omp_sched_static, 0)
+      call get_environment_variable('ICE_OMP_SCHEDULE', env, status=status)
+      if (status == 0) then
+        chunk = 0
+        if (index(env, ',') > 0) then
+          read(env(index(env, ',')+1:), *, iostat=ios) chunk
+          if (ios /= 0) chunk = 0
+          env = env(1:index(env, ',')-1)
+        end if
+        select case (trim(adjustl(env)))
+        !$ case ('dynamic'); call omp_set_schedule(omp_sched_dynamic, chunk)
+        !$ case ('guided');  call omp_set_schedule(omp_sched_guided,  chunk)
+        !$ case ('static');  call omp_set_schedule(omp_sched_static,  chunk)
+        case default
+          if (mpi_is_root) write(*,'(A)') '  OpenMP: ICE_OMP_SCHEDULE not understood, static kept'
+        end select
+        if (mpi_is_root) write(*,'(A)') '  OpenMP: cell loops scheduled '//trim(env)
+      end if
       call get_environment_variable('ICE_TILES_PER_THREAD', env, status=status)
       if (status == 0) then
         read(env, *, iostat=ios) tiles_per_thread
         if (ios /= 0 .or. tiles_per_thread < 1) tiles_per_thread = 1
       end if
-      if (mpi_is_root .and. tiles_per_thread > 1) &
+      if (status == 0 .and. mpi_is_root) &
         write(*,'(A,I0)') '  OpenMP: flux tiles per thread ', tiles_per_thread
     end block
     if (obj_io%timers) call report_bc_mix(sim%domain(1))

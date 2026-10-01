@@ -8,9 +8,17 @@ module ICE_Mod_Fluxes
   public :: compute_flux, state_reconstruction, bad_recon
 
   !> The tile of one thread: the cells (i = 1..ni, j = j1..j2, k = k1..k2) of a block.
-  !> Deep blocks are cut into ranges of whole k-planes; shallow ones (fewer planes
-  !> than threads) into pieces of a plane, so that a thin block still spreads over
-  !> the threads. Every thread builds the same list from the block's dimensions.
+  !> Deep tiling cuts ranges of whole k-planes and keeps the k-faces below and above
+  !> the plane being swept in two private plane buffers per thread; shallow tiling
+  !> cuts pieces of a plane and computes every k-face of the block once into the
+  !> shared kface array. Deep is taken only while the threads' plane buffers together
+  !> fit plane_buffer_budget (on a 192 x 192 plane with seven variables a buffer is
+  !> 2.1 MB: eighty threads of two each are 340 MB). The shallow tiling is not faster
+  !> by itself -- at 80 threads on the 192^3 block the sweep took 218 ms against 221 --
+  !> but its plane pieces give the dynamic schedule tiles to balance: with four per
+  !> thread it took 181 ms (monolith, job 303578, steady state). Every thread builds
+  !> the same list from the block's dimensions; the list holds tiles_per_thread tiles
+  !> per thread.
   type :: tile_type
     integer :: k1 = 0, k2 = 0, j1 = 0, j2 = 0
   end type tile_type
@@ -22,6 +30,10 @@ module ICE_Mod_Fluxes
   !> pieces of a plane (`kface`). Grown to the largest block that needed them;
   !> freed with the program.
   real(R8), allocatable, private :: kface(:,:,:,:), seam(:,:,:,:)
+
+  !> Bytes the threads' private plane buffers may take together before the shallow
+  !> tiling is used instead (the L3 of one node's socket, roughly).
+  integer(kind=8), parameter :: plane_buffer_budget = 16_8 * 1024_8 * 1024_8
 
 contains
 
@@ -66,7 +78,7 @@ contains
       if (.not. is_local_block(b)) cycle
       ni = grid%blk(b)%dim(1) ; nj = grid%blk(b)%dim(2) ; nk = grid%blk(b)%dim(3)
       ni_max = max(ni_max, ni) ; nj_max = max(nj_max, nj)
-      call make_tiles(ni, nj, nk, nthreads, tiles0, deep)
+      call make_tiles(ni, nj, nk, nc, nthreads, tiles0, deep)
       if (deep) then
         call grow(seam, nc, ni, nj, size(tiles0))
       else if (nk > 1) then
@@ -81,13 +93,13 @@ contains
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
       ni = grid%blk(b)%dim(1) ; nj = grid%blk(b)%dim(2) ; nk = grid%blk(b)%dim(3)
-      call make_tiles(ni, nj, nk, nthreads, tiles, deep)
+      call make_tiles(ni, nj, nk, nc, nthreads, tiles, deep)
       nt = size(tiles)
 
       !> The shock-detector weight of every cell, before any face reads it: a face
       !> takes the weight of the cell below it, which may belong to another tile.
       if (obj_space_scheme%SD) then
-        !$OMP DO SCHEDULE (RUNTIME)
+        !$OMP DO SCHEDULE (DYNAMIC, 1)
         do t = 1, nt
           do k = tiles(t)%k1, tiles(t)%k2
           do j = tiles(t)%j1, tiles(t)%j2
@@ -98,7 +110,7 @@ contains
         enddo
         !$OMP END DO
       else
-        !$OMP DO SCHEDULE (RUNTIME)
+        !$OMP DO SCHEDULE (DYNAMIC, 1)
         do t = 1, nt
           do k = tiles(t)%k1, tiles(t)%k2
           do j = tiles(t)%j1, tiles(t)%j2
@@ -113,7 +125,7 @@ contains
       !> each: the top faces of every tile's last plane (deep block), or every
       !> k-face of the block (shallow block).
       if (deep) then
-        !$OMP DO SCHEDULE (RUNTIME)
+        !$OMP DO SCHEDULE (DYNAMIC, 1)
         do t = 1, nt
           k = tiles(t)%k2
           if (k < nk) then
@@ -125,7 +137,7 @@ contains
         enddo
         !$OMP END DO
       else if (nk > 1) then
-        !$OMP DO SCHEDULE (RUNTIME)
+        !$OMP DO SCHEDULE (DYNAMIC, 1)
         do t = 1, nt
           do k = tiles(t)%k1, min(tiles(t)%k2, nk-1)
           do j = tiles(t)%j1, tiles(t)%j2
@@ -136,7 +148,7 @@ contains
         !$OMP END DO
       end if
 
-      !$OMP DO SCHEDULE (RUNTIME)
+      !$OMP DO SCHEDULE (DYNAMIC, 1)
       do t = 1, nt
         do k = tiles(t)%k1, tiles(t)%k2
 
@@ -257,17 +269,24 @@ contains
   !> whose planes outnumber the threads in j): contiguous ranges of whole k-planes.
   !> Otherwise pieces of a plane, about two per thread, so a shallow block still
   !> spreads; a 2-D block (nk = 1) is always cut this way, along j.
-  subroutine make_tiles(ni, nj, nk, nthreads, tiles, deep)
+  subroutine make_tiles(ni, nj, nk, nc, nthreads, tiles, deep)
     use ICE_Global_m, only: tiles_per_thread
-    integer, intent(in) :: ni, nj, nk, nthreads
+    integer, intent(in) :: ni, nj, nk, nc, nthreads
     type(tile_type), allocatable, intent(out) :: tiles(:)
     logical, intent(out) :: deep
     integer :: t, nt, k, kk, per_plane, rows, j, jj, want
 
-    want = nthreads * tiles_per_thread        ! tiles asked for (ICE_TILES_PER_THREAD)
-    deep = (nk >= want)
+    ! Deep tiling keeps one k-range per thread: finer ranges cost 10-41 % from one
+    ! socket of 20 threads to 12 x 20 (more seams, less reuse; jobs 303570/303572);
+    ! and it is taken only while the threads' plane buffers together fit the budget
+    ! -- beyond it the shallow tiling with dynamically scheduled pieces was faster
+    ! (1 x 20 -3 %, 4 x 20 -1.5 %, 1 x 80 -18 % on the sweep, job 303578). The
+    ! shallow pieces are tiles_per_thread per thread.
+    want = nthreads * tiles_per_thread        ! shallow tiles asked for (ICE_TILES_PER_THREAD)
+    deep = (nk >= nthreads) .and. &
+           (int(nthreads, 8) * 2_8 * int(nc, 8) * int(ni, 8) * int(nj, 8) * 8_8 <= plane_buffer_budget)
     if (deep) then
-      nt = min(want, nk)
+      nt = min(nthreads, nk)
       allocate(tiles(nt))
       kk = 0
       do t = 1, nt
