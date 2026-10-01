@@ -87,7 +87,7 @@ contains
       !> The shock-detector weight of every cell, before any face reads it: a face
       !> takes the weight of the cell below it, which may belong to another tile.
       if (obj_space_scheme%SD) then
-        !$OMP DO SCHEDULE (STATIC)
+        !$OMP DO SCHEDULE (RUNTIME)
         do t = 1, nt
           do k = tiles(t)%k1, tiles(t)%k2
           do j = tiles(t)%j1, tiles(t)%j2
@@ -98,7 +98,7 @@ contains
         enddo
         !$OMP END DO
       else
-        !$OMP DO SCHEDULE (STATIC)
+        !$OMP DO SCHEDULE (RUNTIME)
         do t = 1, nt
           do k = tiles(t)%k1, tiles(t)%k2
           do j = tiles(t)%j1, tiles(t)%j2
@@ -113,7 +113,7 @@ contains
       !> each: the top faces of every tile's last plane (deep block), or every
       !> k-face of the block (shallow block).
       if (deep) then
-        !$OMP DO SCHEDULE (STATIC)
+        !$OMP DO SCHEDULE (RUNTIME)
         do t = 1, nt
           k = tiles(t)%k2
           if (k < nk) then
@@ -125,7 +125,7 @@ contains
         enddo
         !$OMP END DO
       else if (nk > 1) then
-        !$OMP DO SCHEDULE (STATIC)
+        !$OMP DO SCHEDULE (RUNTIME)
         do t = 1, nt
           do k = tiles(t)%k1, min(tiles(t)%k2, nk-1)
           do j = tiles(t)%j1, tiles(t)%j2
@@ -136,7 +136,7 @@ contains
         !$OMP END DO
       end if
 
-      !$OMP DO SCHEDULE (STATIC)
+      !$OMP DO SCHEDULE (RUNTIME)
       do t = 1, nt
         do k = tiles(t)%k1, tiles(t)%k2
 
@@ -258,14 +258,16 @@ contains
   !> Otherwise pieces of a plane, about two per thread, so a shallow block still
   !> spreads; a 2-D block (nk = 1) is always cut this way, along j.
   subroutine make_tiles(ni, nj, nk, nthreads, tiles, deep)
+    use ICE_Global_m, only: tiles_per_thread
     integer, intent(in) :: ni, nj, nk, nthreads
     type(tile_type), allocatable, intent(out) :: tiles(:)
     logical, intent(out) :: deep
-    integer :: t, nt, k, kk, per_plane, rows, j, jj
+    integer :: t, nt, k, kk, per_plane, rows, j, jj, want
 
-    deep = (nk >= nthreads)
+    want = nthreads * tiles_per_thread        ! tiles asked for (ICE_TILES_PER_THREAD)
+    deep = (nk >= want)
     if (deep) then
-      nt = min(nthreads, nk)
+      nt = min(want, nk)
       allocate(tiles(nt))
       kk = 0
       do t = 1, nt
@@ -274,7 +276,7 @@ contains
         kk = kk + k
       end do
     else
-      per_plane = max(1, (2*nthreads + nk - 1) / nk) ! pieces per plane
+      per_plane = max(1, (2*want + nk - 1) / nk)     ! pieces per plane
       per_plane = min(per_plane, nj)
       rows = (nj + per_plane - 1) / per_plane       ! rows per piece
       nt = 0

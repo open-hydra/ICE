@@ -27,6 +27,7 @@ contains
     use ICE_Mod_GhostExchange, only: build_ghost_schedule, build_local_bc_index, report_bc_mix
     use ICE_Mod_Timers,     only: timer_run_begin
     use iso_fortran_env,    only: int64
+    !$ use omp_lib,         only: omp_set_schedule, omp_sched_static
     implicit none
     type(ICE_simulation_type), intent(inout)  :: sim
     type(orion_data), intent(inout), optional :: IOgas
@@ -157,6 +158,24 @@ contains
     ! excludes the I/O and the partitioning, the cycle counters attach to the
     ! OpenMP pool at its full size, and a coupled run -- hydra calls ICE%setup,
     ! never ICE's own main -- gets them too.
+    !> The step's worksharing loops are SCHEDULE(RUNTIME): OMP_SCHEDULE picks the
+    !> schedule of a run (a measurement knob); unset, it is static, as the loops
+    !> were written. ICE_TILES_PER_THREAD multiplies the flux kernel's tile count
+    !> so that a dynamic schedule has tiles to balance (default 1: one per thread).
+    !> Neither changes a result: which thread sweeps a cell is not arithmetic.
+    block
+      character(len=32) :: env
+      integer :: status, ios
+      call get_environment_variable('OMP_SCHEDULE', env, status=status)
+      !$ if (status /= 0) call omp_set_schedule(omp_sched_static, 0)
+      call get_environment_variable('ICE_TILES_PER_THREAD', env, status=status)
+      if (status == 0) then
+        read(env, *, iostat=ios) tiles_per_thread
+        if (ios /= 0 .or. tiles_per_thread < 1) tiles_per_thread = 1
+      end if
+      if (mpi_is_root .and. tiles_per_thread > 1) &
+        write(*,'(A,I0)') '  OpenMP: flux tiles per thread ', tiles_per_thread
+    end block
     if (obj_io%timers) call report_bc_mix(sim%domain(1))
     call timer_run_begin(obj_io%timers, count_cells(sim))
 

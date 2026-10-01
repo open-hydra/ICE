@@ -22,7 +22,7 @@ contains
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
   
-      !$OMP DO COLLAPSE(3)
+      !$OMP DO COLLAPSE(3) schedule(runtime)
       do k = 1, grid%blk(b)%dim(3)
       do j = 1, grid%blk(b)%dim(2)
       do i = 1, grid%blk(b)%dim(1)

@@ -46,6 +46,15 @@ threads as well as many small ones. Two details shape the scaling:
 Thread counts beyond a few hundred cells per thread stop paying: the loop bodies are
 short and the barriers are frequent.
 
+Two measurement knobs, both without effect on the result: the step's worksharing loops
+are `SCHEDULE(RUNTIME)`, so `OMP_SCHEDULE` (e.g. `dynamic,4096`, `guided`) chooses the
+schedule of a run — unset, it is static, as the loops were written; `ICE_TILES_PER_THREAD`
+multiplies the flux kernel's tile count (default 1) so that a dynamic schedule has tiles
+to balance (the shared seam planes grow with it: one per tile). A VTune profile of one
+rank of 80 threads on the 192³ case (monolith, 2026-10-01) found 24 % of the CPU time
+spinning — at the barriers of the static loops and at the fork barrier between regions —
+against 8 % with 20 threads; these knobs measure how much of it a schedule recovers.
+
 ## MPI
 
 Blocks are assigned whole, largest first, to the least-loaded rank. Two consequences

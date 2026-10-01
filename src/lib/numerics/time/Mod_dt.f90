@@ -34,7 +34,7 @@ contains
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
 
-      !$omp do collapse(3)
+      !$omp do collapse(3) schedule(runtime)
       do k = 1, grid%blk(b)%dim(3)
       do j = 1, grid%blk(b)%dim(2)
       do i = 1, grid%blk(b)%dim(1)
@@ -116,7 +116,7 @@ contains
       if (.not. is_local_block(b)) cycle
       do p = 1, ngroups
 
-        !$omp do collapse(3)
+        !$omp do collapse(3) schedule(runtime)
         do k = 1, grid%blk(b)%dim(3)
         do j = 1, grid%blk(b)%dim(2)
         do i = 1, grid%blk(b)%dim(1)
