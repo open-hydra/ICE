@@ -78,6 +78,15 @@ the parallel first touch every run is flat from its first iteration (jobs 303746
 showed the effect. The windows of the `ICE Timing` lines show it; a last-window number does
 not.
 
+**Many small blocks on one rank** remain open. On the 24-block cut of the 192³ case (24 × 64 ×
+192 blocks) at one rank of 80 threads the current tree runs 0.690 s per iteration against 0.640
+for the kernel before it (job 303748): with planes far smaller than a 2 MB huge page, the
+plane-by-plane first touch leaves pages shared by threads of two sockets, and the NUMA balancer
+keeps migrating them (195 000 hinting faults per run against 5 000–8 000 on one block). With the
+balancer off and the placement kept (`numactl --membind=0-3`) the same binary runs 0.584 s; the
+best placement the balancer itself reached in one run gave 0.44 s (job 303746). Ranks of 20
+threads on their own socket, the recommended layout, are not affected.
+
 ## MPI
 
 Blocks are assigned whole, largest first, to the least-loaded rank. Two consequences
