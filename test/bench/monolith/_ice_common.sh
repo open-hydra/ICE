@@ -247,8 +247,25 @@ ice_run () {
 try: print('%.1f' % (float('$dt') - float('$loop')))
 except Exception: print('')" 2>/dev/null)
 
-      echo "IREP tag=$tag rep=$rep rc=$rc wall_iter=$wps iters=$nit total_s=$dt loop_s=$loop setup_s=$setup rss_rank_gb=$rss_rank_gb rss_node_gb=$rss_node_gb cycles_iter=$cyc ghz=$ghz"
-      local fields="rank_min_s=$tmn rank_avg_s=$tav imbalance_pct=$imb"
+      # Every timer window, not only the last one. wall_iter is the last window
+      # and stays so (every table of this campaign reads it), but a run that
+      # starts slow and settles -- the 2026-10-01 start-up crawl: 2.1 s per
+      # iteration for 20-30 iterations, then 0.35 -- hands the last window alone
+      # a number that describes nothing. windows= lists them all; steady_iter is
+      # the mean of the second half of the windows; transient_pct says by how
+      # much the slowest window of the FIRST half exceeds that steady value (a
+      # flat run reads ~20 %, the set-up effect of the first window; the crawl
+      # read 500-1000 %). A point whose transient_pct is large is not a steady
+      # state and must not enter a scaling table as one.
+      local win=$(grep 'ICE Timing |' run.log | grep -o 'wall/iter *[0-9.Ee+-]*' | awk '{printf "%s%s", (NR>1?",":""), $2}')
+      local steady=$(python3 -c "
+w=[float(x) for x in '$win'.split(',') if x]
+h=max(1, len(w)//2); s=sum(w[h:])/len(w[h:]) if len(w)>1 else w[0]
+print('%.4E %.0f' % (s, 100.0*(max(w[:h])/s-1.0)))" 2>/dev/null)
+      local std_iter=${steady%% *} trn_pct=${steady##* }
+
+      echo "IREP tag=$tag rep=$rep rc=$rc wall_iter=$wps steady_iter=$std_iter transient_pct=$trn_pct iters=$nit total_s=$dt loop_s=$loop setup_s=$setup rss_rank_gb=$rss_rank_gb rss_node_gb=$rss_node_gb cycles_iter=$cyc ghz=$ghz windows=$win"
+      local fields="steady_iter=$std_iter transient_pct=$trn_pct windows=$win rank_min_s=$tmn rank_avg_s=$tav imbalance_pct=$imb"
       fields="$fields exchange_wait_pct=$cwt collective_wait_pct=$swt"
       fields="$fields source_s=$src source_pct=$srp flux_s=$flx flux_pct=$flp halo_s=$hal halo_pct=$hap"
       fields="$fields compute_max_s=$wmx compute_min_s=$wmn compute_mean_s=$wav compute_spread_pct=$wsp"
