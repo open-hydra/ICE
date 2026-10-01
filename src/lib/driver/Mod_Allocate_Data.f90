@@ -59,7 +59,7 @@ contains
     implicit none
     type(ICE_block_type), intent(inout) :: blk
     integer(kind=I4),     intent(in)    :: nijk(3)
-    integer(kind=I4) :: ni, nj, nk, p
+    integer(kind=I4) :: ni, nj, nk, p, k
 
     ni = nijk(1) ; nj = nijk(2) ; nk = nijk(3)
 
@@ -81,10 +81,18 @@ contains
       allocate( blk%cond_phase(p)%source   (1:ncond(p), 1:ni, 1:nj, 1:nk) )
       allocate( blk%cond_phase(p)%residual (1:ncond(p), 1:ni, 1:nj, 1:nk) )
 
-      blk%cond_phase(p)%prim     = ieee_value(1._R8, ieee_quiet_nan)
-      blk%cond_phase(p)%prim_old = ieee_value(1._R8, ieee_quiet_nan)
-
-      blk%cond_phase(p)%tau      = ieee_value(1._R8, ieee_positive_inf)
+      !> First touch by the threads, plane by plane with the static partition the
+      !> per-cell phases use (and, per socket, the flux kernel's k-ranges): a page
+      !> lands on the socket of the thread that will sweep it. Written serially, a
+      !> whole block sits on one socket and a rank of 80 threads reads three quarters
+      !> of it across the interconnect. The values are the ones written before.
+      !$OMP PARALLEL DO SCHEDULE(STATIC)
+      do k = 1-gc, nk+gc
+        blk%cond_phase(p)%prim    (:,:,:,k) = ieee_value(1._R8, ieee_quiet_nan)
+        blk%cond_phase(p)%prim_old(:,:,:,k) = ieee_value(1._R8, ieee_quiet_nan)
+        blk%cond_phase(p)%tau     (:,:,k)   = ieee_value(1._R8, ieee_positive_inf)
+      end do
+      !$OMP END PARALLEL DO
 
       if (obj_irs%enabled) then
         allocate( blk%cond_phase(p)%RS1 (1:ncond(p), 0:ni+1, 0:nj+1, 0:nk+1) )
@@ -92,10 +100,13 @@ contains
         blk%cond_phase(p)%RS1 = 0._R8
         blk%cond_phase(p)%RS2 = 0._R8
       end if
-      blk%cond_phase(p)%beta = 1d0
-
-      blk%cond_phase(p)%source   = 0._R8
-      blk%cond_phase(p)%residual = 0._R8
+      !$OMP PARALLEL DO SCHEDULE(STATIC)
+      do k = 1, nk
+        blk%cond_phase(p)%beta    (:,:,k)   = 1d0
+        blk%cond_phase(p)%source  (:,:,:,k) = 0._R8
+        blk%cond_phase(p)%residual(:,:,:,k) = 0._R8
+      end do
+      !$OMP END PARALLEL DO
     enddo
 
   end subroutine Allocate_Block
