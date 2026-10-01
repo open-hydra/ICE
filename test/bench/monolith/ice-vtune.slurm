@@ -50,7 +50,9 @@ profile () {
   rm -rf $r
   ICE_WRAP="vtune -collect $col $* -r $r -quiet --" \
   ice_run "vt-$tag-$col" $set 1 $T 1 "$(spread $T)" 1 || echo "VTUNE $tag $col: run failed (rc=$?)"
-  if [ -d $r ]; then
+  # under a launcher VTune appends the host name to the result directory
+  r=$(ls -d $r $r.* 2>/dev/null | head -1)
+  if [ -n "$r" ] && [ -d $r ]; then
     vtune -report summary  -r $r -format text -report-output $r.summary.txt  2>&1 | tail -2
     vtune -report hotspots -r $r -format text -group-by function -column "CPU Time" -report-output $r.functions.txt 2>&1 | tail -2
     vtune -report hotspots -r $r -format text -group-by source-line -source-object function=compute_flux -report-output $r.flux-lines.txt 2>&1 | tail -2
