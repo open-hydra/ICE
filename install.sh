@@ -193,7 +193,8 @@ case "$COMMAND" in
 
         task "Cloning submodules"
         [[ $ORION_PATH == $(pwd)'/lib/ORION/' ]] && git submodule update --init lib/ORION
-        [[ $FINER_PATH == $(pwd)'/lib/third_party/FiNeR/' ]] && git submodule update --init --recursive lib/third_party/FiNeR
+        [[ $FINER_PATH == $(pwd)'/lib/third_party/FiNeR/' ]] && git submodule update --init lib/third_party/FiNeR
+        # FiNeR's own dependencies are cloned by CMake at configure time (ensure_finer_dependencies).
 
         task "Configuring and building $project"
         if [[ $COMPILERS == "intel" ]]; then

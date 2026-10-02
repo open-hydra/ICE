@@ -199,10 +199,14 @@ ice_add_fast_script(Refusals fast/refusals "fast;implementation;refusal")
 # The binary under test is this build's own, so a serial build is reported as a
 # SKIP by the driver (exit 77) instead of passing on a comparison of a file with
 # itself, which is what OpenMPEquiv does on such a build.
+# Each test gets its own work/<NAME>: Equiv3DStage and Equiv3DThreads both write
+# t1..t8, and under ctest -j one ran ICE on a case the other was rewriting.
+# The two paths are quoted for bash: a checkout under a directory with a space
+# would otherwise split them and fail before Python starts.
 function(ice_add_equiv3d NAME MODE ENV)
     add_test(
         NAME    ${NAME}
-        COMMAND bash -c "ICE_BIN=$<TARGET_FILE:${solver}> ICE_EQ_MODE=${MODE} ${ENV} python3 -B run.py"
+        COMMAND bash -c "ICE_BIN=\"$<TARGET_FILE:${solver}>\" ICE_EQ_MODE=${MODE} ICE_SCRATCH=\"${CMAKE_SOURCE_DIR}/test/fast/equiv3d/work/${NAME}\" ${ENV} python3 -B run.py"
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/test/fast/equiv3d"
     )
     set_tests_properties(${NAME} PROPERTIES

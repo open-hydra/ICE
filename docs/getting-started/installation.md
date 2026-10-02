@@ -29,8 +29,14 @@ does CMake if they are missing.
 ```bash
 git clone https://github.com/open-hydra/ICE.git
 cd ICE
-git submodule update --init --recursive
+git submodule update --init
 ```
+
+FiNeR's own five dependencies (PENF, FACE, FLAP, BeFoR64, StringiFor) are not submodules, so
+a recursive clone does not fetch them. The CMake configure clones them from
+`github.com/szaghi/` into `lib/third_party/FiNeR/src/third_party/`, which FiNeR's
+`.gitignore` excludes, so the submodule stays clean. A bare `cmake -B build` does the same, and it needs network access
+the first time. The same applies to a FiNeR tree given with `--include-finer`.
 
 ## Building with `install.sh`
 
