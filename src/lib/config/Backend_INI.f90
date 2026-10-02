@@ -111,7 +111,7 @@ contains
     use ICE_Input_Registry, only: reg
     use Finer,              only: file_ini
     implicit none
-    type(file_ini), intent(in) :: fini
+    type(file_ini), intent(inout) :: fini
     character(len=:), allocatable :: sections(:)
     character(len=:), allocatable :: pairs(:)
     integer :: s, k, nbad
