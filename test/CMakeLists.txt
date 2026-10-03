@@ -229,6 +229,16 @@ ice_add_equiv3d(Equiv3DStage threads
 # boundary loop is owner-computes (Mod_BC_Fluxes).
 ice_add_equiv3d(Equiv3DThreads threads "" "fast;implementation;3D;openmp")
 
+# The rank's blocks owned by thread groups (ICE_THREAD_GROUPS): 1 thread against
+# 4, 6, 8 and 3 threads in 2, 3, 4 and 2 groups -- first touch, per-cell phases,
+# ghost fill, boundary fluxes and the flux kernel's rounds by group. The banner
+# must show the groups in use. Measured RED on 2026-10-03 with the last group's
+# ghost records left out of the group order (its ghosts keep the NaN sentinel)
+# and with every group sweeping group 0's blocks in the flux rounds (4608 cells
+# differ); NOT red with the barrier between the kernel's k-faces and its sweep
+# removed (5 runs): on 8x8x6 blocks the race window is not hit.
+ice_add_equiv3d(Equiv3DGroups groups "" "fast;implementation;3D;openmp")
+
 # Each family alone against the three together: the ghost fill and the halo
 # must carry every family.
 ice_add_equiv3d(FamilyHalo3D family "" "fast;implementation;3D;multifamily")

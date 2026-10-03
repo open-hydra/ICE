@@ -2,7 +2,7 @@
 """Fast tests: a 3-D multi-block, multi-family case must give the same answer
 whatever the thread count, the rank count, or the company of its families.
 
-    ICE_EQ_MODE=threads|ranks|hybrid|family [ICE_EQ_ITERS=n] [ICE_EQ_MASK_CORNERS=1] [ICE_EQ_EXTRA='--scheme euler'] python3 -B run.py
+    ICE_EQ_MODE=threads|groups|ranks|hybrid|family [ICE_EQ_ITERS=n] [ICE_EQ_MASK_CORNERS=1] [ICE_EQ_EXTRA='--scheme euler'] python3 -B run.py
 
 The gates before this one (openmp-equiv, mpi-equiv) run 2-D single-family cases
 in which no populated cell crosses a block interface within their 200 iterations,
@@ -26,6 +26,14 @@ compares the raw-binary VTK payload byte for byte.
             corner's difference into its stencil neighbours, so the mask is
             exact only for a single-stage step; the full-length RK2 leg is the
             target of the owner-computes rewrite.
+  groups    1 thread against thread groups (ICE_THREAD_GROUPS): 2 groups of 2
+            threads, 3 of 2, 4 of 2, and 2 uneven groups of 1 and 2 threads -- the
+            12 blocks owned by groups, first touch, per-cell phases, ghost fill,
+            boundary fluxes and the flux kernel's rounds all by group. Each run's
+            banner must report the groups in use, or the leg FAILs: a binary that
+            ignored the variable would only repeat the threads leg.
+            Measured RED on 2026-10-03: a group's ghost records left out (NaN
+            ghosts) and every group sweeping group 0's blocks in the flux rounds.
   ranks     1 rank against 2, 3, 4 and 5 (12 blocks, so 5 is uneven), and a
             2x1x1 layout on 3 ranks (more ranks than blocks). Needs an MPI build.
             The case carries the three families, so this is also the halo's
@@ -72,9 +80,10 @@ def say(ok, what, yes, no):
     return ok
 
 
-def run(case, threads, ranks):
+def run(case, threads, ranks, extra_env=None):
     """Run ICE in case; returns the log text. Raises on a non-zero exit."""
     env = dict(os.environ, OMP_NUM_THREADS=str(threads), KMP_STACKSIZE='100M', OMP_STACKSIZE='100M')
+    env.update(extra_env or {})
     cmd = [str(ICE_BIN)] if ranks == 1 else [MPIRUN, '-np', str(ranks), str(ICE_BIN)]
     with open(str(case / 'log'), 'w') as out, open(str(case / 'err'), 'w') as err:
         rc = subprocess.call(cmd, cwd=str(case), stdout=out, stderr=err, env=env)
@@ -226,6 +235,23 @@ def leg_threads():
     return ok
 
 
+def leg_groups():
+    ref = make('g1')
+    run(ref, 1, 1, {'ICE_THREAD_GROUPS': '1'})
+    print('[equiv3d] %d blocks written, raw payload checked; every cell compared' % check_payload(ref))
+    ok = True
+    for groups, t in ((2, 4), (3, 6), (4, 8), (2, 3)):
+        case = make('g%d-t%d' % (groups, t))
+        log = run(case, t, 1, {'ICE_THREAD_GROUPS': str(groups)})
+        assert_build(log, t, 1)
+        m = re.search(r'thread groups (\d+) \(asked', log)
+        if m is None or int(m.group(1)) != groups:
+            raise SystemExit('[equiv3d] FAIL: asked for %d thread groups, the banner says %s'
+                             % (groups, m.group(1) if m else 'nothing'))
+        ok &= compare(ref, case, '1 thread vs %d threads in %d groups:' % (t, groups))
+    return ok
+
+
 def leg_ranks():
     ref = make('r1')
     run(ref, 1, 1)
@@ -275,7 +301,7 @@ def main():
     if not ICE_BIN.exists():
         raise SystemExit('[equiv3d] no ICE binary at %s -- build first' % ICE_BIN)
     WORK.mkdir(parents=True, exist_ok=True)
-    legs = {'threads': leg_threads, 'ranks': leg_ranks, 'hybrid': leg_hybrid, 'family': leg_family}
+    legs = {'threads': leg_threads, 'groups': leg_groups, 'ranks': leg_ranks, 'hybrid': leg_hybrid, 'family': leg_family}
     if MODE not in legs:
         raise SystemExit('[equiv3d] unknown ICE_EQ_MODE %s' % MODE)
     ok = legs[MODE]()
