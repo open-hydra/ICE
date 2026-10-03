@@ -2,6 +2,8 @@ module ICE_Mod_BC_Fluxes
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   use ICE_Mod_MPI, only: is_local_block
   use ICE_Lib_Ghost, only: compute_ghost, fill_second_ghost
+  use ICE_Mod_ThreadGroups, only: n_tgroups, thread_group, split_range
+  !$ use omp_lib, only: omp_get_thread_num
 
   implicit none
   private
@@ -18,22 +20,24 @@ contains
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4),      intent(in)    :: p
-    integer(kind=I4) :: n, c, r, b, f, i, j, k
-    integer(kind=I4) :: ig, jg, kg, ig2, jg2, kg2, ip, jp, kp
-    integer(kind=I4) :: dir
-    real(kind=R8)    :: normal(3), area
-    real(kind=R8)    :: dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th
-    real(kind=R8)    :: beta_val
-    real(kind=R8)    :: priml(ncond_max), primr(ncond_max), flux(ncond_max)
+    integer(kind=I4) :: c, tid, g, m, s, a, z, jj
 
     !> The residual was zeroed by zero_residual at the start of the stage and
     !> nothing has written it since, so the boundary fluxes are its first terms.
     bad_recon = .false.
-    !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, p, ncond, mat_of, solid_of, riemann, obj_time_scheme, obj_condensed), &
-    !$OMP PRIVATE(n, c, r, b, f, i, j, k, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, &
-    !$OMP         dir, normal, area, dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th, &
-    !$OMP         beta_val, priml, primr, flux)
+    !> Thread groups: each thread its static share of its own group's boundary cells
+    if (n_tgroups > 1) then
+      !$OMP PARALLEL DEFAULT(NONE) SHARED(grid, p) PRIVATE(tid, g, m, s, a, z, jj)
+      tid = 0
+      !$ tid = omp_get_thread_num()
+      call thread_group(tid, g, m, s)
+      call split_range(grid%bcells(p)%tg_first(g), grid%bcells(p)%tg_first(g+1) - 1, m, s, a, z)
+      do jj = a, z
+        call bound_cell(grid, p, grid%bcells(p)%tg_cell(jj))
+      end do
+      !$OMP END PARALLEL
+    else
+    !$OMP PARALLEL DEFAULT(NONE) SHARED(grid, p) PRIVATE(c)
 
     !> One iteration per boundary cell of this rank (see build_local_bc_index),
     !> its records in the order of the table: an edge or corner cell receives its
@@ -41,6 +45,38 @@ contains
     !> count, and no accumulation is shared.
     !$OMP DO SCHEDULE (DYNAMIC, 16)
     do c = 1, grid%bcells(p)%n
+      call bound_cell(grid, p, c)
+    enddo
+    !$OMP END PARALLEL
+    end if
+    if (bad_recon) then
+      write(*,'(A)') ' [ERROR] [ICE::compute_bound] unphysical state at first order on a boundary face'
+      error stop 1
+    endif
+
+  end subroutine compute_bound
+
+
+  !> The boundary fluxes of boundary cell c of family p, its records in table order: the
+  !> body of compute_bound's loop.
+  subroutine bound_cell(grid, p, c)
+    use ICE_Global_m
+    use ICE_Advanced_Types_m
+    use ICE_Lib_Riemann
+    use ICE_Mod_Fluxes, only: state_reconstruction, bad_recon
+    use ICE_Config_Types_m, only: obj_time_scheme, obj_condensed
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4),      intent(in)    :: p
+    integer(kind=I4),      intent(in)    :: c
+    integer(kind=I4) :: n, r, b, f, i, j, k
+    integer(kind=I4) :: ig, jg, kg, ig2, jg2, kg2, ip, jp, kp
+    integer(kind=I4) :: dir
+    real(kind=R8)    :: normal(3), area
+    real(kind=R8)    :: dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th
+    real(kind=R8)    :: beta_val
+    real(kind=R8)    :: priml(ncond_max), primr(ncond_max), flux(ncond_max)
+
     do r = grid%bcells(p)%first(c), grid%bcells(p)%first(c+1) - 1
       n = grid%bcells(p)%rec(r)
 
@@ -109,14 +145,8 @@ contains
         grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) + flux(1:ncond(p))
 
     enddo
-    enddo
-    !$OMP END PARALLEL
-    if (bad_recon) then
-      write(*,'(A)') ' [ERROR] [ICE::compute_bound] unphysical state at first order on a boundary face'
-      error stop 1
-    endif
 
-  end subroutine compute_bound
+  end subroutine bound_cell
 
 
 end module ICE_Mod_BC_Fluxes

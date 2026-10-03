@@ -59,6 +59,8 @@ module ICE_Advanced_Types_m
   type :: ICE_bc_cells_type
     integer                            :: n = 0
     integer, dimension(:), allocatable :: first, rec
+    ! With thread groups: the cells by owning group, tg_cell(tg_first(g):tg_first(g+1)-1) for group g
+    integer, dimension(:), allocatable :: tg_cell, tg_first
   end type ICE_bc_cells_type
 
   type, extends(bc_type) :: ICE_bc_type
@@ -90,6 +92,10 @@ module ICE_Advanced_Types_m
     type(ICE_bc_cells_type), dimension(:), allocatable :: bcells   ! one per family
     ! The same records grouped by family: family p is local_bc_grp(grp_first(p):grp_first(p+1)-1)
     integer, dimension(:), allocatable  :: local_bc_grp, grp_first
+    ! With thread groups: positions in local_bc_grp by family and owning group -- family p, group g is
+    ! local_bc_grp(tg_bc(tg_bc_first(g,p):tg_bc_first(g+1,p)-1))
+    integer, dimension(:),   allocatable :: tg_bc
+    integer, dimension(:,:), allocatable :: tg_bc_first
   end type ICE_domain_type
 
   type :: ICE_simulation_type

@@ -14,6 +14,8 @@ module ICE_Lib_Ghost
   use ICE_Lib_Solidification, only : solidPhaseAtInjection
   use ICE_Lib_Solid, only : prim_2_cons_MK_S, cons_2_prim_MK_S, prim_2_cons_IG_S, cons_2_prim_IG_S, &
                            prim_2_cons_AG_S, cons_2_prim_AG_S
+  use ICE_Mod_ThreadGroups, only : n_tgroups, thread_group, split_range
+  !$ use omp_lib, only : omp_get_thread_num
 
   implicit none
   private
@@ -29,11 +31,7 @@ contains
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in), optional :: p
     integer(kind=I4) :: i, ii, lo, hi
-    integer(kind=I4) :: bm, pm, im, jm, km, fm
-    integer(kind=I4) :: ig, jg, kg
-    integer(kind=I4) :: bs, is, js, ks, fs
-    integer(kind=I4) :: ic, jc, kc, ph
-    real(kind=R8)    :: area, normal(1:3), velocity(1:3), veln
+    integer(kind=I4) :: tid, g, m, s, pp, p1, p2, a, z, jj
 
     !> Remote cells read below (connection sources, chimera donors) from their owners
     call timer_comm_begin()
@@ -42,12 +40,49 @@ contains
 
     call family_range(grid, p, lo, hi)
 
-    !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, lo, hi, ncond, nbase, solid_of, mat_of, obj_time_scheme, obj_condensed), &
-    !$OMP PRIVATE(ii, i, bm, pm, im, jm, km, fm, ig, jg, kg, bs, is, js, ks, fs, ic, jc, kc, ph, area, normal, velocity, veln)
+    !> Thread groups: each thread its static share of its own group's records
+    if (n_tgroups > 1) then
+      p1 = 1 ; p2 = ngroups
+      if (present(p)) then
+        p1 = p ; p2 = p
+      end if
+      !$OMP PARALLEL DEFAULT(NONE) SHARED(grid, p1, p2) PRIVATE(tid, g, m, s, pp, a, z, jj)
+      tid = 0
+      !$ tid = omp_get_thread_num()
+      call thread_group(tid, g, m, s)
+      do pp = p1, p2
+        call split_range(grid%tg_bc_first(g,pp), grid%tg_bc_first(g+1,pp) - 1, m, s, a, z)
+        do jj = a, z
+          call ghost_record(grid, grid%local_bc_grp(grid%tg_bc(jj)))
+        end do
+      end do
+      !$OMP END PARALLEL
+      return
+    end if
+
+    !$OMP PARALLEL DEFAULT(NONE) SHARED(grid, lo, hi) PRIVATE(ii, i)
     !$OMP DO SCHEDULE (dynamic, 64)
     do ii = lo, hi
       i = grid%local_bc_grp(ii)
+      call ghost_record(grid, i)
+    enddo
+    !$OMP END DO
+    !$OMP END PARALLEL
+
+  end subroutine compute_ghost
+
+
+  !> The first ghost cell of record i (one face cell of one family): the body of compute_ghost's loop.
+  subroutine ghost_record(grid, i)
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4), intent(in) :: i
+    integer(kind=I4) :: bm, pm, im, jm, km, fm
+    integer(kind=I4) :: ig, jg, kg
+    integer(kind=I4) :: bs, is, js, ks, fs
+    integer(kind=I4) :: ic, jc, kc, ph
+    real(kind=R8)    :: area, normal(1:3), velocity(1:3), veln
+
 
       !> Preliminary assignments
       bm = grid%bc(i)%b
@@ -125,7 +160,7 @@ contains
           !> Switch to extrapolation boundary condition
           if (veln*real(1-2*mod(fm,2))>0._R8) then
             grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),im,jm,km)
-            cycle
+            return
           endif
 
           !> Switch to symmetry boundary condtion
@@ -225,11 +260,8 @@ contains
 
       end select
 
-    enddo
-    !$OMP END DO
-    !$OMP END PARALLEL
 
-  end subroutine compute_ghost
+  end subroutine ghost_record
 
 
   subroutine fill_second_ghost(grid, p)
@@ -237,6 +269,47 @@ contains
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in), optional :: p
     integer(kind=I4) :: i, ii, lo, hi
+    integer(kind=I4) :: tid, g, m, s, pp, p1, p2, a, z, jj
+
+    call family_range(grid, p, lo, hi)
+
+    !> Thread groups: each thread its static share of its own group's records
+    if (n_tgroups > 1) then
+      p1 = 1 ; p2 = ngroups
+      if (present(p)) then
+        p1 = p ; p2 = p
+      end if
+      !$OMP PARALLEL DEFAULT(NONE) SHARED(grid, p1, p2) PRIVATE(tid, g, m, s, pp, a, z, jj)
+      tid = 0
+      !$ tid = omp_get_thread_num()
+      call thread_group(tid, g, m, s)
+      do pp = p1, p2
+        call split_range(grid%tg_bc_first(g,pp), grid%tg_bc_first(g+1,pp) - 1, m, s, a, z)
+        do jj = a, z
+          call second_ghost_record(grid, grid%local_bc_grp(grid%tg_bc(jj)))
+        end do
+      end do
+      !$OMP END PARALLEL
+      return
+    end if
+
+    !$OMP PARALLEL DEFAULT(NONE) SHARED(grid, lo, hi) PRIVATE(ii, i)
+    !$OMP DO SCHEDULE(dynamic, 64)
+    do ii = lo, hi
+      i = grid%local_bc_grp(ii)
+      call second_ghost_record(grid, i)
+    enddo
+    !$OMP END DO
+    !$OMP END PARALLEL
+
+  end subroutine fill_second_ghost
+
+
+  !> The second ghost cell of record i: the body of fill_second_ghost's loop.
+  subroutine second_ghost_record(grid, i)
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4), intent(in) :: i
     integer(kind=I4) :: bm, pm, im, jm, km, fm
     integer(kind=I4) :: ig, jg, kg
     integer(kind=I4) :: ig2, jg2, kg2
@@ -245,18 +318,8 @@ contains
     integer(kind=I4) :: ic, jc, kc
     real(kind=R8)    :: normal(1:3), velocity(1:3)
 
-    call family_range(grid, p, lo, hi)
 
-    !$OMP PARALLEL DEFAULT(NONE), &
-    !$OMP SHARED(grid, lo, hi, ncond, nbase, mat_of, obj_condensed), &
-    !$OMP PRIVATE(ii, i, bm, pm, im, jm, km, fm, ig, jg, kg, ig2, jg2, kg2, ip, jp, kp, bs, is, js, ks, fs, &
-    !$OMP         ic, jc, kc, normal, velocity)
-    !$OMP DO SCHEDULE(dynamic, 64)
-    do ii = lo, hi
-      i = grid%local_bc_grp(ii)
-
-      if (grid%bc(i)%type == 0) cycle
-
+      if (grid%bc(i)%type == 0) return
       bm = grid%bc(i)%b
       im = grid%bc(i)%i ; jm = grid%bc(i)%j ; km = grid%bc(i)%k
       pm = grid%bc(i)%p ; fm = grid%bc(i)%f
@@ -304,11 +367,8 @@ contains
 
       end select
 
-    enddo
-    !$OMP END DO
-    !$OMP END PARALLEL
 
-  end subroutine fill_second_ghost
+  end subroutine second_ghost_record
 
 
   !> Chimera ghost cell of layer g: conservative blend of the donor cells found by
