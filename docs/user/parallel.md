@@ -347,9 +347,11 @@ groups of 20 threads (one per socket), against one group, the phase-2 binary
 | 4 (96 × 96 × 192) | — | 0.343 s | **0.287 s** | 0.279 s |
 | 1 (groups fall back to one) | 0.305 s | — | 0.295 s | — |
 
-A single OpenMP rank with groups runs as fast as one MPI rank per socket on the
-same cut, and a single block is unaffected (one block cannot be split among
-groups). On this node the one-group runs also read 3–9 % below the phase-2
+Each entry is the best of two runs. Over four runs on the 24-block cut (this job
+and job 303833, which found the four groups by itself with the variable unset)
+four groups took 0.31–0.34 s and `4 × 20` 0.305–0.312 s: a single OpenMP rank
+with groups is within a few per cent of one MPI rank per socket on the same cut,
+and a single block is unaffected (one block cannot be split among groups). On this node the one-group runs also read 3–9 % below the phase-2
 binary; that difference is not attributed.
 
 On one node, `4 × 20` (0.293 s) is still faster than `1 × 80` (0.303 s), and
@@ -613,3 +615,4 @@ Results under `results/<job>.tsv`; raw per-repetition logs under
 | 303746 | C5d ± C3, `461eb4f` ± C3 | wn05 | C3 makes every `1 × 80` run flat; C5d + C3 0.303 s against 0.343. 24-block cut: 0.71 s (C5d + C3), 0.63 (`461eb4f`), 0.44 (C5d, balancer-placed). |
 | 303748 | `935af6b` (C3 + C5d) beside the 303485 binary | wn[05-07], same nodes as 303350 | Phase-2 verdict, the second table of the single-rank passage in §6. |
 | 303832 | `9a4812b` (thread groups) beside the `935af6b` binary | wn03 | Thread groups at `1 × 80` on 24, 12, 4 and 1 blocks against one group, the phase-2 binary and `4 × 20` — the thread-groups table of §6. |
+| 303833 | `5f020c4` (thread groups, auto) | wn03 | `ICE_THREAD_GROUPS` unset: four groups found at `1 × 80` on 24 blocks (0.333 s), one group at `4 × 20` (0.305 s). |

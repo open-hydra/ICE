@@ -101,8 +101,8 @@ phase then keeps a block on its group:
 
 Which thread computes a cell is not arithmetic: results are bit-identical with and without
 groups (`Equiv3DGroups`). One rank of 80 threads on the 24-block cut went from 0.501 to
-0.309 s per iteration, which is what four ranks of 20 threads take on the same cut (0.312 s, job
-303832). A single block keeps the whole team: groups need at least as many blocks as groups.
+0.31–0.34 s per iteration (four runs, jobs 303832/303833), against 0.305–0.312 s for four ranks of
+20 threads on the same cut. A single block keeps the whole team: groups need at least as many blocks as groups.
 
 ## MPI
 
