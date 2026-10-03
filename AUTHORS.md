@@ -17,9 +17,3 @@ removed from this file; per-release credit is recorded in `CITATION.cff`.
 - Gianluca Cocirla
 - Marco Grossi
 - Giacomo Passarani
-
-## Contributors
-
-Automatically sourced from git history.
-
-- GiacomoPassarani
