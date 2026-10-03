@@ -7,10 +7,13 @@
 !> local block is owned by one group (longest-processing-time on cell counts, as the
 !> blocks over the ranks): its fields are first touched, and its cells swept, only by
 !> the threads of that group. Which thread computes a cell is not arithmetic, so no
-!> result depends on G. G = 1 (the default) is the whole team on every block.
+!> result depends on G. Unset or `auto` (the default): with the threads pinned
+!> (OMP_PROC_BIND), one group per socket the team spans, read from where each thread
+!> runs; unpinned, one group. G = 1 is the whole team on every block.
 module ICE_Mod_ThreadGroups
   use ICE_Mod_MPI, only: lpt_assign, local_block_ids, n_local_blocks, mpi_is_root
-  !$ use omp_lib, only: omp_get_max_threads
+  use iso_c_binding, only: c_int
+  !$ use omp_lib, only: omp_get_max_threads, omp_get_thread_num, omp_get_proc_bind, omp_proc_bind_false
   implicit none
   private
 
@@ -22,6 +25,13 @@ module ICE_Mod_ThreadGroups
   integer, allocatable, public :: tg_thr_lo(:)        !< First thread id of group g
   integer, allocatable, public :: tg_thr_hi(:)        !< Last thread id of group g
   integer, public :: tg_rounds = 0                    !< Most blocks owned by one group
+
+  interface
+    function sched_getcpu() bind(C, name='sched_getcpu')
+      import :: c_int
+      integer(c_int) :: sched_getcpu
+    end function sched_getcpu
+  end interface
 
   public :: setup_thread_groups, thread_group, split_range, block_group, cell_slice
 
@@ -40,20 +50,31 @@ contains
     n_tthreads = 1
     !$ n_tthreads = omp_get_max_threads()
 
-    asked = 1
+    asked = 0                                   ! 0: auto
     call get_environment_variable('ICE_THREAD_GROUPS', env, status=status)
-    if (status == 0) then
+    if (status == 0 .and. trim(adjustl(env)) /= 'auto') then
       read(env, *, iostat=ios) asked
       if (ios /= 0 .or. asked < 1) asked = 1
     end if
 
     nloc = n_local_blocks
-    n_tgroups = asked
-    if (n_tgroups > n_tthreads .or. n_tgroups > nloc) n_tgroups = 1
-
     if (allocated(tgroup_of_block)) deallocate(tgroup_of_block, tg_first, tg_blocks, tg_thr_lo, tg_thr_hi)
-    allocate(tgroup_of_block(nb), tg_first(0:n_tgroups), tg_blocks(max(nloc, 1)), &
-             tg_thr_lo(0:n_tgroups-1), tg_thr_hi(0:n_tgroups-1))
+    if (asked == 0) then
+      call socket_runs(n_tgroups)               ! sets tg_thr_lo/hi when it finds more than one socket
+    else
+      n_tgroups = asked
+    end if
+    if (n_tgroups > n_tthreads .or. n_tgroups > nloc) n_tgroups = 1
+    if (asked /= 0 .or. n_tgroups == 1) then
+      if (allocated(tg_thr_lo)) deallocate(tg_thr_lo, tg_thr_hi)
+      allocate(tg_thr_lo(0:n_tgroups-1), tg_thr_hi(0:n_tgroups-1))
+      do g = 0, n_tgroups - 1
+        tg_thr_lo(g) = (g * n_tthreads) / n_tgroups
+        tg_thr_hi(g) = ((g + 1) * n_tthreads) / n_tgroups - 1
+      end do
+    end if
+
+    allocate(tgroup_of_block(nb), tg_first(0:n_tgroups), tg_blocks(max(nloc, 1)))
     tgroup_of_block = -1
 
     allocate(owner(max(nloc, 1)), load(0:n_tgroups-1), w(max(nloc, 1)))
@@ -77,14 +98,17 @@ contains
     end do
     tg_rounds = 0
     do g = 0, n_tgroups - 1
-      tg_thr_lo(g) = (g * n_tthreads) / n_tgroups
-      tg_thr_hi(g) = ((g + 1) * n_tthreads) / n_tgroups - 1
       tg_rounds = max(tg_rounds, tg_first(g+1) - tg_first(g))
     end do
 
-    if (mpi_is_root .and. status == 0) then
-      write(*,'(A,I0,A,I0,A,I0,A)') '  OpenMP: thread groups ', n_tgroups, ' (asked ', asked, ') over ', &
-        n_tthreads, ' threads'
+    if (mpi_is_root .and. (status == 0 .or. n_tgroups > 1)) then
+      if (asked == 0) then
+        write(*,'(A,I0,A,I0,A)') '  OpenMP: thread groups ', n_tgroups, ' (auto: sockets spanned) over ', &
+          n_tthreads, ' threads'
+      else
+        write(*,'(A,I0,A,I0,A,I0,A)') '  OpenMP: thread groups ', n_tgroups, ' (asked ', asked, ') over ', &
+          n_tthreads, ' threads'
+      end if
       if (n_tgroups > 1) then
         do g = 0, n_tgroups - 1
           write(*,'(A,I0,A,I0,A,I0,A,I0,A,I0)') '    group ', g, ': threads ', tg_thr_lo(g), '-', tg_thr_hi(g), &
@@ -94,6 +118,65 @@ contains
     end if
     deallocate(owner, load, w)
   end subroutine setup_thread_groups
+
+
+  !> Auto mode: the sockets the team spans, from where each thread runs. Only with the
+  !> threads pinned (an unpinned thread's CPU at set-up says nothing about later), and
+  !> only when the threads of each socket are consecutive ids (OMP_PROC_BIND=close or
+  !> spread over a socket-major core list); otherwise one group. On success the
+  !> groups are the runs of consecutive threads on one socket: tg_thr_lo/hi are set.
+  subroutine socket_runs(ng)
+    integer, intent(out) :: ng
+    integer, allocatable :: cpu(:), pkg(:)
+    integer :: t, u, ios, nrun
+    character(len=96) :: path
+    logical :: pinned
+
+    ng = 1
+    pinned = .false.
+    !$ pinned = omp_get_proc_bind() /= omp_proc_bind_false
+    if (.not. pinned .or. n_tthreads < 2) return
+
+    allocate(cpu(0:n_tthreads-1), pkg(0:n_tthreads-1))
+    cpu = -1
+    !$OMP PARALLEL
+    !$ cpu(omp_get_thread_num()) = int(sched_getcpu())
+    !$OMP END PARALLEL
+    do t = 0, n_tthreads - 1
+      if (cpu(t) < 0) return
+      write(path,'(A,I0,A)') '/sys/devices/system/cpu/cpu', cpu(t), '/topology/physical_package_id'
+      open(newunit=u, file=trim(path), status='old', action='read', iostat=ios)
+      if (ios /= 0) return
+      read(u, *, iostat=ios) pkg(t)
+      close(u)
+      if (ios /= 0) return
+    end do
+
+    ! Runs of one socket; a socket that comes back later means the threads are not
+    ! grouped by socket: one group
+    nrun = 1
+    do t = 1, n_tthreads - 1
+      if (pkg(t) /= pkg(t-1)) then
+        if (any(pkg(0:t-1) == pkg(t))) return
+        nrun = nrun + 1
+      end if
+    end do
+    if (nrun == 1) return
+
+    if (allocated(tg_thr_lo)) deallocate(tg_thr_lo, tg_thr_hi)
+    allocate(tg_thr_lo(0:nrun-1), tg_thr_hi(0:nrun-1))
+    nrun = 0
+    tg_thr_lo(0) = 0
+    do t = 1, n_tthreads - 1
+      if (pkg(t) /= pkg(t-1)) then
+        tg_thr_hi(nrun) = t - 1
+        nrun = nrun + 1
+        tg_thr_lo(nrun) = t
+      end if
+    end do
+    tg_thr_hi(nrun) = n_tthreads - 1
+    ng = nrun + 1
+  end subroutine socket_runs
 
 
   !> The group owning block b, or -1 when the whole team works on it: one group,

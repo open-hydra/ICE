@@ -78,14 +78,31 @@ the parallel first touch every run is flat from its first iteration (jobs 303746
 showed the effect. The windows of the `ICE Timing` lines show it; a last-window number does
 not.
 
-**Many small blocks on one rank** remain open. On the 24-block cut of the 192³ case (24 × 64 ×
-192 blocks) at one rank of 80 threads the current tree runs 0.690 s per iteration against 0.640
-for the kernel before it (job 303748): with planes far smaller than a 2 MB huge page, the
-plane-by-plane first touch leaves pages shared by threads of two sockets, and the NUMA balancer
-keeps migrating them (195 000 hinting faults per run against 5 000–8 000 on one block). With the
-balancer off and the placement kept (`numactl --membind=0-3`) the same binary runs 0.584 s; the
-best placement the balancer itself reached in one run gave 0.44 s (job 303746). Ranks of 20
-threads on their own socket, the recommended layout, are not affected.
+**Thread groups: many blocks on one rank spanning sockets.** Spread over all the threads, every
+block's pages are shared by every socket; on many small blocks the NUMA balancer then keeps
+migrating them (24 blocks of 24 × 64 × 192 at one rank of 80 threads: 0.69 s per iteration,
+195 000 hinting faults per run). `Mod_ThreadGroups` cuts the team into groups of consecutive
+thread ids — by default, with pinned threads, one per socket the team spans (each thread reads
+its CPU with `sched_getcpu` and the CPU's socket from `/sys`); `ICE_THREAD_GROUPS=<n>` forces n
+equal groups, `1` turns them off — and assigns each local block to one group by
+longest-processing-time on cell counts (`lpt_assign`, the rule for blocks over ranks). Every
+phase then keeps a block on its group:
+
+- set-up partitions the blocks and builds the groups before `allocate_data`, and a group's
+  threads write each array of its blocks first (`touch_by_group`), so the pages land on the
+  group's socket;
+- the per-cell phases give each thread its slice (`cell_slice`: the split a static
+  `collapse(3)` makes) of its group's blocks;
+- the ghost fill and the boundary fluxes take each record or boundary cell on a thread of the
+  group owning its block (group-ordered lists built by `build_local_bc_index`);
+- the flux kernel runs in rounds, round r sweeping the r-th block of every group at once with
+  the group's own tiles, shared planes and tile counter, so its barriers stay team barriers
+  (`compute_flux_grouped`).
+
+Which thread computes a cell is not arithmetic: results are bit-identical with and without
+groups (`Equiv3DGroups`). One rank of 80 threads on the 24-block cut went from 0.501 to
+0.309 s per iteration, which is what four ranks of 20 threads take on the same cut (0.312 s, job
+303832). A single block keeps the whole team: groups need at least as many blocks as groups.
 
 ## MPI
 

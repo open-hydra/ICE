@@ -35,8 +35,13 @@ mesh rather than in the launch command.
 
 **OpenMP threads over the cells of a block**, not over blocks. A single large
 block therefore threads as well as many small ones, and adding blocks purely to
-feed threads is never necessary — but see [§11](#11-known-scalability-limits)
-for what happens when a rank holds many small blocks at a high thread count.
+feed threads is never necessary. When a rank's threads span several sockets and
+the rank holds several blocks, ICE gives each block to the threads of one socket
+(**thread groups**, `ICE_THREAD_GROUPS`): that block's memory then stays on that
+socket, and one rank does what one rank per socket would. This is automatic when
+the threads are pinned (`OMP_PROC_BIND`); `ICE_THREAD_GROUPS=<n>` forces n groups,
+`1` turns it off. It is what an OpenMP-only host such as hydra-MI2 needs on a
+multi-block mesh. See [§6](#6-strong-scaling).
 
 **Every rank allocates the whole domain** and updates only its own blocks. Per
 rank memory does not fall as ranks are added, so the node's memory — not its
@@ -73,7 +78,7 @@ On a node with **4 sockets × 20 cores**:
 | 20 | `4 × 5` | one rank per socket |
 | 40 | `4 × 10` | one rank per socket |
 | 80 | `4 × 20` | one rank per socket, one node |
-| 80 | `1 × 80` | lowest memory, needs explicit placement; fastest only on the pre-wave baseline — see [§6](#6-strong-scaling) |
+| 80 | `1 × 80` | lowest memory, needs explicit placement (`OMP_PROC_BIND=close`); with several blocks the thread groups make it as fast as `4 × 20` — see [§6](#6-strong-scaling) |
 | 160 | `8 × 20` | two nodes, same per-node layout |
 | 240 | `12 × 20` | three nodes, same per-node layout |
 
@@ -327,7 +332,25 @@ NUMA balancer keeps migrating the pages of the plane-by-plane first touch (a
 threads of two sockets); with the placement kept and the balancer off
 (`numactl --membind=0-3`) the same binary runs 0.584 s, and the best placement
 the balancer itself reached in an earlier run gave 0.44 s (job 303746). A rank
-holding many small blocks over several sockets is the open item of this page.
+holding many small blocks over several sockets was the open item of this page;
+thread groups close it:
+
+**Thread groups (2026-10-03, job 303832, wn03, one node; steady state).** One
+rank of 80 threads pinned with `OMP_PROC_BIND=close`, its blocks owned by four
+groups of 20 threads (one per socket), against one group, the phase-2 binary
+(`935af6b`) and the same cut as four MPI ranks of 20 threads:
+
+| Blocks on the rank | Phase-2 binary | One group | **Four groups** | `4 × 20` |
+| ---: | ---: | ---: | ---: | ---: |
+| 24 (24 × 64 × 192) | 0.550 s | 0.501 s | **0.309 s** | 0.312 s |
+| 12 | — | 0.388 s | **0.299 s** | — |
+| 4 (96 × 96 × 192) | — | 0.343 s | **0.287 s** | 0.279 s |
+| 1 (groups fall back to one) | 0.305 s | — | 0.295 s | — |
+
+A single OpenMP rank with groups runs as fast as one MPI rank per socket on the
+same cut, and a single block is unaffected (one block cannot be split among
+groups). On this node the one-group runs also read 3–9 % below the phase-2
+binary; that difference is not attributed.
 
 On one node, `4 × 20` (0.293 s) is still faster than `1 × 80` (0.303 s), and
 "one rank per socket" ([§2](#2-selecting-a-parallel-configuration)) remains
@@ -504,22 +527,16 @@ counts exhaust memory before they exhaust cores.
 shows up directly in the `balance` figure at startup. Cut the mesh for the rank
 count you intend to use.
 
-**Many small blocks on one rank.** Threading is over cells, not blocks
-([§1](#1-work-division)), but the two are not independent at a high thread
-count. Cutting the 192³ case into 24 blocks of 24×64×192 instead of the
-default 4 blocks of 96×96×192, then running that cut on one rank of 80 threads
-(job 303417, tag `blk-C80-1x80-R24`), makes every per-cell phase 2–8× slower
-than the 4-block cut on the same rank — `zero` 70.6 ms vs. 8.7 ms, `source` 87
-vs. 37, `update` 67 vs. 24, `bound` 21 vs. 3.8, `ghost` 23 vs. 4 — while the
-flux sweep itself is essentially unchanged (0.228 s vs. 0.220 s). The `C4b`
-NOWAIT change only took `zero` from 107 ms to 70.6 ms, so it is not a barrier
-cost, and the per-thread chunk is the same ~3.7k cells (236 kB) in both
-layouts. Something in how 80-thread worksharing splits many small blocks costs
-roughly 2–3 ms per block per phase; this is **unresolved** — a threading
-profile of that leg is the next step. At `4 × 20` the same 24-block cut costs a
-much smaller +16 % (job 303350, `blk-C80-4x20-R24` vs. `env-C80-4x20`); at
-`1 × 80` it costs +54 %. Practical advice: as few blocks per rank as the
-balance allows, and it matters far more at `1 × N` than at a multi-rank split.
+**Many small blocks on one rank spanning sockets.** Spread over all the
+threads, every block's pages are shared by every socket, and the kernel's NUMA
+balancer keeps migrating them: the 24-block cut of the 192³ case on one rank of
+80 threads ran 0.55–0.69 s per iteration where four ranks of 20 take 0.31 s
+(jobs 303748, 303832). Thread groups ([§1](#1-work-division)) remove this —
+0.309 s with four groups — but need pinned threads (`OMP_PROC_BIND`) to be on by
+themselves, and at least as many blocks as sockets: a rank holding fewer blocks
+than the sockets its threads span uses one group. (The figures once quoted here,
+from job 303417, were last-window readings of runs still in their start-up
+transient; see [§6](#6-strong-scaling).)
 
 **Cell balance is not work balance.** At reported 100 % cell-count balance
 at every rank count in this benchmark, ICE still measures up to 6.3 % spread
@@ -595,3 +612,4 @@ Results under `results/<job>.tsv`; raw per-repetition logs under
 | 303745 | `b151bea` rebuilt, and the 303485 binary | wn03 | The flat 303485 binary against its tree rebuilt without C3 (crawls), and the footprint bound to node 0 (4.0 s per iteration). |
 | 303746 | C5d ± C3, `461eb4f` ± C3 | wn05 | C3 makes every `1 × 80` run flat; C5d + C3 0.303 s against 0.343. 24-block cut: 0.71 s (C5d + C3), 0.63 (`461eb4f`), 0.44 (C5d, balancer-placed). |
 | 303748 | `935af6b` (C3 + C5d) beside the 303485 binary | wn[05-07], same nodes as 303350 | Phase-2 verdict, the second table of the single-rank passage in §6. |
+| 303832 | `9a4812b` (thread groups) beside the `935af6b` binary | wn03 | Thread groups at `1 × 80` on 24, 12, 4 and 1 blocks against one group, the phase-2 binary and `4 × 20` — the thread-groups table of §6. |
