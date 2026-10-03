@@ -13,10 +13,16 @@ contains
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Mod_ThreadGroups, only: n_tgroups
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
     integer(kind=I4) :: b, i, j, k
+
+    if (n_tgroups > 1) then
+      call compute_source_grouped(grid, p)
+      return
+    end if
 
     !$OMP PARALLEL
     do b = 1, grid%nb
@@ -45,6 +51,44 @@ contains
   end subroutine compute_source
           
   
+  !> compute_source with thread groups: each thread sweeps its slice of its group's blocks.
+  subroutine compute_source_grouped(grid, p)
+    use ICE_Mod_ThreadGroups, only: n_tgroups, tg_first, tg_blocks, thread_group, cell_slice
+    !$ use omp_lib, only: omp_get_thread_num
+    use ICE_Global_m
+    use ICE_Advanced_Types_m
+    use ICE_Config_Types_m, only: obj_condensed
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4), intent(in)  :: p
+    integer(kind=I4) :: b, i, j, k, n, tid, g, m, s, i1, j1, k1, i2, j2, k2
+
+    !$OMP PARALLEL PRIVATE(b, i, j, k, n, tid, g, m, s, i1, j1, k1, i2, j2, k2)
+    tid = 0
+    !$ tid = omp_get_thread_num()
+    call thread_group(tid, g, m, s)
+    do n = tg_first(g), tg_first(g+1) - 1
+      b = tg_blocks(n)
+      call cell_slice(grid%blk(b)%dim, m, s, i1, j1, k1, i2, j2, k2)
+      do k = k1, k2
+      do j = merge(j1, 1, k == k1), merge(j2, grid%blk(b)%dim(2), k == k2)
+      do i = merge(i1, 1, k == k1 .and. j == j1), merge(i2, grid%blk(b)%dim(1), k == k2 .and. j == j2)
+          call compute_source_ (grid%blk(b)%cond_phase(p)%prim(:,i,j,k),   &
+                                grid%blk(b)%cond_phase(p)%tau(i,j,k),      &
+                                grid%blk(b)%gas_phase%prim(:,i,j,k),       &
+                                grid%blk(b)%gas_phase%R(i,j,k),            &
+                                grid%blk(b)%gas_phase%gam(i,j,k),          &
+                                grid%blk(b)%gas_phase%k(i,j,k),            &
+                                grid%blk(b)%gas_phase%mu(i,j,k),           &
+                                grid%blk(b)%cond_phase(p)%source(:,i,j,k), &
+                                obj_condensed(mat_of(p)), nbase(p)         )
+      enddo ; enddo ; enddo
+    enddo
+    !$OMP END PARALLEL
+
+  end subroutine compute_source_grouped
+
+
   subroutine compute_source_ (cond_prim, cond_tau, gas_prim, gas_R, gas_gam, gas_k, gas_mu, source, mat, nb)
     use ICE_Parameters_m, only: pi, sigma_SB, I4
     use ICE_Config_Types_m, only: condensed_phase_t, obj_time_scheme

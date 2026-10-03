@@ -24,6 +24,7 @@ contains
     use ICE_Mod_Phase
     use ICE_Mod_Multigrid,  only: Setup_Multigrid
     use ICE_Mod_MPI,        only: mpi_is_root, partition_blocks
+    use ICE_Mod_ThreadGroups, only: setup_thread_groups
     use ICE_Mod_GhostExchange, only: build_ghost_schedule, build_local_bc_index, report_bc_mix
     use ICE_Mod_Timers,     only: timer_run_begin
     use iso_fortran_env,    only: int64
@@ -68,6 +69,16 @@ contains
     else
       call read_ic(sim%ODP(1))
     end if
+
+    ! The blocks over the ranks and, inside the rank, over the thread groups
+    ! (ICE_THREAD_GROUPS, default one group: every block over the whole team), decided
+    ! before anything is allocated: with several groups a block's fields are first
+    ! touched by its own group's threads. partition_blocks runs again below, with the
+    ! same result and its report.
+    call partition_blocks(size(sim%ODP(1)%block), [(sim%ODP(1)%block(b)%Ni * sim%ODP(1)%block(b)%Nj * &
+                          sim%ODP(1)%block(b)%Nk, b = 1, size(sim%ODP(1)%block))], quiet=.true.)
+    call setup_thread_groups(size(sim%ODP(1)%block), [(sim%ODP(1)%block(b)%Ni * sim%ODP(1)%block(b)%Nj * &
+                             sim%ODP(1)%block(b)%Nk, b = 1, size(sim%ODP(1)%block))])
 
     ! Allocate data structure for fine level
     call allocate_data(sim%domain(1), coupled, sim%ODP(1))
