@@ -108,15 +108,49 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   # -------- Helper: fetch FiNeR's own dependencies --------
   macro(ensure_finer_dependencies FINER_ROOT)
-    foreach(_dep BeFoR64 FACE FLAP PENF StringiFor)
+    set(_finer_dep_pins
+      BeFoR64=40d19c5f6127088126606b90448e99e02d8b641c
+      FACE=95226cd6135b9daeb8ff2c748d2065deee230358
+      FLAP=7f5ec8e1f26be5e2a263fdd2118501b340c0d461
+      PENF=34e10af852f81822bac0df7c5f73936e0655f54f
+      StringiFor=77b75b1d7f7012d2984135b231008f751ab32dda)
+    foreach(_pin ${_finer_dep_pins})
+      string(REPLACE "=" ";" _pin "${_pin}")
+      list(GET _pin 0 _dep)
+      list(GET _pin 1 _dep_sha)
+      set(_dep_url "https://github.com/szaghi/${_dep}")
       set(_dep_dir "${FINER_ROOT}/src/third_party/${_dep}")
-      if (NOT EXISTS "${_dep_dir}/CMakeLists.txt")
-        message(STATUS "FiNeR dependency ${_dep} missing. Cloning https://github.com/szaghi/${_dep}...")
+      if (NOT EXISTS "${_dep_dir}")
+        message(STATUS "FiNeR dependency ${_dep} missing. Cloning ${_dep_url}...")
         execute_process(
-          COMMAND git clone https://github.com/szaghi/${_dep} "${_dep_dir}"
+          COMMAND git clone ${_dep_url} "${_dep_dir}"
           RESULT_VARIABLE _dep_result)
         if(NOT _dep_result EQUAL 0)
           message(FATAL_ERROR "Failed to clone FiNeR dependency ${_dep} into ${_dep_dir}")
+        endif()
+      elseif (NOT EXISTS "${_dep_dir}/.git")
+        message(FATAL_ERROR "FiNeR dependency ${_dep}: ${_dep_dir} exists but is not a git checkout; "
+                            "remove it to let CMake clone ${_dep_url} at ${_dep_sha}")
+      endif()
+      execute_process(
+        COMMAND git rev-parse HEAD
+        WORKING_DIRECTORY "${_dep_dir}"
+        OUTPUT_VARIABLE _dep_head
+        OUTPUT_STRIP_TRAILING_WHITESPACE)
+      if (NOT _dep_head STREQUAL _dep_sha)
+        message(STATUS "FiNeR dependency ${_dep} at '${_dep_head}'. Checking out ${_dep_sha}...")
+        execute_process(
+          COMMAND git fetch ${_dep_url} ${_dep_sha}
+          WORKING_DIRECTORY "${_dep_dir}"
+          RESULT_VARIABLE _dep_result)
+        if(_dep_result EQUAL 0)
+          execute_process(
+            COMMAND git -c advice.detachedHead=false checkout ${_dep_sha}
+            WORKING_DIRECTORY "${_dep_dir}"
+            RESULT_VARIABLE _dep_result)
+        endif()
+        if(NOT _dep_result EQUAL 0)
+          message(FATAL_ERROR "Failed to check out FiNeR dependency ${_dep} at ${_dep_sha} in ${_dep_dir}")
         endif()
       endif()
     endforeach()
