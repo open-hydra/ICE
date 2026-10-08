@@ -28,6 +28,10 @@ IF(USE_OPENMP)
     target_link_libraries(ICEL PUBLIC OpenMP::OpenMP_Fortran)
 ENDIF(USE_OPENMP)
 
+IF(ICE_RACE_PROBE)
+    target_compile_definitions(ICEL PRIVATE ICE_RACE_PROBE)
+ENDIF()
+
 IF(USE_MPI)
     target_compile_definitions(ICEL PUBLIC USE_MPI)
     target_link_libraries(ICEL PUBLIC MPI::MPI_Fortran)

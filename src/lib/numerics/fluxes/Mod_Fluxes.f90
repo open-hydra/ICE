@@ -3,6 +3,10 @@ module ICE_Mod_Fluxes
   use ICE_Mod_MPI, only: is_local_block
   use ICE_Lib_Reconstruction, only: state_reconstruction, bad_recon
   use ICE_Mod_ThreadGroups, only: n_tgroups, tg_first, tg_blocks, tg_thr_lo, tg_thr_hi, tg_rounds, thread_group
+#ifdef ICE_RACE_PROBE
+  use, intrinsic :: iso_c_binding,   only: c_int
+  use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
+#endif
 
   implicit none
   private
@@ -37,6 +41,23 @@ module ICE_Mod_Fluxes
   !> Bytes the threads' private plane buffers may take together before the shallow
   !> tiling is used instead (the L3 of one node's socket, roughly).
   integer(kind=8), parameter :: plane_buffer_budget = 16_8 * 1024_8 * 1024_8
+
+#ifdef ICE_RACE_PROBE
+  !> The race probe of compute_flux_grouped (CMake ICE_RACE_PROBE, test Equiv3DGroupsRace),
+  !> never in a production build: every round the group's shared planes start as NaN, and
+  !> the k-face tile 1 -- the one whose output the first sweep tile reads -- sleeps this
+  !> long before it writes. Any other thread of the group meanwhile empties the k-face
+  !> counter and, were the barrier between k-faces and sweep missing, would take sweep
+  !> tile 1 and carry the NaN into the residual (state_update then stops the run).
+  integer(c_int), parameter :: probe_sleep_us = 2000
+  interface
+    function c_usleep(us) bind(C, name='usleep') result(rc)
+      import :: c_int
+      integer(c_int), value :: us
+      integer(c_int)        :: rc
+    end function c_usleep
+  end interface
+#endif
 
 contains
 
@@ -162,6 +183,9 @@ contains
     real(R8), allocatable :: fi(:,:), gj(:,:,:), hk(:,:,:,:)
     integer(kind=I4) :: jlo, jhi, klo, khi
     integer(kind=I4), allocatable :: cnt(:,:)
+#ifdef ICE_RACE_PROBE
+    integer(c_int) :: rc
+#endif
 
     nc = ncond(p)
     bad_recon = .false.
@@ -182,8 +206,13 @@ contains
     call grow5(kface_g, n1, n2, n3, n4, n_tgroups)
     allocate(cnt(0:n_tgroups-1, 3))
 
+#ifdef ICE_RACE_PROBE
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b, t, nt, ni, nj, nk, deep, tiles, g, m, s, r, tid, ph, &
+    !$OMP                                  fi, gj, hk, jlo, jhi, klo, khi, rc)
+#else
     !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b, t, nt, ni, nj, nk, deep, tiles, g, m, s, r, tid, ph, &
     !$OMP                                  fi, gj, hk, jlo, jhi, klo, khi)
+#endif
     allocate(fi(nc, 0:ni_max), gj(nc, ni_max, 0:1), hk(nc, ni_max, nj_max, 0:1))
     jlo = 0 ; jhi = 1 ; klo = 0 ; khi = 1
     tid = 0
@@ -197,6 +226,12 @@ contains
         call make_tiles(ni, nj, nk, nc, s, tiles, deep)
         nt = size(tiles)
       end if
+#ifdef ICE_RACE_PROBE
+      if (m == 0) then
+        seam_g(:,:,:,:,g)  = ieee_value(0._R8, ieee_quiet_nan)
+        kface_g(:,:,:,:,g) = ieee_value(0._R8, ieee_quiet_nan)
+      end if
+#endif
       if (m == 0) cnt(g,:) = 0
       !$OMP BARRIER
       do ph = 1, 3
@@ -215,6 +250,9 @@ contains
           case (1)
             call tile_beta(grid%blk(b), p, ni, tiles(t))
           case (2)
+#ifdef ICE_RACE_PROBE
+            if (t == 1) rc = c_usleep(probe_sleep_us)
+#endif
             call tile_kfaces(grid%blk(b), p, nc, ni, nj, nk, tiles(t), t, deep, seam_g(:,:,:,:,g), kface_g(:,:,:,:,g))
           case (3)
             call tile_sweep(grid%blk(b), p, nc, ni, nj, nk, tiles, t, deep, seam_g(:,:,:,:,g), kface_g(:,:,:,:,g), &

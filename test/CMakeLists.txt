@@ -239,6 +239,20 @@ ice_add_equiv3d(Equiv3DThreads threads "" "fast;implementation;3D;openmp")
 # removed (5 runs): on 8x8x6 blocks the race window is not hit.
 ice_add_equiv3d(Equiv3DGroups groups "" "fast;implementation;3D;openmp")
 
+# The same leg on a race-probe build (cmake -DICE_RACE_PROBE=ON, build-cfg.sh
+# omp-race), which is the cover the barrier between the flux kernel's k-faces and
+# its sweep lacks above: the group's shared k-face planes start every round as NaN
+# and k-face tile 1 sleeps 2 ms before writing, so without that barrier another
+# thread of the group takes sweep tile 1, reads the NaN and the run stops. Covers
+# only that barrier of the grouped rounds (not the round-start or shock-detector
+# barriers, not the ungrouped kernel). Label race, not fast: a local / pre-merge
+# check (ctest -L race), outside the gfortran CI, which runs -L fast on a normal
+# build where this test is not registered. RED/GREEN record:
+# plan-bucket/records/2026-10-08-openmp-loose-ends/.
+if (ICE_RACE_PROBE)
+    ice_add_equiv3d(Equiv3DGroupsRace groups "ICE_EQ_PROBE=1" "race;implementation;3D;openmp")
+endif()
+
 # Each family alone against the three together: the ghost fill and the halo
 # must carry every family.
 ice_add_equiv3d(FamilyHalo3D family "" "fast;implementation;3D;multifamily")

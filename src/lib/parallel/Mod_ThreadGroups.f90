@@ -109,6 +109,9 @@ contains
         write(*,'(A,I0,A,I0,A,I0,A)') '  OpenMP: thread groups ', n_tgroups, ' (asked ', asked, ') over ', &
           n_tthreads, ' threads'
       end if
+#ifdef ICE_RACE_PROBE
+      write(*,'(A)') '  OpenMP: RACE PROBE build (ICE_RACE_PROBE): flux k-face planes NaN-filled, k-face tile 1 delayed'
+#endif
       if (n_tgroups > 1) then
         do g = 0, n_tgroups - 1
           write(*,'(A,I0,A,I0,A,I0,A,I0,A,I0)') '    group ', g, ': threads ', tg_thr_lo(g), '-', tg_thr_hi(g), &

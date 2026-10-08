@@ -104,6 +104,19 @@ groups (`Equiv3DGroups`). One rank of 80 threads on the 24-block cut went from 0
 0.31–0.34 s per iteration (four runs, jobs 303832/303833), against 0.305–0.312 s for four ranks of
 20 threads on the same cut. A single block keeps the whole team: groups need at least as many blocks as groups.
 
+`Equiv3DGroups` does not see a missing barrier between the kernel's k-faces and its sweep: on
+its 8×8×6 blocks a sweep tile never reads a seam before its writer has finished (5 runs green with
+the barrier removed). That barrier has its own gate on a race-probe build, outside the `fast`
+tier and the CI: configure with `-DICE_RACE_PROBE=ON` (`test/bench/monolith/build-cfg.sh
+omp-race`) and run `ctest -L race` (`Equiv3DGroupsRace`, the groups leg, ~40 s). In that build every
+round of `compute_flux_grouped` starts with the group's shared k-face planes set to NaN and k-face
+tile 1 sleeps 2 ms before writing; the group's other threads empty the k-face counter meanwhile,
+so without the barrier one of them takes sweep tile 1, reads the NaN and `state_update` stops the
+run. Measured 2026-10-08: RED 10 of 10 with the barrier removed, GREEN on the real code (record
+`plan-bucket/records/2026-10-08-openmp-loose-ends/`). It covers that barrier only: not the
+round-start or shock-detector barriers, not the ungrouped `compute_flux`. Run it before merging a
+change to the grouped kernel. Without the option the code compiled is the normal one.
+
 ## MPI
 
 Blocks are assigned whole, largest first, to the least-loaded rank. Two consequences

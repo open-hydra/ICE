@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Build one ICE configuration into its own build and bin directories.
 #   build-cfg.sh <cfg> [<ICE root>]      cfg: serial | omp | mpi | hyb | omp-strict |
-#                                             hyb-strict | omp-ipo | hyb-ipo | hyb-g | omp-tmp
+#                                             hyb-strict | omp-ipo | hyb-ipo | hyb-g | omp-tmp |
+#                                             omp-race
 # Works on sprop2 and on monolith; sync-src-monolith.sh calls it over ssh.
 #
 # Notes that cost time if rediscovered (Marco Grossi, 2026-09, and 2026-09-30):
@@ -44,6 +45,7 @@ case $CFG in
   hyb-ipo)    OPTS="-DUSE_MPI=ON  -DUSE_OPENMP=ON -DICE_ENABLE_IPO=ON" ;;
   hyb-g)      OPTS="-DUSE_MPI=ON  -DUSE_OPENMP=ON"; FLAGS="-g" ;;   # the campaign binary with symbols, for the profiler legs
   omp-tmp)    OPTS="-DUSE_MPI=OFF -DUSE_OPENMP=ON"; TYPE=DEBUG; FLAGS="-check arg_temp_created" ;;
+  omp-race)   OPTS="-DUSE_MPI=OFF -DUSE_OPENMP=ON -DICE_RACE_PROBE=ON" ;;   # the Equiv3DGroupsRace build (ctest -L race)
   *) echo "unknown configuration $CFG" >&2; exit 2 ;;
 esac
 

@@ -54,6 +54,12 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     endif()
   endif()
 
+  # A test build only: the flux kernel's thread-group rounds NaN-fill their shared
+  # k-face planes and delay one writer, so a missing barrier between the k-faces
+  # and the sweep stops the run (test Equiv3DGroupsRace, label race). Slower, and
+  # never for production.
+  OPTION(ICE_RACE_PROBE "Race probe of the grouped flux rounds (test build only)" OFF)
+
   # This INCLUDE statement executes code that sets the compile flags for DEBUG,
   # RELEASE, and TESTING. You should review this file and make sure the flags
   # are to your liking.

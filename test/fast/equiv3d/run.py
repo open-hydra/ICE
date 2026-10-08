@@ -34,6 +34,9 @@ compares the raw-binary VTK payload byte for byte.
             ignored the variable would only repeat the threads leg.
             Measured RED on 2026-10-03: a group's ghost records left out (NaN
             ghosts) and every group sweeping group 0's blocks in the flux rounds.
+            ICE_EQ_PROBE=1 (test Equiv3DGroupsRace, on an ICE_RACE_PROBE build):
+            every grouped run's banner must also announce the race probe, or the
+            leg FAILs -- without it the test would only repeat Equiv3DGroups.
   ranks     1 rank against 2, 3, 4 and 5 (12 blocks, so 5 is uneven), and a
             2x1x1 layout on 3 ranks (more ranks than blocks). Needs an MPI build.
             The case carries the three families, so this is also the halo's
@@ -72,6 +75,7 @@ ITERS = int(os.environ.get('ICE_EQ_ITERS', '0'))          # 0: the crossing coun
 MASK = os.environ.get('ICE_EQ_MASK_CORNERS', '0') == '1'
 EXTRA = os.environ.get('ICE_EQ_EXTRA', '').split()      # extra make_case.py arguments, e.g. --scheme euler
 MPIRUN = os.environ.get('MPIRUN', 'mpirun')
+PROBE = os.environ.get('ICE_EQ_PROBE', '0') == '1'    # the binary must be an ICE_RACE_PROBE build
 SKIP = 77
 
 
@@ -248,6 +252,8 @@ def leg_groups():
         if m is None or int(m.group(1)) != groups:
             raise SystemExit('[equiv3d] FAIL: asked for %d thread groups, the banner says %s'
                              % (groups, m.group(1) if m else 'nothing'))
+        if PROBE and 'RACE PROBE build' not in log:
+            raise SystemExit('[equiv3d] FAIL: ICE_EQ_PROBE=1 but %s is not an ICE_RACE_PROBE build' % ICE_BIN)
         ok &= compare(ref, case, '1 thread vs %d threads in %d groups:' % (t, groups))
     return ok
 
