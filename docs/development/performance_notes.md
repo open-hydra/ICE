@@ -104,11 +104,17 @@ groups (`Equiv3DGroups`). One rank of 80 threads on the 24-block cut went from 0
 0.31–0.34 s per iteration (four runs, jobs 303832/303833), against 0.305–0.312 s for four ranks of
 20 threads on the same cut. A single block keeps the whole team: groups need at least as many blocks as groups.
 
+With one group the branch is 3–4 % faster than the phase-2 binary as well (job 304446, five
+interleaved passes): the ghost fill, since its loop bodies became the procedures `ghost_record`
+and `second_ghost_record` (`fddd1cb`) — ifx vectorizes more of the body as a procedure of its own
+than inlined in the OpenMP region. Keep loop bodies of the large `select case` kind in their own
+procedures.
+
 `Equiv3DGroups` does not see a missing barrier between the kernel's k-faces and its sweep: on
 its 8×8×6 blocks a sweep tile never reads a seam before its writer has finished (5 runs green with
 the barrier removed). That barrier has its own gate on a race-probe build, outside the `fast`
 tier and the CI: configure with `-DICE_RACE_PROBE=ON` (`test/bench/monolith/build-cfg.sh
-omp-race`) and run `ctest -L race` (`Equiv3DGroupsRace`, the groups leg, ~40 s). In that build every
+omp-race`) and run `ctest -L race` (`Equiv3DGroupsRace`, the groups leg: ~40 s with ifx RELEASE, ~6 min with gfortran TESTING on a busy host, timeout 900 s). In that build every
 round of `compute_flux_grouped` starts with the group's shared k-face planes set to NaN and k-face
 tile 1 sleeps 2 ms before writing; the group's other threads empty the k-face counter meanwhile,
 so without the barrier one of them takes sweep tile 1, reads the NaN and `state_update` stops the

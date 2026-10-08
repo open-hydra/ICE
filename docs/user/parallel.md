@@ -352,7 +352,23 @@ and job 303833, which found the four groups by itself with the variable unset)
 four groups took 0.31–0.34 s and `4 × 20` 0.305–0.312 s: a single OpenMP rank
 with groups is within a few per cent of one MPI rank per socket on the same cut,
 and a single block is unaffected (one block cannot be split among groups). On this node the one-group runs also read 3–9 % below the phase-2
-binary; that difference is not attributed.
+binary. Job 304446 (wn09) attributed it: the six commits from the phase-2 binary to the
+thread groups, each built from one source sync and run with `ICE_THREAD_GROUPS=1`, five
+interleaved passes, medians. From `935af6b` to `f50efc2` the 24-block cut went 0.516 → 0.495 s
+(−4.0 %) and the single block 0.3145 → 0.3046 s (−3.1 %), both beyond the spread (1 % and
+3 × MAD). Most of it is the ghost fill, and it comes with `fddd1cb`, which moved the
+bodies of the ghost loops into procedures (`ghost_record`, `second_ghost_record`) without
+changing the one-group loop: the two ghost regions read 85, then 96 (`e69ebcc`), then 71 ms
+from `fddd1cb` on, on 24 blocks, and 12 → 7 ms on the single block (−13 and −7 ms of the
+−20 and −10 ms). The compiler vectorizes more of a body compiled as its own procedure than of
+the same body inlined in the OpenMP region (ifx optimisation report: about 41 against 21
+vectorized loops in the first ghost body). The flux tiles in procedures (`055f6d4`) took 2–4 %
+off the flux phase (229 → 221 ms on 24 blocks, 183.0 → 178.4 ms with a spread of 0.2 ms on the
+single block), too little to clear the threshold of the whole step; the merge of main and the
+per-cell phases (`037e94f`, `e69ebcc`) moved nothing beyond the spread. One region went the
+other way: `compute_source` on the single block, 38.5 → 40.6 ms (+5 %, spread 0.6 ms), though
+its one-group loop is the same code in both binaries. The rest of the 9 %
+in job 303832 was noise: on 24 blocks the runs of one binary span 0.47–0.57 s.
 
 On one node, `4 × 20` (0.293 s) is still faster than `1 × 80` (0.303 s), and
 "one rank per socket" ([§2](#2-selecting-a-parallel-configuration)) remains
@@ -616,3 +632,4 @@ Results under `results/<job>.tsv`; raw per-repetition logs under
 | 303748 | `935af6b` (C3 + C5d) beside the 303485 binary | wn[05-07], same nodes as 303350 | Phase-2 verdict, the second table of the single-rank passage in §6. |
 | 303832 | `9a4812b` (thread groups) beside the `935af6b` binary | wn03 | Thread groups at `1 × 80` on 24, 12, 4 and 1 blocks against one group, the phase-2 binary and `4 × 20` — the thread-groups table of §6. |
 | 303833 | `5f020c4` (thread groups, auto) | wn03 | `ICE_THREAD_GROUPS` unset: four groups found at `1 × 80` on 24 blocks (0.333 s), one group at `4 × 20` (0.305 s). |
+| 304446 | `935af6b`, `037e94f`, `e69ebcc`, `fddd1cb`, `055f6d4`, `f50efc2`, built together | wn09 | Attribution of the one-group speed-up (`ice-attr.slurm`, `attr-summary.py`): five interleaved passes of the 24-block cut and the single block at `1 × 80`, one group — §6. |
