@@ -22,10 +22,19 @@
 # block 1x80). attr-summary.py reads the IOK lines (steady_iter, ICE Detail).
 set -u
 ROOT=${ICE_PERF_ROOT:-/data_fast/gpassarani/ice-perf}
-W=$ROOT/attr/run
+W=${ICE_ATTR_W:-$ROOT/attr/run}       # a job of its own keeps its logs apart
 B=$ROOT/attr/bin
 COMMITS=${ICE_ATTR_COMMITS:-935af6b 037e94f e69ebcc fddd1cb 055f6d4 f50efc2}
 PASSES=${ICE_ATTR_PASSES:-5}
+SETS=${ICE_ATTR_SETS:-R24 R1}          # R24 = INPUT-R24 (24 blocks), R1 = INPUT (one block)
+ITERS=${ICE_ATTR_ITERS:-}              # e.g. 80: more timer windows (every 10 iterations) per run
+if [ -n "$ITERS" ]; then
+  mkdir -p $W
+  sed "s/^iter-threshold *= *[0-9]*/iter-threshold = $ITERS/" $ROOT/scripts/bench.ini > $W/bench-$ITERS.ini
+  grep -q "iter-threshold = $ITERS" $W/bench-$ITERS.ini || { echo "bench.ini: iter-threshold not rewritten"; exit 2; }
+  export ICE_PERF_INI=$W/bench-$ITERS.ini
+fi
+echo "SETS=$SETS PASSES=$PASSES ITERS=${ITERS:-bench.ini} COMMITS=$COMMITS"
 spread () { python3 - "$1" <<'PY'
 import subprocess, collections, sys
 N=int(sys.argv[1])
@@ -52,8 +61,10 @@ for k in $(seq 1 $PASSES); do
     export ICE_PERF_BIN=$B/ICE-mpi.$c
     source $ROOT/scripts/_ice_common.sh
     ice_setup
-    ice_run "a-$c-R24-p$k" INPUT-R24 1 80 1 "$(spread 80)" 1
-    ice_run "a-$c-R1-p$k"  INPUT     1 80 1 "$(spread 80)" 1
+    for cs in $SETS; do
+      case $cs in R24) set_dir=INPUT-R24 ;; R1) set_dir=INPUT ;; *) echo "unknown set $cs"; exit 2 ;; esac
+      ice_run "a-$c-$cs-p$k" $set_dir 1 80 1 "$(spread 80)" 1
+    done
   done
 done
 echo "ICE-ATTR DONE"

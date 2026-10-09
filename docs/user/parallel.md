@@ -365,9 +365,10 @@ the same body inlined in the OpenMP region (ifx optimisation report: about 41 ag
 vectorized loops in the first ghost body). The flux tiles in procedures (`055f6d4`) took 2–4 %
 off the flux phase (229 → 221 ms on 24 blocks, 183.0 → 178.4 ms with a spread of 0.2 ms on the
 single block), too little to clear the threshold of the whole step; the merge of main and the
-per-cell phases (`037e94f`, `e69ebcc`) moved nothing beyond the spread. One region went the
-other way: `compute_source` on the single block, 38.5 → 40.6 ms (+5 %, spread 0.6 ms), though
-its one-group loop is the same code in both binaries. The rest of the 9 %
+per-cell phases (`037e94f`, `e69ebcc`) moved nothing beyond the spread. A `compute_source` rise on the single block in that
+job's last windows (38.5 → 40.6 ms) did not survive a dedicated job (304520, wn03: twelve
+interleaved passes, 80 iterations, the steady half of each run): 38.6 ± 0.6 against
+37.5 ± 0.6 ms, while the steady iteration again read −3.4 % (306.8 → 296.5 ms). The rest of the 9 %
 in job 303832 was noise: on 24 blocks the runs of one binary span 0.47–0.57 s.
 
 On one node, `4 × 20` (0.293 s) is still faster than `1 × 80` (0.303 s), and
@@ -633,3 +634,4 @@ Results under `results/<job>.tsv`; raw per-repetition logs under
 | 303832 | `9a4812b` (thread groups) beside the `935af6b` binary | wn03 | Thread groups at `1 × 80` on 24, 12, 4 and 1 blocks against one group, the phase-2 binary and `4 × 20` — the thread-groups table of §6. |
 | 303833 | `5f020c4` (thread groups, auto) | wn03 | `ICE_THREAD_GROUPS` unset: four groups found at `1 × 80` on 24 blocks (0.333 s), one group at `4 × 20` (0.305 s). |
 | 304446 | `935af6b`, `037e94f`, `e69ebcc`, `fddd1cb`, `055f6d4`, `f50efc2`, built together | wn09 | Attribution of the one-group speed-up (`ice-attr.slurm`, `attr-summary.py`): five interleaved passes of the 24-block cut and the single block at `1 × 80`, one group — §6. |
+| 304520 | `935af6b`, `037e94f`, `e69ebcc`, `f50efc2` (the 304446 binaries) | wn03 | The single block only, twelve interleaved passes of 80 iterations (`ICE_ATTR_SETS=R1 ICE_ATTR_PASSES=12 ICE_ATTR_ITERS=80`): `compute_source` unchanged, steady iteration −3.4 % — §6. |

@@ -9,6 +9,10 @@ over the passes, and the medians of the ICE Detail regions of each run's last wi
 grouped as the commits touched them -- per-cell (dt copy zero source resid update
 diag; e69ebcc), ghost/bound (ghost1 ghost2 bound; fddd1cb), flux (055f6d4).
 
+The region times come from the IOK line, i.e. each run's LAST window only: one sample per run.
+For a verdict on one region, read the run logs instead and average the steady half of the
+`ICE Detail` windows (job 304520: a +2.1 ms last-window rise of compute_source was noise there).
+
 Verdict per consecutive pair of commits: a step is REAL when the gap of the medians
 exceeds the larger of 3 x the larger MAD of the two and 1 % of the earlier median,
 otherwise NOISE. Python 3.6 (monolith's).
