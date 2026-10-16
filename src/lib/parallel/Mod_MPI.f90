@@ -31,7 +31,7 @@ module ICE_Mod_MPI
   public :: mpi_init_env, mpi_finalize_env
   public :: is_local_block
   public :: mpi_gather_r8
-  public :: partition_blocks
+  public :: partition_blocks, lpt_assign
   public :: mpi_allreduce_sum_r8, mpi_allreduce_min_r8, mpi_allreduce_max_r8
   public :: mpi_allreduce_sum_r8_array, mpi_allreduce_max_r8_array
   public :: mpi_reduce_sum_r8, mpi_reduce_sum_r8_array
@@ -105,45 +105,25 @@ contains
   !> blk_ncells(b) = total number of cells in block b.
   !> Blocks are walked largest-first (LPT), so the balance depends only on the cell
   !> counts and not on the order the blocks appear in the mesh file.
-  subroutine partition_blocks(nb, blk_ncells)
+  subroutine partition_blocks(nb, blk_ncells, quiet)
     integer, intent(in) :: nb
     integer, intent(in) :: blk_ncells(nb)
+    logical, intent(in), optional :: quiet   !< no balance report (an early call; the report comes with the later one)
     ! Local
-    integer :: b, i, j, r, nloc, tmp
-    integer, allocatable :: rank_load(:), order(:)
+    integer :: b, nloc
+    integer, allocatable :: rank_load(:)
 
     if (allocated(block_owner)) deallocate(block_owner)
     allocate(block_owner(nb))
     allocate(rank_load(0:mpi_size_-1))
-    allocate(order(nb))
-    rank_load = 0
 
-    ! Order blocks by descending cell count (insertion sort: nb is small).
-    ! Ties keep mesh order, so the result is reproducible.
-    do b = 1, nb
-      order(b) = b
-    end do
-    do i = 2, nb
-      tmp = order(i)
-      j = i - 1
-      do while (j >= 1)
-        if (blk_ncells(order(j)) >= blk_ncells(tmp)) exit
-        order(j+1) = order(j)
-        j = j - 1
-      end do
-      order(j+1) = tmp
-    end do
+    call lpt_assign(nb, blk_ncells, mpi_size_, block_owner, rank_load)
 
-    ! Greedy: assign each block, largest first, to the rank with the least load
-    do i = 1, nb
-      b = order(i)
-      r = minloc(rank_load, dim=1) - 1   ! rank with minimum load (0-indexed)
-      block_owner(b) = r
-      rank_load(r) = rank_load(r) + blk_ncells(b)
-    end do
-    deallocate(order)
-
-    call report_partition_balance(nb, blk_ncells, rank_load)
+    if (.not. present(quiet)) then
+      call report_partition_balance(nb, blk_ncells, rank_load)
+    else if (.not. quiet) then
+      call report_partition_balance(nb, blk_ncells, rank_load)
+    end if
 
     ! Build local block list
     nloc = count(block_owner == mpi_rank_)
@@ -160,6 +140,45 @@ contains
 
     deallocate(rank_load)
   end subroutine partition_blocks
+
+
+  !> Longest-processing-time assignment of n items of weight w to nbin bins:
+  !> items walked by descending weight (insertion sort, ties keep their order, so
+  !> the result is reproducible), each given to the least-loaded bin (the lowest
+  !> index among equals). owner(i) in 0..nbin-1; load(0:nbin-1) the bins' sums.
+  !> Used for blocks over ranks and, inside a rank, for blocks over thread groups.
+  subroutine lpt_assign(n, w, nbin, owner, load)
+    integer, intent(in)  :: n, nbin
+    integer, intent(in)  :: w(n)
+    integer, intent(out) :: owner(n)
+    integer, intent(out) :: load(0:nbin-1)
+    integer :: b, i, j, r, tmp
+    integer, allocatable :: order(:)
+
+    allocate(order(n))
+    load = 0
+    do b = 1, n
+      order(b) = b
+    end do
+    do i = 2, n
+      tmp = order(i)
+      j = i - 1
+      do while (j >= 1)
+        if (w(order(j)) >= w(tmp)) exit
+        order(j+1) = order(j)
+        j = j - 1
+      end do
+      order(j+1) = tmp
+    end do
+
+    do i = 1, n
+      b = order(i)
+      r = minloc(load, dim=1) - 1   ! bin with minimum load (0-indexed)
+      owner(b) = r
+      load(r) = load(r) + w(b)
+    end do
+    deallocate(order)
+  end subroutine lpt_assign
 
 
   subroutine report_partition_balance(nb, blk_ncells, rank_load)

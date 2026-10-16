@@ -35,8 +35,13 @@ mesh rather than in the launch command.
 
 **OpenMP threads over the cells of a block**, not over blocks. A single large
 block therefore threads as well as many small ones, and adding blocks purely to
-feed threads is never necessary — but see [§11](#11-known-scalability-limits)
-for what happens when a rank holds many small blocks at a high thread count.
+feed threads is never necessary. When a rank's threads span several sockets and
+the rank holds several blocks, ICE gives each block to the threads of one socket
+(**thread groups**, `ICE_THREAD_GROUPS`): that block's memory then stays on that
+socket, and one rank does what one rank per socket would. This is automatic when
+the threads are pinned (`OMP_PROC_BIND`); `ICE_THREAD_GROUPS=<n>` forces n groups,
+`1` turns it off. It is what an OpenMP-only host such as hydra-MI2 needs on a
+multi-block mesh. See [§6](#6-strong-scaling).
 
 **Every rank allocates the whole domain** and updates only its own blocks. Per
 rank memory does not fall as ranks are added, so the node's memory — not its
@@ -73,7 +78,7 @@ On a node with **4 sockets × 20 cores**:
 | 20 | `4 × 5` | one rank per socket |
 | 40 | `4 × 10` | one rank per socket |
 | 80 | `4 × 20` | one rank per socket, one node |
-| 80 | `1 × 80` | lowest memory, needs explicit placement; fastest only on the pre-wave baseline — see [§6](#6-strong-scaling) |
+| 80 | `1 × 80` | lowest memory, needs explicit placement (`OMP_PROC_BIND=close`); with several blocks the thread groups make it as fast as `4 × 20` — see [§6](#6-strong-scaling) |
 | 160 | `8 × 20` | two nodes, same per-node layout |
 | 240 | `12 × 20` | three nodes, same per-node layout |
 
@@ -289,36 +294,86 @@ job 303417 (tree `5575f65`, the same nodes):
 | 240 | `12 × 20` | 0.1174 s | 0.1004 s | −14.5 % |
 | 80 | `1 × 80` | 0.3241 s | 0.3368 s | +3.9 % |
 
-Every multi-rank point got faster. The single-rank, 80-thread point got
-**slower**, and its cause is **open**: two candidate fixes were built, proven
-byte-identical and measured on the same nodes, and neither moved it. Slab
-tiles that keep the flux kernel's per-thread plane buffers inside the cache
-(job 303439) took 6 % off the sweep but left the leg at 0.338 s, cost 31–40 %
-on the 20-thread socket legs through an unbalanced tile count and doubled the
-many-blocks leg, so they were reverted; a parallel first touch of the block
-fields (job 303482) changed nothing at all (0.3373 s) and was reverted too —
-the kernel's automatic NUMA balancing very likely places the pages within the
-first iterations already. On the current tree the leg pays about 25 % more in
-the per-cell streaming phases and 12 % more in the flux sweep than `4 × 20`
-does for the same cells; a memory-access profile of `omp-C80-1x80` is the next
-step.
+Every multi-rank point got faster. The single-rank, 80-thread point read
+**slower** in this table, and the reason was found on 2026-10-01: the harness
+reported the **last** 10-iteration window of each run, and every `1 × 80` run of
+a tree without a parallel first touch of the block fields spends its first 45–60 s
+at 6–10× its steady cost. The master thread writes the fields during set-up, so a
+whole block starts on one socket; eighty threads then stream one socket's memory
+(bound there for the whole run, `numactl --membind=0`, the iteration costs 4.0 s
+instead of 0.35 — job 303745) until the kernel's NUMA balancer has moved ~1.7 GB,
+and on a busy node it may never finish (0.38 s instead of 0.30). The last window
+hid this, so the parallel first touch (job 303482, "0.3373 s, unchanged") was
+judged neutral and reverted. It is back since `52060e1`; job 303485 above was
+built from `461eb4f`, which still had it, so its `1 × 80` point is a steady state.
+Interleaving the pages (job 303418) is no remedy: its interleaved runs are flat
+but slow (1.33 s at `1 × 80`), while its plain run was itself crawling
+(2.10 1.28 0.38 0.38 s per window) — the "3.7×" once quoted here compared that
+run's last window with the interleaved one.
 
-Interleaving memory pages does **not** fix this, and makes it markedly worse on
-the current kernel. Job 303418 measured `1 × 80` and `1 × 40` on the wave's
-tree (`5575f65`) with the pages left where the serial first touch put them
-against the pages explicitly interleaved across sockets: interleaving cost
-**3.7×** the wall time at `1 × 80` and **1.28×** at `1 × 40`. On the
-pre-wave binary (job 303351, same node), the same comparison cost only
-8.0–9.5 % — the interleaving penalty grew with the kernel change, likely
-because the hot data are the per-thread plane buffers, which a thread allocates
-inside the region and which interleaving spreads across sockets instead of
-leaving local (a hypothesis: shrinking those buffers, job 303439, did not move
-the plain `1 × 80` time). "One rank per socket" ([§2](#2-selecting-a-parallel-configuration))
-remains the right default for this reason.
+**Phase 2 (2026-10-01, job 303748, wn[05-07], the 303485 binary run beside the
+new one at every point; steady state = mean of the second half of the windows).**
+The flux kernel's tiles are scheduled dynamically over shallow plane pieces
+(`c7f2754`) and the block fields are first-touched by the threads (`52060e1`):
 
-Until the single-rank leg is understood, prefer a multi-rank layout
-(`4 × 20` or more) on one node: it is 11 % faster than the baseline where
-`1 × 80` is 4 % slower.
+| Cores | Layout | 303485 binary (`461eb4f`) | Current tree | Change |
+| ---: | --- | ---: | ---: | ---: |
+| 1 | `1 × 1` (anchor) | 13.120 s | 13.112 s | −0.1 % |
+| 80 | `4 × 20` | 0.2942 s | 0.2927 s | −0.5 % |
+| 240 | `12 × 20` | 0.1008 s | 0.1004 s | −0.4 % |
+| 20 | `1 × 20`, one socket | 1.142 s | 1.131 s | −0.9 % |
+| 80 | `1 × 80` | 0.3408 s | 0.3030 s | **−11.1 %** |
+| 80 | `1 × 80`, 24 blocks (stress) | 0.640 s | 0.690 s | +7.7 % |
+
+Every run of the table is flat from its first window. The last row is not a
+production layout: 24 small blocks on one rank of 80 threads. There the kernel's
+NUMA balancer keeps migrating the pages of the plane-by-plane first touch (a
+24 × 64 plane is far smaller than a 2 MB huge page, so many pages are shared by
+threads of two sockets); with the placement kept and the balancer off
+(`numactl --membind=0-3`) the same binary runs 0.584 s, and the best placement
+the balancer itself reached in an earlier run gave 0.44 s (job 303746). A rank
+holding many small blocks over several sockets was the open item of this page;
+thread groups close it:
+
+**Thread groups (2026-10-03, job 303832, wn03, one node; steady state).** One
+rank of 80 threads pinned with `OMP_PROC_BIND=close`, its blocks owned by four
+groups of 20 threads (one per socket), against one group, the phase-2 binary
+(`935af6b`) and the same cut as four MPI ranks of 20 threads:
+
+| Blocks on the rank | Phase-2 binary | One group | **Four groups** | `4 × 20` |
+| ---: | ---: | ---: | ---: | ---: |
+| 24 (24 × 64 × 192) | 0.550 s | 0.501 s | **0.309 s** | 0.312 s |
+| 12 | — | 0.388 s | **0.299 s** | — |
+| 4 (96 × 96 × 192) | — | 0.343 s | **0.287 s** | 0.279 s |
+| 1 (groups fall back to one) | 0.305 s | — | 0.295 s | — |
+
+Each entry is the best of two runs. Over four runs on the 24-block cut (this job
+and job 303833, which found the four groups by itself with the variable unset)
+four groups took 0.31–0.34 s and `4 × 20` 0.305–0.312 s: a single OpenMP rank
+with groups is within a few per cent of one MPI rank per socket on the same cut,
+and a single block is unaffected (one block cannot be split among groups). On this node the one-group runs also read 3–9 % below the phase-2
+binary. Job 304446 (wn09) attributed it: the six commits from the phase-2 binary to the
+thread groups, each built from one source sync and run with `ICE_THREAD_GROUPS=1`, five
+interleaved passes, medians. From `935af6b` to `f50efc2` the 24-block cut went 0.516 → 0.495 s
+(−4.0 %) and the single block 0.3145 → 0.3046 s (−3.1 %), both beyond the spread (1 % and
+3 × MAD). Most of it is the ghost fill, and it comes with `fddd1cb`, which moved the
+bodies of the ghost loops into procedures (`ghost_record`, `second_ghost_record`) without
+changing the one-group loop: the two ghost regions read 85, then 96 (`e69ebcc`), then 71 ms
+from `fddd1cb` on, on 24 blocks, and 12 → 7 ms on the single block (−13 and −7 ms of the
+−20 and −10 ms). The compiler vectorizes more of a body compiled as its own procedure than of
+the same body inlined in the OpenMP region (ifx optimisation report: about 41 against 21
+vectorized loops in the first ghost body). The flux tiles in procedures (`055f6d4`) took 2–4 %
+off the flux phase (229 → 221 ms on 24 blocks, 183.0 → 178.4 ms with a spread of 0.2 ms on the
+single block), too little to clear the threshold of the whole step; the merge of main and the
+per-cell phases (`037e94f`, `e69ebcc`) moved nothing beyond the spread. A `compute_source` rise on the single block in that
+job's last windows (38.5 → 40.6 ms) did not survive a dedicated job (304520, wn03: twelve
+interleaved passes, 80 iterations, the steady half of each run): 38.6 ± 0.6 against
+37.5 ± 0.6 ms, while the steady iteration again read −3.4 % (306.8 → 296.5 ms). The rest of the 9 %
+in job 303832 was noise: on 24 blocks the runs of one binary span 0.47–0.57 s.
+
+On one node, `4 × 20` (0.293 s) is still faster than `1 × 80` (0.303 s), and
+"one rank per socket" ([§2](#2-selecting-a-parallel-configuration)) remains
+the default; `1 × 80` is now within 4 % of it.
 
 **Decomposition quality** (job 303484, greedy cuts of the campaign against
 the halo-objective cuts of ATLAS MDB's search, same binary): at 12 ranks the
@@ -491,22 +546,16 @@ counts exhaust memory before they exhaust cores.
 shows up directly in the `balance` figure at startup. Cut the mesh for the rank
 count you intend to use.
 
-**Many small blocks on one rank.** Threading is over cells, not blocks
-([§1](#1-work-division)), but the two are not independent at a high thread
-count. Cutting the 192³ case into 24 blocks of 24×64×192 instead of the
-default 4 blocks of 96×96×192, then running that cut on one rank of 80 threads
-(job 303417, tag `blk-C80-1x80-R24`), makes every per-cell phase 2–8× slower
-than the 4-block cut on the same rank — `zero` 70.6 ms vs. 8.7 ms, `source` 87
-vs. 37, `update` 67 vs. 24, `bound` 21 vs. 3.8, `ghost` 23 vs. 4 — while the
-flux sweep itself is essentially unchanged (0.228 s vs. 0.220 s). The `C4b`
-NOWAIT change only took `zero` from 107 ms to 70.6 ms, so it is not a barrier
-cost, and the per-thread chunk is the same ~3.7k cells (236 kB) in both
-layouts. Something in how 80-thread worksharing splits many small blocks costs
-roughly 2–3 ms per block per phase; this is **unresolved** — a threading
-profile of that leg is the next step. At `4 × 20` the same 24-block cut costs a
-much smaller +16 % (job 303350, `blk-C80-4x20-R24` vs. `env-C80-4x20`); at
-`1 × 80` it costs +54 %. Practical advice: as few blocks per rank as the
-balance allows, and it matters far more at `1 × N` than at a multi-rank split.
+**Many small blocks on one rank spanning sockets.** Spread over all the
+threads, every block's pages are shared by every socket, and the kernel's NUMA
+balancer keeps migrating them: the 24-block cut of the 192³ case on one rank of
+80 threads ran 0.55–0.69 s per iteration where four ranks of 20 take 0.31 s
+(jobs 303748, 303832). Thread groups ([§1](#1-work-division)) remove this —
+0.309 s with four groups — but need pinned threads (`OMP_PROC_BIND`) to be on by
+themselves, and at least as many blocks as sockets: a rank holding fewer blocks
+than the sockets its threads span uses one group. (The figures once quoted here,
+from job 303417, were last-window readings of runs still in their start-up
+transient; see [§6](#6-strong-scaling).)
 
 **Cell balance is not work balance.** At reported 100 % cell-count balance
 at every rank count in this benchmark, ICE still measures up to 6.3 % spread
@@ -574,6 +623,15 @@ Results under `results/<job>.tsv`; raw per-repetition logs under
 | 303417 | `5575f65` (+ C4a, C4b) | wn[05-07], same nodes as 303350 | Reduced matrix: the wave's before/after at the four points in §6, plus `blk-C80-1x80-R24`. |
 | 303418 | `5575f65`, same binary as 303417 | wn09 | NUMA: plain (first-touch) vs. interleaved pages at `1 × 40` and `1 × 80`. |
 | 303439 | `3d43d0e` (+ C5b, slab tiles) | wn[05-07] | Reduced matrix: C5b neutral at 1 × 80 (0.338 s), −31/−40 % on the 20-thread socket legs, many-blocks leg doubled → C5b reverted (`461eb4f`). |
-| 303482 | `461eb4f` (+ C3, parallel first touch) | wn[05-07] | Reduced matrix: C3 changed nothing (1 × 80 0.3373 s) → reverted. |
-| 303484 | `461eb4f` (the final solver code plus C3, measured neutral and reverted afterwards) | 3 nodes | Greedy vs. halo-objective cuts (ATLAS MDB) at R12, R16, R20, R24 — §6. (303478, its first submission, ran the reverted C5b binary and was cancelled.) |
-| 303485 | `461eb4f` (the final solver code plus C3, measured neutral and reverted afterwards) | wn[05-07], same nodes as 303350 | The full nine-point matrix on the final tree, 63 runs — the second table of §6 and the before/after of every leg. (303481, its first submission, was cancelled for the same reason as 303478.) |
+| 303482 | `461eb4f` (+ C3, parallel first touch) | wn[05-07] | Reduced matrix: read as "C3 changed nothing (1 × 80 0.3373 s)" from the last window and reverted — wrongly: C3 removes the 1 × 80 start-up crawl (§6, jobs 303745/303746); re-landed in `52060e1`. |
+| 303484 | `461eb4f` (the final solver code plus C3, reverted afterwards on a last-window reading and re-landed in `52060e1`) | 3 nodes | Greedy vs. halo-objective cuts (ATLAS MDB) at R12, R16, R20, R24 — §6. (303478, its first submission, ran the reverted C5b binary and was cancelled.) |
+| 303485 | `461eb4f` (the final solver code plus C3, reverted afterwards on a last-window reading and re-landed in `52060e1`) | wn[05-07], same nodes as 303350 | The full nine-point matrix on the final tree, 63 runs — the second table of §6 and the before/after of every leg. (303481, its first submission, was cancelled for the same reason as 303478.) |
+| 303562–303572 | `3414a76`–`35edb61` | wn04, wn08, wn[04-05,10] | Phase 2: VTune of `1 × 80` (24 % spin at barriers), scheduling and tile-count legs (`ice-vtune`, `ice-sched*`). Their `1 × 80` last windows sit in the start-up crawl and are not steady states. |
+| 303578–303580 | variants of `fdf9ed3`/C5d | wn04, wn05 | The crawl bisected (`ice-transient*`): every binary without C3 crawls, whatever its schedule; master pinned to CPU 0 in all. |
+| 303745 | `b151bea` rebuilt, and the 303485 binary | wn03 | The flat 303485 binary against its tree rebuilt without C3 (crawls), and the footprint bound to node 0 (4.0 s per iteration). |
+| 303746 | C5d ± C3, `461eb4f` ± C3 | wn05 | C3 makes every `1 × 80` run flat; C5d + C3 0.303 s against 0.343. 24-block cut: 0.71 s (C5d + C3), 0.63 (`461eb4f`), 0.44 (C5d, balancer-placed). |
+| 303748 | `935af6b` (C3 + C5d) beside the 303485 binary | wn[05-07], same nodes as 303350 | Phase-2 verdict, the second table of the single-rank passage in §6. |
+| 303832 | `9a4812b` (thread groups) beside the `935af6b` binary | wn03 | Thread groups at `1 × 80` on 24, 12, 4 and 1 blocks against one group, the phase-2 binary and `4 × 20` — the thread-groups table of §6. |
+| 303833 | `5f020c4` (thread groups, auto) | wn03 | `ICE_THREAD_GROUPS` unset: four groups found at `1 × 80` on 24 blocks (0.333 s), one group at `4 × 20` (0.305 s). |
+| 304446 | `935af6b`, `037e94f`, `e69ebcc`, `fddd1cb`, `055f6d4`, `f50efc2`, built together | wn09 | Attribution of the one-group speed-up (`ice-attr.slurm`, `attr-summary.py`): five interleaved passes of the 24-block cut and the single block at `1 × 80`, one group — §6. |
+| 304520 | `935af6b`, `037e94f`, `e69ebcc`, `f50efc2` (the 304446 binaries) | wn03 | The single block only, twelve interleaved passes of 80 iterations (`ICE_ATTR_SETS=R1 ICE_ATTR_PASSES=12 ICE_ATTR_ITERS=80`): `compute_source` unchanged, steady iteration −3.4 % — §6. |

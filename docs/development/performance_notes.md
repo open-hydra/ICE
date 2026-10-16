@@ -46,6 +46,83 @@ threads as well as many small ones. Two details shape the scaling:
 Thread counts beyond a few hundred cells per thread stop paying: the loop bodies are
 short and the barriers are frequent.
 
+The two loop classes of the step are scheduled differently, and neither choice touches a
+result (which thread sweeps a cell is not arithmetic):
+
+- the **flux kernel's tile loops** are `SCHEDULE(DYNAMIC, 1)` over `ICE_TILES_PER_THREAD`
+  tiles per thread (default 4), because the particle cloud fills only part of the domain
+  and equal cell counts are not equal work: with one static tile per thread a rank of 80
+  threads spent 24 % of the sweep's CPU time at its barrier (VTune, monolith, 2026-10-01).
+  The kernel takes its deep tiling (private plane buffers) only while the threads' buffers
+  together fit `plane_buffer_budget` (16 MiB); above it, the shallow tiling computes every
+  k-face once into the shared array.
+- the **per-cell loops** (`zero_residual`, `compute_source`, `compute_residual`,
+  `state_update`, `state_copy`, `set_dt_global`, `compute_dt`) are `SCHEDULE(RUNTIME)`, and
+  ICE sets that schedule itself at set-up: static. `OMP_SCHEDULE` therefore has no effect on
+  ICE (a dynamic schedule on these loops dispatches per cell and cost up to 25× at 80
+  threads); `ICE_OMP_SCHEDULE=<kind>[,<chunk>]` is the measurement override.
+
+On the 192³ case at one rank of 80 threads (monolith, job 303746, steady state over the last
+30 of 60 iterations, two runs each) the two together run 0.303 s per iteration against 0.343
+for the kernel before them: −12 %.
+
+**First touch.** `Allocate_Block` writes the block fields (`prim`, `prim_old`, `tau`, `beta`,
+`source`, `residual`) from a static parallel loop over the k-planes, so each plane's pages
+start on the socket of the thread that sweeps it. Written serially, a whole block starts on
+the master's socket: a rank of 80 threads over four sockets then streams one socket's memory
+(the whole footprint bound to one node runs 4.15 s per iteration instead of 0.35, job 303745),
+and until the kernel's NUMA balancer has moved ~1.7 GB — 45 to 60 s — the iteration costs
+6–10× its steady value; on a busy node it may never recover (0.38 s instead of 0.30). With
+the parallel first touch every run is flat from its first iteration (jobs 303746). Ranks of
+20 threads pinned to one socket do not need it, which is why the multi-rank layouts never
+showed the effect. The windows of the `ICE Timing` lines show it; a last-window number does
+not.
+
+**Thread groups: many blocks on one rank spanning sockets.** Spread over all the threads, every
+block's pages are shared by every socket; on many small blocks the NUMA balancer then keeps
+migrating them (24 blocks of 24 × 64 × 192 at one rank of 80 threads: 0.69 s per iteration,
+195 000 hinting faults per run). `Mod_ThreadGroups` cuts the team into groups of consecutive
+thread ids — by default, with pinned threads, one per socket the team spans (each thread reads
+its CPU with `sched_getcpu` and the CPU's socket from `/sys`); `ICE_THREAD_GROUPS=<n>` forces n
+equal groups, `1` turns them off — and assigns each local block to one group by
+longest-processing-time on cell counts (`lpt_assign`, the rule for blocks over ranks). Every
+phase then keeps a block on its group:
+
+- set-up partitions the blocks and builds the groups before `allocate_data`, and a group's
+  threads write each array of its blocks first (`touch_by_group`), so the pages land on the
+  group's socket;
+- the per-cell phases give each thread its slice (`cell_slice`: the split a static
+  `collapse(3)` makes) of its group's blocks;
+- the ghost fill and the boundary fluxes take each record or boundary cell on a thread of the
+  group owning its block (group-ordered lists built by `build_local_bc_index`);
+- the flux kernel runs in rounds, round r sweeping the r-th block of every group at once with
+  the group's own tiles, shared planes and tile counter, so its barriers stay team barriers
+  (`compute_flux_grouped`).
+
+Which thread computes a cell is not arithmetic: results are bit-identical with and without
+groups (`Equiv3DGroups`). One rank of 80 threads on the 24-block cut went from 0.501 to
+0.31–0.34 s per iteration (four runs, jobs 303832/303833), against 0.305–0.312 s for four ranks of
+20 threads on the same cut. A single block keeps the whole team: groups need at least as many blocks as groups.
+
+With one group the branch is 3–4 % faster than the phase-2 binary as well (job 304446, five
+interleaved passes): the ghost fill, since its loop bodies became the procedures `ghost_record`
+and `second_ghost_record` (`fddd1cb`) — ifx vectorizes more of the body as a procedure of its own
+than inlined in the OpenMP region. Keep loop bodies of the large `select case` kind in their own
+procedures.
+
+`Equiv3DGroups` does not see a missing barrier between the kernel's k-faces and its sweep: on
+its 8×8×6 blocks a sweep tile never reads a seam before its writer has finished (5 runs green with
+the barrier removed). That barrier has its own gate on a race-probe build, outside the `fast`
+tier and the CI: configure with `-DICE_RACE_PROBE=ON` (`test/bench/monolith/build-cfg.sh
+omp-race`) and run `ctest -L race` (`Equiv3DGroupsRace`, the groups leg: ~40 s with ifx RELEASE, ~6 min with gfortran TESTING on a busy host, timeout 900 s). In that build every
+round of `compute_flux_grouped` starts with the group's shared k-face planes set to NaN and k-face
+tile 1 sleeps 2 ms before writing; the group's other threads empty the k-face counter meanwhile,
+so without the barrier one of them takes sweep tile 1, reads the NaN and `state_update` stops the
+run. Measured 2026-10-08: RED 10 of 10 with the barrier removed, GREEN on the real code (record
+`plan-bucket/records/2026-10-08-openmp-loose-ends/`). It covers that barrier only: not the
+round-start or shock-detector barriers, not the ungrouped `compute_flux`. Run it before merging a
+change to the grouped kernel. Without the option the code compiled is the normal one.
+
 ## MPI
 
 Blocks are assigned whole, largest first, to the least-loaded rank. Two consequences

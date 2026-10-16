@@ -45,7 +45,7 @@ contains
       do b = 1, nb
         simulation%domain(m)%blk(b)%dim = simulation%domain(m-1)%blk(b)%dim / rap
         simulation%domain(m)%blk(b)%dim(3) = max(1, simulation%domain(m)%blk(b)%dim(3))
-        call Allocate_Block(simulation%domain(m)%blk(b), simulation%domain(m)%blk(b)%dim)
+        call Allocate_Block(simulation%domain(m)%blk(b), simulation%domain(m)%blk(b)%dim, b)
 
         ni = simulation%domain(m)%blk(b)%dim(1)
         nj = simulation%domain(m)%blk(b)%dim(2)

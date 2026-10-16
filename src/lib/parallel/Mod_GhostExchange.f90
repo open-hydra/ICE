@@ -12,6 +12,7 @@ module ICE_Mod_GhostExchange
   use ICE_Mod_MPI
   use ICE_Global_m, only: ngroups, ncond, guide
   use ICE_Mod_Timers, only: timer_region_begin, timer_region_end, TR_PACK, TR_WAIT, TR_UNPACK
+  use ICE_Mod_ThreadGroups, only: n_tgroups
 
   implicit none
   private
@@ -131,7 +132,57 @@ contains
       call collect_boundary_cells(grid, i, grid%bcells(i))
     end do
 
+    ! With thread groups, both lists again by the group owning each record's block
+    if (n_tgroups > 1) call build_group_order(grid)
+
   end subroutine build_local_bc_index
+
+
+  !> The records of local_bc_grp and the boundary cells of every family, re-ordered
+  !> by the thread group owning their block (stable: table order inside a group), so a
+  !> group's threads sweep only their own blocks' ghosts and boundary fluxes.
+  subroutine build_group_order(grid)
+    use ICE_Global_m,         only: ngroups
+    use ICE_Advanced_Types_m
+    use ICE_Mod_ThreadGroups, only: block_group
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer :: p, g, ii, c, pos
+
+    if (allocated(grid%tg_bc))       deallocate(grid%tg_bc)
+    if (allocated(grid%tg_bc_first)) deallocate(grid%tg_bc_first)
+    allocate(grid%tg_bc(max(grid%n_local_bc, 1)), grid%tg_bc_first(0:n_tgroups, ngroups))
+    do p = 1, ngroups
+      pos = grid%grp_first(p)
+      do g = 0, n_tgroups - 1
+        grid%tg_bc_first(g, p) = pos
+        do ii = grid%grp_first(p), grid%grp_first(p+1) - 1
+          if (block_group(grid%bc(grid%local_bc_grp(ii))%b) /= g) cycle
+          grid%tg_bc(pos) = ii
+          pos = pos + 1
+        end do
+      end do
+      grid%tg_bc_first(n_tgroups, p) = pos
+    end do
+
+    do p = 1, ngroups
+      associate (cells => grid%bcells(p))
+      if (allocated(cells%tg_cell))  deallocate(cells%tg_cell)
+      if (allocated(cells%tg_first)) deallocate(cells%tg_first)
+      allocate(cells%tg_cell(max(cells%n, 1)), cells%tg_first(0:n_tgroups))
+      pos = 1
+      do g = 0, n_tgroups - 1
+        cells%tg_first(g) = pos
+        do c = 1, cells%n
+          if (block_group(grid%bc(cells%rec(cells%first(c)))%b) /= g) cycle
+          cells%tg_cell(pos) = c
+          pos = pos + 1
+        end do
+      end do
+      cells%tg_first(n_tgroups) = pos
+      end associate
+    end do
+  end subroutine build_group_order
 
 
   !> The boundary cells of family p on this rank, block by block in cell order,
