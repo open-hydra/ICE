@@ -22,7 +22,7 @@ is measured. L runs two or three families side by side in one case, each on its 
 | **B** | [Thermal relaxation](#b-thermal-relaxation) | The energy source at $Nu = 2$ | Closed form |
 | **D** | [Every drag correlation](#d-every-drag-correlation) | All twelve drag laws, to $Ma = 2.6$ | Independent RK4 |
 | **E** | [Every Nusselt correlation](#e-every-nusselt-correlation) | All seven heat laws, velocity and temperature relaxing together | Independent RK4 and closed form |
-| **F** | [Evaporation](#f-evaporation) | All five evaporation models, the latent sink, two exact identities, the boiling clamp, the table's `Psat` | Closed form and RK4 |
+| **F** | [Evaporation](#f-evaporation) | All five evaporation models, the latent sink, two exact identities, the boiling clamp, the table's `Psat`, `Lv`, `Mv` and `Cpv` | Closed form and RK4 |
 | **K** | [The property table](#k-the-property-table) | Linear interpolation between the table's rows, a table that starts above 1 K, saturation past its ends, the energy of a varying specific heat | Closed form and RK4 |
 | **L** | [Several materials](#l-several-materials) | Each family on its own material: its table zone, its model tokens, its inlet records, its inlet density | Closed form and case F's |
 | **C** | [Sinusoidal advection](#c-sinusoidal-advection-on-a-periodic-mesh) | Transport alone, and the order of the space scheme | Closed form |
@@ -324,7 +324,7 @@ to $4\times10^{-10}$, and `CEM` with the `LK` interface, which takes $X_s$ off t
 to 0.98, matches the integrated ODE to $10^{-13}$. The tolerance on the slope is
 $10^{-5}$: one ulp of $Y_s$ at the clamp moves the rate by $2.5\times10^{-6}$.
 
-**The saturation pressure from the property table.** The last part writes the droplet
+**The saturation pressure from the property table.** The fifth part writes the droplet
 material as a [property table](../user/initial-conditions.md#property-table) on 250 to
 450 K with a `Psat` column, which replaces Clausius-Clapeyron. A specific heat of
 $10^{16}$ holds $T_p$ on the 300 K row to $6\times10^{-11}$ K, so the interpolation
@@ -334,6 +334,29 @@ read from the table as written. A column 1.2 times the curve raises the rate by 
 a column equal to the curve is the control, and gives what the curve gives, to
 $3\times10^{-13}$. The tolerance is $10^{-8}$, that of the other integrated references;
 reading the curve instead of the 1.2 column misses it by $6.6\times10^{-3}$.
+
+**The latent heat and the vapour heat capacity from the property table.** The sixth part
+releases the temperature as the second does, with `Lv`, `Mv` and `Cpv` columns in a table
+on 250 to 450 K: $L_v(T) = 2.26\times10^6 - 2500\,(T-300)$ J/kg,
+$c_{p,v}(T) = 1800 + 2\,(T-300)$ J/(kg K) and $M_v = 18.015$, beside the `Psat` column
+that is exact for that $L_v$ (Kirchhoff's law integrated through one atmosphere at the
+boiling temperature), with `latent-heat` and `vapour-molar-mass` at 0 in the INI. The
+reference is the RK4 integration of the second part with the three columns read as
+written, so ICE must take $L_v(T_p)$ in the latent sink and in $B_T$, and $c_{p,v}(T_p)$ in
+the gas-side heat of `ASM` and `TC`. After 0.05 s:
+
+| `evaporation` | $T_p$ [K] (ICE) | $T_p$ [K] (RK4) | $T_p$ error | $\rho_p$ error |
+|---|---|---|---|---|
+| `d2-law` | 319.719179 | 319.719179 | $2.1\times10^{-11}$ | $1.8\times10^{-11}$ |
+| `ASM`    | 334.667315 | 334.667315 | $1.6\times10^{-11}$ | $2.8\times10^{-12}$ |
+| `TC`     | 328.147575 | 328.147575 | $1.1\times10^{-11}$ | $4.8\times10^{-12}$ |
+
+The $T_p$ error is a fraction of the initial gap. The tolerances, $2.2\times10^{-10}$ on
+$T_p$ and $1.8\times10^{-10}$ on $\rho_p$, are ten times the largest of these. A latent heat
+taken at 298.15 K in the sink instead of at $T_p$ moves $T_p$ by up to $4\times10^{-3}$ of
+the gap, a vapour heat capacity taken at the boiling temperature by up to
+$3\times10^{-4}$. The same `d2-law` run with `latent-heat` and `vapour-molar-mass` left out
+of the INI gives the same solution file bit for bit.
 
 !!! note "What this check can and cannot catch"
     As with D and E, a correlation written wrongly in the same way in both ICE and the
@@ -474,10 +497,11 @@ another family's material, model or inlet record is seen directly in its own fie
 | L3c, L3d | Controls: equal radii; one record per face on two blocks | ratio 1 | exact |
 | L4 | `A 1` / `B 1`, zones $\rho$ = 2000 and 1000, one record per face | Each family's inlet $n$ uses its own table density: $n_1/n_2 = 1/2$ | $4.6\times10^{-15}$ |
 | L4c | `A 2`, one zone | Control: ratio 1 | exact |
+| L5 | `A 1 evaporation=d2-law` / `B 1 evaporation=d2-law`, zone A with `Lv` = $2.0\times10^6$, `Mv`, `Cpv` columns, zone B with the three at zero, `latent-heat = 0 2.26e6` | A evaporates with the latent heat of its columns, B with its INI value: each follows case F's $d^2$ slope with its own $L_v$ ($K_A/K_B = 1.116$) | slope $9.5\times10^{-10}$, $7.5\times10^{-10}$ |
 
 L1's tolerance is $10^{-6}$ of the initial gap: RK2 at $\Delta t = \tau_A/1000$ leaves at most
 $(t/\tau)(\Delta t/\tau)^2/6 = 6\times10^{-8}$ of it, and a family that heats with the other
-material misses by 0.165. L2 takes case F's $10^{-6}$ on the slope. L3 and L4 compare ratios
+material misses by 0.165. L2 and L5 take case F's $10^{-6}$ on the slope. L3 and L4 compare ratios
 that are exact in binary ($r_2 = 2r_1$, $\rho_A = 2\rho_B$) through a flux and a limiter that
 are homogeneous of degree one in $n$, so $10^{-12}$ bounds their round-off; a cell counts as
 filled at half the inlet density.

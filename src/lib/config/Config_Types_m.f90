@@ -226,6 +226,9 @@ module ICE_Config_Types_m
     real(R8), allocatable     :: e_tab(:)     ! h_tab - h_off, indexed T_min:T_max
     real(R8), allocatable     :: psat_tab(:)  ! saturation pressure [Pa], indexed T_min:T_max
     logical                   :: use_psat = .false.  ! the evaporation models take psat_tab
+    real(R8), allocatable     :: lv_tab(:)    ! latent heat [J/kg], indexed T_min:T_max
+    real(R8), allocatable     :: cpv_tab(:)   ! vapour specific heat [J/(kg K)], indexed T_min:T_max
+    logical                   :: use_lv = .false., use_cpv = .false.  ! the latent sink and the evaporation models take them
     logical                   :: rho_varies = .false., cs_varies = .false.
     character(len=8)          :: h_datum = 'none'  ! 'relative' (Enthalpy) or 'absolute' (Enthalpy_abs)
     real(R8)                  :: h_off = 0._R8     ! h at 0 K along the first table segment [J/kg]

@@ -7,13 +7,16 @@
 #  first rows are refused while the input is read (a value outside its allowed
 #  list, a required model left unset in a coupled run, the heat name Chang, whose
 #  formula is JAXA3, a property table that is malformed or contradicts the INI,
-#  a Psat column an evaporation model cannot use, a key given together with its
+#  a Psat column an evaporation model cannot use, Lv, Mv and Cpv columns that do
+#  not fit the Psat column or meet a vapour key set non-zero, a latent heat or
+#  molar mass of 0 with no column to replace it, a key given together with its
 #  alias, a phase file whose materials or model tokens ICE cannot honour);
 #  the last one diverges at run time (a NaN source in one cell) and must be
 #  caught after the update. A solver that reports success on
-#  any of these would let a harness read a broken run as a pass. Four rows go the
+#  any of these would let a harness read a broken run as a pass. Six rows go the
 #  other way: an INI value equal to the table's must be accepted, the boiling
-#  temperature must be read under either of its names, and a solidifying material
+#  temperature must be read under either of its names, the vapour columns must be
+#  read with the vapour keys left out or set to 0, and a solidifying material
 #  must be read, reported and written with its frozen and nucleated fractions.
 #===============================================================================
 set -uo pipefail
@@ -149,6 +152,40 @@ accept NoExchange/MK "boiling temperature: key read" \
 accept NoExchange/MK "boiling temperature: alias Tboil read" \
        "psat_table 1atm && $evap_on && sed -i '/^heat-transfer/a Tboil = 1200' input.ini" \
        "psat(boiling-temperature) = 1.20000E+00 atm"
+# vapour_table <mode>: psat_table's "1atm" rows with the Lv, Mv and Cpv columns of a vapour of 18.015 kg/kmol whose
+# Clausius-Clapeyron slope is the Psat column's at any temperature: Lv = Ru T / Mv ("consistent"), the same in kJ/kg
+# ("kJ"), the consistent columns beside a Psat column of zeros ("nopsat"), or with the Mv column zero ("nomv"); the
+# boiling temperature is set to 1200 K
+vapour_table() {
+  awk -v mode="$1" 'BEGIN {
+    print "TITLE = \"Mass Thermodynamic Properties\""
+    print "VARIABLES = \"Temperature\", \"Cp\", \"Density\", \"Enthalpy\", \"Psat\", \"Lv\", \"Mv\", \"Cpv\""
+    print "ZONE T=\"A\""; print "I=5000, F=POINT"
+    for (T = 1; T <= 5000; T++) printf "%.1f 1000.0 2000.0 %.1f %.6e %.6f %.6f 2000.000000\n", T, 1000*T, \
+      (mode == "nopsat" ? 0 : 101.325*T), 8314.46*T/18.015/(mode == "kJ" ? 1000 : 1), (mode == "nomv" ? 0 : 18.015)
+  }' > INPUT/part-properties.dat
+}
+tb1200="sed -i '/^heat-transfer/a boiling-temperature = 1200' input.ini"
+refuse Refuse/MK   "vapour: Lv in kJ/kg" "vapour_table kJ && $evap_on && $tb1200" \
+       "not the slope of the Psat column"
+refuse Refuse/MK   "vapour: latent-heat beside an Lv column" \
+       "vapour_table consistent && $evap_on && $tb1200 && sed -i '/^heat-transfer/a latent-heat = 2.26e6' input.ini" \
+       "latent-heat = 2.26000E+06 is set and the table gives the Lv column"
+refuse Refuse/MK   "vapour: the columns without Psat" "vapour_table nopsat && $evap_on && $tb1200" \
+       "vapour columns without a Psat column"
+refuse Refuse/MK   "vapour: latent-heat = 0 without an Lv column" \
+       "psat_table 1atm && $evap_on && $tb1200 && sed -i '/^heat-transfer/a latent-heat = 0' input.ini" \
+       "latent-heat = 0 needs an Lv column in the property table"
+refuse Refuse/MK   "vapour: an Lv column without Mv, the key unset" "vapour_table nomv && $evap_on && $tb1200" \
+       "an Lv column without an Mv column"
+refuse Refuse/MK   "vapour: an Lv column without Mv, the key 0" \
+       "vapour_table nomv && $evap_on && $tb1200 && sed -i '/^heat-transfer/a vapour-molar-mass = 0' input.ini" \
+       "an Lv column without an Mv column"
+accept NoExchange/MK "vapour: the columns read" "vapour_table consistent && $evap_on && $tb1200" \
+       "vapour data from the table;Lv(298.15 K) = 1.37605E+05;Mv = 1.80150E+01"
+accept NoExchange/MK "vapour: 0 beside the columns" \
+       "vapour_table consistent && $evap_on && $tb1200 && sed -i '/^heat-transfer/a latent-heat = 0\nvapour-molar-mass = 0' input.ini" \
+       "vapour data from the table;Lv(298.15 K) = 1.37605E+05"
 # Materials come from the phase file: "<name> <groups> [key=value ...]" per line. two_mat declares
 # a second material and a second family; the tokens are read for every material, coupled or not.
 two_mat="printf 'condensed-dispersed phase\nA 1\nB 1\n' > INPUT/part-phase.txt && printf '\n[ICE-Family2]\nclosure = MK\n' >> input.ini"

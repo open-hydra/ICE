@@ -1,6 +1,7 @@
 !>@brief The condensed-material property table INPUT/<prefix>properties.dat.
 !> The header names the columns; the rows sit on consecutive integer kelvins from any
-!> Tmin. The header, node and column checks return a code, so the unit test can assert
+!> Tmin, and the optional Psat, Lv, Mv and Cpv columns serve the evaporation models. The
+!> header, node, column, Psat and vapour checks return a code, so the unit test can assert
 !> them; Load_Table turns a failed code, or what the row scan finds, into a refusal.
 module ICE_Load_Table
   use, intrinsic :: iso_fortran_env, only: R8 => real64
@@ -9,7 +10,7 @@ module ICE_Load_Table
   private
   public :: Load_Table
   public :: classify_table_tokens, check_table_nodes, check_table_columns, table_h_offset, table_reason
-  public :: validate_psat_column, psat_reason
+  public :: validate_psat_column, psat_reason, validate_vapour_columns, vapour_reason
 
   integer, parameter :: ntok_max = 32, tok_len = 64, nzone_max = 64
 
@@ -25,29 +26,36 @@ module ICE_Load_Table
                                 PSAT_NONMONOTONE = 4, PSAT_CONSTANT = 5, PSAT_TBOIL_RANGE = 6, &
                                 PSAT_TBOIL_MISMATCH = 7
 
+  !> Codes of the vapour column checks (Lv, Mv, Cpv); vapour_reason gives the text.
+  integer, parameter, public :: VAP_OK = 0, VAP_ABSENT = 1, VAP_NONFINITE = 2, VAP_PARTIAL = 3, VAP_NONPOSITIVE = 4, &
+                                VAP_MV_VARIES = 5, VAP_WITHOUT_PSAT = 6, VAP_CC_MISMATCH = 7
+
   character(len=*), parameter :: grammar = &
-    'expected: VARIABLES = "Temperature", "Cp", "Density", "Enthalpy" (or "Enthalpy_abs")[, "Psat"], '// &
+    'expected: VARIABLES = "Temperature", "Cp", "Density", "Enthalpy" (or "Enthalpy_abs")'// &
+    '[, "Psat"[, "Lv"][, "Mv"][, "Cpv"]], '// &
     'Temperature first and the others in any order, one zone per material, rows on consecutive integer kelvins'
 
 contains
 
   !> Reads the optional table, one zone per material, and fills the table fields of obj_condensed(:).
   !  Absent => the constant [ICE-Physics] density/specific-heat of a single material (several
-  !  materials need the table), and the log says which of the two applies.
+  !  materials need the table), and the log says which of the two applies. The Psat, Lv, Mv and
+  !  Cpv columns are read for a material that evaporates.
   subroutine Load_Table()
     use Lib_ORION_data,     only: orion_data
     use Lib_Tecplot,        only: tec_read_points_multivars
     use ICE_Config_Types_m, only: obj_condensed
     use ICE_Global_m,       only: ICE_phase_prefix, nmat
     use ICE_Mod_MPI,        only: mpi_is_root
-    use ICE_Lib_Evaporation, only: Patm
-    use ICE_Lib_Properties, only: mat_psat
+    use ICE_Lib_Evaporation, only: Patm, Ru
+    use ICE_Lib_Properties, only: mat_psat, mat_lv, mat_cpv
     use ICE_Parameters_m,   only: codename
     implicit none
     type(orion_data)        :: orion
     character(len=512)      :: tablefile
     character(len=tok_len)  :: tokens(ntok_max)
     integer                 :: ntok, icp, irho, ih, ips, code, err, Ni, Tmin, m
+    integer                 :: ilv, imv, icpv
     integer                 :: nzone, nsize, ndata, ntrail, badline
     integer                 :: nannounced(nzone_max), nrows(nzone_max)
     logical                 :: exists, relative, found
@@ -67,7 +75,7 @@ contains
     ! Header: the quoted names of the first VARIABLES line
     call read_variables_line(tablefile, tokens, ntok, found)
     if (.not. found) call refuse(tablefile, 'no VARIABLES line')
-    call classify_table_tokens(tokens(1:ntok), icp, irho, ih, ips, relative, code)
+    call classify_table_tokens(tokens(1:ntok), icp, irho, ih, ips, relative, code, ilv, imv, icpv)
     if (code /= TAB_OK) call refuse(tablefile, table_reason(code))
 
     ! Rows: ORION reads them, after a scan that guards what ORION cannot see
@@ -137,6 +145,7 @@ contains
           ', enthalpy '//trim(obj_condensed(m)%h_datum)//' (hOff = '//trim(rtoa(obj_condensed(m)%h_off))//' J/kg)'
       endif
       if (ips > 0) call load_psat(orion%block(m)%vars(ips,1:Ni,1,1), m)
+      call load_vapour(m)
     enddo
 
   contains
@@ -162,6 +171,76 @@ contains
       if (mpi_is_root) write(*,'(A)') '   Psat from the table, psat(boiling-temperature) = '// &
         trim(rtoa(mat_psat(obj_condensed(m), obj_condensed(m)%Tboil)/Patm))//' atm'
     end subroutine load_psat
+
+
+    !> The Lv, Mv and Cpv columns, as Psat, serve a material that evaporates (all three zero: absent);
+    !  the scalars become Lv(298.15 K), the column's Mv and Cpv(boiling-temperature).
+    subroutine load_vapour(m)
+      use ICE_Input_Registry, only: param_is_set
+      integer, intent(in) :: m
+      real(R8) :: lv(Ni), mv(Ni), cv(Ni), ps(Ni)
+      integer  :: vcode
+      character(len=:), allocatable :: line
+      if (ilv == 0 .and. imv == 0 .and. icpv == 0) return
+      if (obj_condensed(m)%evapSelect == 0) then
+        if (mpi_is_root) write(*,'(A)') '   Lv, Mv, Cpv columns not used: this material does not evaporate'
+        return
+      endif
+      lv = 0._R8; mv = 0._R8; cv = 0._R8; ps = 0._R8
+      if (ilv > 0)  lv = orion%block(m)%vars(ilv,1:Ni,1,1)
+      if (imv > 0)  mv = orion%block(m)%vars(imv,1:Ni,1,1)
+      if (icpv > 0) cv = orion%block(m)%vars(icpv,1:Ni,1,1)
+      if (ips > 0)  ps = orion%block(m)%vars(ips,1:Ni,1,1)
+      call check_vapour_key(m, 'latent-heat',          obj_condensed(m)%lv_al, lv, 'Lv')
+      call check_vapour_key(m, 'vapour-molar-mass',    obj_condensed(m)%Mv,    mv, 'Mv')
+      call check_vapour_key(m, 'vapour-specific-heat', obj_condensed(m)%cpv,   cv, 'Cpv')
+      if (any(lv /= 0._R8) .and. all(mv == 0._R8) .and. &
+          .not. (param_is_set(trim(codename)//'-Physics', 'vapour-molar-mass') .and. obj_condensed(m)%Mv /= 0._R8)) &
+        call refuse(tablefile, trim(zone_label(m))//'an Lv column without an Mv column needs vapour-molar-mass in ['// &
+                    trim(codename)//'-Physics] (the slope check and the evaporation models need the vapour molar mass)')
+      vcode = validate_vapour_columns(lv, mv, cv, ps, obj_condensed(m)%use_psat, Tmin, Tmin+Ni-1, &
+                                      obj_condensed(m)%Tboil, Ru, obj_condensed(m)%Mv)
+      if (vcode == VAP_ABSENT) then
+        if (mpi_is_root) write(*,'(A)') '   Lv, Mv, Cpv columns all zero: the ['//trim(codename)//'-Physics] values are used'
+        return
+      endif
+      if (vcode /= VAP_OK) call refuse(tablefile, trim(zone_label(m))//vapour_reason(vcode))
+      line = ''
+      associate (mat => obj_condensed(m))
+        if (any(lv /= 0._R8)) then
+          allocate(mat%lv_tab(Tmin:Tmin+Ni-1), source=lv)
+          mat%use_lv = .true.
+          mat%lv_al  = mat_lv(mat, 298.15_R8)
+          line = line//', Lv(298.15 K) = '//trim(rtoa(mat%lv_al))//' J/kg, Lv(boiling-temperature) = '// &
+                 trim(rtoa(mat_lv(mat, mat%Tboil)))//' J/kg'
+        endif
+        if (any(mv /= 0._R8)) then
+          mat%Mv = mv(1)
+          line = line//', Mv = '//trim(rtoa(mat%Mv))//' kg/kmol'
+        endif
+        if (any(cv /= 0._R8)) then
+          allocate(mat%cpv_tab(Tmin:Tmin+Ni-1), source=cv)
+          mat%use_cpv = .true.
+          mat%cpv     = mat_cpv(mat, mat%Tboil)
+          line = line//', Cpv(boiling-temperature) = '//trim(rtoa(mat%cpv))//' J/(kg K)'
+        endif
+      end associate
+      if (mpi_is_root) write(*,'(A)') '   vapour data from the table: '//line(3:)
+    end subroutine load_vapour
+
+
+    !> A vapour key set non-zero beside a non-zero column of the same quantity is refused; 0 leaves it to the table.
+    subroutine check_vapour_key(m, key, ini, col, name)
+      use ICE_Input_Registry, only: param_is_set
+      integer,          intent(in) :: m
+      character(len=*), intent(in) :: key, name
+      real(R8),         intent(in) :: ini, col(:)
+      if (all(col == 0._R8)) return
+      if (.not. (param_is_set(trim(codename)//'-Physics', key) .and. ini /= 0._R8)) return
+      call refuse(tablefile, trim(zone_label(m))//'['//trim(codename)//'-Physics] '//key//' = '//trim(rtoa(ini))// &
+                  ' is set and the table gives the '//name//' column (give 0 for this material or remove the key: '// &
+                  'the table owns the property)')
+    end subroutine check_vapour_key
 
 
     !> With a table, a set INI value must equal a constant column; against a varying one it is refused.
@@ -192,13 +271,15 @@ contains
 
 
   !> Maps the header names to column indices of vars (column 1 is Temperature, read as the mesh).
-  pure subroutine classify_table_tokens(tokens, icp, irho, ih, ips, relative, code)
+  pure subroutine classify_table_tokens(tokens, icp, irho, ih, ips, relative, code, ilv, imv, icpv)
     character(len=*), intent(in)  :: tokens(:)
     integer,          intent(out) :: icp, irho, ih, ips, code
     logical,          intent(out) :: relative
+    integer,          intent(out) :: ilv, imv, icpv
     integer :: t
 
     icp = 0; irho = 0; ih = 0; ips = 0; relative = .true.
+    ilv = 0; imv = 0; icpv = 0
     code = TAB_NO_TEMPERATURE
     if (size(tokens) < 1) return
     if (tokens(1) /= 'Temperature' .and. tokens(1) /= 'temperature') return
@@ -219,6 +300,15 @@ contains
       case ('Psat', 'psat', 'PSAT')
         if (ips > 0) code = TAB_DUPLICATE
         ips = t - 1
+      case ('Lv', 'lv', 'LV')
+        if (ilv > 0) code = TAB_DUPLICATE
+        ilv = t - 1
+      case ('Mv', 'mv', 'MV')
+        if (imv > 0) code = TAB_DUPLICATE
+        imv = t - 1
+      case ('Cpv', 'cpv', 'CPV')
+        if (icpv > 0) code = TAB_DUPLICATE
+        icpv = t - 1
       end select
       if (code /= TAB_OK) return
     enddo
@@ -337,6 +427,62 @@ contains
     case default;               txt = 'unknown Psat error'
     end select
   end function psat_reason
+
+
+  !> The Lv, Mv, Cpv columns of one material (an absent one all zero): all three zero means absent;
+  !  finite; each zero on every row or on none; not negative; Mv the same on every row; beside a
+  !  valid Psat column; the Lv column's Clausius-Clapeyron slope ln(p(i0+1)/p(i0)) at the boiling
+  !  temperature within a factor 2 of the Psat column's (Mv from its column, else MvKey).
+  pure function validate_vapour_columns(Lv, Mv, cpv, psat, psatOK, lo, hi, Tboil, Ru, MvKey) result(code)
+    integer,  intent(in) :: lo, hi
+    real(R8), intent(in) :: Lv(lo:hi), Mv(lo:hi), cpv(lo:hi), psat(lo:hi), Tboil, Ru, MvKey
+    logical,  intent(in) :: psatOK
+    integer  :: code, i0
+    real(R8) :: MvCC, ratio
+    code = VAP_ABSENT
+    if (all(Lv == 0._R8) .and. all(Mv == 0._R8) .and. all(cpv == 0._R8)) return
+    code = VAP_NONFINITE
+    if (.not. (all(ieee_is_finite(Lv)) .and. all(ieee_is_finite(Mv)) .and. all(ieee_is_finite(cpv)))) return
+    code = VAP_PARTIAL
+    if (partial(Lv) .or. partial(Mv) .or. partial(cpv)) return
+    code = VAP_NONPOSITIVE
+    if (any(Lv < 0._R8) .or. any(Mv < 0._R8) .or. any(cpv < 0._R8)) return
+    code = VAP_MV_VARIES
+    if (Mv(lo) /= 0._R8 .and. any(Mv /= Mv(lo))) return
+    code = VAP_WITHOUT_PSAT
+    if (.not. psatOK) return
+    code = VAP_CC_MISMATCH
+    if (Lv(lo) /= 0._R8) then
+      MvCC  = merge(Mv(lo), MvKey, Mv(lo) /= 0._R8)
+      i0    = int(Tboil)
+      ratio = log(psat(i0+1)/psat(i0)) / &
+              (0.5_R8*(Lv(i0) + Lv(i0+1))*MvCC/Ru*(1._R8/real(i0, R8) - 1._R8/real(i0+1, R8)))
+      if (.not. (ratio >= 0.5_R8 .and. ratio <= 2._R8)) return
+    endif
+    code = VAP_OK
+  contains
+    pure logical function partial(c)
+      real(R8), intent(in) :: c(:)
+      partial = any(c == 0._R8) .and. any(c /= 0._R8)
+    end function partial
+  end function validate_vapour_columns
+
+
+  pure function vapour_reason(code) result(txt)
+    integer, intent(in) :: code
+    character(len=:), allocatable :: txt
+    select case (code)
+    case (VAP_NONFINITE);    txt = 'vapour column: a value is not finite'
+    case (VAP_PARTIAL);      txt = 'vapour column: zero on some rows and not on others'
+    case (VAP_NONPOSITIVE);  txt = 'vapour column: a value is negative'
+    case (VAP_MV_VARIES);    txt = 'Mv column: not the same value on every row'
+    case (VAP_WITHOUT_PSAT); txt = 'vapour columns without a Psat column (Lv, Mv and Cpv come from the '// &
+                                   'liquid/vapour pair that gives Psat)'
+    case (VAP_CC_MISMATCH);  txt = 'Lv column: not the slope of the Psat column at boiling-temperature '// &
+                                   '(a factor 2 or more)'
+    case default;            txt = 'unknown vapour column error'
+    end select
+  end function vapour_reason
 
 
   pure function table_reason(code) result(txt)

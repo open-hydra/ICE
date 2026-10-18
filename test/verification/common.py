@@ -206,11 +206,13 @@ def write_ini(path, sections):
 
 
 
-def write_properties(path, Tmin, Tmax, cp, rho, datum='Enthalpy', h0=0.0, psat=None, zone='A'):
+def write_properties(path, Tmin, Tmax, cp, rho, datum='Enthalpy', h0=0.0, psat=None, zone='A',
+
+                     lv=None, mv=None, cpv=None):
 
     """Condensed-material property table: one Tecplot POINT zone on T = Tmin..Tmax K.
 
-    cp, rho and psat are constants or functions of T. The enthalpy integrates cp exactly
+    cp, rho, psat, lv, mv and cpv are constants or functions of T. The enthalpy integrates cp exactly
 
     from h(Tmin) = cp(Tmin)*Tmin + h0: cp*T + h0 for a constant cp, the cumulative
 
@@ -224,13 +226,13 @@ def write_properties(path, Tmin, Tmax, cp, rho, datum='Enthalpy', h0=0.0, psat=N
 
     %.10e. Returns the columns as written, parsed back from the text, so an oracle
 
-    reads the numbers ICE reads: {'T', 'cp', 'rho', 'h', 'psat' (None), 'datum'}.
+    reads the numbers ICE reads: {'T', 'cp', 'rho', 'h', 'psat', 'lv', 'mv', 'cpv' (None when absent), 'datum'}.
 
     """
 
-    return write_properties_zones(path, Tmin, Tmax, [dict(cp=cp, rho=rho, h0=h0, psat=psat, zone=zone)],
+    return write_properties_zones(path, Tmin, Tmax, [dict(cp=cp, rho=rho, h0=h0, psat=psat, zone=zone,
 
-                                  datum)[0]
+                                                          lv=lv, mv=mv, cpv=cpv)], datum)[0]
 
 
 
@@ -238,9 +240,11 @@ def write_properties_zones(path, Tmin, Tmax, zones, datum='Enthalpy'):
 
     """write_properties with one zone per material, in the order of the phase file.
 
-    zones = [dict(cp=..., rho=..., h0=0.0, psat=None, zone='A')], all on the rows Tmin..Tmax
+    zones = [dict(cp=..., rho=..., h0=0.0, psat=None, lv=None, mv=None, cpv=None, zone='A')], all on the
 
-    and all with or all without psat. Returns one dict per zone, as write_properties does.
+    rows Tmin..Tmax, all with or all without psat, and all with or all without the vapour columns
+
+    Lv, Mv, Cpv (written after Psat, an absent one as zeros). Returns one dict per zone, as write_properties does.
 
     """
 
@@ -252,7 +256,13 @@ def write_properties_zones(path, Tmin, Tmax, zones, datum='Enthalpy'):
 
     with_psat = zones[0].get('psat') is not None
 
-    names = ['Temperature', 'Cp', 'Density', datum] + (['Psat'] if with_psat else [])
+    vap = ('lv', 'mv', 'cpv')
+
+    with_vap = any(zones[0].get(k) is not None for k in vap)
+
+    names = (['Temperature', 'Cp', 'Density', datum] + (['Psat'] if with_psat else [])
+
+             + (['Lv', 'Mv', 'Cpv'] if with_vap else []))
 
     lines = ['TITLE = "Mass Thermodynamic Properties"',
 
@@ -278,7 +288,9 @@ def write_properties_zones(path, Tmin, Tmax, zones, datum='Enthalpy'):
 
             hs = [cps[0] * T + h0 for T in Ts]
 
-        cols = [cps, rhos, hs] + ([column(psat)] if with_psat else [])
+        cols = ([cps, rhos, hs] + ([column(psat)] if with_psat else [])
+
+                + ([column(z[k] if z.get(k) is not None else 0.0) for k in vap] if with_vap else []))
 
         rows = [('%.1f' % T) + ''.join(' %.10e' % c[i] for c in cols) for i, T in enumerate(Ts)]
 
@@ -289,6 +301,12 @@ def write_properties_zones(path, Tmin, Tmax, zones, datum='Enthalpy'):
         out.append({'T': list(back[0]), 'cp': list(back[1]), 'rho': list(back[2]), 'h': list(back[3]),
 
                     'psat': list(back[4]) if with_psat else None, 'datum': datum})
+
+        nv = 4 + (1 if with_psat else 0)
+
+        for i, k in enumerate(vap):
+
+            out[-1][k] = list(back[nv + i]) if with_vap else None
 
     Path(path).write_text('\n'.join(lines) + '\n')
 

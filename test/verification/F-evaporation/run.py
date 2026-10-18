@@ -44,6 +44,16 @@ the integrated ODE, as in the first part.
 
 The fifth part takes the saturation pressure from a Psat column of the property table
 instead of the Clausius-Clapeyron curve, with the droplet held on one row of the table.
+
+The sixth part releases the temperature again, with the latent heat and the vapour specific
+heat from the Lv and Cpv columns of the property table and the molar mass from its Mv column:
+L_v(T) = 2.26e6 - 2500 (T - 300) J/kg and c_p,v(T) = 1800 + 2 (T - 300) J/(kg K), beside
+the Psat column that is exact for that L_v (Kirchhoff's law integrated through one
+atmosphere at the boiling temperature). The reference is part 2's system with the three
+columns read as written, so ICE must take L_v(T_p) in the latent sink and in the d-squared
+transfer number, and c_p,v(T_p) in the gas-side heat of ASM and TC. latent-heat and
+vapour-molar-mass are 0 in the INI, which leaves them to the table; left out, they must
+give the same run bit for bit.
 """
 import math
 import sys
@@ -87,6 +97,36 @@ VAPOUR = {'latent-heat': LV, 'vapour-molar-mass': MV, 'boiling-temperature': TBO
           'lewis-number': LE, 'vapour-mass-fraction': YINF, 'vapour-specific-heat': 0.0,
           'evaporation-coefficient': ALPHAE}
 
+# Part 6: the tolerances on T_p (of the initial gap) and on rho_p, ten times the largest error
+# measured over the three models (2.12e-11 and 1.79e-11, both the d2-law's)
+TOL6_T, TOL6_R = 2.2e-10, 1.8e-10
+
+
+def lv_ini(T):
+    """The latent heat of the INI, the same at every temperature."""
+    return LV
+
+
+def cpv_ini(T):
+    """No vapour specific heat: the models take the gas cp in its place."""
+    return 0.0
+
+
+def lv6(T):
+    """Part 6's latent heat [J/kg]."""
+    return 2.26e6 - 2500.0 * (T - 300.0)
+
+
+def cpv6(T):
+    """Part 6's vapour specific heat [J/(kg K)]."""
+    return 1800.0 + 2.0 * (T - 300.0)
+
+
+def psat6(T):
+    """The saturation pressure exact for lv6 = a + b T: d ln p/dT = lv6 MV / (RU T^2), 1 atm at TBOIL."""
+    a, b = 2.26e6 + 2500.0 * 300.0, -2500.0
+    return PATM * math.exp(MV / RU * (a * (1.0 / TBOIL - 1.0 / T) + b * math.log(T / TBOIL)))
+
 
 # ---------------------------------------------------------------------------
 #  An independent implementation of Lib_Evaporation at Re = 0
@@ -120,19 +160,21 @@ def _F(B):
     return (1.0 + B) ** 0.7 * math.log(1.0 + B) / B if B > 1.0e-10 else 1.0
 
 
-def gas_side_rate(model, d, Tp, Ys, BM):
+def gas_side_rate(model, d, Tp, Ys, BM, lv=lv_ini, cpv=cpv_ini):
     """mdot [kg/s] (<= 0) and the gas-side heat [W], at Re = 0.
 
     Returns (mdot, Qdot, override). Qdot is meaningful only when override is set:
     ASM and TC resolve the heat inside their own film, the rest leave it to the
     Nusselt correlation. The latent sink belongs to neither and is added by the
-    closure, so it does not appear here.
+    closure, so it does not appear here. lv and cpv are the latent heat and the
+    vapour cp as functions of T; a vapour cp of 0 means the gas cp, as in ICE.
     """
     Dv = KG / (RHO_G * CPG * LE)
     lnBM = math.log(1.0 + BM)
+    cpv_eff = cpv(Tp) if cpv(Tp) > 0.0 else CPG
 
     if model == 'd2-law':
-        BT = CPG * (TG - Tp) / LV
+        BT = CPG * (TG - Tp) / lv(Tp)
         if BT <= 0.0:
             return 0.0, 0.0, False
         return -2.0 * math.pi * d * KG / CPG * math.log(1.0 + BT), 0.0, False
@@ -153,13 +195,13 @@ def gas_side_rate(model, d, Tp, Ys, BM):
         Nu_star = 2.0
         BT = BM
         for _ in range(5):
-            phi = CPG / CPG * 2.0 / Nu_star / LE
+            phi = cpv_eff / CPG * 2.0 / Nu_star / LE
             BT = (1.0 + BM) ** phi - 1.0
             if BT <= 0.0:
                 BT, Nu_star = BM, 2.0
                 break
             Nu_star = 2.0 + (2.0 - 2.0) / _F(BT)
-        Qdot = -mdot * CPG * (TG - Tp) / BT if BT > 0.0 else 0.0
+        Qdot = -mdot * cpv_eff * (TG - Tp) / BT if BT > 0.0 else 0.0
         return mdot, Qdot, True
 
     if model == 'TC':
@@ -170,12 +212,12 @@ def gas_side_rate(model, d, Tp, Ys, BM):
         if rhs0 <= 0.0:
             return 0.0, 0.0, False
         Tts = Tp / TG
-        Lev = KG / (CPG * Dv * RHO_G)
+        Lev = KG / (cpv_eff * Dv * RHO_G)
         mhat = _tc_solve(rhs0, Tts, Lev)
         mdot = -math.pi * d * RHO_G * Dv * 2.0 * mhat
-        chi = min(-mdot * CPG / (math.pi * d * KG * 2.0), 700.0)
+        chi = min(-mdot * cpv_eff / (math.pi * d * KG * 2.0), 700.0)
         if chi > 1.0e-9:
-            Qdot = -mdot * CPG * (TG - Tp) / (math.exp(chi) - 1.0)
+            Qdot = -mdot * cpv_eff * (TG - Tp) / (math.exp(chi) - 1.0)
         else:
             Qdot = math.pi * d * KG * 2.0 * (TG - Tp)
         return mdot, Qdot, True
@@ -211,20 +253,20 @@ def _tc_solve(rhs0, Tts, Lev):
     return mhat
 
 
-def evaporate(model, d, Tp, interface='VLE', psat=psat_cc):
+def evaporate(model, d, Tp, interface='VLE', psat=psat_cc, lv=lv_ini, cpv=cpv_ini):
     """The whole of Lib_Evaporation's `evaporation` at Re = 0."""
     if model == 'none':
         return 0.0, 0.0, False
     p, Xs, Ys, BM = surface_state(Tp, psat)
     if Ys <= YINF or BM <= 0.0:
         return 0.0, 0.0, False
-    mdot, Qdot, ovr = gas_side_rate(model, d, Tp, Ys, BM)
+    mdot, Qdot, ovr = gas_side_rate(model, d, Tp, Ys, BM, lv, cpv)
     if interface == 'LK':
-        mdot, Qdot, ovr = _lk(model, d, Tp, p, Xs, mdot, Qdot, ovr)
+        mdot, Qdot, ovr = _lk(model, d, Tp, p, Xs, mdot, Qdot, ovr, lv, cpv)
     return mdot, Qdot, ovr
 
 
-def _lk(model, d, Tp, p, XsEq, md, Qd, ovr):
+def _lk(model, d, Tp, p, XsEq, md, Qd, ovr, lv=lv_ini, cpv=cpv_ini):
     """Langmuir-Knudsen non-equilibrium interface: Xs depressed, Picard on mdot."""
     Sc = PR * LE
     LKd2 = 2.0 * MU * math.sqrt(2.0 * math.pi * Tp * RU / MV) / (ALPHAE * Sc * p) / d
@@ -238,7 +280,7 @@ def _lk(model, d, Tp, p, XsEq, md, Qd, ovr):
         if YsN > YINF:
             BMN = (YsN - YINF) / (1.0 - YsN)
             if BMN > 0.0:
-                mdNew, QdNew, ovrNew = gas_side_rate(model, d, Tp, YsN, BMN)
+                mdNew, QdNew, ovrNew = gas_side_rate(model, d, Tp, YsN, BMN, lv, cpv)
         diff = abs(mdNew - md)
         if diff <= 1.0e-12 * abs(mdNew):
             return mdNew, QdNew, ovrNew
@@ -264,13 +306,13 @@ def blowing_factor(d, mp, mdot):
 #  Reference solutions
 # ---------------------------------------------------------------------------
 
-def slope(model, interface='VLE', Tp=TP0):
+def slope(model, interface='VLE', Tp=TP0, lv=lv_ini, cpv=cpv_ini):
     """K in d^2(t) = d0^2 - K t, at frozen droplet temperature.
 
     mdot is proportional to d for every model, so K does not depend on d; it is
     evaluated at d0 and divided back out.
     """
-    mdot, _, _ = evaporate(model, D0, Tp, interface)
+    mdot, _, _ = evaporate(model, D0, Tp, interface, lv=lv, cpv=cpv)
     return -4.0 * mdot / (math.pi * D0 * RHO_L)
 
 
@@ -279,17 +321,17 @@ def diameter(rho_p):
 
 
 def coupled(model, t_end, cs, blowing='none', interface='VLE', steps=40000, tp0=TP0,
-            psat=psat_cc):
+            psat=psat_cc, lv=lv_ini, cpv=cpv_ini):
     """RK4 on (rho_p, T_p) with the temperature released.
 
     rho_p' = n mdot and, after the enthalpy the leaving mass carries cancels,
-    rho_p cs T_p' = n (Qconv + mdot Lv): the convective heat in, the latent heat out.
+    rho_p cs T_p' = n (Qconv + mdot Lv(T_p)): the convective heat in, the latent heat out.
     """
     h = t_end / steps
 
     def rhs(rho_p, Tp):
         d = diameter(rho_p)
-        mdot, Qevap, ovr = evaporate(model, d, Tp, interface, psat)
+        mdot, Qevap, ovr = evaporate(model, d, Tp, interface, psat, lv, cpv)
         if ovr:
             Qconv = Qevap
         else:
@@ -297,7 +339,7 @@ def coupled(model, t_end, cs, blowing='none', interface='VLE', steps=40000, tp0=
             if blowing == 'LK':
                 mp = RHO_L * math.pi / 6.0 * d ** 3
                 Qconv *= blowing_factor(d, mp, mdot)
-        return NDENS * mdot, NDENS * (Qconv + mdot * LV) / (rho_p * cs)
+        return NDENS * mdot, NDENS * (Qconv + mdot * lv(Tp)) / (rho_p * cs)
 
     rho_p, Tp = RHO_P0, tp0
     for _ in range(steps):
@@ -314,8 +356,9 @@ def coupled(model, t_end, cs, blowing='none', interface='VLE', steps=40000, tp0=
 #  Running ICE
 # ---------------------------------------------------------------------------
 
-def run(name, model, t_end, dt_max, cs, blowing='none', interface='VLE', tp0=TP0, table=None):
-    """One ICE run; with table, the property table is written first and returned as sol['table']."""
+def run(name, model, t_end, dt_max, cs, blowing='none', interface='VLE', tp0=TP0, table=None, physics=None):
+    """One ICE run; with table, the property table is written first and returned as sol['table'].
+    physics overrides [ICE-Physics] keys; a value None leaves the key out."""
     case = Case(WORK / name, nx=8, Lx=1.0)
     written = case.properties(**table) if table else None
     case.particles(rho=RHO_P0, u=0.0, v=0.0, w=0.0, T=tp0, n=NDENS)
@@ -325,6 +368,11 @@ def run(name, model, t_end, dt_max, cs, blowing='none', interface='VLE', tp0=TP0
     phys = dict(VAPOUR, evaporation=model)
     phys['evaporation-interface'] = interface
     phys['evaporation-blowing'] = blowing
+    for key, value in (physics or {}).items():
+        if value is None:
+            phys.pop(key, None)
+        else:
+            phys[key] = value
     case.ini(t_end=t_end, cfl=0.8, rk='RK2', drag='Stokes', heat='Stokes',
              rho_al=RHO_L, cs=cs, dt_max=dt_max, physics=phys)
     sol = case.run()
@@ -481,6 +529,41 @@ def main():
               % (label, sol['var'][RHO][0], rho_ref, err, drift))
         rep.check(err <= 1.0e-8, 'Psat column, %s: bulk density to %.1e' % (label, err))
         rep.check(drift <= 1.0e-8, 'Psat column, %s: T_p held to %.1e K' % (label, drift))
+
+    # --- Part 6: the latent heat and the vapour cp from the property table --------
+    # Part 2's set-up with Lv, Mv and Cpv columns. The scalar Lv(298.15 K) at the wet-bulb
+    # temperatures is 2.4 to 4.5 % off Lv(T_p), Cpv(boiling-temperature) 3.8 to 5.8 % off
+    # Cpv(T_p) and the gas cp 45 % off, so a model that reads a scalar misses by far.
+    t_end, dt_max = 0.05, 5.0e-6
+    table = dict(Tmin=250, Tmax=450, cp=CS_L, rho=RHO_L, psat=psat6, lv=lv6, mv=MV, cpv=cpv6)
+    print('   Lv, Mv, Cpv columns (table on 250..450 K, T_p released)')
+    print('   case       T_p (ICE)    T_p (RK4)     T_p err    rho_p err')
+    d2_bytes = None
+    for model in ('d2-law', 'ASM', 'TC'):
+        sol = try_run(rep, 'vap-%s' % model, model, t_end, dt_max, CS_L, table=table,
+                      physics={'latent-heat': 0.0, 'vapour-molar-mass': 0.0})
+        if sol is None:
+            continue
+        col = sol['table']
+        rho_ref, T_ref = coupled(model, sol['time'], CS_L,
+                                 psat=lambda T: table_lookup(col, 'psat', T),
+                                 lv=lambda T: table_lookup(col, 'lv', T),
+                                 cpv=lambda T: table_lookup(col, 'cpv', T))
+        rho_ice, T_ice = sol['var'][RHO][0], sol['var'][T][0]
+        eT = abs(T_ice - T_ref) / (TG - TP0)
+        eR = abs(rho_ice - rho_ref) / RHO_P0
+        print('   %-9s  %10.6f  %10.6f   %9.2e  %9.2e' % (model, T_ice, T_ref, eT, eR))
+        rep.check(eT <= TOL6_T, 'Lv, Cpv columns, %s: T_p to %.1e of the initial gap' % (model, eT))
+        rep.check(eR <= TOL6_R, 'Lv, Cpv columns, %s: bulk density to %.1e' % (model, eR))
+        if model == 'd2-law':
+            d2_bytes = (WORK / 'vap-d2-law' / 'OUTPUT' / 'part-field.tec').read_bytes()
+
+    # latent-heat and vapour-molar-mass left out: the table owns them, as with 0
+    sol = try_run(rep, 'vap-d2-law-unset', 'd2-law', t_end, dt_max, CS_L, table=table,
+                  physics={'latent-heat': None, 'vapour-molar-mass': None})
+    same = (sol is not None and d2_bytes is not None and
+            (WORK / 'vap-d2-law-unset' / 'OUTPUT' / 'part-field.tec').read_bytes() == d2_bytes)
+    rep.check(same, 'Lv, Cpv columns: latent-heat and vapour-molar-mass left out give the run with 0 bit for bit')
 
     rep.close(WORK)
 

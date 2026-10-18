@@ -90,8 +90,10 @@ several. It is a Tecplot point file whose first `VARIABLES` line names the colum
 `Temperature` first, then `Cp`, `Density` and one enthalpy column, in any order. The
 enthalpy is either `Enthalpy` (relative: $c_p T$ for a constant $c_p$) or `Enthalpy_abs`
 (absolute: its offset is kept as the material's datum). An optional `Psat` column (Pa)
-replaces the Clausius-Clapeyron saturation curve of the evaporation models; other names
-are ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least
+replaces the Clausius-Clapeyron saturation curve of the evaporation models, and optional
+`Lv` (J/kg), `Mv` (kg/kmol) and `Cpv` (J/(kg K)) columns after it give the latent heat,
+the vapour molar mass and the vapour specific heat; ATLAS writes the four from the
+material's liquid/vapour pair. Other names are ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least
 two of them. Between the nodes the density and $c_p$ are linear in $T$, and outside
 $[T_{min}, T_{max}]$ they keep the end values. When $c_p$ varies, the particle energy is
 the enthalpy column itself, less its value extrapolated to 0 K, so its datum does not
@@ -111,10 +113,33 @@ is negative, decreases with $T$ or is constant, or does not give 0.5 to 2 atm at
 `boiling-temperature`, which must lie in $[T_{min}, T_{max}-1]$; a column of zeros counts
 as absent, and a material that does not evaporate does not use the column.
 
+The `Lv`, `Mv` and `Cpv` columns follow the same rule: they serve a material that
+evaporates, and the three at zero count as absent. A material that evaporates takes the
+latent heat and the vapour specific heat at the particle temperature, linear between the
+nodes and the end values outside, in the latent sink of the energy equation, in the
+transfer number of the d2-law and in the gas-side heat of ASM and TC; `Mv` must be the
+same on every row. ICE refuses vapour columns that are not finite (*vapour column: a value
+is not finite*), that are zero on some rows and not on others, that are negative, an `Mv`
+that varies, the vapour columns without a `Psat` column (*vapour columns without a Psat
+column*), and an `Lv` column whose Clausius-Clapeyron slope at the boiling temperature is
+not within a factor 2 of the `Psat` column's (*Lv column: not the slope of the Psat column
+at boiling-temperature*); the slope takes $M_v$ from the `Mv` column, and an `Lv` column
+without one needs `vapour-molar-mass` set non-zero. IGLOO applies the same checks with the
+same words.
+
 With a table, `density` and `specific-heat` of `[ICE-Physics]` may be left out; if one is
 given it must equal its material's constant column, and it may not be given against a
 column that varies. If the file is absent, the single material takes those two constants;
 ICE prints which of the two applies.
+
+The vapour keys follow a stricter rule: `latent-heat`, `vapour-molar-mass` or
+`vapour-specific-heat` given non-zero for a material whose column of the same quantity is
+non-zero stops the run, even when the two agree, and 0 leaves the quantity to the table
+(one value per material, so `latent-heat = 0 2.26e6` serves a tabulated material A beside
+a material B without the columns). An evaporating material with `latent-heat` or
+`vapour-molar-mass` at 0 and no column to replace it stops the run. The setup prints the
+tabulated values of each such material: $L_v$ at 298.15 K, which becomes its scalar latent
+heat, and at the boiling temperature, $M_v$, and $c_{p,v}$ at the boiling temperature.
 
 ```
 TITLE = "Mass Thermodynamic Properties"

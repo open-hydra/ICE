@@ -94,6 +94,8 @@ with $\sigma = 5.67\times10^{-8}$ W m⁻² K⁻⁴. The area factor is $2\pi R_p
 Particles evaporation provides a mass source term. Every model returns a rate $\dot m$ **per particle**, negative while the droplet loses mass. The source routine multiplies it by the number density, so the bulk density loses $n\dot m$ per unit volume, the energy equation loses both the
 enthalpy that mass carries away and the latent heat $L_v$ needed to vaporise it, and the momentum equation loses the momentum it carries. The number density has no source term at all: droplets shrink, they never disappear, and the radius follows from $\rho_p$ and $n$ as it always does.
 
+When the [property table](../user/initial-conditions.md#property-table) carries the `Lv`, `Mv` and `Cpv` columns, $L_v$ and the vapour heat capacity $c_{p,v}$ are functions of the particle temperature, $L_v(T_p)$ and $c_{p,v}(T_p)$, wherever a model reads them: the latent sink, $B_T$ of the d2-law, $\varphi$ and the gas-side heat of ASM, and the vapour Lewis number and the gas-side heat of TC. $M_v$ is then the column's constant. Without the columns the `[ICE-Physics]` values hold, and a vapour heat capacity of 0 stands for the gas one.
+
 The model, the interface and the accommodation coefficient belong to the material: each takes its phase-file tokens, or the `[ICE-Physics]` default without them (see [Materials](../user/input.md#materials)), together with its own vapour properties.
 
 ### The surface state
