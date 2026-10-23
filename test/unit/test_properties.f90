@@ -1,8 +1,9 @@
 !> Unit test of the property-table reader (ICE_Load_Table): the header grammar, the node and
 !> column checks, Load_Table on small tables written here (Tmin > 1, permuted columns, both
-!> datums), the lookup and energy inversion of ICE_Lib_Properties, the Psat column, and the
-!> energy the MK, IG and AG closures store and recover. Prints every assertion and exits
-!> non-zero if any failed.
+!> datums), the lookup and energy inversion of ICE_Lib_Properties, the Psat column, the Lv, Mv
+!> and Cpv columns (their checks, and the ATLAS water table INPUT/aw-properties.dat), and the
+!> energy the MK, IG and AG closures store, recover and lose with the evaporated mass. Prints
+!> every assertion and exits non-zero if any failed.
 program test_properties
   use, intrinsic :: iso_fortran_env, only: R8 => real64
   use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
@@ -20,6 +21,7 @@ program test_properties
   call test_load()
   call test_lookup()
   call test_psat()
+  call test_vapour()
   call test_closures()
 
   if (nfail > 0) then
@@ -44,42 +46,73 @@ contains
 
   subroutine test_tokens()
     character(len=64), allocatable :: tk(:)
-    integer :: icp, irho, ih, ips, code
+    integer :: icp, irho, ih, ips, code, ilv, imv, icpv, isig, imu
     logical :: rel
 
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_OK .and. icp == 1 .and. irho == 2 .and. ih == 3 .and. ips == 0 .and. rel, &
                'tokens: the ATLAS order binds Cp, Density, Enthalpy to vars 1, 2, 3, relative')
     tk = [character(len=64) :: 'Temperature', 'Enthalpy', 'Density', 'Cp']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_OK .and. icp == 3 .and. irho == 2 .and. ih == 1, 'tokens: permuted columns bind by name')
     tk = [character(len=64) :: 'temperature', 'cp', 'density', 'enthalpy_abs', 'psat']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_OK .and. .not. rel .and. ips == 4, 'tokens: lower-case aliases, Enthalpy_abs is absolute, Psat found')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Hvap', 'Density', 'Enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_OK .and. irho == 3 .and. ih == 4, 'tokens: an unknown name is skipped, not misbound')
+    call check(ilv == 0 .and. imv == 0 .and. icpv == 0, 'tokens: Hvap is not bound as a vapour column')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy_abs', 'Psat', 'Lv', 'Mv', 'Cpv']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_OK .and. ips == 4 .and. ilv == 5 .and. imv == 6 .and. icpv == 7 .and. .not. rel, &
+               'tokens: the ATLAS order binds Psat, Lv, Mv, Cpv to vars 4, 5, 6, 7')
+    tk = [character(len=64) :: 'temperature', 'CPV', 'mv', 'Density', 'LV', 'cp', 'enthalpy']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_OK .and. icpv == 1 .and. imv == 2 .and. ilv == 4 .and. icp == 5 .and. ips == 0, &
+               'tokens: Lv, Mv, Cpv and their aliases bind by name in any order, without Psat')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'Psat', 'Lv', 'lv']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_DUPLICATE, 'tokens: Lv named twice is refused')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'Psat', 'MV', 'Mv']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_DUPLICATE, 'tokens: Mv named twice is refused')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'Psat', 'cpv', 'Cpv']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_DUPLICATE, 'tokens: Cpv named twice is refused')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'VISCOSITY', 'sigma']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_OK .and. isig == 5 .and. imu == 4 .and. ips == 0 .and. ilv == 0 .and. icpv == 0, &
+               'tokens: VISCOSITY and sigma bind their columns by name')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_OK .and. isig == 0 .and. imu == 0, 'tokens: no Sigma or Viscosity name: both 0')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'Sigma', 'SIGMA']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_DUPLICATE, 'tokens: Sigma named twice is refused')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'viscosity', 'Viscosity']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_DUPLICATE, 'tokens: Viscosity named twice is refused')
     tk = [character(len=64) :: 'Temperature', 'Density', 'Enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_NO_CP, 'tokens: no Cp is refused')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_NO_DENSITY, 'tokens: no Density is refused')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_NO_ENTHALPY, 'tokens: no enthalpy is refused')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'Enthalpy_abs']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_TWO_ENTHALPY, 'tokens: both enthalpies are refused')
     tk = [character(len=64) :: 'Cp', 'Temperature', 'Density', 'Enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_NO_TEMPERATURE, 'tokens: Temperature must come first')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Cp', 'Enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_DUPLICATE, 'tokens: a column named twice is refused')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_DUPLICATE, 'tokens: one enthalpy named twice is a duplicate, not two datums')
   end subroutine test_tokens
 
@@ -290,6 +323,157 @@ contains
   end subroutine test_psat
 
 
+  !> The Lv, Mv, Cpv columns: the checks in IGLOO's order, the slope band, the ATLAS water table.
+  subroutine test_vapour()
+    call vapour_codes()
+    call vapour_band()
+    call vapour_atlas()
+  end subroutine test_vapour
+
+
+  !> Each code of validate_vapour_columns once, on the column sets of IGLOO's reader test: a Psat
+  !  column with ln p = -5000/T + const, so Lv*Mv/Ru = 5000 K is its Clausius-Clapeyron slope.
+  subroutine vapour_codes()
+    use ICE_Lib_Evaporation, only: Ru
+    real(R8) :: ps(100:110), Lv(100:110), Mv(100:110), cv(100:110), zero(100:110), bad(100:110)
+    integer  :: k
+
+    do k = 100, 110
+      ps(k) = 101325._R8*exp(-5000._R8*(1._R8/real(k, R8) - 1._R8/105._R8))
+    enddo
+    Lv = 5000._R8*Ru/18._R8; Mv = 18._R8; cv = 1900._R8; zero = 0._R8
+    call check(validate_vapour_columns(Lv, Mv, cv, ps, .true., 100, 110, 105._R8, Ru, 0._R8) == VAP_OK, &
+               'vapour: the three columns on the Psat slope pass')
+    call check(validate_vapour_columns(zero, zero, zero, ps, .true., 100, 110, 105._R8, Ru, 18._R8) == VAP_ABSENT, &
+               'vapour: all three zero count as absent')
+    bad = Lv; bad(103) = ieee_value(1._R8, ieee_quiet_nan)
+    call check(validate_vapour_columns(bad, Mv, cv, ps, .true., 100, 110, 105._R8, Ru, 0._R8) == VAP_NONFINITE, &
+               'vapour: a NaN in Lv is refused')
+    bad = cv; bad(100:102) = 0._R8
+    call check(validate_vapour_columns(Lv, Mv, bad, ps, .true., 100, 110, 105._R8, Ru, 0._R8) == VAP_PARTIAL, &
+               'vapour: Cpv zero on three rows is refused')
+    call check(validate_vapour_columns(Lv, Mv, -cv, ps, .true., 100, 110, 105._R8, Ru, 0._R8) == VAP_NONPOSITIVE, &
+               'vapour: a negative Cpv is refused')
+    bad = Mv; bad(104) = 18.5_R8
+    call check(validate_vapour_columns(Lv, bad, cv, ps, .true., 100, 110, 105._R8, Ru, 0._R8) == VAP_MV_VARIES, &
+               'vapour: an Mv that varies is refused')
+    call check(validate_vapour_columns(Lv, Mv, cv, zero, .false., 100, 110, 105._R8, Ru, 0._R8) == VAP_WITHOUT_PSAT, &
+               'vapour: the columns without a Psat column are refused')
+    call check(validate_vapour_columns(Lv/1000._R8, Mv, cv, ps, .true., 100, 110, 105._R8, Ru, 0._R8) == &
+               VAP_CC_MISMATCH, 'vapour: Lv in kJ/kg is refused (not the slope of Psat)')
+    call check(validate_vapour_columns(Lv, zero, cv, ps, .true., 100, 110, 105._R8, Ru, 18._R8) == VAP_OK .and. &
+               validate_vapour_columns(Lv, zero, cv, ps, .true., 100, 110, 105._R8, Ru, 18._R8/2.5_R8) == &
+               VAP_CC_MISMATCH, 'vapour: without an Mv column the slope takes the key''s Mv (18 passes, 18/2.5 not)')
+  end subroutine vapour_codes
+
+
+  !> The slope check's band on psat_curve, a constant Lv = f*4896.8*Ru/Mv: the ratio is 1/f.
+  subroutine vapour_band()
+    use ICE_Lib_Evaporation, only: Ru
+    real(R8), parameter :: f(5) = [0.49_R8, 0.51_R8, 1.99_R8, 2.01_R8, 1.e-3_R8]
+    integer,  parameter :: expect(5) = [VAP_CC_MISMATCH, VAP_OK, VAP_OK, VAP_CC_MISMATCH, VAP_CC_MISMATCH]
+    real(R8) :: ps(300:400), Lv(300:400), Mv(300:400), cv(300:400)
+    character(len=96) :: what
+    integer  :: i, k
+
+    ps = [(psat_curve(real(i, R8)), i = 300, 400)]
+    Mv = 18.015_R8; cv = 1900._R8
+    do k = 1, size(f)
+      Lv = f(k)*4896.8_R8*Ru/18.015_R8
+      write(what, '(A,ES8.2,A,ES11.5,A)') 'vapour: Lv x ', f(k), ' (slope ratio ', 1._R8/f(k), ')'
+      call check(validate_vapour_columns(Lv, Mv, cv, ps, .true., 300, 400, 373.15_R8, Ru, 0._R8) == expect(k), &
+                 trim(what)//trim(merge(' accepted', ' refused ', expect(k) == VAP_OK)))
+    enddo
+  end subroutine vapour_band
+
+
+  !> Load_Table on the table ATLAS writes for water (Psat, Lv, Mv, Cpv from the H2O(L)/H2O pair):
+  !  not read without evaporation; with it the columns are the file's, the scalars Lv(298.15 K),
+  !  the column's Mv and Cpv(boiling-temperature), and mat_lv, mat_cpv at six temperatures (below,
+  !  the datum, a node, between nodes, the boiling temperature, above) equal the file's numbers by
+  !  the lookup's formula: exact on a node and outside, 4 eps between nodes.
+  subroutine vapour_atlas()
+    use ICE_Lib_Properties, only: mat_lv, mat_cpv
+    real(R8), parameter :: Tq(6) = [250._R8, 298.15_R8, 300._R8, 337.5_R8, 373.15_R8, 400._R8]
+    logical,  parameter :: onNode(6) = [.true., .false., .true., .false., .false., .true.]
+    real(R8) :: T(200), Lvf(200), Mvf(200), Cpvf(200), row(8), eLv, eCpv, tol
+    integer  :: u, ios, n, k, lo, hi
+    character(len=512) :: line
+    character(len=96)  :: what
+
+    obj_condensed(1)%Tboil = 373.15_R8
+    obj_condensed(1)%evapSelect = 0
+    call load('aw-')
+    call check(.not. obj_condensed(1)%use_lv .and. .not. obj_condensed(1)%use_cpv .and. &
+               .not. allocated(obj_condensed(1)%lv_tab) .and. .not. allocated(obj_condensed(1)%cpv_tab) .and. &
+               obj_condensed(1)%lv_al == 10.8e6_R8 .and. obj_condensed(1)%Mv == 26.98_R8, &
+               'vapour: without evaporation the Lv, Mv, Cpv columns are not read')
+    obj_condensed(1)%evapSelect = 2
+    call load('aw-')
+    call check(obj_condensed(1)%use_psat .and. obj_condensed(1)%use_lv .and. obj_condensed(1)%use_cpv, &
+               'vapour: with evaporation the ATLAS water table gives Psat, Lv and Cpv')
+    if (.not. (allocated(obj_condensed(1)%lv_tab) .and. allocated(obj_condensed(1)%cpv_tab))) then
+      call check(.false., 'vapour: the Lv and Cpv tables are allocated')
+      obj_condensed(1)%evapSelect = 0
+      return
+    endif
+
+    open(newunit=u, file='INPUT/aw-properties.dat', status='old', action='read')
+    n = 0
+    do
+      read(u, '(A)', iostat=ios) line
+      if (ios /= 0) exit
+      read(line, *, iostat=ios) row
+      if (ios /= 0) cycle
+      n = n + 1
+      T(n) = row(1); Lvf(n) = row(6); Mvf(n) = row(7); Cpvf(n) = row(8)
+    enddo
+    close(u)
+    lo = obj_condensed(1)%T_min; hi = obj_condensed(1)%T_max
+    call check(n == 101 .and. lo == 280 .and. hi == 380 .and. nint(T(1)) == lo, &
+               'vapour: the table spans 280..380 K in 101 rows')
+    call check(lbound(obj_condensed(1)%lv_tab, 1) == lo .and. ubound(obj_condensed(1)%lv_tab, 1) == hi .and. &
+               all(obj_condensed(1)%lv_tab == Lvf(1:n)) .and. all(obj_condensed(1)%cpv_tab == Cpvf(1:n)), &
+               'vapour: the Lv and Cpv tables are the file''s columns, indexed by temperature')
+    call check(obj_condensed(1)%Mv == 18.015_R8 .and. all(Mvf(1:n) == 18.015_R8), 'vapour: Mv = 18.015 from its column')
+    call check(rel(obj_condensed(1)%lv_al, value_at(Lvf(1:n), lo, hi, 298.15_R8)) <= 4._R8*epsilon(1._R8), &
+               'vapour: the scalar latent heat is Lv(298.15 K)')
+    call check(rel(obj_condensed(1)%cpv, value_at(Cpvf(1:n), lo, hi, 373.15_R8)) <= 4._R8*epsilon(1._R8), &
+               'vapour: the scalar vapour cp is Cpv(boiling-temperature)')
+    do k = 1, size(Tq)
+      eLv  = rel(mat_lv(obj_condensed(1), Tq(k)),  value_at(Lvf(1:n), lo, hi, Tq(k)))
+      eCpv = rel(mat_cpv(obj_condensed(1), Tq(k)), value_at(Cpvf(1:n), lo, hi, Tq(k)))
+      tol  = merge(0._R8, 4._R8*epsilon(1._R8), onNode(k))
+      write(what, '(A,F6.2,A,2ES9.2,A)') 'vapour: Lv and Cpv at ', Tq(k), ' K are the file''s (rel.', eLv, eCpv, ')'
+      call check(eLv <= tol .and. eCpv <= tol, trim(what))
+    enddo
+    obj_condensed(1)%evapSelect = 0
+  end subroutine vapour_atlas
+
+
+  !> A column at T: linear between the nodes, the end value outside (the lookup's rule, written here).
+  pure function value_at(tab, lo, hi, T) result(v)
+    integer,  intent(in) :: lo, hi
+    real(R8), intent(in) :: tab(lo:hi), T
+    real(R8) :: v, Tc
+    integer  :: i
+    Tc = min(max(T, real(lo, R8)), real(hi, R8))
+    if (Tc >= real(hi, R8)) then
+      v = tab(hi)
+    else
+      i = int(Tc)
+      v = tab(i) + (tab(i+1) - tab(i))*(Tc - real(i, R8))
+    endif
+  end function value_at
+
+
+  pure function rel(a, b) result(e)
+    real(R8), intent(in) :: a, b
+    real(R8) :: e
+    e = abs(a - b)/abs(b)
+  end function rel
+
+
   !> P6: a tabulated cp stores rho*e(T), e = h - hOff, and recovers T to round-off, in the
   !  conserved energy, the flux and the source of every closure; an empty cell recovers the T a
   !  constant cp gives it; a constant cp gives the same bits with or without a table.
@@ -397,7 +581,52 @@ contains
     call check(abs(q(5) - (pk(1)*2000._R8*pk(5) + ke)) <= 4._R8*epsilon(1._R8)*q(5) .and. &
                all(abs(b(1:6) - pk) <= 4._R8*epsilon(1._R8)*abs(pk)), &
                'closures: a constant cp stores rho*cp*T and recovers T in one pass')
+
+    call sink_legs(m, t, force)
   end subroutine test_closures
+
+
+  !> The latent sink at the closure's temperature: a material with an Lv column (2.4e6 - 5000 (T - 300)
+  !  J/kg on 280..400 K) and its scalar poisoned gives the sources of the same material without the
+  !  column and the scalar set to the column at T, below, on, between and above the nodes, with a
+  !  varying (mv) and a constant (mc) cp. Every slot exact but the energy, 1e-15 relative.
+  subroutine sink_legs(mv, mc, force)
+    use ICE_Lib_MK, only: source_make_MK
+    use ICE_Lib_IG, only: source_make_IG
+    use ICE_Lib_AG, only: source_make_AG
+    type(condensed_phase_t), intent(in) :: mv, mc
+    real(R8),                intent(in) :: force(6)
+    real(R8), parameter :: Ts(6) = [1.e-3_R8, 280._R8, 333.3_R8, 337.5_R8, 400._R8, 520._R8]
+    type(condensed_phase_t) :: tb(2), rf(2)
+    real(R8) :: lvt(280:400), pk(6), pi7(7), pa(12), a(12), b(12)
+    logical  :: ok(3)
+    integer  :: i, j, k
+
+    lvt = [(2.4e6_R8 - 5000._R8*real(i - 300, R8), i = 280, 400)]
+    tb(1) = mv; tb(2) = mc; rf(1) = mv; rf(2) = mc
+    do j = 1, 2
+      tb(j)%use_lv = .true.; tb(j)%lv_al = 1.e30_R8
+      allocate(tb(j)%lv_tab(280:400), source=lvt)
+    enddo
+    ok = .true.
+    do j = 1, 2
+      do k = 1, size(Ts)
+        rf(j)%lv_al = value_at(lvt, 280, 400, Ts(k))
+        pk = [1.2_R8, 10._R8, -3._R8, 0.5_R8, Ts(k), 1.e9_R8]
+        a(1:6) = source_make_MK(pk, force, tb(j)); b(1:6) = source_make_MK(pk, force, rf(j))
+        ok(1) = ok(1) .and. all(a([1,2,3,4,6]) == b([1,2,3,4,6])) .and. abs(a(5) - b(5)) <= 1.e-15_R8*abs(b(5))
+        pi7 = [1.2_R8, 10._R8, -3._R8, 0.5_R8, 40._R8, Ts(k), 1.e9_R8]
+        a(1:7) = source_make_IG(pi7, force, tb(j)); b(1:7) = source_make_IG(pi7, force, rf(j))
+        ok(2) = ok(2) .and. all(a([1,2,3,4,5,7]) == b([1,2,3,4,5,7])) .and. abs(a(6) - b(6)) <= 1.e-15_R8*abs(b(6))
+        pa = [1.2_R8, 10._R8, -3._R8, 0.5_R8, 40._R8, 3._R8, -2._R8, 30._R8, 1._R8, 20._R8, Ts(k), 1.e9_R8]
+        a(1:12) = source_make_AG(pa, force, tb(j)); b(1:12) = source_make_AG(pa, force, rf(j))
+        ok(3) = ok(3) .and. all(a(1:10) == b(1:10)) .and. a(12) == b(12) .and. abs(a(11) - b(11)) <= 1.e-15_R8*abs(b(11))
+      enddo
+    enddo
+    call check(ok(1), 'closures: MK''s latent sink takes the Lv column at T, varying and constant cp, 1 mK to 520 K')
+    call check(ok(2), 'closures: IG''s latent sink takes the Lv column at T, varying and constant cp, 1 mK to 520 K')
+    call check(ok(3), 'closures: AG''s latent sink takes the Lv column at T, varying and constant cp, 1 mK to 520 K')
+  end subroutine sink_legs
 
 
   !> A Clausius-Clapeyron curve through one atmosphere at 373.15 K (water-like).
@@ -415,8 +644,12 @@ contains
     if (allocated(obj_condensed(1)%h_tab))   deallocate(obj_condensed(1)%h_tab)
     if (allocated(obj_condensed(1)%e_tab))   deallocate(obj_condensed(1)%e_tab)
     if (allocated(obj_condensed(1)%psat_tab)) deallocate(obj_condensed(1)%psat_tab)
+    if (allocated(obj_condensed(1)%lv_tab))  deallocate(obj_condensed(1)%lv_tab)
+    if (allocated(obj_condensed(1)%cpv_tab)) deallocate(obj_condensed(1)%cpv_tab)
     obj_condensed(1)%use_table = .false.
     obj_condensed(1)%use_psat  = .false.
+    obj_condensed(1)%use_lv    = .false.
+    obj_condensed(1)%use_cpv   = .false.
     ICE_phase_prefix = prefix
     call Load_Table()
   end subroutine load

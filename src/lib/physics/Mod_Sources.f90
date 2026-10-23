@@ -97,8 +97,8 @@ contains
     use ICE_Lib_Model
     use ICE_Lib_Drag
     use ICE_Lib_Heat
-    use ICE_Lib_Evaporation, only: evaporation, blowingFactor
-    use ICE_Lib_Properties, only: mat_rho, mat_psat
+    use ICE_Lib_Evaporation, only: evaporation, blowingFactor, nep, iLv, icpv
+    use ICE_Lib_Properties, only: mat_rho, mat_psat, mat_lv, mat_cpv
     implicit none
     real(kind=R8), dimension(:), intent(in)    :: cond_prim, gas_prim
     real(kind=R8),               intent(inout) :: cond_tau
@@ -113,6 +113,7 @@ contains
     real(kind=R8)    :: rho_mat, mdot, Qconv, Qevap
     logical          :: override_Qdot
     real(kind=R8)    :: force(6)
+    real(kind=R8)    :: ep(nep)
 
     !> Slots of the closure: T is n-1, the number density n
     n = nb
@@ -149,19 +150,23 @@ contains
 
     !> Mass exchange of a single particle [kg/s], negative while the particle
     !  evaporates. Qevap comes back in W; the latent sink is not included here,
-    !  every closure's source_make adds it as -force(1)*lv_al. A Psat column in the
-    !  property table replaces the Clausius-Clapeyron curve.
+    !  every closure's source_make adds it as -force(1)*L_v(T). A Psat column in the
+    !  property table replaces the Clausius-Clapeyron curve, and Lv and Cpv columns
+    !  replace the INI values at the particle temperature.
+    ep = mat%ep
+    if (mat%use_lv)  ep(iLv)  = mat_lv(mat, cond_prim(n-1))
+    if (mat%use_cpv) ep(icpv) = mat_cpv(mat, cond_prim(n-1))
     if (mat%use_psat) then
       call evaporation(gas_prim(1), gas_prim(ng), gas_gam, gas_R, gas_mu, gas_k,  &
                        cond_prim(n-1), 2._R8*Rp, Re,                              &
                        mat%evapSelect, mat%intfSelect,                            &
-                       mat%ep, mdot, Qevap, override_Qdot,              &
+                       ep, mdot, Qevap, override_Qdot,                  &
                        psatExt=mat_psat(mat, cond_prim(n-1)))
     else
       call evaporation(gas_prim(1), gas_prim(ng), gas_gam, gas_R, gas_mu, gas_k,  &
                        cond_prim(n-1), 2._R8*Rp, Re,                              &
                        mat%evapSelect, mat%intfSelect,                            &
-                       mat%ep, mdot, Qevap, override_Qdot)
+                       ep, mdot, Qevap, override_Qdot)
     endif
 
     if (override_Qdot) then

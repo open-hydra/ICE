@@ -285,9 +285,17 @@ ice_add_unit_test(RadiationUnit unit/test_radiation.f90 "fast;unit;implementatio
 # The property-table reader: header grammar, node and column checks, Tmin > 1
 ice_add_unit_test(PropertiesUnit unit/test_properties.f90 "fast;unit;implementation")
 
+# The ATLAS water table with the Lv, Mv and Cpv columns, the bytes IGLOO's reader test holds
+configure_file("${CMAKE_SOURCE_DIR}/test/unit/data/atlas-water-properties.dat"
+               "${CMAKE_CURRENT_BINARY_DIR}/unit/PropertiesUnit/INPUT/aw-properties.dat" COPYONLY)
+
 # The solidification functions: the energy against IGLOO's hSolid, the recalescence, melting at T-melt, the
 # nucleated fraction's events and majority threshold
 ice_add_unit_test(SolidificationUnit unit/test_solidification.f90 "fast;unit;implementation")
+
+# The vapour columns through the cell source: compute_source_ with Lv and Cpv tabulated and their
+# scalars poisoned, against the scalars set to the tables' values, for d2-law, CEM, ASM and TC
+ice_add_unit_test(VapourSourcesUnit unit/test_vapour_sources.f90 "fast;unit;implementation")
 
 # Rank count must not change the answer either. Needs an MPI build, so it is
 # registered only when there is one.

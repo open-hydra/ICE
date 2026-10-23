@@ -20,7 +20,7 @@ module ICE_Setup_Materials
   character(len=23), parameter :: vector_keys(10) = [character(len=23) :: 'density', 'specific-heat', &
                                   'latent-heat', 'emissivity', 'vapour-molar-mass', 'boiling-temperature', &
                                   'vapour-specific-heat', 'lewis-number', 'vapour-mass-fraction', 'evaporation-coefficient']
-  logical, parameter :: vector_positive(10) = [.true., .true., .true., .false., .true., .true., .false., .true., &
+  logical, parameter :: vector_positive(10) = [.true., .true., .false., .false., .false., .true., .false., .true., &
                                                .false., .true.]
   !> The alias of each such key ('' = none), the name IGLOO also reads
   character(len=5),  parameter :: vector_alias(10) = [character(len=5) :: '', '', '', '', '', 'Tboil', '', '', '', '']
@@ -91,9 +91,25 @@ contains
                     '(CEM, CEM-B, ASM or TC), not d2-law')
       call finalize_solidification(m)
       if (.not. coupled) obj_condensed(m)%evapSelect = 0
+    enddo
 
-      ! Vapour properties, packed as Lib_Evaporation indexes them
+    ! A solidifying family carries the frozen and nucleated fractions after its closure's slots
+    do p = 1, ngroups
+      solid_of(p) = obj_condensed(mat_of(p))%solid
+      ncond(p)    = nbase(p) + merge(2, 0, solid_of(p))
+    enddo
+
+    call Load_Table()
+
+    ! Vapour properties, packed as Lib_Evaporation indexes them, once the table's columns are in
+    do m = 1, nmat
       associate (mat => obj_condensed(m))
+        if (mat%evapSelect > 0) then
+          if (.not. mat%lv_al > 0._R8) &
+            call refuse(material_label(m)//': latent-heat = 0 needs an Lv column in the property table')
+          if (.not. mat%Mv > 0._R8) &
+            call refuse(material_label(m)//': vapour-molar-mass = 0 needs an Mv column in the property table')
+        endif
         mat%ep = 0._R8
         mat%ep(iMv)         = mat%Mv
         mat%ep(iLv)         = mat%lv_al
@@ -105,14 +121,6 @@ contains
         mat%ep(ialphaE)     = mat%alphaE
       end associate
     enddo
-
-    ! A solidifying family carries the frozen and nucleated fractions after its closure's slots
-    do p = 1, ngroups
-      solid_of(p) = obj_condensed(mat_of(p))%solid
-      ncond(p)    = nbase(p) + merge(2, 0, solid_of(p))
-    enddo
-
-    call Load_Table()
 
     ! Solidification integrates the temperature with constant properties, as IGLOO does
     do m = 1, nmat

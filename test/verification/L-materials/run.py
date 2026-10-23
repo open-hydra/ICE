@@ -39,6 +39,13 @@ case, so a family that reads another family's material, model or inlet is seen d
        inlet record per face for both families (10 um): each family's n_p is its
        rho_p / (rho_mat 4/3 pi r^3) with its own rho_mat, so n_1/n_2 = 1/2.
        L4c: control, "A 2" with one zone (rho 2000).
+  L5   vapour columns per material. "A 1 evaporation=d2-law" / "B 1 evaporation=d2-law", case F's
+       frozen cloud, one table on 250..1000 K with case F's Psat curve in both zones; zone A
+       carries Lv = 2.0e6 J/kg, Mv = 18.015 and Cpv = 1900 columns, zone B the three columns at
+       zero, and latent-heat = 0 2.26e6, vapour-molar-mass = 0 18.015 in [ICE-Physics]: family A
+       follows the d-squared slope with L_v = 2.0e6 from its columns, family B the one with
+       2.26e6 from the INI (K_A/K_B = 1.116, so a column given to the wrong material, or
+       ignored, misses by 11.6 %).
 
 Tolerances.
   L1: RK2 on y' = -y/tau is exact to (dt/tau)^3/6 per step, so after t = tau with
@@ -47,6 +54,7 @@ Tolerances.
   L2: case F's 1e-6 on the d-squared slope, which F's own CEM leg meets at 1.6e-8 (the
       same arithmetic: a constant table cp returns the INI value's number). B: exact.
       L2g, L2h: byte comparisons of two runs of one binary.
+  L5: the same 1e-6 on each family's d-squared slope (case F's d2-law leg meets 7e-10).
   L3, L4: r_2 = 2 r_1 and rho_A = 2 rho_B are exact in binary, the flux and the limiter
       are homogeneous of degree 1 in n, and the inlet formula divides by rho_mat r^3, so
       n_1/n_2 is exact up to the initial content (1e-20 kg/m^3 against 1e-3 at the inlet).
@@ -154,12 +162,13 @@ def heating(rep, label, phase, zones, fam_mat):
 #  L2 - per-material evaporation tokens (case F's material and gas)
 # ---------------------------------------------------------------------------
 
-def evaporating(label, phase, zones=None, model=None, boiling=None):
+def evaporating(label, phase, zones=None, model=None, boiling=None, keys=None):
     """Case F's frozen-temperature cloud, one family per material line of phase.
 
     zones: the table (one per material), or None for the INI constants of one material.
     model: [ICE-Physics] evaporation, or None to leave the key out.
     boiling: (key, values), the boiling temperature per material under that key, or None for case F's.
+    keys: {key: values}, [ICE-Physics] keys given one value per material in place of case F's.
     """
     case = Case(WORK / label.lower(), nx=8, Lx=1.0)
     nmat = len(phase)
@@ -175,6 +184,8 @@ def evaporating(label, phase, zones=None, model=None, boiling=None):
         phys[boiling[0]] = vector(*boiling[1])
     if nmat > 1:
         phys['emissivity'] = vector(*[0.0] * nmat)
+    for key, values in (keys or {}).items():
+        phys[key] = vector(*values)
     if model is not None:
         phys['evaporation'] = model
     case.ini(t_end=0.04, cfl=0.8, rk='RK2', drag='Stokes', heat='Stokes', rho_al=F.RHO_L,
@@ -253,6 +264,29 @@ def evap_legs(rep):
     if 'L2f' in out and 'L2h' in out:
         rep.check(out['L2h'] != out['L2f'], 'L2h: the two values swapped change part-field.tec, '
                   'so each reaches its own material')
+
+
+def vapour_leg(rep):
+    """L5: material A takes Lv, Mv, Cpv from its zone of the table, material B from the INI."""
+    lv_a = 2.0e6
+    zones = [dict(cp=F.CS_FROZEN, rho=F.RHO_L, psat=F.psat_cc, lv=lv_a, mv=F.MV, cpv=1900.0, zone='A'),
+             dict(cp=F.CS_FROZEN, rho=F.RHO_L, psat=F.psat_cc, lv=0.0, mv=0.0, cpv=0.0, zone='B')]
+    print('   L5  "A 1 evaporation=d2-law" / "B 1 evaporation=d2-law", A with Lv = %.2e J/kg in its zone, '
+          'B with latent-heat = %.2e J/kg' % (lv_a, F.LV))
+    case = evaporating('L5', ('A 1 evaporation=d2-law', 'B 1 evaporation=d2-law'), zones,
+                       keys={'latent-heat': (0.0, F.LV), 'vapour-molar-mass': (0.0, F.MV)})
+    sol = try_run(rep, case.run)
+    if sol is None:
+        return
+    oracles = ((F.slope('d2-law', lv=lambda T: lv_a), 'its Lv column'), (F.slope('d2-law'), 'latent-heat'))
+    for p, (K_ref, source) in enumerate(oracles):
+        rho = sol['var'][p * NV + RHO]
+        K_ice = (F.D0 ** 2 - F.diameter(rho[0]) ** 2) / sol['time']
+        err = abs(K_ice - K_ref) / K_ref
+        print('       family %d: K ICE %.8e, d2-law oracle with %s %.8e, rel. error %.2e'
+              % (p + 1, K_ice, source, K_ref, err))
+        rep.check(err <= TOL_K and max(rho) - min(rho) <= 1.0e-12 * F.RHO_P0,
+                  'L5: family %d evaporates with %s, d-squared slope to %.1e' % (p + 1, source, err))
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +379,7 @@ def main():
     heating(rep, 'L1c', ('A 2',), [MAT_A], [0, 0])
 
     evap_legs(rep)
+    vapour_leg(rep)
 
     pay = lambda r: inlet_payload(GP, U_IN, T_IN, r)                          # noqa: E731
     inlet_case(rep, 'L3', ('A 2',), [pay(R_SMALL), pay(R_LARGE)], (R_SMALL, R_LARGE), (RHO_M3, RHO_M3))

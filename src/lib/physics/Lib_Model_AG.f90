@@ -3,7 +3,7 @@ module ICE_Lib_AG
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   use ICE_Global_m
   use ICE_Config_Types_m, only: condensed_phase_t
-  use ICE_Lib_Properties, only: mat_cp_const, mat_e, mat_T_from_rhoe
+  use ICE_Lib_Properties, only: mat_cp_const, mat_e, mat_T_from_rhoe, mat_lv
   implicit none
 
 contains
@@ -277,10 +277,10 @@ contains
                    2._R8*prim(10)/(force(6)+eps)
 
     if (mat%cs_varies) then
-      source(11) = - force(1)*mat_e(mat, prim(11)) - force(1)*mat%lv_al + force(5) &
+      source(11) = - force(1)*mat_e(mat, prim(11)) - force(1)*mat_lv(mat, prim(11)) + force(5) &
                    + 0.5_R8*source(5) + 0.5_R8*source(8) + 0.5_R8*source(10)
     else
-      source(11) = - force(1)*mat_cp_const(mat)*prim(11) - force(1)*mat%lv_al + force(5) &
+      source(11) = - force(1)*mat_cp_const(mat)*prim(11) - force(1)*mat_lv(mat, prim(11)) + force(5) &
                    + 0.5_R8*source(5) + 0.5_R8*source(8) + 0.5_R8*source(10)
     endif
 
