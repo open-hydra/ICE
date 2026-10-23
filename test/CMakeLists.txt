@@ -278,6 +278,10 @@ function(ice_add_unit_test NAME SOURCE)
     set_tests_properties(${NAME} PROPERTIES LABELS "${ARGN}" TIMEOUT 120 ENVIRONMENT "${_ICE_TEST_ENV}")
 endfunction()
 
+# The radiative exchange in the cell source: compute_source_ against eps sigma pi d^2 n (Tg^4 - Tp^4),
+# emissivity 0 switching it off, and 0 as the default
+ice_add_unit_test(RadiationUnit unit/test_radiation.f90 "fast;unit;implementation")
+
 # The property-table reader: header grammar, node and column checks, Tmin > 1
 ice_add_unit_test(PropertiesUnit unit/test_properties.f90 "fast;unit;implementation")
 

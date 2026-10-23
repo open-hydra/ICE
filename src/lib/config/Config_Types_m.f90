@@ -200,7 +200,7 @@ module ICE_Config_Types_m
     real(R8) :: rho_al = 2700._R8    ! Particle density            [kg/m^3]
     real(R8) :: cs_al  = 1598._R8    ! Particle specific heat      [J/(kg K)]
     real(R8) :: lv_al  = 10.8e6_R8   ! Particle latent heat        [J/kg]
-    real(R8) :: emiss  = 1._R8       ! Surface emissivity          [-]
+    real(R8) :: emiss  = 0._R8       ! Surface emissivity          [-]
     ! Vapour properties: only consulted when an evaporation model is selected
     real(R8) :: Mv     = 26.98_R8    ! Vapour molar mass           [kg/kmol]
     real(R8) :: cpv    = 0._R8       ! Vapour specific heat        [J/(kg K)]; 0 = use the gas cp

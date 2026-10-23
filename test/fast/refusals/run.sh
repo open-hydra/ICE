@@ -11,10 +11,11 @@
 #  alias, a phase file whose materials or model tokens ICE cannot honour);
 #  the last one diverges at run time (a NaN source in one cell) and must be
 #  caught after the update. A solver that reports success on
-#  any of these would let a harness read a broken run as a pass. Four rows go the
+#  any of these would let a harness read a broken run as a pass. Eight rows go the
 #  other way: an INI value equal to the table's must be accepted, the boiling
-#  temperature must be read under either of its names, and a solidifying material
-#  must be read, reported and written with its frozen and nucleated fractions.
+#  temperature must be read under either of its names, a solidifying material
+#  must be read, reported and written with its frozen and nucleated fractions,
+#  and an emissivity left out must act as 0 and one above 1 as 1, with a warning.
 #===============================================================================
 set -uo pipefail
 
@@ -207,6 +208,46 @@ refuse Doisneau/MK "tokens: a real key that is not a number" "tokens alpha-e=abc
        "alpha-e=abc is not a real number"
 refuse Doisneau/MK "tokens: LK interface on the d-squared law" "tokens 'evaporation=d2-law interface=LK'" \
        "interface = LK needs a gas-side evaporation model"
+# Radiation: NoExchange/MK is coupled with the gas 100 K above the particles, so any radiative exchange
+# moves its output. An emissivity left out is 0; one above 1 is cut to 1.0 with one warning per material.
+cut='emissivity above 1 cut to 1.0'
+accept NoExchange/MK "emissivity: left out" "sed -i '/^emissivity /d' input.ini" "Time of operation"
+accept NoExchange/MK "emissivity: 0" ":" "Time of operation"
+accept NoExchange/MK "emissivity: 1" "sed -i 's/^emissivity .*/emissivity = 1.0/' input.ini" "Time of operation"
+accept NoExchange/MK "emissivity: 1.5" "sed -i 's/^emissivity .*/emissivity = 1.5/' input.ini" \
+       "material 1 (A): $cut (given 1.50000E+00)"
+rundir() { echo "$WORK/$(echo "$1" | tr -c 'A-Za-z0-9\n' '_')"; }
+# outputs <same|differ> <label> <label>: the OUTPUT directories of two accepted rows, byte for byte
+outputs() {
+  local a b got
+  a=$(rundir "$2")/OUTPUT; b=$(rundir "$3")/OUTPUT
+  if [[ ! -s $a/part-field.tec || ! -s $b/part-field.tec ]]; then
+    echo "[fast] FAIL: $2 / $3: no part-field.tec to compare"; fail=1; return
+  fi
+  if diff -rq "$a" "$b" > /dev/null; then got=same; else got=differ; fi
+  if [[ $got == "$1" ]]; then
+    echo "[fast] PASS: $2 / $3: the outputs $1"
+  else
+    echo "[fast] FAIL: $2 / $3: the outputs $got, expected $1"; fail=1
+  fi
+}
+# warned <label> <count>: the row's log holds the cut warning <count> times
+warned() {
+  local n
+  n=$(grep -cF -- "$cut" "$(rundir "$1")/log")
+  if [[ $n -eq $2 ]]; then
+    echo "[fast] PASS: $1: the cut warning printed $n time(s)"
+  else
+    echo "[fast] FAIL: $1: the cut warning printed $n time(s), expected $2"; fail=1
+  fi
+}
+outputs same   "emissivity: left out" "emissivity: 0"
+outputs differ "emissivity: 0"        "emissivity: 1"
+outputs same   "emissivity: 1.5"      "emissivity: 1"
+warned "emissivity: 1.5" 1
+warned "emissivity: 1"   0
+refuse NoExchange/MK "emissivity: negative" "sed -i 's/^emissivity .*/emissivity = -0.5/' input.ini" \
+       "emissivity must be >= 0"
 refuse Refuse/MK   "divergence caught after the update" ":" \
        "invalid state after the update"
 

@@ -63,8 +63,10 @@ contains
                  'both as the energy sink and as the anchor of the Clausius-Clapeyron saturation curve, '// &
                  'which a Psat column in the property table replaces'//'; one value per material', &
                  '> 0',  .false., per_material=.true.)
-    call reg%add(section, 'emissivity', ini_condensed%emiss, '1.0', &
-                 'Particle surface emissivity; 0 switches radiative exchange off'//'; one value per material', &
+    call reg%add(section, 'emissivity', ini_condensed%emiss, '0.0', &
+                 'Particle surface emissivity of the grey-body exchange with the local gas temperature, '// &
+                 'over the whole particle surface; 0 switches it off; a value above 1 is cut to 1 with a warning'// &
+                 '; one value per material', &
                  '>= 0', .false., per_material=.true.)
 
     ! Vapour properties (only read when an evaporation model is selected) --
