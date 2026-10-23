@@ -82,7 +82,7 @@ Required column says otherwise, and omitting one selects the default.
 | `density` | 2700.0 | > 0 |  no | Condensed-material density [kg/m^3], used when no property table is given; with a table it may be left out, and if given it must equal the table's constant density; one value per material |
 | `specific-heat` | 1598.0 | > 0 |  no | Condensed-material specific heat [J/(kg K)], used when no property table is given; with a table it may be left out, and if given it must equal the table's constant cp; one value per material |
 | `latent-heat` | 1.08e7 | > 0 |  no | Latent heat of vaporisation [J/kg]; the evaporation models use it both as the energy sink and as the anchor of the Clausius-Clapeyron saturation curve, which a Psat column in the property table replaces; one value per material |
-| `emissivity` | 1.0 | >= 0 |  no | Particle surface emissivity; 0 switches radiative exchange off; one value per material |
+| `emissivity` | 0.0 | >= 0 |  no | Particle surface emissivity of the grey-body exchange with the local gas temperature, over the whole particle surface; 0 switches it off; a value above 1 is cut to 1 with a warning; one value per material |
 | `vapour-molar-mass` | 26.98 | > 0 |  no | Molar mass of the vapour [kg/kmol]; one value per material |
 | `boiling-temperature` | 2792.0 | > 0 |  no | Boiling temperature at 1 atm [K], the anchor of the Clausius-Clapeyron saturation pressure; with a Psat column in the property table it must lie in [Tmin, Tmax-1] of the table, where the column must give 0.5 to 2 atm; one value per material |
 | `Tboil` | 2792.0 | > 0 |  no | Alias of boiling-temperature, the name IGLOO also accepts; give one or the other, not both; one value per material |

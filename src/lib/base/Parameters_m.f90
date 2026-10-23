@@ -8,7 +8,7 @@ module ICE_Parameters_m
   character(len=clen) :: codename = 'ICE'
 
   real(R8), parameter :: pi      = 3.14159265358979323846_R8
-  real(R8), parameter :: sigma_SB = 5.67d-8
+  real(R8), parameter :: sigma_SB = 5.670374419d-8
 
   integer, dimension(6,3), parameter :: guide = reshape( [ 1, 0, 0, &
                                                            -1, 0, 0, &

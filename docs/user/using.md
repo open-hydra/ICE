@@ -25,9 +25,9 @@ variables of the file — so there is no separate mesh input. A `MESH/` director
 in the shipped cases only because the mesh generator wrote it there.
 
 Whether the run is coupled is decided by one thing: whether `INPUT/gas.tec` exists. If
-it does, drag, heat and radiation are active and the gas field is read but never
-modified (1-way coupling); if it does not, the cloud is transported with no source
-terms at all (0-way). `gas-path` moves the directory ICE looks in.
+it does, drag, heat and, with a non-zero `emissivity`, radiation are active and the gas
+field is read but never modified (1-way coupling); if it does not, the cloud is transported
+with no source terms at all (0-way). `gas-path` moves the directory ICE looks in.
 
 ## Workflow
 

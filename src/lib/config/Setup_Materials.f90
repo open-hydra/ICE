@@ -32,12 +32,14 @@ contains
     use ICE_Config_Types_m,  only: obj_condensed, ini_condensed, obj_sim_param, obj_time_scheme
     use ICE_Load_Table,      only: Load_Table
     use ICE_Lib_Evaporation, only: Ru, iMv, iLv, icpv, iLe, iYinf, iLvMvOverRu, iinvTboil, ialphaE
+    use ICE_Mod_MPI,         only: mpi_is_root
     implicit none
     character(len=64),   allocatable :: names(:)
     character(len=1024), allocatable :: rest(:)
     integer,             allocatable :: groups(:)
     integer :: m, p, q
     logical :: coupled
+    character(len=12) :: given
 
     call read_phase_file(names, groups, rest)
     nmat = max(size(names), 1)
@@ -65,6 +67,16 @@ contains
     endif
 
     call read_ini_vectors()
+
+    ! A grey body emits at most as a black body: an emissivity above 1 is cut to 1
+    do m = 1, nmat
+      if (obj_condensed(m)%emiss > 1._R8) then
+        write(given, '(ES12.5)') obj_condensed(m)%emiss
+        if (mpi_is_root) write(*,'(A)') ' [WARNING] [ICE::Setup_Materials] '//material_label(m)// &
+          ': emissivity above 1 cut to 1.0 (given '//trim(adjustl(given))//')'
+        obj_condensed(m)%emiss = 1._R8
+      endif
+    enddo
 
     coupled = obj_sim_param%owcoupled .or. obj_sim_param%twcoupled
     do m = 1, nmat
