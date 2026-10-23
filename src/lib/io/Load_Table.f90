@@ -1,8 +1,9 @@
 !>@brief The condensed-material property table INPUT/<prefix>properties.dat.
 !> The header names the columns; the rows sit on consecutive integer kelvins from any
-!> Tmin, and the optional Psat, Lv, Mv and Cpv columns serve the evaporation models. The
-!> header, node, column, Psat and vapour checks return a code, so the unit test can assert
-!> them; Load_Table turns a failed code, or what the row scan finds, into a refusal.
+!> Tmin, and the optional Psat, Lv, Mv and Cpv columns serve the evaporation models (Sigma
+!> and Viscosity are recognised and not used). The header, node, column, Psat and vapour
+!> checks return a code, so the unit test can assert them; Load_Table turns a failed code,
+!> or what the row scan finds, into a refusal.
 module ICE_Load_Table
   use, intrinsic :: iso_fortran_env, only: R8 => real64
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
@@ -32,7 +33,7 @@ module ICE_Load_Table
 
   character(len=*), parameter :: grammar = &
     'expected: VARIABLES = "Temperature", "Cp", "Density", "Enthalpy" (or "Enthalpy_abs")'// &
-    '[, "Psat"[, "Lv"][, "Mv"][, "Cpv"]], '// &
+    '[, "Psat"[, "Lv"][, "Mv"][, "Cpv"]][, "Sigma"][, "Viscosity"], '// &
     'Temperature first and the others in any order, one zone per material, rows on consecutive integer kelvins'
 
 contains
@@ -55,7 +56,7 @@ contains
     character(len=512)      :: tablefile
     character(len=tok_len)  :: tokens(ntok_max)
     integer                 :: ntok, icp, irho, ih, ips, code, err, Ni, Tmin, m
-    integer                 :: ilv, imv, icpv
+    integer                 :: ilv, imv, icpv, isig, imu
     integer                 :: nzone, nsize, ndata, ntrail, badline
     integer                 :: nannounced(nzone_max), nrows(nzone_max)
     logical                 :: exists, relative, found
@@ -75,7 +76,7 @@ contains
     ! Header: the quoted names of the first VARIABLES line
     call read_variables_line(tablefile, tokens, ntok, found)
     if (.not. found) call refuse(tablefile, 'no VARIABLES line')
-    call classify_table_tokens(tokens(1:ntok), icp, irho, ih, ips, relative, code, ilv, imv, icpv)
+    call classify_table_tokens(tokens(1:ntok), icp, irho, ih, ips, relative, code, ilv, imv, icpv, isig, imu)
     if (code /= TAB_OK) call refuse(tablefile, table_reason(code))
 
     ! Rows: ORION reads them, after a scan that guards what ORION cannot see
@@ -271,15 +272,15 @@ contains
 
 
   !> Maps the header names to column indices of vars (column 1 is Temperature, read as the mesh).
-  pure subroutine classify_table_tokens(tokens, icp, irho, ih, ips, relative, code, ilv, imv, icpv)
+  pure subroutine classify_table_tokens(tokens, icp, irho, ih, ips, relative, code, ilv, imv, icpv, isig, imu)
     character(len=*), intent(in)  :: tokens(:)
     integer,          intent(out) :: icp, irho, ih, ips, code
     logical,          intent(out) :: relative
-    integer,          intent(out) :: ilv, imv, icpv
+    integer,          intent(out) :: ilv, imv, icpv, isig, imu
     integer :: t
 
     icp = 0; irho = 0; ih = 0; ips = 0; relative = .true.
-    ilv = 0; imv = 0; icpv = 0
+    ilv = 0; imv = 0; icpv = 0; isig = 0; imu = 0
     code = TAB_NO_TEMPERATURE
     if (size(tokens) < 1) return
     if (tokens(1) /= 'Temperature' .and. tokens(1) /= 'temperature') return
@@ -309,6 +310,12 @@ contains
       case ('Cpv', 'cpv', 'CPV')
         if (icpv > 0) code = TAB_DUPLICATE
         icpv = t - 1
+      case ('Sigma', 'sigma', 'SIGMA')
+        if (isig > 0) code = TAB_DUPLICATE
+        isig = t - 1
+      case ('Viscosity', 'viscosity', 'VISCOSITY')
+        if (imu > 0) code = TAB_DUPLICATE
+        imu = t - 1
       end select
       if (code /= TAB_OK) return
     enddo

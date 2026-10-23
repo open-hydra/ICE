@@ -93,7 +93,8 @@ enthalpy is either `Enthalpy` (relative: $c_p T$ for a constant $c_p$) or `Entha
 replaces the Clausius-Clapeyron saturation curve of the evaporation models, and optional
 `Lv` (J/kg), `Mv` (kg/kmol) and `Cpv` (J/(kg K)) columns after it give the latent heat,
 the vapour molar mass and the vapour specific heat; ATLAS writes the four from the
-material's liquid/vapour pair. Other names are ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least
+material's liquid/vapour pair. `Sigma` and `Viscosity` columns, the surface tension and the
+viscosity IGLOO's breakup models read, are recognised and not used. Other names are ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least
 two of them. Between the nodes the density and $c_p$ are linear in $T$, and outside
 $[T_{min}, T_{max}]$ they keep the end values. When $c_p$ varies, the particle energy is
 the enthalpy column itself, less its value extrapolated to 0 K, so its datum does not

@@ -46,60 +46,73 @@ contains
 
   subroutine test_tokens()
     character(len=64), allocatable :: tk(:)
-    integer :: icp, irho, ih, ips, code, ilv, imv, icpv
+    integer :: icp, irho, ih, ips, code, ilv, imv, icpv, isig, imu
     logical :: rel
 
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_OK .and. icp == 1 .and. irho == 2 .and. ih == 3 .and. ips == 0 .and. rel, &
                'tokens: the ATLAS order binds Cp, Density, Enthalpy to vars 1, 2, 3, relative')
     tk = [character(len=64) :: 'Temperature', 'Enthalpy', 'Density', 'Cp']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_OK .and. icp == 3 .and. irho == 2 .and. ih == 1, 'tokens: permuted columns bind by name')
     tk = [character(len=64) :: 'temperature', 'cp', 'density', 'enthalpy_abs', 'psat']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_OK .and. .not. rel .and. ips == 4, 'tokens: lower-case aliases, Enthalpy_abs is absolute, Psat found')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Hvap', 'Density', 'Enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_OK .and. irho == 3 .and. ih == 4, 'tokens: an unknown name is skipped, not misbound')
     call check(ilv == 0 .and. imv == 0 .and. icpv == 0, 'tokens: Hvap is not bound as a vapour column')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy_abs', 'Psat', 'Lv', 'Mv', 'Cpv']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_OK .and. ips == 4 .and. ilv == 5 .and. imv == 6 .and. icpv == 7 .and. .not. rel, &
                'tokens: the ATLAS order binds Psat, Lv, Mv, Cpv to vars 4, 5, 6, 7')
     tk = [character(len=64) :: 'temperature', 'CPV', 'mv', 'Density', 'LV', 'cp', 'enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_OK .and. icpv == 1 .and. imv == 2 .and. ilv == 4 .and. icp == 5 .and. ips == 0, &
                'tokens: Lv, Mv, Cpv and their aliases bind by name in any order, without Psat')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'Psat', 'Lv', 'lv']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_DUPLICATE, 'tokens: Lv named twice is refused')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'Psat', 'MV', 'Mv']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_DUPLICATE, 'tokens: Mv named twice is refused')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'Psat', 'cpv', 'Cpv']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_DUPLICATE, 'tokens: Cpv named twice is refused')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'VISCOSITY', 'sigma']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_OK .and. isig == 5 .and. imu == 4 .and. ips == 0 .and. ilv == 0 .and. icpv == 0, &
+               'tokens: VISCOSITY and sigma bind their columns by name')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_OK .and. isig == 0 .and. imu == 0, 'tokens: no Sigma or Viscosity name: both 0')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'Sigma', 'SIGMA']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_DUPLICATE, 'tokens: Sigma named twice is refused')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'viscosity', 'Viscosity']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_DUPLICATE, 'tokens: Viscosity named twice is refused')
     tk = [character(len=64) :: 'Temperature', 'Density', 'Enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_NO_CP, 'tokens: no Cp is refused')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_NO_DENSITY, 'tokens: no Density is refused')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_NO_ENTHALPY, 'tokens: no enthalpy is refused')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'Enthalpy_abs']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_TWO_ENTHALPY, 'tokens: both enthalpies are refused')
     tk = [character(len=64) :: 'Cp', 'Temperature', 'Density', 'Enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_NO_TEMPERATURE, 'tokens: Temperature must come first')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Cp', 'Enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_DUPLICATE, 'tokens: a column named twice is refused')
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'enthalpy']
-    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv)
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_DUPLICATE, 'tokens: one enthalpy named twice is a duplicate, not two datums')
   end subroutine test_tokens
 
