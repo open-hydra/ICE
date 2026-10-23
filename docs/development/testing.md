@@ -51,6 +51,7 @@ test/
 │   └── mpi-equiv/             # 1 vs 2 ranks bit-identical (connection and chimera)
 └── unit/                      # Programs linked against the library, no solver run
     ├── test_properties.f90    # Property table: grammar, checks, loading, lookup, energy, Psat
+    ├── test_radiation.f90     # Radiative exchange in the cell source against its closed form
     └── test_solidification.f90 # Solidification functions and the closure wrappers
 ```
 

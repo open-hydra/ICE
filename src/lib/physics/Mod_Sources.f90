@@ -184,8 +184,8 @@ contains
     force(1) = - mdot*cond_prim(n)
     force(5) = Qconv*cond_prim(n)                  
       
-    !> Radiative heat exchange
-    force(5) = force(5) + mat%emiss*sigma_SB * 2._R8*pi*Rp*Rp*cond_prim(n)*(gas_prim(ng)**4._I4-cond_prim(n-1)**4._I4)
+    !> Radiative heat exchange over the whole particle surface
+    force(5) = force(5) + mat%emiss*sigma_SB * 4._R8*pi*Rp*Rp*cond_prim(n)*(gas_prim(ng)**4._I4-cond_prim(n-1)**4._I4)
 
     !> Particles relaxation time (infinite without drag, so every relaxation term vanishes exactly)
     if (Cd == 0._R8) then

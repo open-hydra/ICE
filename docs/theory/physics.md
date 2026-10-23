@@ -84,10 +84,10 @@ eq. 50, after NASA SP-8039).
 ## Radiation
 
 $$
-\dot q_{\text{rad}} = \varepsilon\,\sigma\,2\pi R_p^2\,n\,\big(T_g^4 - T_p^4\big),
+\dot q_{\text{rad}} = \varepsilon\,\sigma\,4\pi R_p^2\,n\,\big(T_g^4 - T_p^4\big),
 $$
 
-with $\sigma = 5.67\times10^{-8}$ W m⁻² K⁻⁴. The area factor is $2\pi R_p^2$, half the sphere surface. Radiation is exchanged with the local gas temperature, not with a wall or a far-field temperature.
+with $\sigma = 5.670374419\times10^{-8}$ W m⁻² K⁻⁴ (CODATA). The area factor is $4\pi R_p^2 = \pi d_p^2$, the whole sphere surface. Radiation is exchanged with the local gas temperature, not with a wall or a far-field temperature. The emissivity $\varepsilon$ is `emissivity` in `[ICE-Physics]`, one value per material: 0, the default, switches radiation off; a grey body cannot exceed 1, so a value above 1 is cut to 1 with a warning, and a negative value stops the run.
 
 ## Evaporation
 
