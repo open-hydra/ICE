@@ -22,7 +22,7 @@ the test:
 | Domain | $[0, 1] \times [-0.5, 0.5]$ m, one cell in $z$ |
 | Grid | $100 \times 100$ cells, uniform |
 | Lower inlet (face 1) | $y \in [-0.3, -0.2]$, direction $+45°$ |
-| Upper inlet (face 1) | $y \in [0.2, 0.3]$, direction $-45°$ |
+| Upper inlet (face 1) | $y \in [0.2, 0.3]$ (MK: $[0.21, 0.31]$), direction $-45°$ |
 | Inlet condition | ATLAS `402`: mass flux $g = 0.7071$ kg/(m² s), speed $10$ m/s, $T_p = 300$ K, $r_p = 1$ µm |
 | Inlet density | $\rho = g / \lvert \mathbf{u}\cdot\mathbf{n} \rvert = 0.1$ kg/m³ |
 | Rest of face 1 | Symmetry (`300`) |
@@ -33,6 +33,11 @@ the test:
 
 In the exact solution each jet is a 45° band of density 0.1 kg/m³. The bands overlap in a
 diamond centred at $(0.25, 0)$, where the density is 0.2 kg/m³.
+
+MK's upper inlet sits one cell higher: with both inlets symmetric about $y = 0$, its two
+pressureless jets collide on the face between rows 50 and 51, and which row takes the merged
+delta is decided at round-off (it differed between compilers). One cell higher, the jets are
+mirror images about the centre of row 51 ($y = 0.005$), which takes the delta.
 
 ## Results
 
@@ -47,12 +52,13 @@ diamond centred at $(0.25, 0)$, where the density is 0.2 kg/m³.
 | Model | Peak density [kg/m³] | Behaviour at the crossing |
 |---|---|---|
 | Exact | 0.200 | Jets pass through each other |
-| MK | 1.98 | Jets merge into a single jet along $y = 0$; mass concentrates in the axis cells (delta shock) |
+| MK | 1.98 | Jets merge into a single jet along $y = 0.005$; mass concentrates in the cells of row 51 (delta shock) |
 | IG | 0.339 | Jets merge where they meet, then spread as a single jet |
 | AG | 0.158 | Jets cross and continue as two separate, diffused jets |
 
-- **MK** merges the jets into one along $y = 0$ and piles their mass into the axis cells.
-  This delta shock is the expected monokinetic answer to crossing streams.
+- **MK** merges the jets into one along $y = 0.005$, midway between its inlets, and piles
+  their mass into the cells of row 51. This delta shock is the expected monokinetic answer
+  to crossing streams.
 - **IG** cannot hold two velocities at the same point either. The jets merge where they
   meet, with a peak above the exact diamond's, and its dispersion then spreads the merged
   jet instead of concentrating it.
@@ -61,8 +67,8 @@ diamond centred at $(0.25, 0)$, where the density is 0.2 kg/m³.
 
 MK and AG run with the [shock detector](../theory/numerics.md#shock-detector), because without
 it their collisions go wrong. MK's delta shock creeps upstream and piles mass against the
-inlet wall along the axis: a density of 0.16 kg/m³ moving at 0.1 m/s in the axis row next
-to the wall, where the jets leave $2 \times 10^{-7}$ kg/m³ moving at their own 7.07 m/s. AG
+inlet wall along its row: a density of 0.16 kg/m³ moving at 0.1 m/s in the cell next to the
+wall, where the jets leave $1.3 \times 10^{-7}$ kg/m³ moving at their own 7.07 m/s. AG
 clips its pressure tensor at the floor in about 450 populated cells where the jets cross.
 With the detector the two do not settle into a steady state: after about 1750 iterations
 the density residual levels off at $2 \times 10^{-3}$ (MK) and $5 \times 10^{-3}$ (AG), as

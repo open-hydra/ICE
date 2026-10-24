@@ -34,18 +34,25 @@ def read_cell_vars(path):
     N_cell = (I - 1) * (J - 1) * max(1, K - 1)
     start  = 3 * N_node
     nvar   = (len(numbers) - start) // N_cell
-    return [numbers[start + q * N_cell : start + (q + 1) * N_cell] for q in range(nvar)]
+    # Whole blocks only: a file cut short or padded holds no variable
+    if len(numbers) != start + nvar * N_cell:
+        nvar = 0
+    return (I, J, K, nvar), [numbers[start + q * N_cell : start + (q + 1) * N_cell] for q in range(nvar)]
 
 
-out = read_cell_vars(Path('OUTPUT/part-field.tec'))
-ref = read_cell_vars(Path('reference/part-field.tec'))
-out_rho, ref_rho = out[0], ref[0]
+out_layout, out = read_cell_vars(Path('OUTPUT/part-field.tec'))
+ref_layout, ref = read_cell_vars(Path('reference/part-field.tec'))
+ref_rho = ref[0]
 
-n  = len(out_rho)
-l2 = math.sqrt(sum((a - b)**2 for a, b in zip(out_rho, ref_rho)) / n)
-# n_p (the last variable) carries the table density through the inlet. It moves with the density along each
-# inlet's streamlines, so it is held to the density's tolerance relative to each field's own scale
-l2_n = math.sqrt(sum((a - b)**2 for a, b in zip(out[-1], ref[-1])) / sum(b * b for b in ref[-1]))
+# zip() stops at the shorter list: an output on another grid, cut short or with other variables fails uncompared
+if out_layout == ref_layout:
+    l2 = math.sqrt(sum((a - b)**2 for a, b in zip(out[0], ref_rho)) / len(ref_rho))
+    # n_p (the last variable) carries the table density through the inlet. It moves with the density along each
+    # inlet's streamlines, so it is held to the density's tolerance relative to each field's own scale
+    l2_n = math.sqrt(sum((a - b)**2 for a, b in zip(out[-1], ref[-1])) / sum(b * b for b in ref[-1]))
+else:
+    print(f'OUTPUT/part-field.tec: I, J, K, variables {out_layout}; reference/part-field.tec {ref_layout}')
+    l2 = l2_n = math.inf
 
 GREEN, RED, RESET = '\033[92m', '\033[91m', '\033[0m'
 passed = l2 <= 1e-4 and l2_n <= 1e-4 / math.sqrt(sum(b * b for b in ref_rho) / len(ref_rho))
