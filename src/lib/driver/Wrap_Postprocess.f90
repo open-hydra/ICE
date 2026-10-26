@@ -21,7 +21,7 @@ contains
     use ICE_Advanced_Types_m,  only: ICE_simulation_type
     use ICE_Config_Types_m
     use ICE_IO_Solution
-    use ICE_IO_Probes,         only: Write_Probes_Data, nprobes
+    use ICE_IO_Probes,         only: Write_Probes_Data, Close_Probes, nprobes
     use ICE_Mod_Diagnostic
     use ICE_Mod_Multigrid,     only: Prolongation
     use ICE_Read_Ini,          only: Read_Inifile_Runtime
@@ -62,6 +62,7 @@ contains
       if (mpi_is_root) then
         write(obj_io%unitRES, trim(obj_io%unitRES_format)) obj_sim_param%iter_general, &
               simulation%domain(1)%time, obj_sim_param%residuotot
+        flush(obj_io%unitRES)
 
         if (obj_time_scheme%time_accurate) then
           if (obj_multigrid%MGL > 1) then
@@ -93,6 +94,11 @@ contains
 
       call timer_summary()
 
+      ! The history files hold their last rows: close them here, before MPI is
+      ! finalized, not at the end of the process.
+      call Close_Probes()
+      if (mpi_is_root) close(obj_io%unitRES)
+
     ! INTERMEDIATE SOLUTION EVALUATION
     elseif (obj_sim_param%TODO == 2) then
 
@@ -112,9 +118,11 @@ contains
         call timer_report(simulation%domain(level)%iter)
 
       if (mpi_is_root) then
-        if (mod(simulation%domain(level)%iter, obj_io%res_diter) == 0d0) &
+        if (mod(simulation%domain(level)%iter, obj_io%res_diter) == 0d0) then
           write(obj_io%unitRES, trim(obj_io%unitRES_format)) obj_sim_param%iter_general, &
                 simulation%domain(level)%time, obj_sim_param%residuotot
+          flush(obj_io%unitRES)
+        end if
 
         if (mod(simulation%domain(level)%iter, obj_io%shell_diter) == 0d0) then
           if (obj_time_scheme%time_accurate) then
@@ -172,9 +180,11 @@ contains
         call timer_report(simulation%domain(level)%iter)
 
       if (mpi_is_root) then
-        if (mod(simulation%domain(level)%iter, obj_io%res_diter) == 0d0) &
+        if (mod(simulation%domain(level)%iter, obj_io%res_diter) == 0d0) then
           write(obj_io%unitRES, obj_io%unitRES_format) obj_sim_param%iter_general, &
                 simulation%domain(level)%time, obj_sim_param%residuotot
+          flush(obj_io%unitRES)
+        end if
 
         if (mod(simulation%domain(level)%iter, obj_io%shell_diter) == 0d0) then
           if (obj_time_scheme%time_accurate) then

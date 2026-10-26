@@ -7,7 +7,7 @@ module ICE_IO_Probes
 
   implicit none
   private
-  public :: Setup_Probes, Write_Probes_Data, Restart_Probes
+  public :: Setup_Probes, Write_Probes_Data, Close_Probes, Restart_Probes
 
   type :: real_ptr
     real(R8), pointer :: p => null()
@@ -239,6 +239,9 @@ contains
   end subroutine Restart_Probes
 
 
+  !> The probe rows due at this iteration, each passed to the file system when
+  !> it is written: a run stopped before its end (killed, at the time limit of
+  !> a queue) keeps every row it wrote, which the buffer of the unit would lose.
   subroutine Write_Probes_Data(iter, time)
 #ifdef USE_MPI
     use ICE_Mod_MPI, only: is_local_block
@@ -254,13 +257,35 @@ contains
 #endif
       if (mod(iter, probe(i)%diter) == 0) then
         write(probe(i)%unit,*) iter, (probe(i)%variables(v)%p, v=1,probe(i)%nvar)
+        flush(probe(i)%unit)
       else if (time >= probe(i)%dtime * probe(i)%ntime) then
         write(probe(i)%unit,*) time, (probe(i)%variables(v)%p, v=1,probe(i)%nvar)
+        flush(probe(i)%unit)
         probe(i)%ntime = probe(i)%ntime + 1
       end if
     end do
 
   end subroutine Write_Probes_Data
+
+
+  !> Close the probe files at the end of the run, each on the rank that owns
+  !> its probe, before MPI is finalized: a unit left open is closed by the
+  !> run-time library only when the process ends.
+  subroutine Close_Probes()
+#ifdef USE_MPI
+    use ICE_Mod_MPI, only: is_local_block
+#endif
+    implicit none
+    integer :: i
+
+    do i = 1, nprobes
+#ifdef USE_MPI
+      if (.not. is_local_block(probe(i)%ilocation(1))) cycle
+#endif
+      close(probe(i)%unit)
+    end do
+
+  end subroutine Close_Probes
 
 
 end module ICE_IO_Probes
