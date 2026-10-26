@@ -5,6 +5,7 @@
 !> IGLOO, and the property table gives one zone per material.
 module ICE_Setup_Materials
   use, intrinsic :: iso_fortran_env, only: R8 => real64
+  use ICE_Finite_m, only: Not_Finite
   implicit none
   private
   public :: Setup_Materials
@@ -212,6 +213,7 @@ contains
           read(value, *, iostat=ios) x
           if (ios /= 0 .or. index(value, ',') > 0) &
             call refuse(material_label(m)//': '//trim(key)//'='//trim(value)//' is not a real number')
+          if (Not_Finite(x)) call refuse(material_label(m)//': '//trim(key)//'='//trim(value)//' is not finite')
           select case (trim(key))
           case ('alpha-e')
             if (.not. x > 0._R8) call refuse(material_label(m)//': alpha-e='//trim(value)//' must be > 0')
@@ -287,6 +289,7 @@ contains
         read(tok, *, iostat=ios) x
         if (ios /= 0 .or. index(tok, ',') > 0) call refuse('['//trim(codename)//'-Physics] '// &
           trim(key)//': "'//trim(tok)//'" is not a real number')
+        if (Not_Finite(x)) call refuse('['//trim(codename)//'-Physics] '//trim(key)//': "'//trim(tok)//'" is not finite')
         if ((vector_positive(i) .and. .not. x > 0._R8) .or. (.not. vector_positive(i) .and. .not. x >= 0._R8)) &
           call refuse('['//trim(codename)//'-Physics] '//trim(key)//' = '//trim(tok)// &
                       merge(' must be > 0 ', ' must be >= 0', vector_positive(i)))

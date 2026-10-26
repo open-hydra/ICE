@@ -36,7 +36,7 @@ contains
     out = Validate_Registry()
     if (trim(out) /= '') then
       write(*, '(A)') trim(out)
-      error stop
+      error stop 1
     end if
 
   end subroutine Read_Inifile
@@ -55,7 +55,7 @@ contains
     out = Validate_Registry()
     if (trim(out) /= '') then
       write(*, '(A)') trim(out)
-      error stop
+      error stop 1
     end if
 
   end subroutine Read_Inifile_Runtime

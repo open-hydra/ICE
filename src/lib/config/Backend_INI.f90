@@ -44,13 +44,21 @@ contains
 
   end subroutine Open_Ini
 
+  !> The values of input.ini into the variables of the registry. FiNeR leaves a parameter as
+  !  it was and returns err_option_vals for a value that does not convert to its type (a word,
+  !  NaN, Infinity, a decimal comma, a logical not starting with T or F), a list longer than
+  !  the parameter holds, or a key with no value: such a key is marked unread, with its text,
+  !  and Validate_Registry stops on it instead of the run going on with the default. So is an
+  !  integer written with a period or an exponent (gfortran refuses 2.7, ifx reads it as 2)
+  !  and a number or logical written with several values, of which FiNeR takes the first.
   subroutine Load_Ini(fini)
     use ICE_Input_Registry, only: reg
-    use Finer,              only: file_ini
+    use Finer,              only: file_ini, err_option_vals
     implicit none
     type(file_ini), intent(in) :: fini
     character(len=1024) :: buf
-    integer :: i, error
+    character(len=:), allocatable :: text
+    integer :: i, error, error_text
 
     do i = 1, reg%size
       error = 1
@@ -77,6 +85,20 @@ contains
       end if
 
       if (error == 0) reg%params(i)%is_set = .true.
+
+      reg%params(i)%unread = (error == err_option_vals)
+      if (allocated(reg%params(i)%text)) deallocate(reg%params(i)%text)
+      call fini%get_string(reg%params(i)%section, reg%params(i)%name, val=text, error=error_text)
+      if (error_text == 0) reg%params(i)%text = text
+      if (error == 0 .and. error_text == 0) then
+        if (associated(reg%params(i)%value%i) .or. associated(reg%params(i)%value%iarr)) then
+          if (scan(text, '.eEdDqQ') > 0) reg%params(i)%unread = .true.
+        end if
+        if (associated(reg%params(i)%value%i) .or. associated(reg%params(i)%value%l) .or. &
+            (associated(reg%params(i)%value%r) .and. .not. reg%params(i)%multi)) then
+          if (count_fields(text) > 1) reg%params(i)%unread = .true.
+        end if
+      end if
     end do
 
   end subroutine Load_Ini
@@ -157,7 +179,7 @@ contains
 
 
   subroutine Scan_Ini(fini, nprobes, probe_sections, nmgl, ngroups)
-    use Finer,            only: file_ini
+    use Finer,            only: file_ini, err_option
     use ICE_Parameters_m, only: codename, clen
     use IR_Precision,     only: str
     implicit none
@@ -166,13 +188,31 @@ contains
     character(len=clen), allocatable,        intent(out) :: probe_sections(:)
     integer,                                 intent(out) :: nmgl
     integer,                                 intent(out) :: ngroups
-    integer             :: error, p
+    integer             :: error, error_text, p
     character(len=clen) :: val
+    character(len=:), allocatable :: text
 
     ! --- Number of multigrid levels ---
+    ! levels sizes the registry (one level<n>-iter per level) before the keys are matched
+    ! against it, so a value that does not read as one integer stops here, as Load_Ini
+    ! would stop it: gfortran would leave one level, ifx reads 2.0 as two.
     nmgl = 1
     call fini%get(section_name=trim(codename)//'-Multigrid', option_name='levels', &
                   val=nmgl, error=error)
+    if (error /= err_option) then
+      text = ''
+      call fini%get_string(section_name=trim(codename)//'-Multigrid', option_name='levels', &
+                           val=text, error=error_text)
+      if (error /= 0 .or. scan(text, '.eEdDqQ') > 0 .or. count_fields(text) /= 1) then
+        if (len_trim(text) == 0) then
+          write(*,'(A)') '[ERROR] input.ini, ['//trim(codename)//'-Multigrid] levels =: the value is empty'
+        else
+          write(*,'(A)') '[ERROR] input.ini, ['//trim(codename)//'-Multigrid] levels = '//trim(text)// &
+                         ': the value is not an integer'
+        end if
+        error stop 1
+      end if
+    end if
 
     ! --- Number of condensed-phase families ---
     ngroups = 0
