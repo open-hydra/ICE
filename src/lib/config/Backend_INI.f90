@@ -160,35 +160,58 @@ contains
   end function count_fields
 
 
-  !> Report keys ICE does not know, inside sections it does.
+  !> Report keys ICE does not know, inside sections it does, and the sections it would skip.
   !
   !  An unrecognised key is not an error to FiNeR and not an error to the registry
   !  either: it simply never reaches a parameter, which takes its default instead.
   !  A renamed or mistyped key then changes nothing and says nothing, which is the
   !  worst way for an input file to be wrong. Sections ICE does not own are left
-  !  alone, so a case may keep the mesh-generator sections that produced it.
+  !  alone, so a case may keep the mesh-generator sections that produced it. A
+  !  section named after ICE that it does not read (a renamed one such as
+  !  [ICE-Scheme], a family section without closure) would be skipped whole with
+  !  its keys, and so would the second block of a section given twice, since FiNeR
+  !  hands out the first: both are reported too. An [ICE-*] section without keys
+  !  changes nothing and is left alone.
   subroutine Check_Unknown_Keys(fini)
     use ICE_Input_Registry, only: reg
+    use ICE_Parameters_m,   only: codename
     use Finer,              only: file_ini
     implicit none
     type(file_ini), intent(inout) :: fini
     character(len=:), allocatable :: sections(:)
     character(len=:), allocatable :: pairs(:)
-    integer :: s, k, nbad
+    integer :: s, k, nbad, nsec, nkeys
     logical :: known
 
     call fini%get_sections_list(sections)
     if (.not. allocated(sections)) return
 
+    nsec = 0
+    do s = 1, size(sections)
+      if (any(sections(1:s-1) == sections(s))) cycle
+      if (registered(sections(s))) then
+        if (count(sections == sections(s)) < 2) cycle
+        if (nsec == 0) write(*,'(A)') '  [ERROR] input.ini has sections ICE would skip:'
+        nsec = nsec + 1
+        write(*,'(A,I0,A)') '    ['//trim(sections(s))//'] given ', count(sections == sections(s)), &
+                            ' times: only the first is read'
+      else if (index(sections(s), trim(codename)//'-') == 1) then
+        nkeys = 0
+        do while (fini%loop(section_name=trim(sections(s)), option_pairs=pairs))
+          nkeys = nkeys + 1
+        end do
+        if (nkeys == 0) cycle
+        if (nsec == 0) write(*,'(A)') '  [ERROR] input.ini has sections ICE would skip:'
+        nsec = nsec + 1
+        write(*,'(A)') '    ['//trim(sections(s))//'] is not a section ICE reads'
+      end if
+    end do
+
     nbad = 0
     do s = 1, size(sections)
       !> Only sections the registry knows: anything else belongs to another tool.
-      known = .false.
-      do k = 1, reg%size
-        if (trim(reg%params(k)%section) == trim(sections(s))) then
-          known = .true. ; exit
-        end if
-      end do
+      if (any(sections(1:s-1) == sections(s))) cycle
+      known = registered(sections(s))
       if (.not. known) cycle
 
       do while (fini%loop(section_name=trim(sections(s)), option_pairs=pairs))
@@ -207,11 +230,25 @@ contains
       end do
     end do
 
-    if (nbad > 0) then
+    if (nbad > 0 .or. nsec > 0) then
       write(*,'(A)') '  They would be ignored and their parameters left at the default.'
       write(*,'(A)') '  See docs/user/registry.md for the current names.'
-      error stop '[ERROR ICE] unknown input keys'
+      error stop 1
     end if
+
+  contains
+
+    !> A section the registry holds keys of.
+    logical function registered(name)
+      character(len=*), intent(in) :: name
+      integer :: k
+      registered = .false.
+      do k = 1, reg%size
+        if (trim(reg%params(k)%section) == trim(name)) then
+          registered = .true. ; return
+        end if
+      end do
+    end function registered
 
   end subroutine Check_Unknown_Keys
 
