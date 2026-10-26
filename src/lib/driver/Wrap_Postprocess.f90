@@ -196,9 +196,23 @@ contains
 
     end if
 
-    ! Runtime INI update
-    if (mod(simulation%domain(level)%iter, obj_io%ini_diter) == 0d0) &
+    ! Runtime INI update. iter-threshold and level<n>-iter take effect at once: the stop
+    ! test (Mod_Explicit) and the level switch (Wrap_Solve) read each level's itermax,
+    ! set from them here as at set-up (Setup_Multigrid, ICE_setup).
+    if (mod(simulation%domain(level)%iter, obj_io%ini_diter) == 0d0) then
       call Read_Inifile_Runtime()
+      block
+        integer :: m
+        do m = 2, obj_multigrid%MGL
+          simulation%domain(m)%itermax = obj_multigrid%iter_threshold(m)
+        end do
+        if (obj_multigrid%MGL > 1) then
+          simulation%domain(1)%itermax = min(obj_sim_param%iter_threshold, obj_multigrid%iter_threshold(1))
+        else
+          simulation%domain(1)%itermax = obj_sim_param%iter_threshold
+        end if
+      end block
+    end if
 
   end subroutine ICE_postprocess
 

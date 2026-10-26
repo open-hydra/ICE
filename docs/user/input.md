@@ -183,6 +183,9 @@ residual — which for a genuinely unsteady problem may be immediately. Set
 ## Re-reading at runtime
 
 If `ini-diter` is set, `input.ini` is re-read every that many iterations. Thresholds
-and output frequencies then take effect during a run; anything consumed once at setup
-does not: the closures, the scheme, and the materials with their properties, models and
-property table.
+and output frequencies then take effect during a run: an `iter-threshold` or
+`level<n>-iter` lowered below the iterations already done ends that level at the next
+iteration. Anything consumed once at setup does not: the scheme, and the materials with
+their properties, models and property table. A change of `levels` or of a family's
+`closure`, which setup has sized the run for, stops the run, as does a value that breaks
+its rule; `irs = true` in a time-accurate run is ignored, with a warning.

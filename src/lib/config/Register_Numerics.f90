@@ -49,7 +49,7 @@ contains
     obj_irs%warning_message = 'none'
     obj_irs%error_message   = 'none'
     call reg%add(trim(section), 'irs', obj_irs%enabled,                                &
-                 '.false.', 'Implicit Residual Smoothing', 'logical', .false.)
+                 '.false.', 'Implicit Residual Smoothing (steady runs only)', 'logical', .false.)
     call reg%add(trim(section), 'irs-beta', obj_irs%beta,                              &
                  '0.5',     'IRS beta parameter', '>= 0', .false.)
 

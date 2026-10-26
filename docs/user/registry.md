@@ -55,7 +55,7 @@ Required column says otherwise, and omitting one selects the default.
 | `tau-factor` | 1.0 | >= 0 |  no | Ceiling on the time step as a multiple of the particle relaxation time, coupled runs only (0 = off) |
 | `cfl-rise-threshold` | 0 | >= 0 |  no | CFL rise threshold |
 | `time-accurate` | .true. | logical | yes | Time accurate switch |
-| `irs` | .false. | logical |  no | Implicit Residual Smoothing |
+| `irs` | .false. | logical |  no | Implicit Residual Smoothing (steady runs only) |
 | `irs-beta` | 0.5 | >= 0 |  no | IRS beta parameter |
 | `space-reconstruction` | first-order | MUSCL, first-order | yes | Space reconstruction method |
 | `flux-limiter` | none | minmod, vanalbada, vanleer, ospre, umist, osher, sweby, mc, koren, superbee, none |  no | Flux limiter for space reconstruction |
