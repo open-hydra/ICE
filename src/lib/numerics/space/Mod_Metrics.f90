@@ -3,10 +3,12 @@ module ICE_Mod_Metrics
 
   implicit none
   private
-  public :: setup_metrics, delthe, meshType
+  public :: setup_metrics, delthe, meshType, ncollapsed_corners
 
   integer(kind=I4) :: meshType ! 1 -> 1D, 2 -> 2D, 3 -> 3D
   real(kind=R8)    :: delthe   ! grid axisymmetric angle
+  integer(kind=I4) :: ncollapsed_corners = 0 ! cell corners of the last setup_metrics on a collapsed edge, not checked
+                                             ! for folding (check_folded_cells)
 
 contains
 
@@ -17,12 +19,21 @@ contains
     type(ICE_domain_type), intent(inout) :: grid
     type(orion_data),      intent(inout) :: IOfield
     integer(kind=I4), intent(in), optional :: level   !< Multigrid level, for the messages (default 1, the fine one)
-    integer(kind=I4) :: b, lev
+    integer(kind=I4) :: b, lev, ncollapsed
 
     lev = 1
     if (present(level)) lev = level
 
     call import_nodes (grid, IOfield)
+
+    ncollapsed_corners = 0
+    do b = 1, grid%nb
+      call check_folded_cells (grid%blk(b)%dim(1), &
+                               grid%blk(b)%dim(2), &
+                               grid%blk(b)%dim(3), &
+                               grid%blk(b)%node, b, lev, ncollapsed)
+      ncollapsed_corners = ncollapsed_corners + ncollapsed
+    end do
 
     call check_mesh_type (grid)
 
@@ -93,6 +104,105 @@ contains
     ndir = meshType
 
   end subroutine check_mesh_type
+
+
+  !> A cell is the image of the unit cube by the trilinear map of its eight nodes, and a finite
+  !> volume needs that map one-to-one: its Jacobian keeps the sign of the block in the whole cell.
+  !> At a corner the Jacobian is J = e_i . (e_j x e_k), with e_i, e_j and e_k the three edges from
+  !> that corner along i, j and k. The setup stops when, at a corner of a cell of block b,
+  !> s J <= 1e-12 |e_i| |e_j| |e_k| (Hadamard's bound, as for the degenerate cells of
+  !> compute_metric_tensor), with s the sign of the determinant of the mean edges of the block's
+  !> first cell; a degenerate first cell gives the block no orientation and stops it there. A
+  !> corner on a collapsed edge, one no longer than 1e-3 of the longest of the four edges of its
+  !> cell parallel to it (where the nodes of the cell meet on an axis), is not checked: its
+  !> Jacobian says how the nodes of that edge were placed, not how the cell is shaped. Such
+  !> corners are counted in ncollapsed. On a 2-D mesh, plane or a wedge whose nodes are off the
+  !> axis, the corners decide for the whole cell; in 3-D they are a necessary condition. Every rank
+  !> holds every block and checks it, so every rank stops alike; setup_metrics runs on every
+  !> multigrid level, and a stop names a coarse one.
+  subroutine check_folded_cells (im, jm, km, node, b, level, ncollapsed)
+    use ICE_Base_Types_m
+    implicit none
+    integer(kind=I4),         intent(in)  :: im, jm, km, b, level
+    type(ICE_vector_3D_type), intent(in)  :: node(-1:im+1, -1:jm+1, -1:km+1)
+    integer(kind=I4),         intent(out) :: ncollapsed
+    real(kind=R8), parameter :: collapsed = 1d-3   ! an edge this short against its longest parallel is collapsed
+    integer(kind=I4)  :: i, j, k, ca, cb, cc
+    real(kind=R8)     :: A(3,3), det, hm, s, h, jac
+    real(kind=R8)     :: ei(3,0:1,0:1), ej(3,0:1,0:1), ek(3,0:1,0:1), li(0:1,0:1), lj(0:1,0:1), lk(0:1,0:1)
+    logical           :: folded
+    character(len=32) :: lev
+
+    lev = ''
+    if (level > 1) write(lev,'(A,I0,A)') ' (multigrid level ', level, ')'
+
+    ! Orientation: the determinant of the mean edges of cell 1 1 1, as compute_metric_tensor forms them
+    A(1,:) = node(1,1,1)%c - node(0,1,1)%c + node(1,0,1)%c - node(0,0,1)%c + &
+             node(1,1,0)%c - node(0,1,0)%c + node(1,0,0)%c - node(0,0,0)%c
+    A(2,:) = node(1,1,1)%c - node(1,0,1)%c + node(0,1,1)%c - node(0,0,1)%c + &
+             node(1,1,0)%c - node(1,0,0)%c + node(0,1,0)%c - node(0,0,0)%c
+    A(3,:) = node(1,1,1)%c - node(1,1,0)%c + node(0,1,1)%c - node(0,1,0)%c + &
+             node(1,0,1)%c - node(1,0,0)%c + node(0,0,1)%c - node(0,0,0)%c
+    A = 0.25d0 * A
+    det = A(1,1)*A(2,2)*A(3,3) - A(1,1)*A(2,3)*A(3,2) &
+        - A(1,2)*A(2,1)*A(3,3) + A(1,2)*A(2,3)*A(3,1) &
+        + A(1,3)*A(2,1)*A(3,2) - A(1,3)*A(2,2)*A(3,1)
+    hm = norm2(A(1,:)) * norm2(A(2,:)) * norm2(A(3,:))
+    if (.not. (abs(det) > 1d-12*hm)) then
+      write(*,'(A,I0,A,ES12.4,A,ES12.4)') ' [ERROR] [ICE::check_folded_cells] block ', b, ', cell 1 1 1'//trim(lev)// &
+        ': degenerate, so the block has no orientation; det = ', det, ', |A1| |A2| |A3| = ', hm
+      error stop 1
+    endif
+    s = sign(1.d0, det)
+
+    folded = .false.
+    ncollapsed = 0
+    !$omp parallel do collapse(3) private(i,j,k,ca,cb,cc,ei,ej,ek,li,lj,lk,h,jac) &
+    !$omp shared(node,im,jm,km,s,b,lev,folded) reduction(+:ncollapsed)
+    do k = 1, km ; do j = 1, jm ; do i = 1, im
+      ! The twelve edges of the cell, e_i(cb,cc) from node (i-1, j-1+cb, k-1+cc), and so on
+      do cc = 0, 1 ; do cb = 0, 1
+        ei(:,cb,cc) = node(i, j-1+cb, k-1+cc)%c - node(i-1, j-1+cb, k-1+cc)%c
+        li(cb,cc)   = norm2(ei(:,cb,cc))
+      end do ; end do
+      do cc = 0, 1 ; do ca = 0, 1
+        ej(:,ca,cc) = node(i-1+ca, j, k-1+cc)%c - node(i-1+ca, j-1, k-1+cc)%c
+        lj(ca,cc)   = norm2(ej(:,ca,cc))
+      end do ; end do
+      do cb = 0, 1 ; do ca = 0, 1
+        ek(:,ca,cb) = node(i-1+ca, j-1+cb, k)%c - node(i-1+ca, j-1+cb, k-1)%c
+        lk(ca,cb)   = norm2(ek(:,ca,cb))
+      end do ; end do
+      do cc = 0, 1 ; do cb = 0, 1 ; do ca = 0, 1
+        if (li(cb,cc) <= collapsed*maxval(li) .or. lj(ca,cc) <= collapsed*maxval(lj) .or. &
+            lk(ca,cb) <= collapsed*maxval(lk)) then
+          ncollapsed = ncollapsed + 1
+          cycle
+        end if
+        h   = li(cb,cc) * lj(ca,cc) * lk(ca,cb)
+        jac = ei(1,cb,cc)*(ej(2,ca,cc)*ek(3,ca,cb) - ej(3,ca,cc)*ek(2,ca,cb)) &
+            + ei(2,cb,cc)*(ej(3,ca,cc)*ek(1,ca,cb) - ej(1,ca,cc)*ek(3,ca,cb)) &
+            + ei(3,cb,cc)*(ej(1,ca,cc)*ek(2,ca,cb) - ej(2,ca,cc)*ek(1,ca,cb))
+        if (s*jac > 1d-12*h) cycle
+        !$omp critical (ICE_metrics_report)
+        if (.not. folded) then
+          write(*,'(A,I0,A,3(1X,I0),A,3(1X,I0),A)') ' [ERROR] [ICE::check_folded_cells] block ', b, ', cell', i, j, k, &
+            trim(lev)//', corner node', i-1+ca, j-1+cb, k-1+cc, ': the cell is folded or turned against its block'
+          write(*,'(A,ES12.4,A,ES12.4,A,I0)') '   e_i . (e_j x e_k) = ', jac, ', |e_i| |e_j| |e_k| = ', h, &
+            ', sign of the block (from its first cell): ', nint(s)
+          write(*,'(A,3(1X,ES14.6))') '   corner node:', node(i-1+ca, j-1+cb, k-1+cc)%c
+        endif
+        folded = .true.
+        !$omp end critical (ICE_metrics_report)
+      end do ; end do ; end do
+    end do ; end do ; end do
+    !$omp end parallel do
+    if (folded) then
+      write(*,'(A)') ' [ERROR] [ICE::check_folded_cells] folded cell in the mesh'
+      error stop 1
+    endif
+
+  end subroutine check_folded_cells
 
 
   !> Extrapolate ghost cell nodes with 2nd order accuracy.

@@ -246,6 +246,9 @@ contains
       write(*,*)
       write(*,'(A)') " Checking input file..."
       write(*,'(A)') " - Mesh                   ---> OK"
+      !> The fine level's corners left out of the folding check (check_folded_cells)
+      if (ncollapsed_corners > 0) write(*,'(A,I0,A)') "   (", ncollapsed_corners, &
+        " cell corners on a collapsed edge, as at an axis, not checked for folding)"
       write(*,'(A)') " - Initial conditions     ---> OK"
       write(*,'(A)') " - Boundary conditions    ---> OK"
       write(*,'(A)') " - Particle properties    ---> OK"
