@@ -34,7 +34,7 @@ contains
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4) :: p, srk
     real(R8)         :: dtlocal
-    logical          :: endsim, iosim, need_norm
+    logical          :: endsim, iosim, need_norm, res_stop
 
     grid%iter                    = grid%iter + 1
     obj_sim_param%iter_from_call = obj_sim_param%iter_from_call + 1
@@ -144,10 +144,18 @@ contains
 
     end do
 
+    !> res-threshold ends steady runs only, on the finest level: the density change of a
+    !  time step says nothing of convergence, and a transient whose density happens to be
+    !  stationary -- a cloud relaxing in velocity only -- would be declared converged at
+    !  its first iteration. A time-accurate run ends on time-threshold or iter-threshold.
+    !  res-threshold = 0 means "never stop on the residual".
+    res_stop = .not. obj_time_scheme%time_accurate .and. obj_multigrid%MG_level == 1 &
+               .and. obj_sim_param%res_threshold > 0._R8
+
     !> The residual norm, only on a step that reads it: the stop test, the
     !  residual file, the shell line, the last step. Every key can change at run
     !  time, so the conditions are evaluated here, every step.
-    need_norm = (obj_multigrid%MG_level == 1 .and. obj_sim_param%res_threshold > 0._R8) &
+    need_norm = res_stop &
            .or. due(grid%iter, obj_io%res_diter) .or. due(grid%iter, obj_io%shell_diter) &
            .or. (obj_sim_param%iter_from_call >= grid%itermax)                          &
            .or. (grid%time >= obj_sim_param%time_threshold)
@@ -160,12 +168,8 @@ contains
     iosim  = (mod(grid%iter, obj_io%sol_diter) == 0) &
          .or. (grid%time >= obj_sim_param%time_from_call + obj_io%sol_dtime)
 
-    !> res-threshold = 0 means "never stop on the residual". Without it a transient
-    !> whose density happens to be stationary -- a cloud relaxing in velocity only --
-    !> reports a zero density residual and is declared converged at the first iteration.
-    endsim = (obj_sim_param%iter_from_call >= grid%itermax)                                        &
-         .or. (obj_multigrid%MG_level == 1 .and. obj_sim_param%res_threshold > 0._R8 .and.       &
-               obj_sim_param%residuotot(1) <= obj_sim_param%res_threshold)                       &
+    endsim = (obj_sim_param%iter_from_call >= grid%itermax)                               &
+         .or. (res_stop .and. obj_sim_param%residuotot(1) <= obj_sim_param%res_threshold) &
          .or. (grid%time >= obj_sim_param%time_threshold)
 
     if (endsim) then

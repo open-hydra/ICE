@@ -175,10 +175,11 @@ is reported rather than absorbed.
 ## Stopping conditions
 
 `iter-threshold`, `time-threshold` and `res-threshold` are independent, and the run
-stops at whichever is met first. Their defaults are effectively infinite for the first
-two and $10^{-10}$ for the third, so a file that sets none of them will stop on the
-residual — which for a genuinely unsteady problem may be immediately. Set
-`res-threshold = 0` to disable it.
+stops at whichever is met first. `res-threshold` ends steady runs only
+(`time-accurate = false`): the density change of a time step says nothing about
+convergence, so a time-accurate run ends on the other two. Their defaults are
+effectively infinite for the first two and $10^{-10}$ for the third, so a steady run
+that sets none of them stops on the residual. Set `res-threshold = 0` to disable it.
 
 ## Re-reading at runtime
 
