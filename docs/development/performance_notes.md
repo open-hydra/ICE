@@ -37,7 +37,7 @@ threads as well as many small ones. Two details shape the scaling:
   there are three worksharing loops (the shock-detector pass, the faces on the tile
   seams, the sweep) where the scatter form had a pass per parity per direction.
 - The boundary flux loop is `SCHEDULE(DYNAMIC, 16)` over the rank's boundary cells of
-  the family, each cell accumulating its records in table order on one thread — a
+  the family, each cell accumulating its records in face order on one thread — a
   block corner in 3-D carries three — so 2-D and 3-D runs are bit-identical across
   thread counts (`test/fast/equiv3d`: RED on the record-parallel `ATOMIC` loop, GREEN
   since 2026-09-30). The cost per cell varies a great deal by type: a chimera cell
