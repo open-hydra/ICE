@@ -102,8 +102,10 @@ contains
         if (.not.obj_io%sol_overwrite) dgsfile = trim(dgsfile)//trim(str(.true.,id_stampa))
       end if
 
-      ! Probes
-      if (nprobes > 0) call Write_Probes_Data(simulation%domain(1)%iter, simulation%domain(1)%time)
+      ! Probes: on the finest level, whose cells they read, at the global
+      ! iteration count of the residual history
+      if (nprobes > 0 .and. level == 1) &
+        call Write_Probes_Data(obj_sim_param%iter_general, simulation%domain(1)%time)
 
       ! Collective, so every rank calls it -- not inside the root guard below.
       if (mod(simulation%domain(level)%iter, obj_io%shell_diter) == 0d0) &
@@ -161,8 +163,9 @@ contains
     ! AUXILIARY OPERATIONS AT EACH ITERATION
     elseif (obj_sim_param%TODO == 1) then
 
-      ! Probes
-      if (nprobes > 0) call Write_Probes_Data(simulation%domain(1)%iter, simulation%domain(1)%time)
+      ! Probes, as at an output iteration
+      if (nprobes > 0 .and. level == 1) &
+        call Write_Probes_Data(obj_sim_param%iter_general, simulation%domain(1)%time)
 
       ! Collective, so every rank calls it -- not inside the root guard below.
       if (mod(simulation%domain(level)%iter, obj_io%shell_diter) == 0d0) &

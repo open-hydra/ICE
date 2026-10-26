@@ -130,7 +130,7 @@ independent — a case may be given in Tecplot ASCII and written in VTK.
 
 The file holds the node coordinates followed by the primitive variables of every
 family, cell-centred, named `rho_p1`, `u_p1`, … `n_p1`, `rho_p2`, …, a solidifying family adding `f_p1` and
-`chi_p1` after `n_p1` (a probe takes them as `f_1` and `chi_1`). The solution time
+`chi_p1` after `n_p1` (a probe takes the same names). The solution time
 is recorded in the zone header; in steady-state mode it carries the iteration count
 instead, negated.
 
@@ -167,7 +167,19 @@ dtime          = 1e-4
 ```
 
 Give either `position` (physical coordinates, and ICE finds the nearest cell) or
-`index-position` as `b i j k`. `dtime` and `diter` set how often the probe samples.
+`index-position` as `b i j k`; an `index-position` that is not a cell of the mesh stops
+the run. `dtime` and `diter` set how often the probe samples: a row every `diter`
+iterations of the global count (the first column of the residual history), written on the
+finest grid level, and a row at each multiple of `dtime` of physical time, from the first,
+with the time in its first column.
+
+The variables of family `n` are those of the solution files, `rho_p<n>`, `u_p<n>`,
+`v_p<n>`, `w_p<n>`, `T_p<n>`, `n_p<n>`, and `f_p<n>`, `chi_p<n>` for a solidifying family;
+the same names without the `p` (`rho_<n>`, …) are accepted too. Any other name stops the
+run at set-up.
+
+A new run replaces the probe files; a restart appends to them, and creates any that are
+missing (for example a probe added before the restart).
 
 ## Re-steering a running simulation
 

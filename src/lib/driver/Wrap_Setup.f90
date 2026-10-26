@@ -19,7 +19,7 @@ contains
     use ICE_IO_BC,          only: Setup_BC
     use ICE_Setup_Materials, only: Setup_Materials
     use ICE_Lib_Heat,       only: heat_formula
-    use ICE_IO_Probes,      only: Setup_Probes
+    use ICE_IO_Probes,      only: Setup_Probes, Restart_Probes
     use ICE_Mod_BC_Fluxes
     use ICE_Mod_Phase
     use ICE_Mod_Multigrid,  only: Setup_Multigrid
@@ -148,6 +148,10 @@ contains
         obj_sim_param%iter_general   = int(sim%ODP(1)%solutiontime)
         sim%domain(1)%time           = -1._8
       end if
+
+      ! Time-based probe rows fall on the multiples of their dtime: a restart
+      ! that goes on in time writes the next one its time has not reached
+      call Restart_Probes(sim%domain(1)%time, resume = obj_time_scheme%time_accurate)
     else
       if (obj_time_scheme%time_accurate) then
         sim%domain(1)%time = 0._8

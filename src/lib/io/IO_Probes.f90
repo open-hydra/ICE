@@ -7,20 +7,23 @@ module ICE_IO_Probes
 
   implicit none
   private
-  public :: Setup_Probes, Write_Probes_Data
+  public :: Setup_Probes, Write_Probes_Data, Restart_Probes
 
   type :: real_ptr
-    real(R8), pointer :: p
+    real(R8), pointer :: p => null()
   end type real_ptr
 
   type :: obj_probe
+    character(len=clen)               :: name   !< its section
+    character(len=llen)               :: file   !< OUTPUT/<name>.txt
     type(ICE_vector_3D_type)          :: location
     integer, dimension(4)             :: ilocation
     integer                           :: nvar
     character(len=clen), allocatable  :: names(:)
+    integer, allocatable              :: family(:), column(:)   !< where each variable is in prim
     type(real_ptr), allocatable       :: variables(:)
     real(R8)                          :: dtime
-    integer                           :: ntime = 0
+    integer                           :: ntime = 1   !< next multiple of dtime with a time-based row
     integer                           :: diter
     integer                           :: unit
   contains
@@ -38,6 +41,7 @@ contains
     use ICE_Config_Types_m, only: obj_io_probes, obj_sim_param
     use IR_Precision,       only: str
     use strings,            only: parse
+    use ICE_Mod_MPI,        only: mpi_abort_all
 #ifdef USE_MPI
     use ICE_Mod_MPI, only: is_local_block
 #endif
@@ -53,7 +57,10 @@ contains
 
     do i = 1, nprobes
 
-      obj_io_probes(i)%file = 'OUTPUT/'//trim(obj_io_probes(i)%file)//'.txt'
+      ! The key names the probe's section, and the section names the file. The
+      ! path is built apart: the key holds clen characters.
+      probe(i)%name = obj_io_probes(i)%file
+      probe(i)%file = 'OUTPUT/'//trim(probe(i)%name)//'.txt'
 
       string = ''
       probe(i)%nvar = 0
@@ -72,7 +79,15 @@ contains
       probe(i)%location%c = obj_io_probes(i)%loc
       probe(i)%ilocation  = obj_io_probes(i)%iloc
 
-      if (sum(obj_io_probes(i)%iloc) == 0) call probe(i)%Place(domain)
+      if (sum(obj_io_probes(i)%iloc) == 0) then
+        call probe(i)%Place(domain)
+      else
+        call Check_Index(probe(i), domain)
+      end if
+
+      ! Every rank holds the whole domain and the same input, so every rank
+      ! takes the names and stops on the same error.
+      call Resolve_Variables(probe(i))
 
 #ifdef USE_MPI
       if (.not. is_local_block(probe(i)%ilocation(1))) cycle
@@ -80,26 +95,79 @@ contains
 
       call Assign_Variables(probe(i), domain)
 
+      ! A restart appends to the probe file, creating it if missing (a probe
+      ! added, a file moved away); a new run replaces it. Only the rank that
+      ! owns the probe gets here, so a failure aborts all ranks.
       if (.not. obj_sim_param%newrun) then
-        open(newunit=probe(i)%unit, file=trim(obj_io_probes(i)%file), &
-             status='OLD', iostat=error)
-        if (error /= 0) then
-          obj_io_probes(i)%error_message = &
-            '[ERROR] Restart requested but probe file not found: '//trim(obj_io_probes(i)%file)
-          write(*,'(A)') trim(obj_io_probes(i)%error_message)
-          return
-        end if
-        error = 0
-        do while (error == 0); read(probe(i)%unit, *, iostat=error); end do
-        backspace(probe(i)%unit)
+        open(newunit=probe(i)%unit, file=trim(probe(i)%file), &
+             status='UNKNOWN', position='APPEND', action='WRITE', iostat=error)
       else
-        open(newunit=probe(i)%unit, file=trim(obj_io_probes(i)%file), &
+        open(newunit=probe(i)%unit, file=trim(probe(i)%file), &
              status='REPLACE', iostat=error)
       end if
+      if (error /= 0) call mpi_abort_all('cannot open probe file '//trim(probe(i)%file))
 
     end do
 
   end subroutine Setup_Probes
+
+
+  !> An index-position names a cell of the mesh: a block of the domain and
+  !> i, j, k inside it (ghost cells excluded).
+  subroutine Check_Index(probe, domain)
+    implicit none
+    type(obj_probe),       intent(in) :: probe
+    type(ICE_domain_type), intent(in) :: domain
+    integer :: b
+
+    b = probe%ilocation(1)
+    if (b >= 1 .and. b <= domain%nb) then
+      if (all(probe%ilocation(2:4) >= 1 .and. probe%ilocation(2:4) <= domain%blk(b)%dim)) return
+    end if
+    write(*,'(A,4(1X,I0),A,I0,A)') ' [ERROR] [ICE::Setup_Probes] probe '//trim(probe%name)//': index-position', &
+      probe%ilocation, ' is not a cell of the mesh (block 1..', domain%nb, ', i j k inside the block)'
+    error stop 1
+  end subroutine Check_Index
+
+
+  !> Each variable name to its family and its column of prim. A family p
+  !> answers to the names of the solution files, rho_p<p>, u_p<p>, v_p<p>,
+  !> w_p<p>, T_p<p>, n_p<p> (and f_p<p>, chi_p<p> for a solidifying family),
+  !> and to the same names without the p (rho_<p>, ...). Any other name stops
+  !> the run.
+  subroutine Resolve_Variables(probe)
+    use IR_Precision, only: str
+    use ICE_Global_m, only: ngroups, ncond, nbase, solid_of
+    implicit none
+    type(obj_probe),  intent(inout) :: probe
+    character(len=3), parameter :: base(8) = ['rho', 'u  ', 'v  ', 'w  ', 'T  ', 'n  ', 'f  ', 'chi']
+    integer :: v, p, q, col(8)
+
+    allocate(probe%family(probe%nvar), probe%column(probe%nvar))
+    probe%family = 0
+    probe%column = 0
+
+    do v = 1, probe%nvar
+      do p = 1, ngroups
+        col = [1, 2, 3, 4, nbase(p)-1, nbase(p), nbase(p)+1, ncond(p)]
+        do q = 1, merge(8, 6, solid_of(p))
+          if (probe%names(v) == trim(base(q))//'_p'//trim(str(.true.,p)) .or. &
+              probe%names(v) == trim(base(q))//'_'//trim(str(.true.,p))) then
+            probe%family(v) = p
+            probe%column(v) = col(q)
+          end if
+        end do
+      end do
+      if (probe%family(v) == 0) then
+        write(*,'(A)') ' [ERROR] [ICE::Setup_Probes] probe '//trim(probe%name)//': unknown variable "'// &
+          trim(probe%names(v))//'"'
+        write(*,'(A,I0)') '   accepted: rho_p<n> u_p<n> v_p<n> w_p<n> T_p<n> n_p<n> (f_p<n> chi_p<n> for a '// &
+          'solidifying family), or the same without the p, for a family n = 1..', ngroups
+        error stop 1
+      end if
+    end do
+
+  end subroutine Resolve_Variables
 
 
   subroutine Place(self, domain)
@@ -126,12 +194,10 @@ contains
 
 
   subroutine Assign_Variables(probe, domain)
-    use IR_Precision, only: str
-    use ICE_Global_m, only: ngroups, ncond, nbase, solid_of
     implicit none
     type(obj_probe),       intent(inout), target :: probe
     type(ICE_domain_type), intent(in),    target :: domain
-    integer :: v, p, b, i, j, k
+    integer :: v, b, i, j, k
 
     b = probe%ilocation(1)
     i = probe%ilocation(2)
@@ -141,28 +207,36 @@ contains
     allocate(probe%variables(1:probe%nvar))
 
     do v = 1, probe%nvar
-      do p = 1, ngroups
-        if (probe%names(v) == 'rho_'//trim(str(.true.,p))) &
-          probe%variables(v)%p => domain%blk(b)%cond_phase(p)%prim(1,i,j,k)
-        if (probe%names(v) == 'u_'//trim(str(.true.,p))) &
-          probe%variables(v)%p => domain%blk(b)%cond_phase(p)%prim(2,i,j,k)
-        if (probe%names(v) == 'v_'//trim(str(.true.,p))) &
-          probe%variables(v)%p => domain%blk(b)%cond_phase(p)%prim(3,i,j,k)
-        if (probe%names(v) == 'w_'//trim(str(.true.,p))) &
-          probe%variables(v)%p => domain%blk(b)%cond_phase(p)%prim(4,i,j,k)
-        if (probe%names(v) == 'T_'//trim(str(.true.,p))) &
-          probe%variables(v)%p => domain%blk(b)%cond_phase(p)%prim(nbase(p)-1,i,j,k)
-        if (probe%names(v) == 'n_'//trim(str(.true.,p))) &
-          probe%variables(v)%p => domain%blk(b)%cond_phase(p)%prim(nbase(p),i,j,k)
-        if (.not. solid_of(p)) cycle
-        if (probe%names(v) == 'f_'//trim(str(.true.,p))) &
-          probe%variables(v)%p => domain%blk(b)%cond_phase(p)%prim(nbase(p)+1,i,j,k)
-        if (probe%names(v) == 'chi_'//trim(str(.true.,p))) &
-          probe%variables(v)%p => domain%blk(b)%cond_phase(p)%prim(ncond(p),i,j,k)
-      end do
+      probe%variables(v)%p => domain%blk(b)%cond_phase(probe%family(v))%prim(probe%column(v),i,j,k)
     end do
 
   end subroutine Assign_Variables
+
+
+  !> The time counter of the time-based rows at a restart. Write_Probes_Data
+  !> writes a time-based row when time >= dtime*ntime and then counts it, so the
+  !> rows fall on the multiples of dtime, from the first (ntime starts at 1). A
+  !> restart that goes on in time (resume) takes for ntime the first multiple
+  !> its time has not reached, computed with the same product as
+  !> Write_Probes_Data so that an exact multiple counts as written; otherwise,
+  !> and in a steady run (time < 0), the rows start again from the first.
+  subroutine Restart_Probes(time, resume)
+    implicit none
+    real(R8), intent(in) :: time
+    logical,  intent(in) :: resume
+    integer :: i
+
+    do i = 1, nprobes
+      probe(i)%ntime = 1
+      if (.not. resume .or. time < 0._R8) cycle
+      if (time / probe(i)%dtime >= 0.5_R8 * real(huge(1), R8)) cycle
+      probe(i)%ntime = max(0, int(time / probe(i)%dtime) - 1)
+      do while (time >= probe(i)%dtime * probe(i)%ntime)
+        probe(i)%ntime = probe(i)%ntime + 1
+      end do
+    end do
+
+  end subroutine Restart_Probes
 
 
   subroutine Write_Probes_Data(iter, time)

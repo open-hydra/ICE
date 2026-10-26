@@ -409,7 +409,7 @@ contains
     call MPI_ABORT(MPI_COMM_WORLD, 1, ierr)
 #else
     write(*,'(A,A)') ' ABORT: ', trim(message)
-    error stop
+    error stop 1
 #endif
   end subroutine mpi_abort_all
 
