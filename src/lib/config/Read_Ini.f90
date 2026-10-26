@@ -45,6 +45,7 @@ contains
   subroutine Read_Inifile_Runtime()
     use Finer,            only: file_ini
     use ICE_Backend_INI,  only: Open_Ini, Load_Ini
+    use ICE_Assign_Setup, only: Check_Riemann_Solver
     use ICE_Input_Registry
     implicit none
     type(file_ini)      :: fini
@@ -57,6 +58,9 @@ contains
       write(*, '(A)') trim(out)
       error stop 1
     end if
+
+    ! riemann-solver takes effect at the next step
+    call Check_Riemann_Solver()
 
   end subroutine Read_Inifile_Runtime
 

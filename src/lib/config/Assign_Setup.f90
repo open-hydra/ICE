@@ -2,7 +2,7 @@ module ICE_Assign_Setup
   use iso_fortran_env, only: I4 => int32, R8 => real64
   implicit none
   private
-  public :: Assign_Setup
+  public :: Assign_Setup, Check_Riemann_Solver
 
 contains
 
@@ -15,6 +15,7 @@ contains
     use ICE_Lib_Heat,      only: assign_heat
     use ICE_IO_Solution,   only: io_extension
     use ICE_Lib_Evaporation, only: assign_evaporation, assign_interface, assign_blowing
+    use ICE_Mod_MPI,       only: mpi_is_root
     implicit none
     integer :: p
     logical :: gas_present
@@ -46,11 +47,26 @@ contains
     if (trim(obj_space_scheme%space_reconstruction) == 'MUSCL') then
       if (trim(obj_space_scheme%flux_limiter) == 'none') then
         obj_space_scheme%flux_limiter = 'vanleer'
-        write(*, '(A)') ' [WARNING] MUSCL without flux-limiter. Van Leer by default.'
+        if (mpi_is_root) write(*, '(A)') ' [WARNING] MUSCL without flux-limiter. Van Leer by default.'
       end if
       call assign_limiter(obj_space_scheme%flux_limiter)
     else
+      if (trim(obj_space_scheme%flux_limiter) /= 'none' .and. mpi_is_root) &
+        write(*, '(A)') ' [WARNING] flux-limiter = '//trim(obj_space_scheme%flux_limiter)// &
+                        ' ignored: space-reconstruction is first-order.'
       call assign_limiter('IORD')
+    end if
+
+    ! --- Riemann solver: Saurel for MK families only ---
+    call Check_Riemann_Solver()
+
+    ! --- Implicit residual smoothing: steady runs only ---
+    ! The smoothed residual is not the residual of the space discretisation, so a
+    ! time-accurate run with it does not follow the transient of the scheme.
+    if (obj_irs%enabled .and. obj_time_scheme%time_accurate) then
+      write(*,'(A)') ' [ERROR] [ICE-Numerics] irs = true needs time-accurate = false: implicit residual '// &
+                     'smoothing accelerates steady runs and changes the transient of a time-accurate one'
+      error stop 1
     end if
 
     ! --- Assign the global exchange models (only consulted when coupled) ---
@@ -86,5 +102,28 @@ contains
     nrk = 1
 
   end subroutine Assign_Setup
+
+
+  !> Saurel upwinds on the mean normal velocity and assembles the flux from the MK variable
+  !> layout, so it is meaningless for the Gaussian closures. riemann-solver is resolved at
+  !> every step (Mod_Explicit), so the choice is checked at set-up and after each re-read
+  !> of input.ini.
+  subroutine Check_Riemann_Solver()
+    use ICE_Config_Types_m, only: obj_time_scheme
+    use ICE_Global_m,       only: ngroups
+    implicit none
+    integer :: p
+
+    if (trim(obj_time_scheme%riemann) /= 'Saurel') return
+    do p = 1, ngroups
+      if (trim(obj_time_scheme%model(p)) /= 'MK') then
+        write(*,'(A,I0,A)') ' [ERROR] [ICE-Numerics] riemann-solver = Saurel is specific to the MK closure, '// &
+                            'and family ', p, ' is '//trim(obj_time_scheme%model(p))//'; use Rusanov or HLLE '// &
+                            'with IG and AG.'
+        error stop 1
+      end if
+    end do
+
+  end subroutine Check_Riemann_Solver
 
 end module ICE_Assign_Setup

@@ -79,14 +79,8 @@ contains
         case default;    call assign_riemann('Rusanov')
         end select
       else
-        !> Saurel upwinds on the mean normal velocity and assembles the flux from the
-        !  MK variable layout, so it is meaningless for the Gaussian closures.
-        if (trim(obj_time_scheme%riemann) == 'Saurel' .and. &
-            trim(obj_time_scheme%model(p)) /= 'MK') then
-          write(*,'(A)') '  [ICE] the Saurel solver is specific to the MK closure; '// &
-                         'use Rusanov or HLLE with IG and AG.'
-          error stop 'ICE: Saurel with a non-MK family'
-        endif
+        !> Saurel with a non-MK family is refused at set-up and at each re-read
+        !  (Check_Riemann_Solver).
         call assign_riemann(trim(obj_time_scheme%riemann), solid_of(p))
       endif
       select case (trim(obj_time_scheme%solver_type))
@@ -96,7 +90,7 @@ contains
       case default
         write(*,'(A)') '  [ERROR] unknown time-scheme "'//trim(obj_time_scheme%solver_type)// &
                        '"; choose euler, RK2 or RK3.'
-        error stop 'ICE: unknown time-scheme'
+        error stop 1
       end select
 
       do srk = 1, nrk
