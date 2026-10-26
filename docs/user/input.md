@@ -181,6 +181,23 @@ convergence, so a time-accurate run ends on the other two. Their defaults are
 effectively infinite for the first two and $10^{-10}$ for the third, so a steady run
 that sets none of them stops on the residual. Set `res-threshold = 0` to disable it.
 
+`res-threshold` is relative: a steady run ends when its density residual (the L2 norm
+over the cells of the change of density in one iteration, the third column of
+`residual-history.dat`, after the iteration and the time) has fallen by that factor from the first non-zero one, on the
+finest level. The residual scales with the loading and with the square root of the
+number of cells, so a relative test stops the same flow at the same iteration whatever
+its density, and a dilute cloud does not stop at its first iteration. The reference is
+the first non-zero residual rather than the first one, because a cloud at rest that the
+gas starts to move can have no density change at its first step (none with the one-stage
+`euler` scheme); while every residual is zero, the residual ends nothing, and
+`iter-threshold` ends a run in which nothing moves. A `res-threshold` switched on by a
+re-read of `input.ini` (from 0) measures from the first non-zero residual after it. If a
+residual rises before it falls, the run ends when it is `res-threshold` times the first
+one, later than a test relative to the peak would. A restart takes the first non-zero
+residual of its own run as the reference (the solution files do not carry the first
+run's) and says so. An input written for the former absolute test keeps its stop with
+`res-threshold` divided by that first residual.
+
 ## Re-reading at runtime
 
 If `ini-diter` is set, `input.ini` is re-read every that many iterations. Thresholds

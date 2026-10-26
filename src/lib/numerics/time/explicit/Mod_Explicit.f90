@@ -175,11 +175,22 @@ contains
       call timer_region_end(TR_DIAG)
     end if
 
+    !> A steady run ends when its density residual has fallen by res-threshold from the first
+    !  non-zero one: the residual scales with the loading and with the square root of the cell
+    !  count, so an absolute threshold stops the same flow at different iterations, and a dilute
+    !  cloud at its first iteration. Not the first iteration's own: a cloud at rest that the gas
+    !  starts to move can have no density change at its first step (none with a one-stage
+    !  scheme, whose step reads the velocities at its start). While no non-zero residual has
+    !  come, the residual ends nothing.
+    if (res_stop .and. obj_sim_param%res_reference == 0._R8) &
+      obj_sim_param%res_reference = obj_sim_param%residuotot(1)
+
     iosim  = (mod(grid%iter, obj_io%sol_diter) == 0) &
          .or. (grid%time >= obj_sim_param%time_from_call + obj_io%sol_dtime)
 
-    endsim = (obj_sim_param%iter_from_call >= grid%itermax)                               &
-         .or. (res_stop .and. obj_sim_param%residuotot(1) <= obj_sim_param%res_threshold) &
+    endsim = (obj_sim_param%iter_from_call >= grid%itermax)                                   &
+         .or. (res_stop .and. obj_sim_param%res_reference > 0._R8 .and.                       &
+               obj_sim_param%residuotot(1) <= obj_sim_param%res_threshold * obj_sim_param%res_reference) &
          .or. (grid%time >= obj_sim_param%time_threshold)
 
     if (endsim) then

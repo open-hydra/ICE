@@ -27,7 +27,8 @@ contains
                  'true',      'Start a new simulation (false = restart)',   &
                  'true, false', .false.)
     call reg%add(section, 'res-threshold',  obj_sim_param%res_threshold,   &
-                 '1e-10',     'Residual convergence threshold, steady runs only (0 = never stop on it)', &
+                 '1e-10',     'Residual convergence threshold, relative to the first non-zero density residual, '// &
+                 'steady runs only (0 = never stop on it)', &
                  '>= 0',       .false.)
     call reg%add(section, 'time-threshold', obj_sim_param%time_threshold,  &
                  '1e30',      'Maximum simulation time',                    &

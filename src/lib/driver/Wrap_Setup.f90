@@ -155,6 +155,10 @@ contains
       else
         obj_sim_param%iter_general   = int(sim%ODP(1)%solutiontime)
         sim%domain(1)%time           = -1._8
+        ! The solution does not carry the first residual of the run it continues
+        if (mpi_is_root .and. obj_sim_param%res_threshold > 0._R8) write(*,'(A)') &
+          ' [WARNING] restart: res-threshold is relative to the first non-zero density residual of this run, '// &
+          'not of the run it continues'
       end if
 
       ! Time-based probe rows fall on the multiples of their dtime: a restart
@@ -172,6 +176,7 @@ contains
     obj_sim_param%time_from_call = sim%domain(1)%time
     sim%domain(1)%iter           = 0
     obj_sim_param%iter_from_call = 0
+    obj_sim_param%res_reference  = 0._R8
 
     write(obj_io%unitRES_format, '(A11,I0,A7)') '(I8,E20.10,', 5, 'E20.10)'
 

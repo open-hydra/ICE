@@ -34,6 +34,8 @@ module ICE_Config_Types_m
     logical   :: HYDRA_MG            = .false.
     ! Global residual (L2 norm, updated each iteration)
     real(R8)  :: residuotot(5) = 0._R8
+    ! The unit of res-threshold: the first non-zero density residual of the run on the finest level (0 = not yet)
+    real(R8)  :: res_reference = 0._R8
   end type simulation_parameters_t
   !! ------------------------------------------------------
   !! ------------------------------------------------------

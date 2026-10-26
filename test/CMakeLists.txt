@@ -194,6 +194,10 @@ ice_add_fast_script(Multigrid fast/multigrid "fast;implementation;multigrid")
 # required model left unset in a coupled run, a NaN after the update).
 ice_add_fast_script(Refusals fast/refusals "fast;implementation;refusal")
 
+# res-threshold relative to the first non-zero density residual: the same stop at loadings
+# 1 and 2^-16, a cloud at rest whose first residual is zero, a run in which nothing moves
+ice_add_fast_script(ResThreshold fast/res-threshold "fast;implementation")
+
 # The 3-D gates: a generated 24x16x12 box in 3x2x2 blocks with an MK, an IG and
 # an AG family, compared on the raw-binary VTK payload (test/fast/equiv3d/run.py).
 # The binary under test is this build's own, so a serial build is reported as a

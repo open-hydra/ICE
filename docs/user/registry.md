@@ -10,7 +10,7 @@ Required column says otherwise, and omitting one selects the default.
 |-----------|---------|---------|----------|-------------|
 | `phase` |  |  |  no | ATLAS name of the condensed phase to read: INPUT/<phase>-{bc.txt,ic,properties.dat}. Absent = keep the prefix in force (standalone default part-) |
 | `newrun` | true | true, false |  no | Start a new simulation (false = restart) |
-| `res-threshold` | 1e-10 | >= 0 |  no | Residual convergence threshold, steady runs only (0 = never stop on it) |
+| `res-threshold` | 1e-10 | >= 0 |  no | Residual convergence threshold, relative to the first non-zero density residual, steady runs only (0 = never stop on it) |
 | `time-threshold` | 1e30 | > 0 |  no | Maximum simulation time |
 | `iter-threshold` | 1000000000 | > 0 |  no | Maximum number of iterations |
 

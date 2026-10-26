@@ -192,6 +192,7 @@ contains
       if (obj_multigrid%change_MG) then
         obj_multigrid%MG_level       = obj_multigrid%MG_level - 1
         obj_sim_param%iter_from_call = 0
+        obj_sim_param%res_reference  = 0._R8
         obj_sim_param%time_from_call = 0.0_R8
         obj_multigrid%change_MG      = .false.
       end if
