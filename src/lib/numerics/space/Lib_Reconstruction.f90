@@ -12,8 +12,9 @@ module ICE_Lib_Reconstruction
 contains
 
   !> The faces of a stencil; a solidifying family (solid) goes through solid_reconstruction, every other family through the
-  !  body below.
-  subroutine state_reconstruction(prev, local, next, next2, dl0, dl1, dl2, dll, dlr, priml, primr, beta, mat, solid)
+  !  body below. loc, the block, cell (i, j, k) and face of the cell the stencil serves, only names it in the error
+  !  message.
+  subroutine state_reconstruction(prev, local, next, next2, dl0, dl1, dl2, dll, dlr, priml, primr, beta, mat, solid, loc)
     use ICE_Lib_Limiters
     use ICE_Lib_Model
     use ICE_Global_m, only: rho_empty
@@ -25,13 +26,14 @@ contains
     real(R8),               intent(in)  :: beta
     type(condensed_phase_t), intent(in) :: mat
     logical,                intent(in)  :: solid
+    integer(I4), optional,  intent(in)  :: loc(5)
 
     integer(I4) :: i
     real(R8)    :: slope0, slope1, slope2, slopel, sloper, limval
     logical     :: prim_status_l, prim_status_r
 
     if (solid) then
-      call solid_reconstruction(prev, local, next, next2, dl0, dl1, dl2, dll, dlr, priml, primr, beta, mat)
+      call solid_reconstruction(prev, local, next, next2, dl0, dl1, dl2, dll, dlr, priml, primr, beta, mat, loc)
       return
     endif
 
@@ -60,7 +62,7 @@ contains
         if (limval < 1.e-18_R8 .and. .not. (prim_status_l .and. prim_status_r)) then
           priml = local
           primr = next
-          if (.not. (check_prim(priml) .and. check_prim(primr))) call report_stencil(prev, local, next, next2)
+          if (.not. (check_prim(priml) .and. check_prim(primr))) call report_stencil(prev, local, next, next2, loc)
           exit
         endif
       end do
@@ -73,7 +75,7 @@ contains
   !  a nucleation front (chi, which still jumps, decides a face in the band); each face's (T, f) is re-derived from its
   !  (T_liq, chi) before the check, and a non-finite T_liq stays so, for check_prim tests T and f for NaN and infinity. An empty
   !  stencil and the first-order fallback take the physical cells.
-  subroutine solid_reconstruction(prev, local, next, next2, dl0, dl1, dl2, dll, dlr, priml, primr, beta, mat)
+  subroutine solid_reconstruction(prev, local, next, next2, dl0, dl1, dl2, dll, dlr, priml, primr, beta, mat, loc)
     use ICE_Lib_Limiters
     use ICE_Lib_Model
     use ICE_Global_m, only: rho_empty
@@ -85,6 +87,7 @@ contains
     real(R8),               intent(in)  :: dl0, dl1, dl2, dll, dlr
     real(R8),               intent(in)  :: beta
     type(condensed_phase_t), intent(in) :: mat
+    integer(I4), optional,  intent(in)  :: loc(5)
 
     integer(I4) :: i
     real(R8)    :: slope0, slope1, slope2, slopel, sloper, limval
@@ -122,7 +125,7 @@ contains
       if (limval < 1.e-18_R8 .and. .not. (prim_status_l .and. prim_status_r)) then
         priml = local
         primr = next
-        if (.not. (check_prim(priml) .and. check_prim(primr))) call report_stencil(prev, local, next, next2)
+        if (.not. (check_prim(priml) .and. check_prim(primr))) call report_stencil(prev, local, next, next2, loc)
         exit
       endif
     end do
@@ -130,12 +133,21 @@ contains
   end subroutine solid_reconstruction
 
 
-  !> The first unphysical stencil is printed; the flag stops the run after the parallel region.
-  subroutine report_stencil(prev, local, next, next2)
+  !> The first unphysical stencil is printed, with where it is when the caller says (and the multigrid level when it is
+  !  not the fine one); the flag stops the run after the parallel region.
+  subroutine report_stencil(prev, local, next, next2, loc)
+    use ICE_Config_Types_m, only: obj_multigrid
     real(R8), dimension(:), intent(in) :: prev, local, next, next2
+    integer(I4), optional,  intent(in) :: loc(5)
+    character(len=32) :: lev
     !$OMP CRITICAL (ICE_recon_report)
     if (.not. bad_recon) then
       write(*,'(A)') ' [ERROR] [ICE::state_reconstruction] unphysical state at first order; stencil:'
+      if (present(loc)) then
+        lev = ''
+        if (obj_multigrid%MG_level > 1) write(lev,'(A,I0,A)') ' (multigrid level ', obj_multigrid%MG_level, ')'
+        write(*,'(A,I0,A,3(1X,I0),A,I0,A)') '   block ', loc(1), ', cell', loc(2:4), ', face ', loc(5), trim(lev)
+      endif
       write(*,'(A,*(1X,ES13.5))') '   prev ', prev
       write(*,'(A,*(1X,ES13.5))') '   local', local
       write(*,'(A,*(1X,ES13.5))') '   next ', next

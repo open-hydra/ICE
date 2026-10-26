@@ -140,14 +140,14 @@ contains
       if (deep .or. nk > 1) then
         !$OMP DO SCHEDULE (DYNAMIC, 1)
         do t = 1, nt
-          call tile_kfaces(grid%blk(b), p, nc, ni, nj, nk, tiles(t), t, deep, seam, kface)
+          call tile_kfaces(grid%blk(b), b, p, nc, ni, nj, nk, tiles(t), t, deep, seam, kface)
         enddo
         !$OMP END DO
       end if
 
       !$OMP DO SCHEDULE (DYNAMIC, 1)
       do t = 1, nt
-        call tile_sweep(grid%blk(b), p, nc, ni, nj, nk, tiles, t, deep, seam, kface, &
+        call tile_sweep(grid%blk(b), b, p, nc, ni, nj, nk, tiles, t, deep, seam, kface, &
                         fi, gj, hk, jlo, jhi, klo, khi)
       enddo
       !$OMP END DO
@@ -253,9 +253,9 @@ contains
 #ifdef ICE_RACE_PROBE
             if (t == 1) rc = c_usleep(probe_sleep_us)
 #endif
-            call tile_kfaces(grid%blk(b), p, nc, ni, nj, nk, tiles(t), t, deep, seam_g(:,:,:,:,g), kface_g(:,:,:,:,g))
+            call tile_kfaces(grid%blk(b), b, p, nc, ni, nj, nk, tiles(t), t, deep, seam_g(:,:,:,:,g), kface_g(:,:,:,:,g))
           case (3)
-            call tile_sweep(grid%blk(b), p, nc, ni, nj, nk, tiles, t, deep, seam_g(:,:,:,:,g), kface_g(:,:,:,:,g), &
+            call tile_sweep(grid%blk(b), b, p, nc, ni, nj, nk, tiles, t, deep, seam_g(:,:,:,:,g), kface_g(:,:,:,:,g), &
                             fi, gj, hk, jlo, jhi, klo, khi)
           end select
         end do
@@ -313,11 +313,11 @@ contains
 
 
   !> The k-faces one tile shares with the next: its seam (deep) or its planes' k-faces (shallow).
-  subroutine tile_kfaces(blk, p, nc, ni, nj, nk, tile, t, deep, seam_a, kface_a)
+  subroutine tile_kfaces(blk, b, p, nc, ni, nj, nk, tile, t, deep, seam_a, kface_a)
     use ICE_Advanced_Types_m
     implicit none
     type(ICE_block_type), intent(inout) :: blk
-    integer(kind=I4),     intent(in)    :: p, nc, ni, nj, nk, t
+    integer(kind=I4),     intent(in)    :: b, p, nc, ni, nj, nk, t
     type(tile_type),      intent(in)    :: tile
     logical,              intent(in)    :: deep
     real(R8),             intent(inout) :: seam_a(:,:,:,:), kface_a(:,:,:,:)
@@ -327,25 +327,25 @@ contains
       if (k < nk) then
         do j = 1, nj
         do i = 1, ni
-          call face_flux(blk, p, nc, 3, i, j, k, seam_a(1:nc,i,j,t))
+          call face_flux(blk, b, p, nc, 3, i, j, k, seam_a(1:nc,i,j,t))
         enddo ; enddo
       end if
     else
       do k = tile%k1, min(tile%k2, nk-1)
       do j = tile%j1, tile%j2
       do i = 1, ni
-        call face_flux(blk, p, nc, 3, i, j, k, kface_a(1:nc,i,j,k))
+        call face_flux(blk, b, p, nc, 3, i, j, k, kface_a(1:nc,i,j,k))
       enddo ; enddo ; enddo
     end if
   end subroutine tile_kfaces
 
 
   !> The gathered fluxes of the cells of tile t: the sweep of compute_flux's last loop.
-  subroutine tile_sweep(blk, p, nc, ni, nj, nk, tiles, t, deep, seam, kface, fi, gj, hk, jlo, jhi, klo, khi)
+  subroutine tile_sweep(blk, b, p, nc, ni, nj, nk, tiles, t, deep, seam, kface, fi, gj, hk, jlo, jhi, klo, khi)
     use ICE_Advanced_Types_m
     implicit none
     type(ICE_block_type), intent(inout) :: blk
-    integer(kind=I4),     intent(in)    :: p, nc, ni, nj, nk, t
+    integer(kind=I4),     intent(in)    :: b, p, nc, ni, nj, nk, t
     type(tile_type),      intent(in)    :: tiles(:)
     logical,              intent(in)    :: deep
     real(R8),             intent(inout) :: seam(:,:,:,:), kface(:,:,:,:)
@@ -365,7 +365,7 @@ contains
         else
           do j = 1, nj
           do i = 1, ni
-            call face_flux(blk, p, nc, 3, i, j, k, hk(1:nc,i,j,khi))
+            call face_flux(blk, b, p, nc, 3, i, j, k, hk(1:nc,i,j,khi))
           enddo ; enddo
         end if
       end if
@@ -376,18 +376,18 @@ contains
         !> tile's first row and carried afterwards.
         if (j == tiles(t)%j1 .and. j > 1) then
           do i = 1, ni
-            call face_flux(blk, p, nc, 2, i, j-1, k, gj(1:nc,i,jlo))
+            call face_flux(blk, b, p, nc, 2, i, j-1, k, gj(1:nc,i,jlo))
           enddo
         end if
         if (j < nj) then
           do i = 1, ni
-            call face_flux(blk, p, nc, 2, i, j, k, gj(1:nc,i,jhi))
+            call face_flux(blk, b, p, nc, 2, i, j, k, gj(1:nc,i,jhi))
           enddo
         end if
 
         !> The i-faces of the line
         do i = 1, ni-1
-          call face_flux(blk, p, nc, 1, i, j, k, fi(1:nc,i))
+          call face_flux(blk, b, p, nc, 1, i, j, k, fi(1:nc,i))
         enddo
 
         !> The cells of the line, each direction in the odd-then-even face order
@@ -511,14 +511,15 @@ contains
   !> direction d, times the area: the arithmetic of the scatter form, unchanged.
   !> The i stencil is a contiguous slab of prim and goes in as it is; the j and k
   !> stencils are gathered into four columns first, which is the copy the
-  !> compiler made for the scatter form's strided sections.
-  subroutine face_flux(blk, p, nc, d, i, j, k, flux)
+  !> compiler made for the scatter form's strided sections. b, the number of the
+  !> block, only names the face (face 2d of the cell) in an error message.
+  subroutine face_flux(blk, b, p, nc, d, i, j, k, flux)
     use ICE_Advanced_Types_m
     use ICE_Global_m,       only: mat_of, solid_of
     use ICE_Config_Types_m, only: obj_condensed
     implicit none
     type(ICE_block_type), intent(in)  :: blk
-    integer(kind=I4),     intent(in)  :: p, nc, d, i, j, k
+    integer(kind=I4),     intent(in)  :: b, p, nc, d, i, j, k
     real(kind=R8),        intent(out) :: flux(nc)
     real(kind=R8) :: prim(nc,-1:2)
 
@@ -528,26 +529,29 @@ contains
                           [blk%dl(i-1,j,k)%c(1), blk%dl(i,j,k)%c(1),                           &
                            blk%dl(i+1,j,k)%c(1), blk%dl(i+2,j,k)%c(1)],                        &
                           blk%dir(1)%f(i,j,k)%N, blk%dir(1)%f(i,j,k)%A, flux, nc,              &
-                          blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p))
+                          blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p),  &
+                          [b, i, j, k, 2*d])
     case (2)
       prim(1:nc,-1:2) = blk%cond_phase(p)%prim(1:nc,i,j-1:j+2,k)
       call compute_flux_ (prim,                                                                &
                           [blk%dl(i,j-1,k)%c(2), blk%dl(i,j,k)%c(2),                           &
                            blk%dl(i,j+1,k)%c(2), blk%dl(i,j+2,k)%c(2)],                        &
                           blk%dir(2)%f(i,j,k)%N, blk%dir(2)%f(i,j,k)%A, flux, nc,              &
-                          blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p))
+                          blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p),  &
+                          [b, i, j, k, 2*d])
     case (3)
       prim(1:nc,-1:2) = blk%cond_phase(p)%prim(1:nc,i,j,k-1:k+2)
       call compute_flux_ (prim,                                                                &
                           [blk%dl(i,j,k-1)%c(3), blk%dl(i,j,k)%c(3),                           &
                            blk%dl(i,j,k+1)%c(3), blk%dl(i,j,k+2)%c(3)],                        &
                           blk%dir(3)%f(i,j,k)%N, blk%dir(3)%f(i,j,k)%A, flux, nc,              &
-                          blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p))
+                          blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p),  &
+                          [b, i, j, k, 2*d])
     end select
   end subroutine face_flux
 
 
-  subroutine compute_flux_ (prim, length, normal, area, flux, nvar, beta, mat, solid)
+  subroutine compute_flux_ (prim, length, normal, area, flux, nvar, beta, mat, solid, loc)
     use ICE_Lib_Riemann
     use ICE_Config_Types_m, only: condensed_phase_t
     implicit none
@@ -560,6 +564,7 @@ contains
     real(kind=R8),                         intent(in)    :: beta
     type(condensed_phase_t),               intent(in)    :: mat
     logical,                               intent(in)    :: solid
+    integer(kind=I4), dimension(5),        intent(in)    :: loc    ! block, cell i j k and face: for the error message
 
     real(kind=R8) :: dl0, dl1, dl2, dll, dlr
     real(kind=R8), dimension(size(prim(:,1))) :: prim_1, prim_4
@@ -571,7 +576,7 @@ contains
     dlr = 0.5d0 * length(1)
 
     call state_reconstruction (prim(:,-1), prim(:,0), prim(:,1), prim(:,2), &
-                               dl0, dl1, dl2, dll, dlr, prim_1, prim_4, beta, mat, solid)
+                               dl0, dl1, dl2, dll, dlr, prim_1, prim_4, beta, mat, solid, loc)
 
     flux = riemann (prim_1, prim_4, normal, mat)
     flux = flux * area
