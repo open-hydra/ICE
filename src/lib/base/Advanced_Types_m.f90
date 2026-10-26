@@ -23,6 +23,8 @@ module ICE_Advanced_Types_m
     integer  :: i, j, k, b, f                          ! Location in grid
     integer  :: type                                    ! BC type: ATLAS code (see ICE_IO_BC)
     integer  :: bs, is, js, ks, fs, d11, d12, d21, d22 ! Connection specs
+    integer  :: partner = 0                             ! Connection: record of the same face seen from the other block
+    logical  :: owner = .false.                         ! Connection: of the face's two records, the owner (Pair_Connections)
     integer               :: ni(2) = 0                 ! Chimera: donors per ghost layer
     integer,  allocatable :: donorID(:,:)               ! Chimera: (donor, [b i j k]), layer 1 then 2
     real(R8), allocatable :: volume_fraction(:)         ! Chimera: donor weights, sum to 1 per layer

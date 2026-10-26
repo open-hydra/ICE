@@ -318,12 +318,162 @@ contains
       error stop
     endif
 
+    call Pair_Connections(grid, level)
+
     if (mpi_is_root) then
       call Print_BC_Summary()
       call Check_Phase_Groups(ngroups)
     endif
 
   end subroutine Setup_BC
+
+
+  !> The two records of each connection face (101, 201) of a family, one per block, must
+  !  point at each other: each is the other's partner. One of them owns the face: the record
+  !  whose face is the high-index one of its cell (2, 4, 6) when the other's is a low-index
+  !  one, as on an interior face, whose flux takes the cell below; between faces of the same
+  !  parity (blocks that meet with their index directions permuted) the record with the
+  !  smaller (block, face, k, j, i), a key each record has of its own, so that the owner does
+  !  not depend on the order of the file. A record that points at a cell and face where no
+  !  connection record of its family stands, at its own cell and face, or at a record that
+  !  does not point back at it stops the setup. So does one whose block across has fewer than
+  !  gc cells across its face at this level: the ghost cells of the face are the first gc
+  !  cells of that block, and the second would be one of its ghost cells. The search goes
+  !  through a map, per block face, from the two indices of a cell along the face to its
+  !  record: one pass over the records, in any order.
+  subroutine Pair_Connections(grid, level)
+    use ICE_Global_m, only: ngroups, gc
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(I4),           intent(in)    :: level  !< Multigrid level, 1 = fine
+    type :: face_records_type
+      integer(I4), allocatable :: r(:,:)
+    end type face_records_type
+    type(face_records_type), allocatable :: rec(:,:)
+    integer(I4) :: p, n, q, b, f, t(2), nt(2), across
+    character(len=40)  :: at_level
+    character(len=200) :: msg
+
+    at_level = ''
+    if (level > 1) write(at_level,'(A,I0)') ' at multigrid level ', level
+
+    allocate(rec(grid%nb, 6))
+
+    do p = 1, ngroups
+
+      !> Map of the connection records of family p, per block face
+      do n = p, size(grid%bc), ngroups
+        if (grid%bc(n)%type /= 101 .and. grid%bc(n)%type /= 201) cycle
+        b = grid%bc(n)%b ; f = grid%bc(n)%f
+        if (.not. allocated(rec(b,f)%r)) then
+          nt = tangential(f, grid%blk(b)%dim(1), grid%blk(b)%dim(2), grid%blk(b)%dim(3))
+          allocate(rec(b,f)%r(nt(1), nt(2)))
+          rec(b,f)%r = 0
+        endif
+        t = tangential(f, grid%bc(n)%i, grid%bc(n)%j, grid%bc(n)%k)
+        rec(b,f)%r(t(1), t(2)) = n
+      enddo
+
+      !> Partner and owner of each
+      do n = p, size(grid%bc), ngroups
+        if (grid%bc(n)%type /= 101 .and. grid%bc(n)%type /= 201) cycle
+        b = grid%bc(n)%bs ; f = grid%bc(n)%fs
+        q = 0
+        if (b >= 1 .and. b <= grid%nb .and. f >= 1 .and. f <= 6) then
+          if (allocated(rec(b,f)%r)) then
+            t = tangential(f, grid%bc(n)%is, grid%bc(n)%js, grid%bc(n)%ks)
+            if (all(t >= 1) .and. all(t <= shape(rec(b,f)%r))) q = rec(b,f)%r(t(1), t(2))
+          endif
+        endif
+        if (q /= 0) then
+          if (grid%bc(q)%i /= grid%bc(n)%is .or. grid%bc(q)%j /= grid%bc(n)%js .or. &
+              grid%bc(q)%k /= grid%bc(n)%ks) q = 0
+        endif
+        if (q == 0) then
+          call pair_error(n, 'points at '//trim(cell_face(grid%bc(n)%bs, grid%bc(n)%is, grid%bc(n)%js, &
+            grid%bc(n)%ks, grid%bc(n)%fs))//', where no connection record of its family stands')
+        endif
+        if (q == n) call pair_error(n, 'points at its own cell and face')
+        if (grid%bc(q)%type /= grid%bc(n)%type .or. &
+            grid%bc(q)%bs /= grid%bc(n)%b .or. grid%bc(q)%fs /= grid%bc(n)%f .or. grid%bc(q)%is /= grid%bc(n)%i .or. &
+            grid%bc(q)%js /= grid%bc(n)%j .or. grid%bc(q)%ks /= grid%bc(n)%k) then
+          write(msg,'(A,I0,A)') ', whose record (code ', grid%bc(q)%type, ') points at '
+          call pair_error(n, 'points at '//trim(cell_face(b, grid%bc(q)%i, grid%bc(q)%j, grid%bc(q)%k, f))// &
+            trim(msg)//' '//trim(cell_face(grid%bc(q)%bs, grid%bc(q)%is, grid%bc(q)%js, grid%bc(q)%ks, &
+            grid%bc(q)%fs))//': the two records of a face must have one code and point at each other')
+        endif
+        across = grid%blk(b)%dim((f+1)/2)
+        if (across < gc) then
+          write(msg,'(A,I0,A,I0,A,I0,A,I0,A)') 'has across it block ', b, ', with ', across, ' cell across its face ', f, &
+            trim(at_level)//', fewer than the ', gc, ' a connection needs'
+          call pair_error(n, trim(msg))
+        endif
+
+        grid%bc(n)%partner = q
+        if (mod(grid%bc(n)%f, 2) == 0 .and. mod(grid%bc(q)%f, 2) == 1) then
+          grid%bc(n)%owner = .true.
+        elseif (mod(grid%bc(n)%f, 2) == 1 .and. mod(grid%bc(q)%f, 2) == 0) then
+          grid%bc(n)%owner = .false.
+        else
+          grid%bc(n)%owner = key_less([grid%bc(n)%b, grid%bc(n)%f, grid%bc(n)%k, grid%bc(n)%j, grid%bc(n)%i], &
+                                      [grid%bc(q)%b, grid%bc(q)%f, grid%bc(q)%k, grid%bc(q)%j, grid%bc(q)%i])
+        endif
+      enddo
+
+      do b = 1, grid%nb
+        do f = 1, 6
+          if (allocated(rec(b,f)%r)) deallocate(rec(b,f)%r)
+        enddo
+      enddo
+    enddo
+
+  contains
+
+    !> The two indices of a cell (or the two dimensions of a block) along face f
+    pure function tangential(f, i, j, k) result(t)
+      integer(I4), intent(in) :: f, i, j, k
+      integer(I4) :: t(2)
+      select case (f)
+        case (1:2)    ; t = [j, k]
+        case (3:4)    ; t = [i, k]
+        case default  ; t = [i, j]
+      end select
+    end function tangential
+
+    !> Whether key1 comes before key2, comparing (block, face, k, j, i) in that order
+    pure logical function key_less(key1, key2)
+      integer(I4), intent(in) :: key1(5), key2(5)
+      integer(I4) :: m
+      key_less = .false.
+      do m = 1, 5
+        if (key1(m) /= key2(m)) then
+          key_less = key1(m) < key2(m)
+          return
+        endif
+      enddo
+    end function key_less
+
+    !> "block b, cell i j k, face f"
+    function cell_face(b, i, j, k, f) result(s)
+      integer(I4), intent(in) :: b, i, j, k, f
+      character(len=80) :: s
+      write(s,'(A,I0,A,3(1X,I0),A,I0)') 'block ', b, ', cell', i, j, k, ', face ', f
+    end function cell_face
+
+    !> Stop on the connection record n of this level: why says what is wrong with it
+    subroutine pair_error(n, why)
+      integer(I4),      intent(in) :: n
+      character(len=*), intent(in) :: why
+      character(len=24) :: family
+      family = ''
+      if (ngroups > 1) write(family,'(A,I0)') ', family ', grid%bc(n)%p
+      write(*,'(A,I0,A)') '  [ICE::Setup_BC] '//trim(bc_filename(level))//': the connection record of '// &
+        trim(cell_face(grid%bc(n)%b, grid%bc(n)%i, grid%bc(n)%j, grid%bc(n)%k, grid%bc(n)%f))//trim(family)// &
+        ' (code ', grid%bc(n)%type, ') '//why
+      error stop 1
+    end subroutine pair_error
+
+  end subroutine Pair_Connections
 
 
   !> How many records does the BC file hold? Walk the payload with the same rules as
