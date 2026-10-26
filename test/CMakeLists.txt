@@ -253,6 +253,22 @@ if (ICE_RACE_PROBE)
     ice_add_equiv3d(Equiv3DGroupsRace groups "ICE_EQ_PROBE=1" "race;implementation;3D;openmp")
 endif()
 
+# The threads and groups legs with the shock detector on, which no other test runs on
+# more than one thread: compute_beta computes its weights over the flux kernel's tiles
+# (by group with thread groups) after the ghost fill, and the boundary fluxes read them.
+# Every run's banner must report the detector, or the leg FAILs (RED, both legs, with
+# ICE_EQ_EXTRA not forwarded to make_case.py, where both passed without the check).
+# Measured RED, both legs: 3 of 3 runs on a variant that computes the weights of the
+# last tile of every block after the boundary fluxes (4608 cells differ at every thread
+# count), 10 of 10 on one that lets the boundary loop start while the weight pass still
+# runs (no barrier between them, tile 1 of every block delayed 2 ms); GREEN 11 of 11 on
+# the real code. They compare thread counts: a weight equally stale on every thread
+# count passes them.
+ice_add_equiv3d(Equiv3DThreadsSD threads "ICE_EQ_EXTRA='--shock-detector Jameson'"
+    "fast;implementation;3D;openmp")
+ice_add_equiv3d(Equiv3DGroupsSD groups "ICE_EQ_EXTRA='--shock-detector Jameson'"
+    "fast;implementation;3D;openmp")
+
 # Each family alone against the three together: the ghost fill and the halo
 # must carry every family.
 ice_add_equiv3d(FamilyHalo3D family "" "fast;implementation;3D;multifamily")

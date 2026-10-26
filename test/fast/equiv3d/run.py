@@ -54,6 +54,7 @@ compares the raw-binary VTK payload byte for byte.
 Every leg first checks the banner: a serial binary reports no thread count, and
 `OMP_NUM_THREADS` is then ignored, so the run would compare a file with itself.
 Such a build is a SKIP (exit 77), never a PASS.
+A `--shock-detector X` (not none) in ICE_EQ_EXTRA must show in every run's banner, or the leg FAILs.
 """
 import glob
 import os
@@ -85,7 +86,7 @@ def say(ok, what, yes, no):
 
 
 def run(case, threads, ranks, extra_env=None):
-    """Run ICE in case; returns the log text. Raises on a non-zero exit."""
+    """Run ICE in case; returns the log text. Raises on a non-zero exit or a missing detector banner."""
     env = dict(os.environ, OMP_NUM_THREADS=str(threads), KMP_STACKSIZE='100M', OMP_STACKSIZE='100M')
     env.update(extra_env or {})
     cmd = [str(ICE_BIN)] if ranks == 1 else [MPIRUN, '-np', str(ranks), str(ICE_BIN)]
@@ -95,6 +96,7 @@ def run(case, threads, ranks, extra_env=None):
     if rc != 0:
         print(log[-2000:])
         raise SystemExit('[equiv3d] ICE failed (exit %d) in %s' % (rc, case))
+    assert_detector(log, case)
     return log
 
 
@@ -114,6 +116,15 @@ def assert_build(log, threads, ranks):
             sys.exit(SKIP)
         if int(m.group(1)) != ranks:
             raise SystemExit('[equiv3d] FAIL: asked for %d ranks, the banner says %s' % (ranks, m.group(1)))
+
+
+def assert_detector(log, case):
+    """The shock detector ICE_EQ_EXTRA asks for must be in the run's banner: FAIL otherwise."""
+    args = ' '.join(EXTRA).replace('--shock-detector=', '--shock-detector ').split()
+    sd = args[args.index('--shock-detector') + 1] if '--shock-detector' in args[:-1] else 'none'
+    if sd != 'none' and not re.search(r'Shock\s+-->\s+%s detector' % re.escape(sd), log):
+        raise SystemExit("[equiv3d] FAIL: ICE_EQ_EXTRA asks for the %s shock detector, but the log of %s "
+                         "has no ' - Shock   --> %s detector' line" % (sd, case, sd))
 
 
 # --- raw-appended VTK -------------------------------------------------------

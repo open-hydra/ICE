@@ -37,7 +37,8 @@ threads as well as many small ones. Two details shape the scaling:
   there are two worksharing loops (the faces on the tile seams, the sweep) where the
   scatter form had a pass per parity per direction. The shock-detector weights are a
   pass of their own over the same tiles (`compute_beta`), after the ghost fill and
-  before the boundary fluxes, which read them too.
+  before the boundary fluxes, which read them too (`Equiv3DThreadsSD`, `Equiv3DGroupsSD`:
+  the threads and groups legs with the detector on).
 - The boundary flux loop is `SCHEDULE(DYNAMIC, 16)` over the rank's boundary cells of
   the family, each cell accumulating its records in face order on one thread — a
   block corner in 3-D carries three — so 2-D and 3-D runs are bit-identical across
