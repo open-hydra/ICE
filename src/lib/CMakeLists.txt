@@ -35,4 +35,13 @@ ENDIF()
 IF(USE_MPI)
     target_compile_definitions(ICEL PUBLIC USE_MPI)
     target_link_libraries(ICEL PUBLIC MPI::MPI_Fortran)
+    # An mpi module made for a compiler that cannot ignore the type of a choice buffer declares no
+    # interface for the routines that take one (MPI 4.1, Section 19.1.3), as the gfortran modules of
+    # Intel MPI do: gfortran >= 10 then stops on calls of one such routine with buffers of different
+    # types or ranks in one file. Mod_MPI.f90 makes such calls (MPI_BCAST of a LOGICAL and of an
+    # INTEGER, MPI_ALLREDUCE of a scalar and of an array); -fallow-argument-mismatch turns those errors
+    # into warnings for that file only, and the other files keep the full check.
+    IF(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU" AND CMAKE_Fortran_COMPILER_VERSION VERSION_GREATER_EQUAL 10)
+        set_source_files_properties(parallel/Mod_MPI.f90 PROPERTIES COMPILE_OPTIONS -fallow-argument-mismatch)
+    ENDIF()
 ENDIF(USE_MPI)

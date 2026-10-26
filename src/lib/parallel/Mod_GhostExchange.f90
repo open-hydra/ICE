@@ -46,6 +46,7 @@ module ICE_Mod_GhostExchange
     type(rank_group_type), allocatable :: send_groups(:), recv_groups(:)
     real(R8), allocatable :: send_buf(:), recv_buf(:)
     integer,  allocatable :: send_req(:), recv_req(:)  !< Persistent requests
+    integer,  allocatable :: stats(:,:)                !< Statuses of their waits (no MPI_STATUSES_IGNORE)
     logical :: persistent_init = .false.
     logical :: built = .false.
   end type ghost_schedule_type
@@ -370,8 +371,8 @@ contains
 
         call init_persistent_requests()
 
-        ns = ghost_sched%n_send
-        call MPI_ALLREDUCE(MPI_IN_PLACE, ns, 1, MPI_INTEGER, MPI_SUM, ice_comm, ierr)
+        call MPI_ALLREDUCE(ghost_sched%n_send, ns, 1, MPI_INTEGER, MPI_SUM, ice_comm, ierr)
+        call check_mpi_error(ierr)
         ns_total = ns_total + ns
 
         deallocate(send_per_rank, recv_per_rank, expect, send_pos, recv_pos)
@@ -379,11 +380,14 @@ contains
       ghost_sched%built = .true.
     end do
     ! The sum over the families: what a set-up fill exchanges; a stage of
-    ! family p exchanges p's share of it.
+    ! family p exchanges p's share of it. Sent from a copy: no MPI_IN_PLACE
+    ! (see mpi_allreduce_sum_r8_array).
     block
       use mpi
-      integer :: ierr
-      call MPI_ALLREDUCE(MPI_IN_PLACE, ndup, 1, MPI_INTEGER, MPI_SUM, ice_comm, ierr)
+      integer :: ierr, ndup_rank
+      ndup_rank = ndup
+      call MPI_ALLREDUCE(ndup_rank, ndup, 1, MPI_INTEGER, MPI_SUM, ice_comm, ierr)
+      call check_mpi_error(ierr)
     end block
     if (mpi_is_root) then
       write(*,'(A,I0,A)') '  MPI halo: ', ns_total, ' cells exchanged per ghost fill'
@@ -559,7 +563,7 @@ contains
 
       call timer_region_begin(TR_WAIT)
       if (ghost_sched%n_recv_ranks > 0) then
-        call MPI_WAITALL(ghost_sched%n_recv_ranks, ghost_sched%recv_req, MPI_STATUSES_IGNORE, ierr)
+        call MPI_WAITALL(ghost_sched%n_recv_ranks, ghost_sched%recv_req, ghost_sched%stats, ierr)
         call check_mpi_error(ierr)
       end if
       call timer_region_end(TR_WAIT)
@@ -579,7 +583,7 @@ contains
 
       call timer_region_begin(TR_WAIT)
       if (ghost_sched%n_send_ranks > 0) then
-        call MPI_WAITALL(ghost_sched%n_send_ranks, ghost_sched%send_req, MPI_STATUSES_IGNORE, ierr)
+        call MPI_WAITALL(ghost_sched%n_send_ranks, ghost_sched%send_req, ghost_sched%stats, ierr)
         call check_mpi_error(ierr)
       end if
       call timer_region_end(TR_WAIT)
@@ -972,7 +976,11 @@ contains
 
 
 #ifdef USE_MPI
-  !> Initialize one persistent receive and one persistent send per neighbour rank.
+  !> Initialize one persistent receive and one persistent send per neighbour rank,
+  !> and the statuses their waits fill. MPI_STATUSES_IGNORE, like MPI_IN_PLACE,
+  !> lives in a COMMON block of the mpi module, which -fno-underscoring renames
+  !> (see mpi_allreduce_sum_r8_array): the library would write the statuses
+  !> through an ordinary address.
   subroutine init_persistent_requests()
     use mpi
     implicit none
@@ -980,6 +988,7 @@ contains
 
     allocate(ghost_sched%recv_req(max(ghost_sched%n_recv_ranks, 1)))
     allocate(ghost_sched%send_req(max(ghost_sched%n_send_ranks, 1)))
+    allocate(ghost_sched%stats(MPI_STATUS_SIZE, max(ghost_sched%n_recv_ranks, ghost_sched%n_send_ranks, 1)))
 
     do r = 1, ghost_sched%n_recv_ranks
       associate (g => ghost_sched%recv_groups(r))
