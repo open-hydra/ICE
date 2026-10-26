@@ -57,7 +57,6 @@ contains
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_positive_inf
     use ICE_Global_m
     use ICE_Advanced_Types_m
-    use ICE_Config_Types_m, only: obj_irs
     use ICE_Mod_ThreadGroups, only: block_group
     implicit none
     type(ICE_block_type), intent(inout) :: blk
@@ -103,12 +102,6 @@ contains
       !$OMP END PARALLEL DO
       end if
 
-      if (obj_irs%enabled) then
-        allocate( blk%cond_phase(p)%RS1 (1:ncond(p), 0:ni+1, 0:nj+1, 0:nk+1) )
-        allocate( blk%cond_phase(p)%RS2 (1:ncond(p), 0:ni+1, 0:nj+1, 0:nk+1) )
-        blk%cond_phase(p)%RS1 = 0._R8
-        blk%cond_phase(p)%RS2 = 0._R8
-      end if
       if (g < 0) then
       !$OMP PARALLEL DO SCHEDULE(STATIC)
       do k = 1, nk
