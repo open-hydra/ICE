@@ -22,7 +22,7 @@ Expanding the last row recovers the familiar Shu-Osher form
 $\mathbf{U}^{(2)} = \tfrac34\mathbf{U}^n + \tfrac14(\mathbf{U}^{(1)} + \Delta t \mathcal R^{(1)})$,
 $\mathbf{U}^{n+1} = \tfrac13\mathbf{U}^n + \tfrac23(\mathbf{U}^{(2)} + \Delta t \mathcal R^{(2)})$.
 
-Every stage is a full pass: sources, ghost fill (including the MPI halo exchange), boundary fluxes, interior fluxes, residual, optional smoothing, update. The stage update is done in conservative variables — the primitives are converted in, integrated, and converted back — and the converted-back state is checked for positivity.
+Every stage is a full pass: sources, ghost fill (including the MPI halo exchange), shock-detector weights, boundary fluxes, interior fluxes, residual, optional smoothing, update. The stage update is done in conservative variables — the primitives are converted in, integrated, and converted back — and the converted-back state is checked for positivity.
 
 The measured orders of these schemes on a problem with an exact solution are in [Code Verification](../vv/verification.md).
 

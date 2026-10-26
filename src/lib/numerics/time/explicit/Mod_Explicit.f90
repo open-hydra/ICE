@@ -114,7 +114,17 @@ contains
         call timer_region_begin(TR_GHOST2)
         call fill_second_ghost(grid, p)
         call timer_region_end(TR_GHOST2)
+        call timer_halo_end()
 
+        !> The shock-detector weights of this stage, before any face reads them: the
+        !  boundary fluxes as well as the interior ones. Timed as flux.
+        call timer_flux_begin()
+        call timer_region_begin(TR_FLUX)
+        call compute_beta(grid, p)
+        call timer_region_end(TR_FLUX)
+        call timer_flux_end()
+
+        call timer_halo_begin()
         call timer_region_begin(TR_BOUND)
         call compute_bound(grid, p)
         call timer_region_end(TR_BOUND)

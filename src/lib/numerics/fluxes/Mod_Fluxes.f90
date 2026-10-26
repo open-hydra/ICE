@@ -10,7 +10,7 @@ module ICE_Mod_Fluxes
 
   implicit none
   private
-  public :: compute_flux, state_reconstruction, bad_recon
+  public :: compute_beta, compute_flux, state_reconstruction, bad_recon
 
   !> The tile of one thread: the cells (i = 1..ni, j = j1..j2, k = k1..k2) of a block.
   !> Deep tiling cuts ranges of whole k-planes and keeps the k-faces below and above
@@ -61,18 +61,103 @@ module ICE_Mod_Fluxes
 
 contains
 
+  !> The shock-detector weight of every cell of family p, from the state and the ghosts
+  !> of this stage: called after the ghost fill and before the boundary fluxes, which read
+  !> it as the interior faces do -- each face the weight of a cell next to it, which may
+  !> belong to another tile. The tiles are the flux kernel's; the blocks are independent,
+  !> so the only barrier is the end of the region.
+  subroutine compute_beta(grid, p)
+    use ICE_Global_m
+    use ICE_Advanced_Types_m
+    !$ use omp_lib, only: omp_get_max_threads
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4), intent(in)  :: p
+    integer(kind=I4) :: b, t, nthreads, ni, nj, nk, nc
+    logical          :: deep
+    type(tile_type), allocatable :: tiles(:)
+
+    if (n_tgroups > 1) then
+      call compute_beta_grouped(grid, p)
+      return
+    end if
+
+    nc = ncond(p)
+    nthreads = 1
+    !$ nthreads = omp_get_max_threads()
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b, t, ni, nj, nk, deep, tiles)
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      ni = grid%blk(b)%dim(1) ; nj = grid%blk(b)%dim(2) ; nk = grid%blk(b)%dim(3)
+      call make_tiles(ni, nj, nk, nc, nthreads, tiles, deep)
+      !> NOWAIT: a weight reads prim only, never another weight; the end of the region is the barrier before any face reads it.
+      !$OMP DO SCHEDULE (DYNAMIC, 1)
+      do t = 1, size(tiles)
+        call tile_beta(grid%blk(b), p, ni, tiles(t))
+      enddo
+      !$OMP END DO NOWAIT
+      deallocate(tiles)
+    enddo
+    !$OMP END PARALLEL
+
+  end subroutine compute_beta
+
+
+  !> compute_beta with thread groups: the threads of each group take the tiles of their
+  !> group's blocks (cut for the group's size) one at a time, from one counter per block.
+  subroutine compute_beta_grouped(grid, p)
+    use ICE_Global_m
+    use ICE_Advanced_Types_m
+    !$ use omp_lib, only: omp_get_thread_num
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4), intent(in)  :: p
+    integer(kind=I4) :: b, n, t, ni, nj, nk, nc, g, m, s, tid
+    logical          :: deep
+    type(tile_type), allocatable :: tiles(:)
+    integer(kind=I4), allocatable :: cnt(:)
+
+    nc = ncond(p)
+    allocate(cnt(size(tg_blocks)))
+    cnt = 0
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b, n, t, ni, nj, nk, deep, tiles, g, m, s, tid)
+    tid = 0
+    !$ tid = omp_get_thread_num()
+    call thread_group(tid, g, m, s)
+    !> No barrier: a weight reads prim only, never another weight; the end of the region is the barrier before any face reads it.
+    do n = tg_first(g), tg_first(g+1) - 1
+      b = tg_blocks(n)
+      ni = grid%blk(b)%dim(1) ; nj = grid%blk(b)%dim(2) ; nk = grid%blk(b)%dim(3)
+      call make_tiles(ni, nj, nk, nc, s, tiles, deep)
+      do
+        !$OMP ATOMIC CAPTURE
+        t = cnt(n)
+        cnt(n) = cnt(n) + 1
+        !$OMP END ATOMIC
+        t = t + 1
+        if (t > size(tiles)) exit
+        call tile_beta(grid%blk(b), p, ni, tiles(t))
+      end do
+      deallocate(tiles)
+    end do
+    !$OMP END PARALLEL
+    deallocate(cnt)
+
+  end subroutine compute_beta_grouped
+
+
   !> The interior fluxes of family p, gathered by cell. Every face flux is computed
   !> once by the thread that owns the cell below it (the lower i, j or k) and kept in
   !> that thread's line, row or plane buffer; each cell then receives the two faces
   !> of each direction in the order the odd-then-even face passes of the scatter form
   !> gave them -- an odd cell its own face first, then the one below; an even cell the
   !> one below first -- so the residual is bit for bit what those passes produced,
-  !> without their six barriers and the strided copies of the j and k stencils.
+  !> without their six barriers and the strided copies of the j and k stencils. The
+  !> shock-detector weights are compute_beta's, of this stage.
   subroutine compute_flux (grid, p)
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m,     only: obj_space_scheme, obj_condensed
-    use ICE_Lib_Shock_Detector, only: SD_rho
     !$ use omp_lib,             only: omp_get_max_threads
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
@@ -126,14 +211,6 @@ contains
       call make_tiles(ni, nj, nk, nc, nthreads, tiles, deep)
       nt = size(tiles)
 
-      !> The shock-detector weight of every cell, before any face reads it: a face
-      !> takes the weight of the cell below it, which may belong to another tile.
-      !$OMP DO SCHEDULE (DYNAMIC, 1)
-      do t = 1, nt
-        call tile_beta(grid%blk(b), p, ni, tiles(t))
-      enddo
-      !$OMP END DO
-
       !> The k-faces shared between tiles, once, by the owner of the cell below
       !> each: the top faces of every tile's last plane (deep block), or every
       !> k-face of the block (shallow block).
@@ -167,7 +244,7 @@ contains
   !> compute_flux with thread groups: the blocks in rounds -- round r sweeps the r-th
   !> block of every group at once, each group with its own threads, its own tiles
   !> (cut for the group's size) and its own shared planes -- so the barriers between
-  !> the three phases stay barriers of the whole team, one set per round instead of
+  !> the two phases stay barriers of the whole team, one set per round instead of
   !> one per block. Inside a group the tiles are taken dynamically, one at a time.
   subroutine compute_flux_grouped(grid, p)
     use ICE_Global_m
@@ -204,7 +281,7 @@ contains
     if (allocated(tiles0)) deallocate(tiles0)
     call grow5(seam_g, n1, n2, n3, n4, n_tgroups)
     call grow5(kface_g, n1, n2, n3, n4, n_tgroups)
-    allocate(cnt(0:n_tgroups-1, 3))
+    allocate(cnt(0:n_tgroups-1, 2))
 
 #ifdef ICE_RACE_PROBE
     !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b, t, nt, ni, nj, nk, deep, tiles, g, m, s, r, tid, ph, &
@@ -234,8 +311,8 @@ contains
 #endif
       if (m == 0) cnt(g,:) = 0
       !$OMP BARRIER
-      do ph = 1, 3
-        if (ph == 2 .and. .not. (deep .or. nk > 1)) then
+      do ph = 1, 2
+        if (ph == 1 .and. .not. (deep .or. nk > 1)) then
           !$OMP BARRIER
           cycle
         end if
@@ -248,13 +325,11 @@ contains
           if (t > nt) exit
           select case (ph)
           case (1)
-            call tile_beta(grid%blk(b), p, ni, tiles(t))
-          case (2)
 #ifdef ICE_RACE_PROBE
             if (t == 1) rc = c_usleep(probe_sleep_us)
 #endif
             call tile_kfaces(grid%blk(b), b, p, nc, ni, nj, nk, tiles(t), t, deep, seam_g(:,:,:,:,g), kface_g(:,:,:,:,g))
-          case (3)
+          case (2)
             call tile_sweep(grid%blk(b), b, p, nc, ni, nj, nk, tiles, t, deep, seam_g(:,:,:,:,g), kface_g(:,:,:,:,g), &
                             fi, gj, hk, jlo, jhi, klo, khi)
           end select
