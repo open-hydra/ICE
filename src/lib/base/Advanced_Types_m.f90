@@ -68,6 +68,7 @@ module ICE_Advanced_Types_m
     integer  :: p                                       ! Particle group index
     real(R8) :: massflux, velocity, temperature
     real(R8) :: alpha, beta, radius
+    logical  :: normal_dir = .false.                    ! Inlet direction `normal`: the inward face normal
     type(time_series_type) :: BCtime
   end type ICE_bc_type
 

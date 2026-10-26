@@ -77,6 +77,7 @@ contains
     integer(I4) :: cs(9)
     real(R8)    :: massflux, velocity, temperature, radius, alpha, beta
     character(len=32) :: alpha_tok, beta_tok
+    logical     :: normal_dir
     integer(I4) :: nchi(2), s, nzero_chim
     integer(I4), allocatable :: donorID(:,:)
     real(R8), allocatable :: weight(:)
@@ -253,11 +254,11 @@ contains
               !  [ sigmap, distribution law, per-cell ds ] follow and are IGLOO-only.
               nio = nio + 1
               massflux = EMPTY ; velocity = EMPTY ; temperature = EMPTY ; radius = EMPTY
-              alpha_tok = ' ' ; beta_tok = ' '
+              alpha_tok = ' ' ; beta_tok = ' ' ; normal_dir = .false.
               call next_line(unitfile, line, ios, nline)
               if (ios == 0) read(line,*,iostat=ios) massflux, velocity, alpha_tok, beta_tok, temperature, radius
               if (ios == 0) call check_inlet(level, nline, nrec, code, massflux, velocity, alpha_tok, beta_tok, &
-                                             temperature, radius, alpha, beta)
+                                             temperature, radius, alpha, beta, normal_dir)
 
             case (0)
               continue
@@ -290,6 +291,7 @@ contains
             bc(idx)%velocity    = velocity
             bc(idx)%alpha       = alpha
             bc(idx)%beta        = beta
+            bc(idx)%normal_dir  = normal_dir
             bc(idx)%temperature = temperature
             bc(idx)%radius      = radius
             if (code == 101 .or. code == 201) then
@@ -570,9 +572,9 @@ contains
   end subroutine Check_Phase_Groups
 
   !> Direction token. ATLAS writes the literal `normal` when the injection direction is the
-  !  face normal. ICE's convention for that is alpha = beta = 0, which Lib_Ghost detects and
-  !  replaces with the actual face-normal angles -- so `normal` maps to 0, NOT to MOSE's
-  !  huge() sentinel. A token that is neither `normal` nor a number gives ios /= 0.
+  !  face normal: it maps to 0 here, and check_inlet sets the record's normal_dir flag, which
+  !  Lib_Ghost reads (numbers are angles, 0 and 0 included). A token that is neither `normal`
+  !  nor a number gives ios /= 0.
   pure subroutine Parse_Dir_Token(tok, val, ios)
     implicit none
     character(len=*), intent(in)  :: tok
@@ -595,12 +597,13 @@ contains
   !  radius cubed (Lib_Ghost), so both must be non-zero there and the radius positive; with
   !  none the inlet is a symmetry and neither is used.
   subroutine check_inlet(level, nline, nrec, code, massflux, velocity, alpha_tok, beta_tok, temperature, radius, &
-                         alpha, beta)
+                         alpha, beta, normal_dir)
     implicit none
     integer(I4),      intent(in)  :: level, nline, nrec, code
     real(R8),         intent(in)  :: massflux, velocity, temperature, radius
     character(len=*), intent(in)  :: alpha_tok, beta_tok
     real(R8),         intent(out) :: alpha, beta
+    logical,          intent(out) :: normal_dir
     integer(I4) :: ios
 
     call need_reals(level, nline, nrec, code, [massflux, velocity, temperature, radius], &
@@ -614,6 +617,11 @@ contains
     if (ios /= 0) call field_error(level, nline, nrec, code, &
       "beta is neither a number nor normal: '"//trim(adjustl(beta_tok))//"'")
     call need_reals(level, nline, nrec, code, [alpha, beta], [character(len=5) :: 'alpha', 'beta'])
+    !> The face normal fixes both angles: `normal` for one and a number for the other says nothing
+    normal_dir = (trim(adjustl(alpha_tok)) == 'normal')
+    if (normal_dir .neqv. (trim(adjustl(beta_tok)) == 'normal')) call field_error(level, nline, nrec, code, &
+      "alpha and beta are both normal or both numbers: '"//trim(adjustl(alpha_tok))//"', '"// &
+      trim(adjustl(beta_tok))//"'")
     if (massflux /= 0._R8) then
       if (velocity == 0._R8) call field_error(level, nline, nrec, code, &
         'the velocity is 0 with a mass flux: the injected density would be infinite')

@@ -198,6 +198,10 @@ ice_add_fast_script(Refusals fast/refusals "fast;implementation;refusal")
 # 1 and 2^-16, a cloud at rest whose first residual is zero, a run in which nothing moves
 ice_add_fast_script(ResThreshold fast/res-threshold "fast;implementation")
 
+# An inlet on a face whose normal points out of the domain injects into it: `normal` along the
+# inward normal, a 401's speed signed by the gas entering, one `normal` with one number refused
+ice_add_fast_script(InletDirection fast/inlet-direction "fast;implementation;bc")
+
 # The 3-D gates: a generated 24x16x12 box in 3x2x2 blocks with an MK, an IG and
 # an AG family, compared on the raw-binary VTK payload (test/fast/equiv3d/run.py).
 # The binary under test is this build's own, so a serial build is reported as a

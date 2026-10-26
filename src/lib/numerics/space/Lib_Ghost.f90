@@ -84,7 +84,7 @@ contains
     integer(kind=I4) :: ig, jg, kg
     integer(kind=I4) :: bs, is, js, ks, fs
     integer(kind=I4) :: ic, jc, kc, ph
-    real(kind=R8)    :: area, normal(1:3), velocity(1:3), veln
+    real(kind=R8)    :: area, normal(1:3), velocity(1:3), veln, inward(1:3)
 
 
       !> Preliminary assignments
@@ -182,19 +182,14 @@ contains
 
             prim(1:ncond(pm),ig,jg,kg) = 0._R8
 
-            if ( ( grid%bc(i)%alpha == 0d0 ) .and. ( grid%bc(i)%beta == 0d0 ) ) then
-              grid%bc(i)%alpha = atan2(normal(2),normal(1)+1d-20)
-              grid%bc(i)%beta  = atan2(normal(3),normal(1)+1d-20)
-              if (abs(normal(3)) < 1d-10) grid%bc(i)%beta = 0.d0
-            endif
+            !> The face normal into the domain: N points to growing i, j or k, out of faces 2, 4 and 6
+            inward = real(2*mod(fm,2)-1, R8) * normal
 
-            !> Assigned gaseous carrier phase
+            !> Assigned gaseous carrier phase: the speed is a ratio of the gas velocity into the domain
             if (grid%bc(i)%type == 401) then
-              veln = dot_product(grid%blk(bm)%gas_phase%prim(2:4,im,jm,km),normal)
+              veln = dot_product(grid%blk(bm)%gas_phase%prim(2:4,im,jm,km),inward)
               !> Velocity
-              prim(2,ig,jg,kg) = grid%bc(i)%velocity * veln * cos(grid%bc(i)%beta) * cos(grid%bc(i)%alpha)
-              prim(3,ig,jg,kg) = grid%bc(i)%velocity * veln * cos(grid%bc(i)%beta) * sin(grid%bc(i)%alpha)
-              prim(4,ig,jg,kg) = grid%bc(i)%velocity * veln * sin(grid%bc(i)%beta)
+              prim(2:4,ig,jg,kg) = injected_velocity(grid%bc(i)%velocity * veln, grid%bc(i), inward)
               !> Density
               prim(1,ig,jg,kg) = grid%bc(i)%massflux/(1._R8-grid%bc(i)%massflux) * grid%blk(bm)%gas_phase%prim(1,im,jm,km) / grid%bc(i)%velocity
               !> Temperature
@@ -203,9 +198,7 @@ contains
             !> Direct assignement of massflux, velocity, and temperature.
             elseif (grid%bc(i)%type == 402) then
               !> Velocity
-              prim(2,ig,jg,kg) = grid%bc(i)%velocity * cos(grid%bc(i)%beta) * cos(grid%bc(i)%alpha)
-              prim(3,ig,jg,kg) = grid%bc(i)%velocity * cos(grid%bc(i)%beta) * sin(grid%bc(i)%alpha)
-              prim(4,ig,jg,kg) = grid%bc(i)%velocity * sin(grid%bc(i)%beta)
+              prim(2:4,ig,jg,kg) = injected_velocity(grid%bc(i)%velocity, grid%bc(i), inward)
               !> Density
               veln = dot_product(prim(2:4,ig,jg,kg),normal)
               prim(1,ig,jg,kg) = grid%bc(i)%massflux / abs(veln)
@@ -216,9 +209,7 @@ contains
             elseif (grid%bc(i)%type == 403) then
               !> Velocity
               veln = norm2(grid%blk(bm)%gas_phase%prim(2:4,im,jm,km))
-              prim(2,ig,jg,kg) = grid%bc(i)%velocity * veln * cos(grid%bc(i)%beta) * cos(grid%bc(i)%alpha)
-              prim(3,ig,jg,kg) = grid%bc(i)%velocity * veln * cos(grid%bc(i)%beta) * sin(grid%bc(i)%alpha)
-              prim(4,ig,jg,kg) = grid%bc(i)%velocity * veln * sin(grid%bc(i)%beta)
+              prim(2:4,ig,jg,kg) = injected_velocity(grid%bc(i)%velocity * veln, grid%bc(i), inward)
               !> Density
               veln = dot_product(prim(2:4,ig,jg,kg),normal)
               prim(1,ig,jg,kg) = grid%bc(i)%massflux / abs(veln)
@@ -411,6 +402,25 @@ contains
     end select
 
   end function ghost_rule
+
+
+  !> The velocity of particles injected at `speed`: along the inward face normal for a direction given as
+  !> `normal`, else along the angles, alpha in the x-y plane from x and beta out of it.
+  pure function injected_velocity(speed, bc, inward) result(v)
+    implicit none
+    real(kind=R8),     intent(in) :: speed, inward(1:3)
+    type(ICE_bc_type), intent(in) :: bc
+    real(kind=R8) :: v(1:3)
+
+    if (bc%normal_dir) then
+      v = speed * inward
+    else
+      v(1) = speed * cos(bc%beta) * cos(bc%alpha)
+      v(2) = speed * cos(bc%beta) * sin(bc%alpha)
+      v(3) = speed * sin(bc%beta)
+    endif
+
+  end function injected_velocity
 
 
   !> Chimera ghost cell of layer g: conservative blend of the donor cells found by
