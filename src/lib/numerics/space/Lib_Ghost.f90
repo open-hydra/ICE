@@ -192,8 +192,8 @@ contains
               prim(2,ig,jg,kg) = grid%bc(i)%velocity * veln * cos(grid%bc(i)%beta) * cos(grid%bc(i)%alpha)
               prim(3,ig,jg,kg) = grid%bc(i)%velocity * veln * cos(grid%bc(i)%beta) * sin(grid%bc(i)%alpha)
               prim(4,ig,jg,kg) = grid%bc(i)%velocity * veln * sin(grid%bc(i)%beta)
-              !> Density
-              prim(1,ig,jg,kg) = grid%bc(i)%massflux/(1._R8-grid%bc(i)%massflux) * grid%blk(bm)%gas_phase%prim(1,im,jm,km) / grid%bc(i)%velocity
+              !> Density: the mixture rule, krho over 1 - the cell's krho sum
+              prim(1,ig,jg,kg) = grid%bc(i)%massflux/(1._R8-grid%bc(i)%krho_sum) * grid%blk(bm)%gas_phase%prim(1,im,jm,km) / grid%bc(i)%velocity
               !> Temperature
               prim(nbase(pm)-1,ig,jg,kg) = grid%bc(i)%temperature * grid%blk(bm)%gas_phase%prim(5,im,jm,km)
 

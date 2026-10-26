@@ -24,7 +24,7 @@ is measured. L runs two or three families side by side in one case, each on its 
 | **E** | [Every Nusselt correlation](#e-every-nusselt-correlation) | All seven heat laws, velocity and temperature relaxing together | Independent RK4 and closed form |
 | **F** | [Evaporation](#f-evaporation) | All five evaporation models, the latent sink, two exact identities, the boiling clamp, the table's `Psat`, `Lv`, `Mv` and `Cpv` | Closed form and RK4 |
 | **K** | [The property table](#k-the-property-table) | Linear interpolation between the table's rows, a table that starts above 1 K, saturation past its ends, the energy of a varying specific heat | Closed form and RK4 |
-| **L** | [Several materials](#l-several-materials) | Each family on its own material: its table zone, its model tokens, its inlet records, its inlet density | Closed form and case F's |
+| **L** | [Several materials](#l-several-materials) | Each family on its own material: its table zone, its model tokens, its inlet records, its inlet density; the `401` inlet of several families | Closed form and case F's |
 | **C** | [Sinusoidal advection](#c-sinusoidal-advection-on-a-periodic-mesh) | Transport alone, and the order of the space scheme | Closed form |
 | **G** | [Cloud in a uniform gas](#g-a-cloud-released-into-a-uniform-gas) | Transport and drag together | Closed form |
 | **H** | [Cloud in a straining gas](#h-a-cloud-in-a-straining-gas) | A non-trivial particle velocity field, and the small-Stokes limit | Closed form |
@@ -498,13 +498,19 @@ another family's material, model or inlet record is seen directly in its own fie
 | L4 | `A 1` / `B 1`, zones $\rho$ = 2000 and 1000, one record per face | Each family's inlet $n$ uses its own table density: $n_1/n_2 = 1/2$ | $4.6\times10^{-15}$ |
 | L4c | `A 2`, one zone | Control: ratio 1 | exact |
 | L5 | `A 1 evaporation=d2-law` / `B 1 evaporation=d2-law`, zone A with `Lv` = $2.0\times10^6$, `Mv`, `Cpv` columns, zone B with the three at zero, `latent-heat = 0 2.26e6` | A evaporates with the latent heat of its columns, B with its INI value: each follows case F's $d^2$ slope with its own $L_v$ ($K_A/K_B = 1.116$) | slope $9.5\times10^{-10}$, $7.5\times10^{-10}$ |
+| L6 | `A 2`, face-1 `401` records in ATLAS's order (family 1 `krho` = 0.2, family 2 0.1, $kV = kT = 1$) in a uniform gas, each family starting with $10^{-4}\,krho_i$ kg m⁻³ | Family $i$ enters at $krho_i/(1-\sum_j krho_j)$ of the gas density, IGLOO's mixture rule: 0.2/0.7 and 0.1/0.7 in cell 1, $\rho_{p1}/\rho_{p2} = 2$ in every cell | cell 1 $3.7\times10^{-8}$; ratio $4.9\times10^{-15}$ |
+| L6c | `A 1`, `krho` = 0.2 | Control: one family, 0.25 in cell 1, where the two rules agree | $3.7\times10^{-8}$ |
+| L6r | L6 with `krho` = 0.6 and 0.5, and with 0.2 and −0.1 | A cell whose `krho` sum reaches 1, or a negative `krho`, stops the setup with the `401` inlet message | refused |
 
 L1's tolerance is $10^{-6}$ of the initial gap: RK2 at $\Delta t = \tau_A/1000$ leaves at most
 $(t/\tau)(\Delta t/\tau)^2/6 = 6\times10^{-8}$ of it, and a family that heats with the other
 material misses by 0.165. L2 and L5 take case F's $10^{-6}$ on the slope. L3 and L4 compare ratios
 that are exact in binary ($r_2 = 2r_1$, $\rho_A = 2\rho_B$) through a flux and a limiter that
 are homogeneous of degree one in $n$, so $10^{-12}$ bounds their round-off; a cell counts as
-filled at half the inlet density.
+filled at half the inlet density. L6's ratio is exact for the same reason: its content keeps every cell above the
+empty-cell density, $10^{-6}$ kg m⁻³, below which the reconstruction is first order (a switch that is not
+scale-free), and starts in the inlet's ratio, so $10^{-12}$ bounds it too. L6's cell 1 is judged at $10^{-3}$
+relative: a family loaded as if alone, $krho_i/(1-krho_i)$, misses there by 12.5 % and 22.2 %.
 
 ## Clouds carried by the gas
 

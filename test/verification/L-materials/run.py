@@ -46,6 +46,16 @@ case, so a family that reads another family's material, model or inlet is seen d
        follows the d-squared slope with L_v = 2.0e6 from its columns, family B the one with
        2.26e6 from the INI (K_A/K_B = 1.116, so a column given to the wrong material, or
        ignored, misses by 11.6 %).
+  L6   the 401 inlet of several families. One material, "A 2", L3's mesh in a uniform gas
+       (1.2 kg/m^3, 10 m/s, 300 K), code-401 records on face 1 in ATLAS's order: family 1 with
+       krho = 0.2, then family 2 with krho = 0.1, kV = kT = 1, both 10 um; family i starts with a
+       content of 1e-4 krho_i kg/m^3 at 10 m/s. Family i takes krho_i/(1 - sum_j krho_j) of the
+       gas flow, IGLOO's mixture rule: rho_p1/rho_p2 = 2 in every cell and, in cell 1,
+       rho_pi/rho_g = 0.2/0.7 and 0.1/0.7 (a family loaded as if alone, krho_i/(1 - krho_i), gives
+       the ratio 2.25 in the cells the inlet fills, and 0.25 and 0.111 in cell 1).
+  L6c  control: one family, "A 1", krho = 0.2: rho_p/rho_g = 0.25 in cell 1, where the two rules agree.
+  L6r  refusals: L6 with krho = 0.6 and 0.5 (a sum of 1.1), and with 0.2 and -0.1 (a negative
+       krho), stop the setup with the 401 inlet message.
 
 Tolerances.
   L1: RK2 on y' = -y/tau is exact to (dt/tau)^3/6 per step, so after t = tau with
@@ -60,6 +70,12 @@ Tolerances.
       n_1/n_2 is exact up to the initial content (1e-20 kg/m^3 against 1e-3 at the inlet).
       The per-family value n rho_mat 4/3 pi r^3 / rho_p = 1 carries a few roundings.
       1e-12 bounds both. A cell counts as filled at rho_p >= rho_in / 2.
+  L6: the content keeps every cell above ICE's empty-cell threshold (rho_empty, 1e-6 kg/m^3,
+      below which the reconstruction is first order: a switch that is not scale-free) and starts
+      in the ratio of the inlet (0.2 = 2 x 0.1 in binary), so through a flux and a limiter
+      homogeneous of degree one the two families' fields stay proportional: 1e-12 in every cell.
+      Cell 1 against the oracle at 1e-3 relative: the two rules differ there by 12.5 % and
+      22.2 %, 125 and 222 times that.
 """
 import importlib.util
 import math
@@ -97,6 +113,13 @@ RHO_M3 = 2000.0
 DX3 = 0.05
 T_END3 = 0.05
 TOL_N = 1.0e-12
+
+# --- L6: the 401 inlet of several families -----------------------------------------
+RHO_G6 = 1.2                             # the uniform gas, at U_IN and T_IN
+RHO_C6 = 1.0e-4                          # family i starts with RHO_C6 krho_i, above rho_empty
+KRHO6 = (0.2, 0.1)                       # family 1, family 2
+TOL_C6 = 1.0e-3
+REFUSE6 = 'Setup_BC: 401 inlet: krho must be >= 0 and the families of one cell must sum below 1'
 
 # --- L2: evaporation, case F's material and gas -------------------------------------
 TOL_K = 1.0e-6
@@ -371,6 +394,74 @@ def two_blocks(rep, label, radii, atlas):
         inlet_check(rep, '%s block %d' % (label, b + 1), sol, radii[b], (RHO_M3, RHO_M3))
 
 
+# ---------------------------------------------------------------------------
+#  L6 - the 401 inlet of several families: IGLOO's mixture rule, and its refusals
+# ---------------------------------------------------------------------------
+
+def content_state(rho):
+    """A family's initial content: rho kg/m^3 at the inlet speed and temperature, radius 10 um."""
+    return (rho, U_IN, 0.0, 0.0, T_IN, rho / (RHO_M3 * 4.0 / 3.0 * math.pi * R_SMALL ** 3))
+
+
+def mixture_case(name, phase, krhos, contents):
+    """One mesh block, uncoupled, in a uniform gas; face-1 code-401 records, one block of records per
+    family in ATLAS's order (one record per face for one family), kV = kT = 1, radius 10 um."""
+    case = Case(WORK / name, nx=int(round(1.0 / DX3)), Lx=1.0)
+    case.families(*[content_state(c) for c in contents])
+    case.gas(rho=RHO_G6, u=U_IN, v=0.0, w=0.0, T=T_IN, R=287.05, gam=1.4, k=0.026, mu=1.8e-5)
+    case.boundaries('extrapolation', inlets=[inlet_payload(k, 1.0, 1.0, R_SMALL) for k in krhos], code=401)
+    case.phase(*phase)
+    case.ini(t_end=T_END3, drag='NoDrag', heat='NoHeat', rho_al=RHO_M3, closures=('MK',) * len(krhos))
+    return case
+
+
+def mixture_leg(rep, label, phase, krhos):
+    """Cell 1 holds rho_p,i/rho_g = krho_i/(1 - sum krho); with two families, rho_p,1/rho_p,2 = krho_1/krho_2
+    in every cell."""
+    case = mixture_case(label.lower(), phase, krhos, [RHO_C6 * k for k in krhos])
+    print('   %-3s phase %s, 401 records krho %s, kV = kT = 1, radius %g um' % (
+        label, ' / '.join(phase), ' / '.join('%g' % k for k in krhos), R_SMALL * 1e6))
+    sol = try_run(rep, case.run)
+    if sol is None:
+        return
+    rest = 1.0 - sum(krhos)
+    for p, k in enumerate(krhos):
+        got = sol['var'][p * NV + RHO][0] / RHO_G6
+        ref = k / rest
+        err = abs(got / ref - 1.0)
+        print('       family %d: cell 1 rho_p/rho_g %.9f, oracle krho/(1 - sum krho) %.9f, rel. error %.2e'
+              % (p + 1, got, ref, err))
+        rep.check(err <= TOL_C6, '%s: family %d enters at krho/(1 - sum krho) = %.6f of the gas density '
+                  '(%.1e)' % (label, p + 1, ref, err))
+    if len(krhos) < 2:
+        return
+    rho1, rho2 = sol['var'][RHO], sol['var'][NV + RHO]
+    filled = [c for c in range(len(rho1)) if rho1[c] >= 0.5 * krhos[0] / rest * RHO_G6]
+    expect = krhos[0] / krhos[1]
+    ratio_err = max(abs(rho1[c] / rho2[c] / expect - 1.0) for c in range(len(rho1)))
+    print('       %2d cells filled of %d; rho_p1/rho_p2 = %.15g in cell 1 (expected %.15g), largest rel. error '
+          'over the cells %.2e' % (len(filled), len(rho1), rho1[0] / rho2[0], expect, ratio_err))
+    rep.check(len(filled) >= 3, '%s: the inlet fills %d cells' % (label, len(filled)))
+    rep.check(ratio_err <= TOL_N, '%s: rho_p1/rho_p2 = krho_1/krho_2 = %g in every cell to %.1e'
+              % (label, expect, ratio_err))
+
+
+def refusal_leg(rep, label, name, krhos, why):
+    """A loading the mixture rule cannot carry stops the setup with the 401 inlet message."""
+    case = mixture_case(name, ('A 2',), krhos, [RHO_E] * len(krhos))
+    print('   %-3s phase A 2, 401 records krho %s: %s' % (label, ' / '.join('%g' % k for k in krhos), why))
+    try:
+        run_ice(case.dir)
+    except RuntimeError:
+        text = '\n'.join((case.dir / f).read_text(errors='replace') for f in ('log', 'err')
+                         if (case.dir / f).exists())
+        where = [s.strip() for s in text.splitlines() if '[ICE::Setup_BC] 401 inlet' in s]
+        print('       %s' % (where[0] if where else 'ICE stopped without the 401 inlet line'))
+        rep.check(REFUSE6 in text, '%s: %s is refused: %s' % (label, why, REFUSE6))
+        return
+    rep.check(False, '%s: %s ran to the end (exit 0); expected: %s' % (label, why, REFUSE6))
+
+
 def main():
     rep = Report('L. Several materials')
 
@@ -391,6 +482,11 @@ def main():
                zones=[dict(cp=1000.0, rho=2000.0, zone='A'), dict(cp=1000.0, rho=1000.0, zone='B')])
     inlet_case(rep, 'L4c', ('A 2',), [pay(R_SMALL)], (R_SMALL, R_SMALL), (2000.0, 2000.0),
                zones=[dict(cp=1000.0, rho=2000.0, zone='A')])
+
+    mixture_leg(rep, 'L6', ('A 2',), KRHO6)
+    mixture_leg(rep, 'L6c', ('A 1',), KRHO6[:1])
+    refusal_leg(rep, 'L6r', 'l6r-sum', (0.6, 0.5), 'a krho sum of 1.1')
+    refusal_leg(rep, 'L6r', 'l6r-negative', (0.2, -0.1), 'a negative krho')
 
     rep.close(WORK)
 
