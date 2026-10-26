@@ -130,6 +130,10 @@ contains
     ! Setup probes (no-op if nprobes == 0)
     call Setup_Probes(sim%domain(1))
 
+    ! A restart from a solution that a run went on past: the history rows
+    ! written after it go, before the files take new rows
+    if (.not. obj_sim_param%newrun) call Drop_History_Rows(sim%ODP(1))
+
     ! Open residuals file (written by root only)
     if (mpi_is_root) &
       open(newunit=obj_io%unitRES, &
@@ -218,6 +222,50 @@ contains
 
 
   contains
+
+
+    !> The rows of residual-history.dat and of the probe files that a run wrote
+    !> after the solution a restart reads (it went on past its last output and
+    !> stopped, killed or at the time limit of a queue): the restart writes those
+    !> iterations again, so they are dropped (Drop_Rows_After). Only where the
+    !> solution places them exactly: a Tecplot ASCII solution holds its time and
+    !> marks a steady one (STRANDID = 0). A steady restart takes back the global
+    !> iteration count, and the rows of later iterations go. A time-accurate one
+    !> takes back the time and counts the iterations from 0: the residual rows of
+    !> later times go (their time, written E20.10, against the restart time
+    !> rounded up to those digits), the time rows of a probe too, and its
+    !> iteration rows stay. Any other solution (vtk and Tecplot binary, whose time
+    !> ICE does not read back, a file without SOLUTIONTIME, a solution of the
+    !> other mode) drops nothing.
+    subroutine Drop_History_Rows(IOfield)
+      use iso_fortran_env, only: R8 => real64
+      use ICE_IO_Probes,   only: Drop_Probe_Rows, Drop_Rows_After
+      type(orion_data), intent(in) :: IOfield
+      character(len=20) :: printed
+      character(llen)   :: resfile
+      real(R8)          :: last
+      integer           :: ncol
+
+      if (trim(obj_io%ini_fmt(1)) /= 'tecplot' .or. trim(obj_io%ini_fmt(2)) /= 'ascii') return
+      ! ORION gives -10 when the file holds no SOLUTIONTIME; ICE writes abs(time)
+      if (.not. IOfield%solutiontime >= 0._R8) return
+      if (obj_time_scheme%time_accurate .eqv. (IOfield%strandid == 0)) return
+
+      ! A residual row: the global iteration, the time and the residuals
+      resfile = 'OUTPUT/'//trim(ICE_phase_prefix)//'residual-history.dat'
+      ncol = 2 + size(obj_sim_param%residuotot)
+      if (obj_time_scheme%time_accurate) then
+        write(printed, '(RU,E20.10)') IOfield%solutiontime
+        read(printed, *) last
+        if (mpi_is_root) call Drop_Rows_After(trim(resfile), ncol, 2, last, times=.true.)
+        call Drop_Probe_Rows(IOfield%solutiontime * (1._R8 + 1.e-12_R8), times=.true.)
+      else
+        last = real(int(IOfield%solutiontime), R8)
+        if (mpi_is_root) call Drop_Rows_After(trim(resfile), ncol, 1, last, times=.false.)
+        call Drop_Probe_Rows(last, times=.false.)
+      end if
+
+    end subroutine Drop_History_Rows
 
 
     !> Cells in the whole domain, for the throughput figure in the timer

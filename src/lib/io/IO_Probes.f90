@@ -7,7 +7,7 @@ module ICE_IO_Probes
 
   implicit none
   private
-  public :: Setup_Probes, Write_Probes_Data, Close_Probes, Restart_Probes
+  public :: Setup_Probes, Write_Probes_Data, Close_Probes, Restart_Probes, Drop_Probe_Rows, Drop_Rows_After
 
   type :: real_ptr
     real(R8), pointer :: p => null()
@@ -237,6 +237,128 @@ contains
     end do
 
   end subroutine Restart_Probes
+
+
+  !> At a restart, the rows of the probe files written after its solution
+  !> (Drop_Rows_After: the first value of a row, an iteration or a time, against
+  !> last), each file on the rank that owns its probe: closed, cut, and opened
+  !> again at its end, as Setup_Probes opens it.
+  subroutine Drop_Probe_Rows(last, times)
+    use ICE_Mod_MPI, only: mpi_abort_all
+#ifdef USE_MPI
+    use ICE_Mod_MPI, only: is_local_block
+#endif
+    implicit none
+    real(R8), intent(in) :: last
+    logical,  intent(in) :: times
+    integer :: i, error
+
+    do i = 1, nprobes
+#ifdef USE_MPI
+      if (.not. is_local_block(probe(i)%ilocation(1))) cycle
+#endif
+      close(probe(i)%unit)
+      call Drop_Rows_After(trim(probe(i)%file), 1 + probe(i)%nvar, 1, last, times)
+      open(newunit=probe(i)%unit, file=trim(probe(i)%file), &
+           status='UNKNOWN', position='APPEND', action='WRITE', iostat=error)
+      if (error /= 0) call mpi_abort_all('cannot open probe file '//trim(probe(i)%file))
+    end do
+
+  end subroutine Drop_Probe_Rows
+
+
+  !> Drop the rows of a history file written after the solution a restart
+  !> reads, which the restart writes again. A row holds ncol values and starts
+  !> a line; written list-directed it may take more than one line, so the values
+  !> are counted to find where each row starts. Value col of a row places it: a
+  !> time (written with a decimal point or an exponent) when times, else an
+  !> iteration. The first row whose value is of that kind and greater than last
+  !> is dropped, with every row after it; a row whose value is of the other kind
+  !> is not compared (the iteration rows of a probe in a time-accurate run, whose
+  !> iteration count a restart starts again). A last row with fewer than ncol
+  !> values (a file cut in the middle of a row) is dropped too, and a line that
+  !> starts with '#' is kept and holds no values. The file is truncated and ends
+  !> with a newline (End_With_Newline); a missing file is left alone.
+  subroutine Drop_Rows_After(file, ncol, col, last, times)
+    implicit none
+    character(len=*), intent(in) :: file
+    integer,          intent(in) :: ncol, col
+    real(R8),         intent(in) :: last
+    logical,          intent(in) :: times
+    character(len=32768) :: line
+    integer  :: unit, ios, nkeep, nrow, nval, k1, k2
+    real(R8) :: v
+    logical  :: later
+
+    open(newunit=unit, file=file, status='OLD', action='READWRITE', iostat=ios)
+    if (ios /= 0) return
+    nkeep = 0      ! lines kept
+    nrow  = 0      ! lines kept before the row being read
+    nval  = 0      ! values counted
+    later = .false.
+    do
+      read(unit, '(A)', iostat=ios) line
+      if (ios /= 0) exit
+      if (len_trim(line) > 0) then
+        if (line(verify(line, ' '):verify(line, ' ')) == '#') then
+          nkeep = nkeep + 1
+          cycle
+        end if
+        if (mod(nval, ncol) == 0) nrow = nkeep
+      end if
+      ! The blank-separated values of the line, line(k1:k2)
+      k2 = 0
+      do
+        k1 = verify(line(k2+1:), ' ')
+        if (k1 == 0) exit
+        k1 = k2 + k1
+        k2 = k1 + scan(line(k1:), ' ') - 2
+        if (k2 < k1) k2 = len(line)
+        nval = nval + 1
+        if (mod(nval - 1, ncol) + 1 == col .and. ((scan(line(k1:k2), '.eEdD') > 0) .eqv. times)) then
+          read(line(k1:k2), *, iostat=ios) v
+          if (ios == 0) later = v > last
+          if (later) exit
+        end if
+        if (k2 >= len(line)) exit
+      end do
+      if (later) exit
+      nkeep = nkeep + 1
+    end do
+    ! The row later than the solution, or a last row cut short: dropped from its first line
+    if (later .or. mod(nval, ncol) /= 0) nkeep = nrow
+    rewind(unit)
+    do k1 = 1, nkeep
+      read(unit, '(A)', iostat=ios) line
+      if (ios /= 0) exit
+    end do
+    endfile(unit)
+    close(unit)
+    call End_With_Newline(file)
+
+  end subroutine Drop_Rows_After
+
+
+  !> End a file with a newline if its last line has none: the rows a restart
+  !> appends would go on that line. Read and written as a stream of bytes.
+  subroutine End_With_Newline(file)
+    use iso_fortran_env, only: int64
+    implicit none
+    character(len=*), intent(in) :: file
+    integer        :: unit, ios
+    integer(int64) :: nbytes
+    character      :: last
+
+    open(newunit=unit, file=file, access='STREAM', form='UNFORMATTED', status='OLD', action='READWRITE', iostat=ios)
+    if (ios /= 0) return
+    inquire(unit=unit, size=nbytes)
+    if (nbytes > 0) then
+      read(unit, pos=nbytes, iostat=ios) last
+      if (ios == 0 .and. last /= new_line('a')) write(unit, pos=nbytes+1, iostat=ios) new_line('a')
+    end if
+    close(unit)
+
+  end subroutine End_With_Newline
 
 
   !> The probe rows due at this iteration, each passed to the file system when

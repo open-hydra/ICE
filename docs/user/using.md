@@ -148,6 +148,15 @@ instead of `INPUT/part-ic.*`, picks up the simulation time from the zone header,
 continues appending to the residual history. The restart file is a solution ICE wrote
 itself, so it is `sol-format` — not `ic-format` — that names it.
 
+A run that went on past the solution the restart reads (it stopped after its last
+output) left in the residual history and in the probe files rows that the restart writes
+again. From a `tecplot ascii` solution the restart drops them first: a steady restart the
+rows of later iterations, a time-accurate one the residual rows and the time-based probe
+rows of later times (the iteration rows of a probe stay: a time-accurate restart counts
+its iterations from 0). A last row cut in the middle goes too, and a file whose last line
+has no newline gets one. From the other formats, whose solution time ICE does not read
+back, nothing is dropped: remove those rows by hand, and end the file with a newline.
+
 With `sol-overwrite = false` the solutions form a numbered series; restarting from a
 particular one means renaming it back to `part-field`.
 
@@ -178,7 +187,8 @@ The variables of family `n` are those of the solution files, `rho_p<n>`, `u_p<n>
 the same names without the `p` (`rho_<n>`, …) are accepted too. Any other name stops the
 run at set-up.
 
-A new run replaces the probe files; a restart appends to them, and creates any that are
+A new run replaces the probe files; a restart appends to them, after the rows written past
+its solution are dropped (see [Restarting](#restarting)), and creates any that are
 missing (for example a probe added before the restart).
 
 ## Re-steering a running simulation
