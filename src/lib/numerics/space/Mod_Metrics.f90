@@ -10,13 +10,17 @@ module ICE_Mod_Metrics
 
 contains
 
-  subroutine setup_metrics (grid, IOfield)
+  subroutine setup_metrics (grid, IOfield, level)
     use Lib_ORION_data
     use ICE_Advanced_Types_m
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     type(orion_data),      intent(inout) :: IOfield
-    integer(kind=I4) :: b
+    integer(kind=I4), intent(in), optional :: level   !< Multigrid level, for the messages (default 1, the fine one)
+    integer(kind=I4) :: b, lev
+
+    lev = 1
+    if (present(level)) lev = level
 
     call import_nodes (grid, IOfield)
 
@@ -32,7 +36,7 @@ contains
     end do
 
     do b = 1, grid%nb
-      call compute_metric_tensor (grid%blk(b))
+      call compute_metric_tensor (grid%blk(b), b, lev)
     end do
 
   end subroutine setup_metrics
@@ -296,16 +300,22 @@ contains
   end function tvol
 
 
-  subroutine compute_metric_tensor (b)
+  subroutine compute_metric_tensor (b, ib, level)
     use ICE_Advanced_Types_m
     implicit none
     type(ICE_block_type), intent(inout) :: b
+    integer(kind=I4),     intent(in)    :: ib, level   !< Block number and multigrid level, for the messages
     integer(kind=I4) :: i, j, k, im, jm, km, h
     real(kind=R8)    :: det, A(3,3), cofactor(3,3)
+    logical          :: degenerate
+    character(len=32) :: lev
 
     im = b%dim(1) ; jm = b%dim(2) ; km = b%dim(3)
 
-    !$omp parallel do collapse(3), private(i,j,k,h,A,det,cofactor), shared(b,im,jm,km)
+    lev = ''
+    if (level > 1) write(lev,'(A,I0,A)') ' (multigrid level ', level, ')'
+    degenerate = .false.
+    !$omp parallel do collapse(3), private(i,j,k,h,A,det,cofactor), shared(b,im,jm,km,ib,lev,degenerate)
     do k = 0, km+1
     do j = 0, jm+1
     do i = 0, im+1
@@ -353,9 +363,28 @@ contains
         b%dl(i,j,k)%c(h) = sqrt( A(h,1)**2 + A(h,2)**2 + A(h,3)**2 )
       end do
 
+      !> An interior cell has a volume: |det| above 1e-12 of the product of the lengths of its
+      !> mean edges (Hadamard's bound). A ghost cell is extrapolated and only its length across
+      !> the face is read, so its metric keeps the identity when det is zero.
+      if (i >= 1 .and. i <= im .and. j >= 1 .and. j <= jm .and. k >= 1 .and. k <= km) then
+        if (.not. (abs(det) > 1d-12*b%dl(i,j,k)%c(1)*b%dl(i,j,k)%c(2)*b%dl(i,j,k)%c(3))) then
+          !$omp critical (ICE_metrics_report)
+          if (.not. degenerate) &
+            write(*,'(A,I0,A,3(1X,I0),A,ES12.4,A,ES12.4)') ' [ERROR] [ICE::compute_metric_tensor] block ', ib, &
+              ', cell', i, j, k, trim(lev)//': degenerate; det = ', det, &
+              ', |A1| |A2| |A3| = ', b%dl(i,j,k)%c(1)*b%dl(i,j,k)%c(2)*b%dl(i,j,k)%c(3)
+          degenerate = .true.
+          !$omp end critical (ICE_metrics_report)
+        end if
+      end if
+
     end do
     end do
     end do
+    if (degenerate) then
+      write(*,'(A)') ' [ERROR] [ICE::compute_metric_tensor] degenerate cell in the mesh'
+      error stop 1
+    endif
 
   end subroutine compute_metric_tensor
 
