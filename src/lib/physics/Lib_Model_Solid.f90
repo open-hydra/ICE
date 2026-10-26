@@ -176,7 +176,7 @@ contains
   end subroutine to_liquid_temperature
 
   !> A reconstructed face back to primitives: (T, f) from its (T_liq, chi) as for a cell; chi keeps its limited value.
-  !  A non-finite T_liq (a NaN in the stencil) is left as it is, so check_prim's NaN test still sees it.
+  !  A non-finite T_liq (a NaN or an infinity in the stencil) is left as it is, so check_prim's test still sees it.
   pure subroutine from_liquid_temperature(prim, mat)
     real(kind=R8), intent(inout) :: prim(:)
     type(condensed_phase_t), intent(in) :: mat
