@@ -4,11 +4,11 @@ module ICE_IO_Solution
   use Lib_ORION_data
   use ICE_Global_m,      only: ICE_phase_prefix, ngroups, ncond, solid_of
   use ICE_Config_Types_m, only: obj_time_scheme
-  use ICE_Parameters_m,  only: llen
+  use ICE_Parameters_m,  only: llen, hlen
 
   implicit none
 
-  integer(kind=I4) :: error
+  integer(kind=I4) :: error = 0, error_gas = 0   !< what the readers return, of the condensed and of the gas field
   real(kind=R8)    :: IOtime
 
   character(llen)  :: condinit, gasinit
@@ -252,12 +252,12 @@ contains
       select case (trim(obj_io%ini_fmt(1)))
       case ('tecplot')
         IOfield_gas%tec%format = obj_io%ini_fmt(2)
-        error = tec_read_structured_multiblock(orion=IOfield_gas, filename=trim(gasinit))
+        error_gas = tec_read_structured_multiblock(orion=IOfield_gas, filename=trim(gasinit))
       case ('vtk')
         IOfield_gas%tec%format = obj_io%ini_fmt(2)
-        error = vtk_read_structured_multiblock(orion=IOfield_gas, &
-                  vtmpath=gasinit(1:len(trim(gasinit))-4), &
-                  vtspath='INPUT/vtk/field', time=IOtime)
+        error_gas = vtk_read_structured_multiblock(orion=IOfield_gas, &
+                      vtmpath=gasinit(1:len(trim(gasinit))-4), &
+                      vtspath='INPUT/vtk/field', time=IOtime)
       end select
     end if
 
@@ -279,10 +279,101 @@ contains
       write(*,'(A)') '  The format is "'//trim(obj_io%ini_fmt(1))//'", which is neither "tecplot"'
       write(*,'(A)') '  nor "vtk", so no reader was selected. Set it explicitly, e.g.'
       write(*,'(A)') '    ic-format = tecplot ascii'
-      error stop
+      error stop 1
     end select
 
   end subroutine read_vtk_tec
+
+
+  !> An error of the read of the initial condition (or of the solution a
+  !> restart reads, or of the gas field it was read with), the time of a
+  !> restart solution, or a value the condensed field gives the domain that is
+  !> not finite (NaN, infinity) stops the run at set-up, with the file and the
+  !> place: the node coordinates of every block and the cell variables that
+  !> setup_cond reads, the first sum(ncond) of each cell. Every rank reads the
+  !> files: the ranks decide together (the largest of a flag), the first rank
+  !> that found an error writes it, and every rank stops.
+  subroutine check_ic(IOfield_cond, gas_read)
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use, intrinsic :: iso_fortran_env, only: output_unit
+    use ICE_Config_Types_m,    only: obj_sim_param
+    use ICE_Mod_MPI,           only: mpi_rank_, mpi_size_, mpi_allreduce_max_r8, mpi_allreduce_min_r8
+    use ICE_Mod_GhostExchange, only: mpi_io_barrier
+    implicit none
+    type(orion_data), intent(in) :: IOfield_cond
+    logical,          intent(in) :: gas_read   !< the gas field was read with it (ICE alone, 1-way coupled)
+    character(len=1), parameter :: axis(3) = ['x', 'y', 'z']
+    character(len=hlen) :: what
+    character(len=llen) :: name
+    integer(kind=I4)    :: b, i, j, k, d, nvar, off
+    real(kind=R8)       :: flag, flag_all, first
+
+    what = ''
+    if (error /= 0) then
+      write(what,'(A,I0,A)') 'cannot read '//trim(condinit)//' (error ', error, ' of the reader)'
+    elseif (gas_read .and. error_gas /= 0) then
+      write(what,'(A,I0,A)') 'cannot read '//trim(gasinit)//' (error ', error_gas, ' of the reader)'
+    elseif (.not. allocated(IOfield_cond%block)) then
+      what = 'cannot read '//trim(condinit)//': it gives no block'
+    elseif (.not. obj_sim_param%newrun .and. .not. ieee_is_finite(IOfield_cond%solutiontime)) then
+      what = trim(condinit)//': the solution time is not finite (NaN or infinity)'
+    else
+      blocks: do b = 1, size(IOfield_cond%block)
+        associate (mesh => IOfield_cond%block(b)%mesh)
+          do k = lbound(mesh, 4), ubound(mesh, 4)
+          do j = lbound(mesh, 3), ubound(mesh, 3)
+          do i = lbound(mesh, 2), ubound(mesh, 2)
+          do d = 1, size(mesh, 1)
+            if (.not. ieee_is_finite(mesh(d,i,j,k))) then
+              write(what,'(3A,I0,A,2(I0,A),I0)') 'coordinate ', axis(min(d,3)), ' of block ', b, &
+                ', node i, j, k = ', i, ', ', j, ', ', k
+              exit blocks
+            end if
+          end do; end do; end do; end do
+        end associate
+        if (.not. allocated(IOfield_cond%block(b)%vars)) cycle
+        associate (vars => IOfield_cond%block(b)%vars)
+          nvar = min(size(vars, 1), sum(ncond))
+          do k = lbound(vars, 4), ubound(vars, 4)
+          do j = lbound(vars, 3), ubound(vars, 3)
+          do i = lbound(vars, 2), ubound(vars, 2)
+          do d = 1, nvar
+            if (.not. ieee_is_finite(vars(d,i,j,k))) then
+              ! The name, when the file gives the names (after the coordinates)
+              name = ''
+              if (allocated(IOfield_cond%varnames)) then
+                off = size(IOfield_cond%varnames) - size(vars, 1)
+                if (off >= 0) name = ' ('//trim(adjustl(IOfield_cond%varnames(off+d)))//')'
+              end if
+              write(what,'(A,I0,2A,I0,A,2(I0,A),I0)') 'variable ', d, trim(name), ' of block ', b, &
+                ', cell i, j, k = ', i, ', ', j, ', ', k
+              exit blocks
+            end if
+          end do; end do; end do; end do
+        end associate
+      end do blocks
+      if (len_trim(what) > 0) what = trim(condinit)//' holds a value that is not finite (NaN or infinity): '//trim(what)
+    end if
+
+    flag = 0._R8
+    if (len_trim(what) > 0) flag = 1._R8
+    call mpi_allreduce_max_r8(flag, flag_all)
+    if (flag_all > 0._R8) then
+      ! Written once, by the first rank that found it, before any rank stops
+      call mpi_allreduce_min_r8(merge(real(mpi_rank_, R8), huge(1._R8), flag > 0._R8), first)
+      if (flag > 0._R8 .and. nint(first) == mpi_rank_) then
+        if (mpi_size_ > 1) then
+          write(*,'(A,I0,A)') ' [ERROR] [ICE::read_ic] '//trim(what)//' (rank ', mpi_rank_, ')'
+        else
+          write(*,'(A)') ' [ERROR] [ICE::read_ic] '//trim(what)
+        end if
+        flush(output_unit)
+      end if
+      call mpi_io_barrier()
+      error stop 1
+    end if
+
+  end subroutine check_ic
 
 
 end module ICE_IO_Solution

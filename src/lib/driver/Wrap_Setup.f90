@@ -70,6 +70,10 @@ contains
       call read_ic(sim%ODP(1))
     end if
 
+    ! An error of the read, or a value that is not finite, stops the run here,
+    ! before anything takes the values
+    call check_ic(sim%ODP(1), gas_read = coupled .and. .not. present(IOgas))
+
     ! The blocks over the ranks and, inside the rank, over the thread groups
     ! (ICE_THREAD_GROUPS, default one group: every block over the whole team), decided
     ! before anything is allocated: with several groups a block's fields are first
