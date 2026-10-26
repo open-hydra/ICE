@@ -32,6 +32,7 @@ contains
     character(llen) :: solfile, bckfile, dgsfile
     real(R8)        :: sim_time
     integer         :: level
+    logical         :: iter_based
 
     level = obj_multigrid%MG_level
 
@@ -86,6 +87,33 @@ contains
         sim_time = (obj_sim_param%cputime(2) - obj_sim_param%cputime(1)) / obj_sim_param%nthreads
         write(*,*)
         write(*,*) '  Time of operation was', sim_time/60, 'min'
+      end if
+
+      ! What an output iteration writes, when the last iteration is one: the
+      ! probe rows due and the solution due (sol-diter, else sol-dtime) with the
+      ! next output number; with sol-overwrite = true the final solution below
+      ! is that output, written once. Every rank evaluates the same condition.
+      ! A run ends on the finest level, whose files these are.
+      if (level == 1) then
+        if (nprobes > 0) call Write_Probes_Data(obj_sim_param%iter_general, simulation%domain(1)%time)
+        iter_based = mod(simulation%domain(1)%iter, obj_io%sol_diter) == 0
+        if (iter_based .or. simulation%domain(1)%time >= obj_sim_param%time_from_call + obj_io%sol_dtime) then
+          id_stampa = id_stampa + 1
+          if (.not. iter_based) obj_sim_param%time_from_call = simulation%domain(1)%time
+          if (.not. obj_io%sol_overwrite) then
+            if (mpi_is_root) then
+              if (iter_based) then
+                write(*,*) ' ... writing iter-based solution'
+              else
+                write(*,*) ' ... writing time-based solution'
+              end if
+            end if
+            call Write_Solution(simulation%domain(1), simulation%ODP(1), &
+                                trim(solfile)//trim(str(.true.,id_stampa)), obj_io%sol_fmt)
+            if (.not. obj_time_scheme%time_accurate) &
+              call Write_Diagnostic(simulation%domain(1), simulation%ODP(1), trim(dgsfile)//trim(str(.true.,id_stampa)))
+          end if
+        end if
       end if
 
       call Write_Solution(simulation%domain(1), simulation%ODP(1), solfile, obj_io%sol_fmt)
