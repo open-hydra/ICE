@@ -187,7 +187,8 @@ contains
     character(len=*),      intent(in)           :: file
     character(len=*),      intent(in), optional :: format(2)
     character(len=llen) :: path, localpath_vtk
-    integer(kind=I4)    :: b, p, nstart, nend, E_IO
+    character(len=len(obj_io%Ovarnames)) :: vtknames
+    integer(kind=I4)    :: b, p, c, nstart, nend, E_IO
 
     !> Collect the blocks owned by other ranks on root, which writes the file
     call gather_prim_to_root(grid)
@@ -215,11 +216,17 @@ contains
       select case (format(1))
       case ('vtk')
         IOfield%vtk%format = format(2)
+        !> The names become XML attributes (Name="..."): the quotes of the
+        !  Tecplot list go, ORION splits the names on blanks.
+        vtknames = obj_io%Ovarnames
+        do c = 1, len_trim(vtknames)
+          if (vtknames(c:c) == '"') vtknames(c:c) = ' '
+        end do
         localpath_vtk = trim(path)//'vtk/'
         call execute_command_line('mkdir -p '//trim(localpath_vtk))
         E_IO = vtk_write_structured_multiblock(orion=IOfield, &
                  vtspath=trim(localpath_vtk)//trim(file), &
-                 vtmpath=trim(path)//trim(file), varnames=obj_io%Ovarnames, time=grid%time)
+                 vtmpath=trim(path)//trim(file), varnames=vtknames, time=grid%time)
       case ('tecplot')
         IOfield%tec%format = format(2)
         E_IO = tec_write_structured_multiblock(orion=IOfield, varnames=obj_io%Ovarnames, &
