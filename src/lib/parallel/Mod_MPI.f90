@@ -36,7 +36,7 @@ module ICE_Mod_MPI
   public :: mpi_allreduce_sum_r8_array, mpi_allreduce_max_r8_array
   public :: mpi_reduce_sum_r8, mpi_reduce_sum_r8_array
   public :: mpi_allreduce_norm2
-  public :: mpi_bcast_logical, mpi_bcast_integer
+  public :: mpi_bcast_logical, mpi_bcast_integer, mpi_bcast_chars
   public :: mpi_abort_all
   public :: check_mpi_error
 
@@ -350,6 +350,30 @@ contains
     call check_mpi_error(ierr)
 #endif
   end subroutine mpi_bcast_logical
+
+
+  !> Broadcast a string from root (rank 0) to all ranks: its length first, which every
+  !> rank needs to receive it, then its characters.
+  subroutine mpi_bcast_chars(text)
+    character(len=:), allocatable, intent(inout) :: text
+    integer :: n
+#ifdef USE_MPI
+    integer :: ierr
+#endif
+    n = 0
+    if (mpi_is_root .and. allocated(text)) n = len(text)
+    call mpi_bcast_integer(n)
+    if (.not. mpi_is_root) then
+      if (allocated(text)) deallocate(text)
+      allocate(character(len=n) :: text)
+    end if
+#ifdef USE_MPI
+    if (n > 0) then
+      call MPI_BCAST(text, n, MPI_CHARACTER, 0, ice_comm, ierr)
+      call check_mpi_error(ierr)
+    end if
+#endif
+  end subroutine mpi_bcast_chars
 
 
   !> Broadcast an integer value from root (rank 0) to all ranks.
