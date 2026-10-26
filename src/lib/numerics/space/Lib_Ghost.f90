@@ -21,6 +21,9 @@ module ICE_Lib_Ghost
   private
   public :: compute_ghost, fill_second_ghost
 
+  !> How the ghosts of a symmetry, wall or inlet record are filled (ghost_rule)
+  integer, parameter :: GHOST_COPY = 0, GHOST_MIRROR = 1, GHOST_INJECT = 2
+
 contains
 
   !> The first ghost layer of family p (the stage of one family), or of every
@@ -126,7 +129,7 @@ contains
 
           velocity = grid%blk(bm)%cond_phase(pm)%prim(2:4,im,jm,km)
           veln     = dot_product(velocity,normal)
-          if (grid%bc(i)%type == 200 .or. veln*real(1-2*mod(fm,2))<=0._R8 .or. fm==3) then
+          if (ghost_rule(grid%bc(i), veln) == GHOST_MIRROR) then
             velocity = velocity - 2._R8*veln*normal
             if (nbase(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig,jg,kg) = &
               mirror_tensor_AG(grid%blk(bm)%cond_phase(pm)%prim(5:10,im,jm,km), normal)
@@ -158,13 +161,13 @@ contains
           veln     = dot_product(velocity,normal)
 
           !> Switch to extrapolation boundary condition
-          if (veln*real(1-2*mod(fm,2))>0._R8) then
+          if (ghost_rule(grid%bc(i), veln) == GHOST_COPY) then
             grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),im,jm,km)
             return
           endif
 
           !> Switch to symmetry boundary condtion
-          if (grid%bc(i)%massflux == 0._R8) then
+          if (ghost_rule(grid%bc(i), veln) == GHOST_MIRROR) then
             grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),im,jm,km)
             velocity = velocity - 2._R8*veln*normal
             grid%blk(bm)%cond_phase(pm)%prim(2:4,ig,jg,kg) = velocity(1:3)
@@ -315,8 +318,8 @@ contains
     integer(kind=I4) :: ig2, jg2, kg2
     integer(kind=I4) :: ip, jp, kp
     integer(kind=I4) :: bs, is, js, ks, fs
-    integer(kind=I4) :: ic, jc, kc
-    real(kind=R8)    :: normal(1:3), velocity(1:3)
+    integer(kind=I4) :: ic, jc, kc, rule
+    real(kind=R8)    :: normal(1:3), velocity(1:3), veln
 
 
       if (grid%bc(i)%type == 0) return
@@ -340,7 +343,9 @@ contains
         case (102) !> chimera: second ghost layer from its own donors
           call ghost_chimera(grid%blk, grid%bc(i), 2, obj_condensed(mat_of(pm)))
 
-        case (200) !> wedge side face: the second ghost mirrors the second interior cell
+        case (200, 300, 301, 401:403) !> symmetry, wall and inlet faces: the second ghost follows the rule of the
+                                      !>  first, on the same cell (ghost_rule): the second interior cell, mirrored
+                                      !>  where the first ghost mirrors the first, or the injected state again
           ip = im + guide(fm,1) ; jp = jm + guide(fm,2) ; kp = km + guide(fm,3)
           if (fm <= 2) then
             ic = im - mod(fm,2)
@@ -352,11 +357,22 @@ contains
             kc = km - mod(fm,2)
             normal = grid%blk(bm)%dir(3)%f(im,jm,kc)%N
           endif
-          grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig2,jg2,kg2) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ip,jp,kp)
-          velocity = grid%blk(bm)%cond_phase(pm)%prim(2:4,ip,jp,kp)
-          grid%blk(bm)%cond_phase(pm)%prim(2:4,ig2,jg2,kg2) = velocity - 2._R8*dot_product(velocity,normal)*normal
-          if (nbase(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig2,jg2,kg2) = &
-            mirror_tensor_AG(grid%blk(bm)%cond_phase(pm)%prim(5:10,ip,jp,kp), normal)
+          velocity = grid%blk(bm)%cond_phase(pm)%prim(2:4,im,jm,km)
+          veln     = dot_product(velocity,normal)
+          rule     = ghost_rule(grid%bc(i), veln)
+          if (rule == GHOST_INJECT) then
+            grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig2,jg2,kg2) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg)
+          else
+            !> A copy where the particles leave: what the extrapolation below gives from a first ghost that copies
+            !>  the first interior cell, and the face states do not depend on it there (zero slope between them)
+            grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig2,jg2,kg2) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ip,jp,kp)
+            if (rule == GHOST_MIRROR) then
+              velocity = grid%blk(bm)%cond_phase(pm)%prim(2:4,ip,jp,kp)
+              grid%blk(bm)%cond_phase(pm)%prim(2:4,ig2,jg2,kg2) = velocity - 2._R8*dot_product(velocity,normal)*normal
+              if (nbase(pm) == 12) grid%blk(bm)%cond_phase(pm)%prim(5:10,ig2,jg2,kg2) = &
+                mirror_tensor_AG(grid%blk(bm)%cond_phase(pm)%prim(5:10,ip,jp,kp), normal)
+            endif
+          endif
 
         case default !> 2nd-order extrapolation: P(g2) = 3*P(g1) - 3*P(m) + P(m+1)
           ip = im + guide(fm,1) ; jp = jm + guide(fm,2) ; kp = km + guide(fm,3)
@@ -369,6 +385,32 @@ contains
 
 
   end subroutine second_ghost_record
+
+
+  !> The rule of the ghosts of a symmetry, wall or inlet record, from the normal velocity veln of its cell:
+  !> the wedge side face (200) mirrors; a 300/301 face mirrors unless the particles move out through it, and
+  !> face 3, usually the axis, always mirrors; an inlet copies the cell when they move out through it, mirrors
+  !> it with a zero mass flux and injects otherwise. Both ghost layers take their rule from here, and nothing
+  !> writes the cell between the two fills, so the two layers always follow the same rule.
+  pure integer function ghost_rule(bc, veln)
+    implicit none
+    type(ICE_bc_type), intent(in) :: bc
+    real(kind=R8),     intent(in) :: veln
+
+    ghost_rule = GHOST_COPY
+    select case (bc%type)
+      case (200)
+        ghost_rule = GHOST_MIRROR
+      case (300, 301)
+        if (veln*real(1-2*mod(bc%f,2))<=0._R8 .or. bc%f==3) ghost_rule = GHOST_MIRROR
+      case (401:403)
+        if (.not. (veln*real(1-2*mod(bc%f,2))>0._R8)) then
+          ghost_rule = GHOST_INJECT
+          if (bc%massflux == 0._R8) ghost_rule = GHOST_MIRROR
+        endif
+    end select
+
+  end function ghost_rule
 
 
   !> Chimera ghost cell of layer g: conservative blend of the donor cells found by

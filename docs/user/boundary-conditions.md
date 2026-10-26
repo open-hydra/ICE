@@ -69,10 +69,13 @@ So a phase with two materials, one of them in two populations, needs three
 
 Any other code stops ICE at setup.
 
-The second ghost layer is copied from the neighbour for `101`/`201`, taken from its own
-donors for `102`, the mirror image of the second interior cell for `200`, and otherwise
-built by a second-order extrapolation $P_{g2} = 3P_{g1} - 3P_m + P_{m+1}$; `0` leaves it
-unfilled, since no stencil reaches it.
+The second ghost layer is copied from the neighbour for `101`/`201` and taken from its own
+donors for `102`. On a `200`, `300`/`301` or inlet face it follows the rule of the first:
+the mirror image of the second interior cell where the first ghost mirrors the first, a copy
+of it where the first is a copy, and the injected state again where an inlet injects. `400`
+builds it by a second-order extrapolation $P_{g2} = 3P_{g1} - 3P_m + P_{m+1}$, which from its
+copied first ghost is the second interior cell too; `0` leaves it unfilled, since no stencil
+reaches it.
 
 ## Symmetry (`300`)
 

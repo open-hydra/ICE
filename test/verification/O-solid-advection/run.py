@@ -10,12 +10,15 @@ liquid); chi is the inflow's between T_nuc and T_m, 1 below, 0 above. It is ICE'
   O0  every cell liquid (T-melt 200 K): the solidifying run's file holds the plain run's blocks byte for byte, and
       two blocks of zeros for f and chi. MK/Saurel and IG/Rusanov, MUSCL.
   O1  first order, nx = 120, against the recursion per cell, with its energy balance.
-  O2  MUSCL at nx = 120, 240, 480 against the closed form: the front within a cell, T = T_m on the plateau, the
-      liquid error falling with dx - at first order: ICE holds the inlet state at the ghost-cell centre, half a cell
-      upstream of the face, which shifts the profile by dx/2, (T_0 - T_g) dx/(2 L_l) = 10.6 K at nx = 120 - and the
-      exit within the solid's first-order bound. Every nx must be a fixed point: the family reconstructs
-      T_liq = e/c_l, continuous through the recalescence, so the front does not depend on its own cell's phase
-      (reconstructing T instead, nx = 480 cycles with period 2, the front cell's chi 0.6/1.0 and an f ripple of 2.9e-3).
+  O2  MUSCL at nx = 120, 240, 480 against the closed form: the front within a cell (at nx = 480 in cell 122, the one
+      after x_n's), T = T_m on the plateau, the liquid error falling with dx - at first order, 2.68, 1.36 and 0.68 K:
+      the inlet state fills both ghost layers, so the inlet face carries it exactly, but the reconstruction of the
+      first interior face sees it at the first ghost's centre, half a cell upstream of the face, and takes half the
+      first cell's upstream slope (the same scheme with the inlet state at the face in that stencil is second order,
+      0.03 K at nx = 120) - and the exit within the solid's first-order bound. Every nx must be a fixed point: the
+      family reconstructs T_liq = e/c_l, continuous through the recalescence, so the front does not depend on its own
+      cell's phase (reconstructing T instead, nx = 480 cycles with period 2, the front cell's chi 0.6/1.0 and an f
+      ripple of 2.9e-3).
   O3  IG/Rusanov, MUSCL nx = 240: the front of O2 within a cell and chi at most 1e-4 in every cell upstream of it.
       At the inlet's P = 1e-6 the Rusanov leak is c/(2u + c) = 5.04e-5 at first order and 2.52e-5 with MUSCL and van
       Leer (measured here), and with T_liq reconstructed nothing else reaches upstream (reconstructing T, the cell
