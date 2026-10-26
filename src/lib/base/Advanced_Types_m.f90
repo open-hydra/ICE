@@ -55,7 +55,7 @@ module ICE_Advanced_Types_m
   end type ICE_block_type
 
   !> The boundary cells of one family that this rank owns, each with its records
-  !> in the order of the boundary table: cell c holds rec(first(c):first(c+1)-1).
+  !> in face order: cell c holds rec(first(c):first(c+1)-1).
   !> Built by build_local_bc_index; read by compute_bound.
   type :: ICE_bc_cells_type
     integer                            :: n = 0

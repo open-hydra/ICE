@@ -40,7 +40,7 @@ contains
     !$OMP PARALLEL DEFAULT(NONE) SHARED(grid, p) PRIVATE(c)
 
     !> One iteration per boundary cell of this rank (see build_local_bc_index),
-    !> its records in the order of the table: an edge or corner cell receives its
+    !> its records in face order: an edge or corner cell receives its
     !> two or three fluxes from one thread in one fixed order, whatever the thread
     !> count, and no accumulation is shared.
     !$OMP DO SCHEDULE (DYNAMIC, 16)
@@ -57,7 +57,7 @@ contains
   end subroutine compute_bound
 
 
-  !> The boundary fluxes of boundary cell c of family p, its records in table order: the
+  !> The boundary fluxes of boundary cell c of family p, its records in face order: the
   !> body of compute_bound's loop.
   subroutine bound_cell(grid, p, c)
     use ICE_Global_m

@@ -122,8 +122,8 @@ contains
       deallocate(pos)
     end block
 
-    ! One list of boundary cells per family, each cell with its records in the
-    ! order of the table. compute_bound then accumulates a cell's boundary
+    ! One list of boundary cells per family, each cell with its records in
+    ! face order. compute_bound then accumulates a cell's boundary
     ! fluxes from one thread in one fixed order: an edge or corner cell carries
     ! two or three records, and (a+b)+c is not (a+c)+b.
     if (allocated(grid%bcells)) deallocate(grid%bcells)
@@ -186,7 +186,7 @@ contains
 
 
   !> The boundary cells of family p on this rank, block by block in cell order,
-  !> each with its records in table order. Type-0 records (no condition) are
+  !> each with its records in face order. Type-0 records (no condition) are
   !> left out. Linear in the records and the cells of the owned blocks.
   subroutine collect_boundary_cells(grid, p, cells)
     use ICE_Advanced_Types_m
@@ -195,7 +195,7 @@ contains
     integer,                 intent(in)    :: p
     type(ICE_bc_cells_type), intent(inout) :: cells
     integer, allocatable :: head(:,:,:), tail(:,:,:), next(:)
-    integer :: b, nn, n, i, j, k, c, r, ncell, nrec
+    integer :: b, nn, n, i, j, k, c, r, ncell, nrec, m, l
 
     ! Pass 1 counts, pass 2 fills; the chains are rebuilt per block each pass.
     nrec = 0 ; ncell = 0
@@ -248,6 +248,18 @@ contains
           r = r + 1
           cells%rec(r) = grid%local_bc_idx(nn)
           nn = next(nn)
+        end do
+        ! The cell's records by face, stably (at most six): a file that lists them in
+        ! another order gives the sum of a file that lists them by face
+        do m = cells%first(c) + 1, r
+          n = cells%rec(m)
+          l = m - 1
+          do while (l >= cells%first(c))
+            if (grid%bc(cells%rec(l))%f <= grid%bc(n)%f) exit
+            cells%rec(l+1) = cells%rec(l)
+            l = l - 1
+          end do
+          cells%rec(l+1) = n
         end do
       end do ; end do ; end do
       deallocate(head, tail)
