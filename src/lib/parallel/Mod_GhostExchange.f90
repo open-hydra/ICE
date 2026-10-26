@@ -51,7 +51,14 @@ module ICE_Mod_GhostExchange
     logical :: built = .false.
   end type ghost_schedule_type
 
+  !> Message tags, within 32767, the least MPI_TAG_UB the MPI standard allows. The
+  !> halo exchange of family p uses halo_tag + p. The gathers and the scatter of the
+  !> output use io_tag for every block: each receive names its source rank, and both
+  !> sides post the messages of a pair of ranks in increasing block order, which MPI
+  !> matches in the order they were started (MPI 4.1, Sec. 3.7.4), so the k-th
+  !> receive from a rank takes the k-th block that rank sends.
   integer, parameter :: halo_tag = 7101
+  integer, parameter :: io_tag   = 7100
 
   !> One schedule per (level, family): a stage of family p fills only p's ghosts,
   !> so only p's cells cross. ghost_sched points at the one being used.
@@ -682,7 +689,7 @@ contains
           if (.not. is_local_block(b)) then
             nreq = nreq + 1
             call MPI_IRECV(buf(blk_offset(b,1)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           block_owner(b), b, ice_comm, reqs(nreq), ierr)
+                           block_owner(b), io_tag, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -702,7 +709,7 @@ contains
             end do
             nreq = nreq + 1
             call MPI_ISEND(buf(blk_offset(b,1)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           0, b, ice_comm, reqs(nreq), ierr)
+                           0, io_tag, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -793,7 +800,7 @@ contains
           if (.not. is_local_block(b)) then
             nreq = nreq + 1
             call MPI_IRECV(buf(blk_offset(b,1)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           block_owner(b), b, ice_comm, reqs(nreq), ierr)
+                           block_owner(b), io_tag, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -818,7 +825,7 @@ contains
             end do
             nreq = nreq + 1
             call MPI_ISEND(buf(blk_offset(b,1)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           0, b, ice_comm, reqs(nreq), ierr)
+                           0, io_tag, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -916,7 +923,7 @@ contains
             end do
             nreq = nreq + 1
             call MPI_ISEND(buf(blk_offset(b)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           block_owner(b), b, ice_comm, reqs(nreq), ierr)
+                           block_owner(b), io_tag, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -926,7 +933,7 @@ contains
           if (is_local_block(b)) then
             nreq = nreq + 1
             call MPI_IRECV(buf(blk_offset(b)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           0, b, ice_comm, reqs(nreq), ierr)
+                           0, io_tag, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
