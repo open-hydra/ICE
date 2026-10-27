@@ -359,7 +359,7 @@ contains
       integer(I4), allocatable :: r(:,:)
     end type face_records_type
     type(face_records_type), allocatable :: rec(:,:)
-    integer(I4) :: p, n, q, b, f, t(2), nt(2), across
+    integer(I4) :: p, n, q, b, f, t(2), nt(2), across, nf
     character(len=40)  :: at_level
     character(len=200) :: msg
 
@@ -367,6 +367,8 @@ contains
     if (level > 1) write(at_level,'(A,I0)') ' at multigrid level ', level
 
     allocate(rec(grid%nb, 6))
+    if (allocated(grid%conn)) deallocate(grid%conn)
+    allocate(grid%conn(ngroups))
 
     do p = 1, ngroups
 
@@ -428,6 +430,18 @@ contains
                                       [grid%bc(q)%b, grid%bc(q)%f, grid%bc(q)%k, grid%bc(q)%j, grid%bc(q)%i])
         endif
       enddo
+
+      !> The faces of family p, numbered by their owner records in table order: every rank reads the whole
+      !  table, so every rank numbers them alike
+      nf = 0
+      do n = p, size(grid%bc), ngroups
+        if (grid%bc(n)%type /= 101 .and. grid%bc(n)%type /= 201) cycle
+        if (.not. grid%bc(n)%owner) cycle
+        nf = nf + 1
+        grid%bc(n)%cf = nf
+        grid%bc(grid%bc(n)%partner)%cf = nf
+      enddo
+      grid%conn(p)%n = nf
 
       do b = 1, grid%nb
         do f = 1, 6

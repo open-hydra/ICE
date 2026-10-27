@@ -57,7 +57,7 @@ So a phase with two materials, one of them in two populations, needs three
 | Code | Type | Payload | ICE treatment |
 |------|------|---------|---------------|
 | `0` | Null | none | The ghost copies the interior cell; no boundary flux. This is the code for the faces of a direction the mesh does not resolve — faces 5 and 6 of a planar 2-D case |
-| `101` | Connection | `b2 i2 j2 k2 f2 c1 c2 c3 c4` | Both ghost layers copied from the interior cells of the neighbouring block |
+| `101` | Connection | `b2 i2 j2 k2 f2 c1 c2 c3 c4` | Both ghost layers copied from the interior cells of the neighbouring block; the face's flux is computed once and the neighbouring block takes its negative |
 | `201` | Periodic | as `101` | As `101` |
 | `102` | Chimera (overset) | donor counts per layer, then `b i j k weight` per donor | Each ghost layer set to the weighted blend of its own donors, in conservative variables |
 | `200` | Axisymmetry | none | The side faces of an axisymmetric wedge: see below |

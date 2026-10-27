@@ -90,8 +90,8 @@ $$
 
 So $\beta = 1$ in smooth flow, where the scheme is the plain MUSCL one, falls continuously with the sensor, and is 0 at
 a shock ($s \ge 1/\Delta$), where the scheme drops to first order. A face inside a block takes the smaller weight of its
-two cells, $\min(\beta_L, \beta_R)$; a face on a block boundary takes the weight of its own block's cell, the only one of
-its two cells the block holds.
+two cells, $\min(\beta_L, \beta_R)$; a face on a physical boundary takes its cell's weight, and a face between two blocks
+the weight of the cell of its owner record ([Boundary faces](#boundary-faces)).
 
 The form is that of Tramel, Nichols and Buning (AIAA 2009-3988, Eqs. 29-30), with one change. There the weight is
 $1 - \tanh(10\,\varphi^3)$ with $\varphi = s/\Delta$, and $\Delta$ between 1 and 10 was found adequate. With
@@ -113,7 +113,7 @@ zero, so the scheme is more dissipative there: on the AG crossing jets the RMS d
 $2.7\times10^{-2}$ to $2.8\times10^{-2}$ kg/m³, and the field's maximum, on a jet where the jets meet (0.1 kg/m³ in the
 exact solution), falls from 0.16 to 0.12. A domain split into blocks still differs from the same domain in one block
 where the detector acts at a block boundary, whose face sees one cell's weight, but by little: the four-block crossing
-jets differ from the single block by $3\times10^{-6}$ of the peak density
+jets differ from the single block by $7\times10^{-7}$ of the peak density
 ([Multi-block and MPI](../vv/multiblock-mpi.md)).
 
 On the [crossing jets](../vv/crossing-jets.md) the detector lets the MK and AG runs converge, keeps the AG pressure
@@ -142,6 +142,14 @@ Boundary fluxes are built from the ghost values, so every boundary type — conn
 reaches the flux loop through the same path. The ghost fill is described under [Boundary Conditions](../user/boundary-conditions.md).
 On the side faces of an axisymmetric wedge the ghost is the cell's mirror image, so the flux carries no mass, and for IG and
 AG the pressure on those faces is the hoop term of the radial momentum; MK has no flux there.
+
+A face between two blocks (`101`, `201`) has a record in each block. Its flux is computed once, from the owner record — the
+one on the face's low-index side when the face is the high face of one block and the low face of the other, otherwise the
+first in (block, face, k, j, i) order — with that block's stencil and that cell's detector weight, and the other block's
+cell takes its negative. The two blocks therefore exchange the same mass, momentum and energy across the cut, which a
+reconstruction from each side would not give: each block takes the lengths of the other's cells from its own extrapolated
+ghost nodes, and the weight of its own cell. With MPI the owner's rank sends the flux to the rank of the other block, once
+per stage.
 
 The state an inlet injects is the state of the boundary face, not of the ghost cell's centre: the reconstructions take the
 length of an injecting ghost as zero, so the first cell's slope toward the inlet is the one-sided slope from the face, on

@@ -100,6 +100,7 @@ the least work so far. At startup it prints how even the split is:
 ```
   MPI partition: 4 blocks over 2 ranks, balance 100.0% of ideal
   MPI halo: 400 cells exchanged per ghost fill
+  MPI halo: 100 connection faces whose flux crosses ranks
 ```
 
 - A block is never split, so ranks beyond the number of blocks sit idle. To use more
@@ -107,7 +108,8 @@ the least work so far. At startup it prints how even the split is:
 - Every rank reads the whole mesh and solution, and updates only its own blocks. Before
   each ghost-cell fill — that is, once per Runge-Kutta stage — the interior cells that
   a connection (`101`/`201`) or chimera (`102`) face reads from a block owned by
-  another rank are sent to it.
+  another rank are sent to it. The flux through a connection face is computed once, by
+  the rank of one of its two blocks, and sent to the rank of the other.
 - Rank 0 gathers the blocks and writes the output files.
 
 The result does not depend on the number of ranks: the solution is bit-for-bit the same

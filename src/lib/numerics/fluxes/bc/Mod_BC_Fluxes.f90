@@ -2,6 +2,7 @@ module ICE_Mod_BC_Fluxes
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   use ICE_Mod_MPI, only: is_local_block
   use ICE_Lib_Ghost, only: compute_ghost, fill_second_ghost
+  use ICE_Mod_GhostExchange, only: exchange_conn_flux
   use ICE_Mod_ThreadGroups, only: n_tgroups, thread_group, split_range
   !$ use omp_lib, only: omp_get_thread_num
 
@@ -25,6 +26,33 @@ contains
     !> The residual was zeroed by zero_residual at the start of the stage and
     !> nothing has written it since, so the boundary fluxes are its first terms.
     bad_recon = .false.
+
+    !> The flux of every connection face (101/201) of family p, once, by the face's owner record,
+    !> before any cell takes it: the owner's cell then adds it and the partner's cell its negative
+    !> (bound_cell), so the two blocks exchange the same flux. The end of the region is the barrier
+    !> before the cells: a partner's cell may belong to another thread group than its owner's.
+    !> With MPI, the owner's rank sends the flux to the partner's (exchange_conn_flux).
+    if (grid%conn(p)%nown > 0) then
+      if (n_tgroups > 1) then
+        !$OMP PARALLEL DEFAULT(NONE) SHARED(grid, p) PRIVATE(tid, g, m, s, a, z, jj)
+        tid = 0
+        !$ tid = omp_get_thread_num()
+        call thread_group(tid, g, m, s)
+        call split_range(grid%conn(p)%tg_first(g), grid%conn(p)%tg_first(g+1) - 1, m, s, a, z)
+        do jj = a, z
+          call owner_flux(grid, p, grid%conn(p)%own(jj))
+        end do
+        !$OMP END PARALLEL
+      else
+        !$OMP PARALLEL DO DEFAULT(NONE) SHARED(grid, p) PRIVATE(jj) SCHEDULE(DYNAMIC, 16)
+        do jj = 1, grid%conn(p)%nown
+          call owner_flux(grid, p, grid%conn(p)%own(jj))
+        end do
+        !$OMP END PARALLEL DO
+      end if
+    end if
+    call exchange_conn_flux(grid, p)
+
     !> Thread groups: each thread its static share of its own group's boundary cells
     if (n_tgroups > 1) then
       !$OMP PARALLEL DEFAULT(NONE) SHARED(grid, p) PRIVATE(tid, g, m, s, a, z, jj)
@@ -58,38 +86,93 @@ contains
 
 
   !> The boundary fluxes of boundary cell c of family p, its records in face order: the
-  !> body of compute_bound's loop. A first ghost that holds an injected state (inj) has
-  !> length 0: its side of the face is that state, and the cell's side takes the one-sided
-  !> slope from the face; the length between the two ghosts stays, as both hold the state
-  !> and their slope is 0. In a block one cell across, ip is the opposite face's first
-  !> ghost, which inj may flag as well; inj is never set on an interior cell.
+  !> body of compute_bound's loop.
   subroutine bound_cell(grid, p, c)
     use ICE_Global_m
     use ICE_Advanced_Types_m
-    use ICE_Lib_Riemann
-    use ICE_Mod_Fluxes, only: state_reconstruction, bad_recon
-    use ICE_Config_Types_m, only: obj_time_scheme, obj_condensed
+    use ICE_Config_Types_m, only: obj_time_scheme
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4),      intent(in)    :: p
     integer(kind=I4),      intent(in)    :: c
-    integer(kind=I4) :: n, r, b, f, i, j, k
-    integer(kind=I4) :: ig, jg, kg, ig2, jg2, kg2, ip, jp, kp
-    integer(kind=I4) :: dir
-    real(kind=R8)    :: normal(3), area
-    real(kind=R8)    :: dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th
-    real(kind=R8)    :: beta_val
-    real(kind=R8)    :: priml(ncond_max), primr(ncond_max), flux(ncond_max)
+    integer(kind=I4) :: n, r, b, i, j, k
+    real(kind=R8)    :: flux(ncond_max)
 
     do r = grid%bcells(p)%first(c), grid%bcells(p)%first(c+1) - 1
       n = grid%bcells(p)%rec(r)
 
       b = grid%bc(n)%b
       i = grid%bc(n)%i ; j = grid%bc(n)%j ; k = grid%bc(n)%k
-      f = grid%bc(n)%f
 
       !> Nothing crosses a symmetry face of a pressureless cloud
       if (grid%bc(n)%type == 200 .and. trim(obj_time_scheme%model(p)) == 'MK') cycle
+
+      select case (grid%bc(n)%type)
+        case (101, 201)
+          !> A connection face's flux is its owner record's, computed before the cells (compute_bound).
+          !>  Every conserved component is in the global frame, so what enters the owner's cell leaves the
+          !>  partner's whatever the orientation of the two blocks' indices
+          if (grid%bc(n)%owner) then
+            flux(1:ncond(p)) =  grid%conn(p)%F(1:ncond(p), grid%bc(n)%cf)
+          else
+            flux(1:ncond(p)) = -grid%conn(p)%F(1:ncond(p), grid%bc(n)%cf)
+          end if
+        case default
+          call record_flux(grid, p, n, flux(1:ncond(p)))
+      end select
+
+      grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = &
+        grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) + flux(1:ncond(p))
+
+    enddo
+
+  end subroutine bound_cell
+
+
+  !> The flux of connection face grid%bc(n)%cf of family p, from its owner record n (record_flux,
+  !> which gives the face the shock-detector weight of the owner's cell: under MPI the partner's
+  !> cell may lie on another rank, whose weights this rank does not compute).
+  subroutine owner_flux(grid, p, n)
+    use ICE_Global_m
+    use ICE_Advanced_Types_m
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4),      intent(in)    :: p, n
+    real(kind=R8)    :: flux(ncond_max)
+
+    call record_flux(grid, p, n, flux(1:ncond(p)))
+    grid%conn(p)%F(1:ncond(p), grid%bc(n)%cf) = flux(1:ncond(p))
+
+  end subroutine owner_flux
+
+
+  !> The flux through the face of boundary record n of family p into its cell. A first ghost
+  !> that holds an injected state (inj) has length 0: its side of the face is that state, and
+  !> the cell's side takes the one-sided slope from the face; the length between the two
+  !> ghosts stays, as both hold the state and their slope is 0. In a block one cell across,
+  !> ip is the opposite face's first ghost, which inj may flag as well; inj is never set on
+  !> an interior cell.
+  subroutine record_flux(grid, p, n, flux)
+    use ICE_Global_m
+    use ICE_Advanced_Types_m
+    use ICE_Lib_Riemann
+    use ICE_Mod_Fluxes, only: state_reconstruction, bad_recon
+    use ICE_Config_Types_m, only: obj_condensed
+    implicit none
+    type(ICE_domain_type), intent(in)  :: grid
+    integer(kind=I4),      intent(in)  :: p, n
+    real(kind=R8),         intent(out) :: flux(:)
+    integer(kind=I4) :: b, f, i, j, k
+    integer(kind=I4) :: ig, jg, kg, ig2, jg2, kg2, ip, jp, kp
+    integer(kind=I4) :: dir
+    real(kind=R8)    :: normal(3), area
+    real(kind=R8)    :: dl0, dl1, dl2, dll, dlr, dl_g1, dl_m, dl_4th
+    real(kind=R8)    :: beta_val
+    real(kind=R8)    :: priml(ncond_max), primr(ncond_max)
+
+      b = grid%bc(n)%b
+      i = grid%bc(n)%i ; j = grid%bc(n)%j ; k = grid%bc(n)%k
+      f = grid%bc(n)%f
 
       !> Ghost and interior neighbor coordinates
       ig  = i -   guide(f,1) ; jg  = j -   guide(f,2) ; kg  = k -   guide(f,3)
@@ -155,12 +238,7 @@ contains
 
       end select
 
-      grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = &
-        grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) + flux(1:ncond(p))
-
-    enddo
-
-  end subroutine bound_cell
+  end subroutine record_flux
 
 
 end module ICE_Mod_BC_Fluxes

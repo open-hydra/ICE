@@ -25,6 +25,7 @@ module ICE_Advanced_Types_m
     integer  :: bs, is, js, ks, fs, d11, d12, d21, d22 ! Connection specs
     integer  :: partner = 0                             ! Connection: record of the same face seen from the other block
     logical  :: owner = .false.                         ! Connection: of the face's two records, the owner (Pair_Connections)
+    integer  :: cf = 0                                  ! Connection: the face's number among its family's (Pair_Connections)
     integer               :: ni(2) = 0                 ! Chimera: donors per ghost layer
     integer,  allocatable :: donorID(:,:)               ! Chimera: (donor, [b i j k]), layer 1 then 2
     real(R8), allocatable :: volume_fraction(:)         ! Chimera: donor weights, sum to 1 per layer
@@ -67,6 +68,19 @@ module ICE_Advanced_Types_m
     integer, dimension(:), allocatable :: tg_cell, tg_first
   end type ICE_bc_cells_type
 
+  !> The connection faces (101/201) of one family on one grid level. The flux of face cf is computed
+  !> once, by its owner record, into F(:,cf): what enters the owner's cell through the face; the
+  !> partner's cell takes its negative. Every rank numbers the faces alike (Pair_Connections), so a
+  !> face's flux crosses ranks by its number.
+  type :: ICE_conn_faces_type
+    integer                               :: n = 0      ! faces of the family
+    real(R8), dimension(:,:), allocatable :: F          ! (ncond, n)
+    integer                               :: nown = 0   ! owner records in this rank's blocks
+    integer,  dimension(:),   allocatable :: own        ! those records, in table order
+    ! With thread groups: own by the group owning the record's block, own(tg_first(g):tg_first(g+1)-1) for group g
+    integer,  dimension(:),   allocatable :: tg_first
+  end type ICE_conn_faces_type
+
   type, extends(bc_type) :: ICE_bc_type
     integer  :: p                                       ! Particle group index
     real(R8) :: massflux, velocity, temperature
@@ -101,6 +115,7 @@ module ICE_Advanced_Types_m
     ! local_bc_grp(tg_bc(tg_bc_first(g,p):tg_bc_first(g+1,p)-1))
     integer, dimension(:),   allocatable :: tg_bc
     integer, dimension(:,:), allocatable :: tg_bc_first
+    type(ICE_conn_faces_type), dimension(:), allocatable :: conn   ! one per family: the connection faces' fluxes
   end type ICE_domain_type
 
   type :: ICE_simulation_type
