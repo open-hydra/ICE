@@ -29,7 +29,7 @@ the test:
 | Faces 2–4 | Extrapolation (`400`) |
 | Coupling | 0-way (no gas) |
 | Time | Local time stepping, 5000 iterations, CFL 0.8 |
-| Space reconstruction | MUSCL, Van Leer limiter; shock detector on for MK and AG, off for IG |
+| Space reconstruction | MUSCL, Van Leer limiter, no shock detector |
 
 In the exact solution each jet is a 45° band of density 0.1 kg/m³. The bands overlap in a
 diamond centred at $(0.25, 0)$, where the density is 0.2 kg/m³.
@@ -52,9 +52,9 @@ mirror images about the centre of row 51 ($y = 0.005$), which takes the delta.
 | Model | Peak density [kg/m³] | Behaviour at the crossing |
 |---|---|---|
 | Exact | 0.200 | Jets pass through each other |
-| MK | 1.98 | Jets merge into a single jet along $y = 0.005$; mass concentrates in the cells of row 51 (delta shock) |
-| IG | 0.339 | Jets merge where they meet, then spread as a single jet |
-| AG | 0.158 | Jets cross and continue as two separate, diffused jets |
+| MK | 2.00 | Jets merge into a single jet along $y = 0.005$; mass concentrates in the cells of row 51 (delta shock) |
+| IG | 0.346 | Jets merge where they meet, then spread as a single jet |
+| AG | 0.234 | Jets cross and continue as two separate, diffused jets; the peak lies beside the crossing |
 
 - **MK** merges the jets into one along $y = 0.005$, midway between its inlets, and piles
   their mass into the cells of row 51. This delta shock is the expected monokinetic answer
@@ -65,19 +65,23 @@ mirror images about the centre of row 51 ($y = 0.005$), which takes the delta.
 - **AG** is the only closure that lets the jets cross. Downstream they are much wider and
   weaker than the exact bands.
 
-MK and AG run with the [shock detector](../theory/numerics.md#shock-detector). Without it, AG
-clips its pressure tensor at the floor in 22 populated cells where the jets cross, and its
-residual cycles between $4 \times 10^{-5}$ and $9 \times 10^{-5}$. MK without it stays nearer
-its exact solution (an RMS distance of $5.6 \times 10^{-3}$ kg/m³ against $1.4 \times 10^{-2}$;
-at $x = 0.15$, upstream of where the jets meet, row 51 holds $8 \times 10^{-4}$ kg/m³ against
-0.069), but its residual stalls at $1.6 \times 10^{-5}$ and its jets are $1.2 \times 10^{-2}$
-from their mirror image at the outer edges of the inlets. With the detector both converge: MK reaches the default residual threshold at iteration
-2493, where its run stops, and AG's residual is below $10^{-8}$ at iteration 5000, where the
-test stops (it reaches the threshold at iteration 6907, $4 \times 10^{-8}$ away from the field
-at 5000). IG needs no detector: it converges
-(a residual of $3 \times 10^{-6}$ at 5000 iterations), and its chimera and multi-block
-versions then match it to round-off ([Chimera Overset](chimera.md),
-[Multi-block and MPI](multiblock-mpi.md)).
+The three closures run without the [shock detector](../theory/numerics.md#shock-detector).
+For MK and AG this is a trade. Without it MK stays nearer its exact solution (an RMS distance
+of $5.6 \times 10^{-3}$ kg/m³ against $1.4 \times 10^{-2}$ with the detector; at $x = 0.15$,
+upstream of where the jets meet, row 51 holds $8 \times 10^{-4}$ kg/m³ against 0.069), and so
+does AG ($2.6 \times 10^{-2}$ against $2.8 \times 10^{-2}$; the crossing, 0.2 kg/m³ in the
+exact solution, holds 0.06 on average against 0.04). But neither converges: MK's residual
+stalls at $1.6 \times 10^{-5}$ and its jets are $1.2 \times 10^{-2}$ from their mirror image at
+the outer edges of the inlets, and AG's residual cycles between $4 \times 10^{-5}$ and
+$9 \times 10^{-5}$. AG also gathers mass on either side of the crossing, up to 0.234 kg/m³
+where the exact solution has at most 0.15 (the field's maximum is 0.115 with the detector),
+and clips its pressure tensor at the floor in 22 nearly empty cells ($1$ to
+$3 \times 10^{-3}$ kg/m³, where the exact solution is empty): 16 between the jets next to the
+inlet face, 6 outside the jets beside the crossing. Both tests therefore run their 5000
+iterations; with the detector, MK reaches the default residual threshold at iteration 2493
+and AG at iteration 6907. IG converges without it (a residual of $1.4 \times 10^{-6}$ at 5000
+iterations), and its chimera and multi-block versions then match it to round-off
+([Chimera Overset](chimera.md), [Multi-block and MPI](multiblock-mpi.md)).
 
 The cases are also part of the regression suite (`Doisneau/MK`, `Doisneau/IG`,
 `Doisneau/AG`), which checks the density and number-density fields against a stored reference.

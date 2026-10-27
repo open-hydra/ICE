@@ -99,15 +99,18 @@ A switch also kept steady computations from converging: the cells near the thres
 next, so the density residual levelled off (at about $2\times10^{-3}$ for MK and $4\times10^{-3}$ for AG on the crossing
 jets) instead of falling. With the continuous weight both converge: MK reaches the default `res-threshold` at iteration
 2493 and AG at iteration 6907. Below the threshold the weight is smaller than the switch's wherever the sensor is not
-zero, so the scheme is more dissipative there: the peak where the AG jets cross falls from 0.16 to 0.12 kg/m³ (the exact
-peak is 0.2). A domain split into blocks still differs from the same domain in one block where the detector acts at a
-block boundary, whose face sees one cell's weight, but by little: the four-block crossing jets differ from the single
-block by $3\times10^{-6}$ of the peak density ([Multi-block and MPI](../vv/multiblock-mpi.md)).
+zero, so the scheme is more dissipative there: on the AG crossing jets the RMS distance to the exact solution grows from
+$2.7\times10^{-2}$ to $2.8\times10^{-2}$ kg/m³, and the field's maximum, on a jet where the jets meet (0.1 kg/m³ in the
+exact solution), falls from 0.16 to 0.12. A domain split into blocks still differs from the same domain in one block
+where the detector acts at a block boundary, whose face sees one cell's weight, but by little: the four-block crossing
+jets differ from the single block by $3\times10^{-6}$ of the peak density
+([Multi-block and MPI](../vv/multiblock-mpi.md)).
 
-On the [crossing jets](../vv/crossing-jets.md) the detector lets the MK and AG runs converge and keeps the AG
-pressure tensor off its floor where the jets cross. It costs accuracy where the flow is smooth: without it MK is nearer
-its exact solution, but its residual stalls and its jets are not each other's mirror image at the edges of the inlets.
-The IG crossing-jets cases run without it.
+On the [crossing jets](../vv/crossing-jets.md) the detector lets the MK and AG runs converge, keeps the AG pressure
+tensor off its floor in the nearly empty cells around the jets, and keeps AG from gathering mass on either side of the
+crossing. It costs accuracy where the flow is smooth: without it MK and AG are nearer their exact solutions, but neither
+converges (MK's residual stalls and its jets are not each other's mirror image at the edges of the inlets; AG's
+residual cycles). The crossing-jets tests run without it, for all three closures.
 
 ## Riemann solvers
 
