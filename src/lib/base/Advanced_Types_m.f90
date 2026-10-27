@@ -75,6 +75,9 @@ module ICE_Advanced_Types_m
   type :: ICE_conn_faces_type
     integer                               :: n = 0      ! faces of the family
     real(R8), dimension(:,:), allocatable :: F          ! (ncond, n)
+    integer,  dimension(:),   allocatable :: prt        ! (n): the partner record of face cf
+    real(R8), dimension(:),   allocatable :: bp         ! (n): the partner cell's detector weight, where that
+                                                        !  cell lies on another rank (exchange_conn_beta)
     integer                               :: nown = 0   ! owner records in this rank's blocks
     integer,  dimension(:),   allocatable :: own        ! those records, in table order
     ! With thread groups: own by the group owning the record's block, own(tg_first(g):tg_first(g+1)-1) for group g

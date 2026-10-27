@@ -90,8 +90,9 @@ $$
 
 So $\beta = 1$ in smooth flow, where the scheme is the plain MUSCL one, falls continuously with the sensor, and is 0 at
 a shock ($s \ge 1/\Delta$), where the scheme drops to first order. A face inside a block takes the smaller weight of its
-two cells, $\min(\beta_L, \beta_R)$; a face on a physical boundary takes its cell's weight, and a face between two blocks
-the weight of the cell of its owner record ([Boundary faces](#boundary-faces)).
+two cells, $\min(\beta_L, \beta_R)$, and so does a face between two connected blocks (`101`, `201`), which lies inside the
+domain just the same ([Boundary faces](#boundary-faces)). A face on a physical boundary, and a chimera face (`102`), whose
+ghost is a blend of donor cells rather than a cell, take their own cell's weight.
 
 The form is that of Tramel, Nichols and Buning (AIAA 2009-3988, Eqs. 29-30), with one change. There the weight is
 $1 - \tanh(10\,\varphi^3)$ with $\varphi = s/\Delta$, and $\Delta$ between 1 and 10 was found adequate. With
@@ -111,10 +112,12 @@ jets) instead of falling. With the continuous weight both converge: MK reaches t
 2493 and AG at iteration 6907. Below the threshold the weight is smaller than the switch's wherever the sensor is not
 zero, so the scheme is more dissipative there: on the AG crossing jets the RMS distance to the exact solution grows from
 $2.7\times10^{-2}$ to $2.8\times10^{-2}$ kg/m³, and the field's maximum, on a jet where the jets meet (0.1 kg/m³ in the
-exact solution), falls from 0.16 to 0.12. A domain split into blocks still differs from the same domain in one block
-where the detector acts at a block boundary, whose face sees one cell's weight, but by little: the four-block crossing
-jets differ from the single block by $7\times10^{-7}$ of the peak density
-([Multi-block and MPI](../vv/multiblock-mpi.md)).
+exact solution), falls from 0.16 to 0.12. A domain split into connected blocks gets the weights of the same domain in
+one block, so the two differ by round-off only — which the detector amplifies where the crossing jets collide: the
+four-block crossing jets, cut at $y = 0$ through the collision, differ from the single block by $3\times10^{-10}$ of the
+peak density at iteration 5000, less than a change of one inlet value in its last digit moves the single block
+($1\times10^{-9}$; [Multi-block and MPI](../vv/multiblock-mpi.md)). Blocks joined by chimera faces still differ where
+the detector acts at the interface.
 
 On the [crossing jets](../vv/crossing-jets.md) the detector lets the MK and AG runs converge, keeps the AG pressure
 tensor off its floor in the nearly empty cells around the jets, and keeps AG from gathering mass on either side of the
@@ -145,11 +148,11 @@ AG the pressure on those faces is the hoop term of the radial momentum; MK has n
 
 A face between two blocks (`101`, `201`) has a record in each block. Its flux is computed once, from the owner record — the
 one on the face's low-index side when the face is the high face of one block and the low face of the other, otherwise the
-first in (block, face, k, j, i) order — with that block's stencil and that cell's detector weight, and the other block's
-cell takes its negative. The two blocks therefore exchange the same mass, momentum and energy across the cut, which a
-reconstruction from each side would not give: each block takes the lengths of the other's cells from its own extrapolated
-ghost nodes, and the weight of its own cell. With MPI the owner's rank sends the flux to the rank of the other block, once
-per stage.
+first in (block, face, k, j, i) order — with that block's stencil and, as for a face inside a block, the smaller of its two
+cells' detector weights; the other block's cell takes its negative. The two blocks therefore exchange the same mass,
+momentum and energy across the cut, which a reconstruction from each side would not give: each block would take the lengths
+of the other's cells from its own extrapolated ghost nodes. With MPI the rank of the other block sends its cell's weight to
+the owner's rank, and the owner's rank sends back the flux, once per stage.
 
 The state an inlet injects is the state of the boundary face, not of the ghost cell's centre: the reconstructions take the
 length of an injecting ghost as zero, so the first cell's slope toward the inlet is the one-sided slope from the face, on

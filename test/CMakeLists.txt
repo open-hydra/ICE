@@ -331,11 +331,25 @@ ice_add_unit_test(VapourSourcesUnit unit/test_vapour_sources.f90 "fast;unit;impl
 if(USE_MPI)
     ice_add_fast_script(MPIEquivConnection fast/mpi-equiv "fast;implementation;needs-mpi")
     set_tests_properties(MPIEquivConnection PROPERTIES
-        ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-split4")
+        ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-split4"
+        RESOURCE_LOCK fast-mpi-equiv-work)
+
+    # The same with the shock detector on: a connection face whose two cells lie on two ranks
+    # takes the smaller of their weights, which the partner cell's rank sends to the owner's
+    # (exchange_conn_beta); with the detector off every weight is 1 and nothing would show it.
+    # On two ranks the cut at x = 0.5 separates them, and the detector acts on it from about
+    # iteration 300, so this leg runs 400: a serial stand-in for a missing weight message (weight
+    # 1 for a partner cell on the other rank) is identical to the real run up to iteration 250 and
+    # 2.5e-3 of the peak density away at 400.
+    ice_add_fast_script(MPIEquivConnectionSD fast/mpi-equiv "fast;implementation;needs-mpi")
+    set_tests_properties(MPIEquivConnectionSD PROPERTIES
+        ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-split4;ICE_FAST_SD=Jameson;ICE_FAST_ITER=400"
+        RESOURCE_LOCK fast-mpi-equiv-work)
 
     ice_add_fast_script(MPIEquivChimera fast/mpi-equiv "fast;implementation;chimera;needs-mpi")
     set_tests_properties(MPIEquivChimera PROPERTIES
-        ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-chimera")
+        ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-chimera"
+        RESOURCE_LOCK fast-mpi-equiv-work)
 
     # The same multigrid case again, this time also across ranks: each level carries
     # its own halo schedule, so a level switch has to move the exchange with it.
@@ -349,6 +363,13 @@ if(USE_MPI)
     # loop of 2026-09-30 made the corners thread-invariant).
     ice_add_equiv3d(Equiv3DRanks ranks "" "fast;implementation;3D;needs-mpi")
     ice_add_equiv3d(Equiv3DHybrid hybrid "" "fast;implementation;3D;openmp;needs-mpi")
+
+    # The ranks leg with the shock detector on, on 2 ranks: the cuts between the two ranks'
+    # blocks are connection faces whose partner cell's weight crosses ranks (exchange_conn_beta).
+    # A serial stand-in for a missing weight message (weight 1 for a partner cell on the other
+    # rank) differs from the real run in every cell, by 2e-2 of the MK density.
+    ice_add_equiv3d(Equiv3DRanksSD ranks "ICE_EQ_RANKS=2 ICE_EQ_EXTRA='--shock-detector Jameson'"
+        "fast;implementation;3D;needs-mpi")
 
     # The two-block solidifying stream of SolidAdvection (leg O6) on two ranks, against the serial runs
     ice_add_verification(SolidAdvectionMPI O-solid-advection "fast;verification;phase-change;needs-mpi")

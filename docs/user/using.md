@@ -109,7 +109,8 @@ the least work so far. At startup it prints how even the split is:
   each ghost-cell fill — that is, once per Runge-Kutta stage — the interior cells that
   a connection (`101`/`201`) or chimera (`102`) face reads from a block owned by
   another rank are sent to it. The flux through a connection face is computed once, by
-  the rank of one of its two blocks, and sent to the rank of the other.
+  the rank of one of its two blocks, and sent to the rank of the other, which first sends
+  the shock-detector weight of its cell.
 - Rank 0 gathers the blocks and writes the output files.
 
 The result does not depend on the number of ranks: the solution is bit-for-bit the same

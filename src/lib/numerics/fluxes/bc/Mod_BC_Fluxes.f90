@@ -2,7 +2,7 @@ module ICE_Mod_BC_Fluxes
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   use ICE_Mod_MPI, only: is_local_block
   use ICE_Lib_Ghost, only: compute_ghost, fill_second_ghost
-  use ICE_Mod_GhostExchange, only: exchange_conn_flux
+  use ICE_Mod_GhostExchange, only: exchange_conn_flux, exchange_conn_beta
   use ICE_Mod_ThreadGroups, only: n_tgroups, thread_group, split_range
   !$ use omp_lib, only: omp_get_thread_num
 
@@ -31,7 +31,10 @@ contains
     !> before any cell takes it: the owner's cell then adds it and the partner's cell its negative
     !> (bound_cell), so the two blocks exchange the same flux. The end of the region is the barrier
     !> before the cells: a partner's cell may belong to another thread group than its owner's.
-    !> With MPI, the owner's rank sends the flux to the partner's (exchange_conn_flux).
+    !> With MPI, the partner's rank first sends its cell's detector weight to the owner's
+    !> (exchange_conn_beta), and the owner's rank then sends the flux to the partner's
+    !> (exchange_conn_flux).
+    call exchange_conn_beta(grid, p)
     if (grid%conn(p)%nown > 0) then
       if (n_tgroups > 1) then
         !$OMP PARALLEL DEFAULT(NONE) SHARED(grid, p) PRIVATE(tid, g, m, s, a, z, jj)
@@ -129,30 +132,40 @@ contains
   end subroutine bound_cell
 
 
-  !> The flux of connection face grid%bc(n)%cf of family p, from its owner record n (record_flux,
-  !> which gives the face the shock-detector weight of the owner's cell: under MPI the partner's
-  !> cell may lie on another rank, whose weights this rank does not compute).
+  !> The flux of connection face grid%bc(n)%cf of family p, from its owner record n. A connection
+  !> face lies inside the domain, so it takes the shock-detector weight of an interior face, the
+  !> smaller of its two cells' (face_flux); the partner's cell is in another block, and its weight
+  !> comes from conn(p)%bp when that block is on another rank (exchange_conn_beta).
   subroutine owner_flux(grid, p, n)
     use ICE_Global_m
     use ICE_Advanced_Types_m
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4),      intent(in)    :: p, n
-    real(kind=R8)    :: flux(ncond_max)
+    integer(kind=I4) :: q
+    real(kind=R8)    :: flux(ncond_max), beta_q
 
-    call record_flux(grid, p, n, flux(1:ncond(p)))
+    q = grid%bc(n)%partner
+    if (is_local_block(grid%bc(q)%b)) then
+      beta_q = grid%blk(grid%bc(q)%b)%cond_phase(p)%beta(grid%bc(q)%i, grid%bc(q)%j, grid%bc(q)%k)
+    else
+      beta_q = grid%conn(p)%bp(grid%bc(n)%cf)
+    end if
+    call record_flux(grid, p, n, flux(1:ncond(p)), &
+                     min(grid%blk(grid%bc(n)%b)%cond_phase(p)%beta(grid%bc(n)%i, grid%bc(n)%j, grid%bc(n)%k), beta_q))
     grid%conn(p)%F(1:ncond(p), grid%bc(n)%cf) = flux(1:ncond(p))
 
   end subroutine owner_flux
 
 
-  !> The flux through the face of boundary record n of family p into its cell. A first ghost
+  !> The flux through the face of boundary record n of family p into its cell, with the shock-
+  !> detector weight beta_face, or the cell's own. A first ghost
   !> that holds an injected state (inj) has length 0: its side of the face is that state, and
   !> the cell's side takes the one-sided slope from the face; the length between the two
   !> ghosts stays, as both hold the state and their slope is 0. In a block one cell across,
   !> ip is the opposite face's first ghost, which inj may flag as well; inj is never set on
   !> an interior cell.
-  subroutine record_flux(grid, p, n, flux)
+  subroutine record_flux(grid, p, n, flux, beta_face)
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Lib_Riemann
@@ -162,6 +175,7 @@ contains
     type(ICE_domain_type), intent(in)  :: grid
     integer(kind=I4),      intent(in)  :: p, n
     real(kind=R8),         intent(out) :: flux(:)
+    real(kind=R8), optional, intent(in) :: beta_face
     integer(kind=I4) :: b, f, i, j, k
     integer(kind=I4) :: ig, jg, kg, ig2, jg2, kg2, ip, jp, kp
     integer(kind=I4) :: dir
@@ -180,9 +194,14 @@ contains
       ip  = i +   guide(f,1) ; jp  = j +   guide(f,2) ; kp  = k +   guide(f,3)
 
       dir      = (f+1)/2
-      !> The face's shock-detector weight is its cell's, the only one of its two cells the block holds
-      !> (an interior face takes the smaller of its two cells' weights, face_flux)
-      beta_val = grid%blk(b)%cond_phase(p)%beta(i,j,k)
+      !> A physical boundary face or a chimera face (102) takes its cell's shock-detector weight, the
+      !> only cell it has: a chimera ghost is a blend of donor cells, not a cell (a connection face
+      !> is given the interior faces' weight by owner_flux)
+      if (present(beta_face)) then
+        beta_val = beta_face
+      else
+        beta_val = grid%blk(b)%cond_phase(p)%beta(i,j,k)
+      end if
 
       select case (f)
 

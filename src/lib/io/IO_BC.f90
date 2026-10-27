@@ -433,6 +433,10 @@ contains
 
       !> The faces of family p, numbered by their owner records in table order: every rank reads the whole
       !  table, so every rank numbers them alike
+      nf = count([( (grid%bc(n)%type == 101 .or. grid%bc(n)%type == 201) .and. grid%bc(n)%owner, &
+                    n = p, size(grid%bc), ngroups )])
+      grid%conn(p)%n = nf
+      allocate(grid%conn(p)%prt(max(nf, 1)))
       nf = 0
       do n = p, size(grid%bc), ngroups
         if (grid%bc(n)%type /= 101 .and. grid%bc(n)%type /= 201) cycle
@@ -440,8 +444,8 @@ contains
         nf = nf + 1
         grid%bc(n)%cf = nf
         grid%bc(grid%bc(n)%partner)%cf = nf
+        grid%conn(p)%prt(nf) = grid%bc(n)%partner
       enddo
-      grid%conn(p)%n = nf
 
       do b = 1, grid%nb
         do f = 1, 6
