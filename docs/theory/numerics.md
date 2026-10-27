@@ -25,8 +25,11 @@ every block, it is the $k = 0$ plane translated. Every node is checked against 1
 thickness of its block, the largest move of a node from one plane to the other; a mesh
 with blocks of both kinds, or a block that fits neither to 1 % (coordinates written with
 too few digits, or $k$ planes neither parallel nor turned about $x$), stops at setup, and
-the setup summary names the type. The ghost nodes beyond the side faces of a wedge are
-rotated by its angle, not extrapolated in a straight line.
+the setup summary names the type. The ghost nodes, one layer beyond every face, are
+extrapolated linearly along the index lines, $\mathbf{x}_{-1} = 2\mathbf{x}_0 - \mathbf{x}_1$,
+so that a ghost cell has the length across the face of the first cell, whatever the
+stretching (the length the reconstruction at the faces next to a boundary reads); beyond
+the side faces of a wedge they are rotated by its angle instead.
 
 The interior faces of a block are swept in two passes, odd faces then even, so that two
 faces sharing a cell never accumulate into it at the same time. This is what makes the

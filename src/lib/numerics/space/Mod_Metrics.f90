@@ -380,7 +380,11 @@ contains
   end subroutine check_folded_cells
 
 
-  !> Extrapolate ghost cell nodes with 2nd order accuracy.
+  !> The ghost nodes, one layer beyond every face, extrapolated linearly along the index lines,
+  !> N(-1) = 2 N(0) - N(1): the edges across the face of a ghost cell are those of the first cell,
+  !> node by node, so its length across the face (the only metric of a ghost cell a flux reads)
+  !> is that of the first cell whatever the stretching, and no node past the first cell is read,
+  !> in a block of one cell too. The side faces of a 2-D wedge are rotated by its angle instead.
   subroutine extrapolate_nodes (im, jm, km, node)
     use ICE_Base_Types_m
     implicit none
@@ -390,30 +394,18 @@ contains
 
     ! i-faces
     do k = 0, km ; do j = 0, jm
-      node(-1,j,k)%c   = 3._R8*node(0,j,k)%c  - 3._R8*node(1,j,k)%c    + node(2,j,k)%c
-      node(im+1,j,k)%c = 3._R8*node(im,j,k)%c - 3._R8*node(im-1,j,k)%c + node(im-2,j,k)%c
+      node(-1,j,k)%c   = 2._R8*node(0,j,k)%c  - node(1,j,k)%c
+      node(im+1,j,k)%c = 2._R8*node(im,j,k)%c - node(im-1,j,k)%c
     enddo ; enddo
 
     ! j-faces
-    if ( jm > 2 ) then
-      do k = 0, km ; do i = -1, im+1
-        node(i,-1,k)%c   = 3._R8*node(i,0,k)%c  - 3._R8*node(i,1,k)%c    + node(i,2,k)%c
-        node(i,jm+1,k)%c = 3._R8*node(i,jm,k)%c - 3._R8*node(i,jm-1,k)%c + node(i,jm-2,k)%c
-      enddo ; enddo
-    else
-      do k = 0, km ; do i = -1, im+1
-        node(i,-1,k)%c   = 2._R8*node(i,0,k)%c  - node(i,1,k)%c
-        node(i,jm+1,k)%c = 2._R8*node(i,jm,k)%c - node(i,jm-1,k)%c
-      end do ; end do
-    endif
+    do k = 0, km ; do i = -1, im+1
+      node(i,-1,k)%c   = 2._R8*node(i,0,k)%c  - node(i,1,k)%c
+      node(i,jm+1,k)%c = 2._R8*node(i,jm,k)%c - node(i,jm-1,k)%c
+    end do ; end do
 
-    ! k-faces: cubic needs two cells, which a block of a 3-D mesh, or its coarse level, may lack
-    if ( meshType == 2 .and. delthe == 0d0 .or. meshType == 1 .or. meshType == 3 .and. km < 2 ) then
-      do j = -1, jm+1 ; do i = -1, im+1
-        node(i,j,-1)%c   = 2._R8*node(i,j,0)%c  - node(i,j,1)%c
-        node(i,j,km+1)%c = 2._R8*node(i,j,km)%c - node(i,j,km-1)%c
-      end do ; end do
-    elseif (meshType == 2 .and. delthe /= 0d0) then
+    ! k-faces
+    if (meshType == 2 .and. delthe /= 0d0) then
       do j = -1, jm+1 ; do i = -1, im+1
         node(i,j,-1)%c(1)   = node(i,j,0)%c(1)
         node(i,j,km+1)%c(1) = node(i,j,km)%c(1)
@@ -424,10 +416,10 @@ contains
         node(i,j,km+1)%c(2) =  node(i,j,-1)%c(2)
         node(i,j,km+1)%c(3) = -node(i,j,-1)%c(3)
       end do ; end do
-    elseif (meshType == 3) then
+    else
       do j = -1, jm+1 ; do i = -1, im+1
-        node(i,j,-1)%c   = 3._R8*node(i,j,0)%c  - 3._R8*node(i,j,1)%c    + node(i,j,2)%c
-        node(i,j,km+1)%c = 3._R8*node(i,j,km)%c - 3._R8*node(i,j,km-1)%c + node(i,j,km-2)%c
+        node(i,j,-1)%c   = 2._R8*node(i,j,0)%c  - node(i,j,1)%c
+        node(i,j,km+1)%c = 2._R8*node(i,j,km)%c - node(i,j,km-1)%c
       end do ; end do
     endif
 
