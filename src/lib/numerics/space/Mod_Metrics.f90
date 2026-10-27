@@ -426,6 +426,55 @@ contains
   end subroutine extrapolate_nodes
 
 
+  !> The signs that turn the face normals of a block along +i, +j and +k, from the nodes of its first
+  !> cell. The nodes come in through a dummy of explicit bounds (see node_planes).
+  pure subroutine normal_signs (node, signi, signj, signk)
+    use ICE_Base_Types_m, only: ICE_vector_3D_type
+    implicit none
+    type(ICE_vector_3D_type), intent(in)  :: node(-1:,-1:,-1:)
+    real(kind=R8),            intent(out) :: signi, signj, signk
+    real(kind=R8) :: d1(3), d2(3), d3(3), scal
+    real(kind=R8) :: snixx, sniyy, snizz, snjxx, snjyy, snjzz, snkxx, snkyy, snkzz
+
+    ! i direction
+    d1 = node(1,1,1)%c - node(1,0,0)%c
+    d2 = node(1,0,1)%c - node(1,1,0)%c
+    d3(1) = d1(2)*d2(3) - d1(3)*d2(2)
+    d3(2) = d1(3)*d2(1) - d1(1)*d2(3)
+    d3(3) = d1(1)*d2(2) - d1(2)*d2(1)
+    snixx = d3(1) ; sniyy = d3(2) ; snizz = d3(3)
+    d1 = 0.25d0*( node(1,1,1)%c + node(1,0,1)%c + node(1,0,0)%c + node(1,1,0)%c )
+    d2 = 0.25d0*( node(0,1,1)%c + node(0,0,1)%c + node(0,0,0)%c + node(0,1,0)%c )
+    scal = (d1(1)-d2(1))*snixx + (d1(2)-d2(2))*sniyy + (d1(3)-d2(3))*snizz
+    signi = sign(1.d0, scal)
+
+    ! j direction
+    d1 = node(0,1,1)%c - node(1,1,0)%c
+    d2 = node(1,1,1)%c - node(0,1,0)%c
+    d3(1) = d1(2)*d2(3) - d1(3)*d2(2)
+    d3(2) = d1(3)*d2(1) - d1(1)*d2(3)
+    d3(3) = d1(1)*d2(2) - d1(2)*d2(1)
+    snjxx = d3(1) ; snjyy = d3(2) ; snjzz = d3(3)
+    d1 = 0.25d0*( node(1,1,1)%c + node(0,1,1)%c + node(0,1,0)%c + node(1,1,0)%c )
+    d2 = 0.25d0*( node(1,0,1)%c + node(0,0,1)%c + node(0,0,0)%c + node(1,0,0)%c )
+    scal = (d1(1)-d2(1))*snjxx + (d1(2)-d2(2))*snjyy + (d1(3)-d2(3))*snjzz
+    signj = sign(1.d0, scal)
+
+    ! k direction
+    d1 = node(0,1,1)%c - node(1,0,1)%c
+    d2 = node(0,0,1)%c - node(1,1,1)%c
+    d3(1) = d1(2)*d2(3) - d1(3)*d2(2)
+    d3(2) = d1(3)*d2(1) - d1(1)*d2(3)
+    d3(3) = d1(1)*d2(2) - d1(2)*d2(1)
+    snkxx = d3(1) ; snkyy = d3(2) ; snkzz = d3(3)
+    d1 = 0.25d0*( node(1,1,1)%c + node(0,1,1)%c + node(0,0,1)%c + node(1,0,1)%c )
+    d2 = 0.25d0*( node(1,1,0)%c + node(0,1,0)%c + node(0,0,0)%c + node(1,0,0)%c )
+    scal = (d1(1)-d2(1))*snkxx + (d1(2)-d2(2))*snkyy + (d1(3)-d2(3))*snkzz
+    signk = sign(1.d0, scal)
+
+  end subroutine normal_signs
+
+
   subroutine compute_metrics (b)
     use ICE_Advanced_Types_m
     implicit none
@@ -433,49 +482,14 @@ contains
     real(kind=R8)    :: Ai, snix, sniy, sniz, Aj, snjx, snjy, snjz, Ak, snkx, snky, snkz, vol
     integer(kind=I4) :: i, j, k, im, jm, km
     real(kind=R8)    :: d1(3), d2(3), d3(3), vx(8), vy(8), vz(8)
-    real(kind=R8)    :: snixx, sniyy, snizz, snjxx, snjyy, snjzz, snkxx, snkyy, snkzz
-    real(kind=R8)    :: scal, signi, signj, signk
+    real(kind=R8)    :: signi, signj, signk
     logical          :: bad_vol
 
     im = b%dim(1) ; jm = b%dim(2) ; km = b%dim(3)
 
     ! ------ Sign of normal vectors ------
 
-    ! i direction
-    d1 = b%node(1,1,1)%c - b%node(1,0,0)%c
-    d2 = b%node(1,0,1)%c - b%node(1,1,0)%c
-    d3(1) = d1(2)*d2(3) - d1(3)*d2(2)
-    d3(2) = d1(3)*d2(1) - d1(1)*d2(3)
-    d3(3) = d1(1)*d2(2) - d1(2)*d2(1)
-    snixx = d3(1) ; sniyy = d3(2) ; snizz = d3(3)
-    d1 = 0.25d0*( b%node(1,1,1)%c + b%node(1,0,1)%c + b%node(1,0,0)%c + b%node(1,1,0)%c )
-    d2 = 0.25d0*( b%node(0,1,1)%c + b%node(0,0,1)%c + b%node(0,0,0)%c + b%node(0,1,0)%c )
-    scal = (d1(1)-d2(1))*snixx + (d1(2)-d2(2))*sniyy + (d1(3)-d2(3))*snizz
-    signi = sign(1.d0, scal)
-
-    ! j direction
-    d1 = b%node(0,1,1)%c - b%node(1,1,0)%c
-    d2 = b%node(1,1,1)%c - b%node(0,1,0)%c
-    d3(1) = d1(2)*d2(3) - d1(3)*d2(2)
-    d3(2) = d1(3)*d2(1) - d1(1)*d2(3)
-    d3(3) = d1(1)*d2(2) - d1(2)*d2(1)
-    snjxx = d3(1) ; snjyy = d3(2) ; snjzz = d3(3)
-    d1 = 0.25d0*( b%node(1,1,1)%c + b%node(0,1,1)%c + b%node(0,1,0)%c + b%node(1,1,0)%c )
-    d2 = 0.25d0*( b%node(1,0,1)%c + b%node(0,0,1)%c + b%node(0,0,0)%c + b%node(1,0,0)%c )
-    scal = (d1(1)-d2(1))*snjxx + (d1(2)-d2(2))*snjyy + (d1(3)-d2(3))*snjzz
-    signj = sign(1.d0, scal)
-
-    ! k direction
-    d1 = b%node(0,1,1)%c - b%node(1,0,1)%c
-    d2 = b%node(0,0,1)%c - b%node(1,1,1)%c
-    d3(1) = d1(2)*d2(3) - d1(3)*d2(2)
-    d3(2) = d1(3)*d2(1) - d1(1)*d2(3)
-    d3(3) = d1(1)*d2(2) - d1(2)*d2(1)
-    snkxx = d3(1) ; snkyy = d3(2) ; snkzz = d3(3)
-    d1 = 0.25d0*( b%node(1,1,1)%c + b%node(0,1,1)%c + b%node(0,0,1)%c + b%node(1,0,1)%c )
-    d2 = 0.25d0*( b%node(1,1,0)%c + b%node(0,1,0)%c + b%node(0,0,0)%c + b%node(1,0,0)%c )
-    scal = (d1(1)-d2(1))*snkxx + (d1(2)-d2(2))*snkyy + (d1(3)-d2(3))*snkzz
-    signk = sign(1.d0, scal)
+    call normal_signs (b%node, signi, signj, signk)
 
     ! ------ Compute metrics ------
 
