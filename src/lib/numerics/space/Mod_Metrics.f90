@@ -49,7 +49,7 @@ contains
                               grid%blk(b)%dim(3), &
                               grid%blk(b)%node)
 
-      call compute_metrics (grid%blk(b))
+      call compute_metrics (grid%blk(b), b, lev)
     end do
 
     do b = 1, grid%nb
@@ -475,17 +475,23 @@ contains
   end subroutine normal_signs
 
 
-  subroutine compute_metrics (b)
+  subroutine compute_metrics (b, ib, level)
     use ICE_Advanced_Types_m
     implicit none
     type(ICE_block_type), intent(inout) :: b
-    real(kind=R8)    :: Ai, snix, sniy, sniz, Aj, snjx, snjy, snjz, Ak, snkx, snky, snkz, vol
+    integer(kind=I4),     intent(in)    :: ib, level   !< Block number and multigrid level, for the messages
+    real(kind=R8)    :: Ai, snix, sniy, sniz, Aj, snjx, snjy, snjz, Ak, snkx, snky, snkz, vol, det
     integer(kind=I4) :: i, j, k, im, jm, km
-    real(kind=R8)    :: d1(3), d2(3), d3(3), vx(8), vy(8), vz(8)
+    real(kind=R8)    :: d1(3), d2(3), d3(3), r(3,8), ea(3,3)
+    real(kind=R8), volatile :: rv(3,8)   ! the corners relative to the first one, rounded once as written
     real(kind=R8)    :: signi, signj, signk
     logical          :: bad_vol
+    character(len=32) :: lev
 
     im = b%dim(1) ; jm = b%dim(2) ; km = b%dim(3)
+
+    lev = ''
+    if (level > 1) write(lev,'(A,I0,A)') ' (multigrid level ', level, ')'
 
     ! ------ Sign of normal vectors ------
 
@@ -495,7 +501,7 @@ contains
 
     bad_vol = .false.
     !$omp parallel private (d1,d2,d3,i,j,k,snix,sniy,sniz,Ai,Aj,snjx,snjy,snjz,Ak,snkx,snky,snkz), &
-    !$omp private (vx,vy,vz,vol)
+    !$omp private (r,rv,ea,vol,det)
 
     ! i direction
     !$omp do collapse(3)
@@ -545,50 +551,69 @@ contains
       b%dir(3)%f(i,j,k)%N = [ snkx, snky, snkz ]
     end do ; end do ; end do
 
-    ! Cell volumes
+    !> Cell volumes: the integral of det J over the trilinear cell, whose faces are the bilinear
+    !> faces of their four nodes, as the cells next door take them,
+    !>   V = 1/6 sum_d e_d . (S_d- + S_d+),
+    !> e_d the mean edge of direction d and S_d-, S_d+ the area vectors, half the cross product of
+    !> the diagonals, of the two faces of direction d, both along +d. It is exact on every cell,
+    !> twisted faces included, so the volumes of the cells sum to the volume their boundary faces
+    !> enclose. Only differences of nodes enter, the corners relative to the first one, so the
+    !> rounding is that of the size of the cell, not of its coordinates, as long as the differences
+    !> are rounded as written: a compiler that reassociates (ifx -fp-model fast) may rewrite
+    !> (q - c1) - (c2 - c1) as q - c2 across statements, and a VOLATILE object (rv) is defined and
+    !> referenced each time as the program says. V is signed: a cell is turned over somewhere when
+    !> V has not the sign of det, the determinant of the mean edges at its centre (a left-handed
+    !> block has both negative), and flat when it is zero; both stop the setup. The volume kept is
+    !> |V|.
     !$omp do collapse(3)
     do k = 1, km ; do j = 1, jm ; do i = 1, im
-      vx = [ b%node(i-1,j-1,k-1)%c(1), b%node(i,j-1,k-1)%c(1), b%node(i-1,j,k-1)%c(1), b%node(i,j,k-1)%c(1), &
-             b%node(i-1,j-1,k  )%c(1), b%node(i,j-1,k  )%c(1), b%node(i-1,j,k  )%c(1), b%node(i,j,k  )%c(1) ]
-      vy = [ b%node(i-1,j-1,k-1)%c(2), b%node(i,j-1,k-1)%c(2), b%node(i-1,j,k-1)%c(2), b%node(i,j,k-1)%c(2), &
-             b%node(i-1,j-1,k  )%c(2), b%node(i,j-1,k  )%c(2), b%node(i-1,j,k  )%c(2), b%node(i,j,k  )%c(2) ]
-      vz = [ b%node(i-1,j-1,k-1)%c(3), b%node(i,j-1,k-1)%c(3), b%node(i-1,j,k-1)%c(3), b%node(i,j,k-1)%c(3), &
-             b%node(i-1,j-1,k  )%c(3), b%node(i,j-1,k  )%c(3), b%node(i-1,j,k  )%c(3), b%node(i,j,k  )%c(3) ]
-      vol = tvol(vx,vy,vz,1,2,3,5) + tvol(vx,vy,vz,2,4,3,8) &
-          + tvol(vx,vy,vz,5,8,6,2) + tvol(vx,vy,vz,5,7,8,3) &
-          + tvol(vx,vy,vz,5,8,2,3)
-      if (vol <= 0d0) then
+      ! Corner 1 + a + 2 b + 4 c is node (i-1+a, j-1+b, k-1+c)
+      rv(:,1) = 0d0
+      rv(:,2) = b%node(i  ,j-1,k-1)%c - b%node(i-1,j-1,k-1)%c
+      rv(:,3) = b%node(i-1,j  ,k-1)%c - b%node(i-1,j-1,k-1)%c
+      rv(:,4) = b%node(i  ,j  ,k-1)%c - b%node(i-1,j-1,k-1)%c
+      rv(:,5) = b%node(i-1,j-1,k  )%c - b%node(i-1,j-1,k-1)%c
+      rv(:,6) = b%node(i  ,j-1,k  )%c - b%node(i-1,j-1,k-1)%c
+      rv(:,7) = b%node(i-1,j  ,k  )%c - b%node(i-1,j-1,k-1)%c
+      rv(:,8) = b%node(i  ,j  ,k  )%c - b%node(i-1,j-1,k-1)%c
+      r = rv
+      ea(:,1) = 0.25d0 * ( r(:,2) + ( r(:,6) - r(:,5) ) + ( r(:,4) - r(:,3) ) + ( r(:,8) - r(:,7) ) )
+      ea(:,2) = 0.25d0 * ( r(:,3) + ( r(:,7) - r(:,5) ) + ( r(:,4) - r(:,2) ) + ( r(:,8) - r(:,6) ) )
+      ea(:,3) = 0.25d0 * ( r(:,5) + ( r(:,7) - r(:,3) ) + ( r(:,6) - r(:,2) ) + ( r(:,8) - r(:,4) ) )
+      ! Twice the area vectors, (3rd - 1st) x (4th - 2nd) of the corners in the order that turns
+      ! about +d: i faces 1 3 7 5 and 2 4 8 6, j faces 1 5 6 2 and 3 7 8 4, k faces 1 2 4 3 and 5 6 8 7
+      vol =       dot_product(ea(:,1), cross(r(:,7), r(:,5) - r(:,3)) + cross(r(:,8) - r(:,2), r(:,6) - r(:,4)))
+      vol = vol + dot_product(ea(:,2), cross(r(:,6), r(:,2) - r(:,5)) + cross(r(:,8) - r(:,3), r(:,4) - r(:,7)))
+      vol = vol + dot_product(ea(:,3), cross(r(:,4), r(:,3) - r(:,2)) + cross(r(:,8) - r(:,5), r(:,7) - r(:,6)))
+      vol = vol / 12d0
+      det = dot_product(ea(:,1), cross(ea(:,2), ea(:,3)))
+      if (.not. (vol*det > 0d0)) then
         !$omp critical (ICE_metrics_report)
-        write(*,*) 'Negative volume in i,j,k', i, j, k
+        if (.not. bad_vol) &
+          write(*,'(A,I0,A,3(1X,I0),A,ES12.4,A,ES12.4)') ' [ERROR] [ICE::compute_metrics] block ', ib, ', cell', &
+            i, j, k, trim(lev)//': turned over or flat; volume = ', vol, ', det of the mean edges = ', det
         bad_vol = .true.
         !$omp end critical (ICE_metrics_report)
       endif
-      b%vol(i,j,k) = vol
+      b%vol(i,j,k) = abs(vol)
     end do ; end do ; end do
     !$omp end parallel
     if (bad_vol) then
-      write(*,'(A)') ' [ERROR] [ICE::compute_metrics] non-positive cell volume'
+      write(*,'(A)') ' [ERROR] [ICE::compute_metrics] a cell whose volume is zero or has not the sign of det at its centre'
       error stop 1
     endif
 
   end subroutine compute_metrics
 
 
-  pure function tvol(vx,vy,vz,ind1,ind2,ind3,ind4) result(volume)
+  pure function cross(u, v) result(w)
     implicit none
-    real(kind=R8),    intent(in) :: vx(8), vy(8), vz(8)
-    integer(kind=I4), intent(in) :: ind1, ind2, ind3, ind4
-    real(kind=R8) :: volume
+    real(kind=R8), intent(in) :: u(3), v(3)
+    real(kind=R8) :: w(3)
 
-    volume = abs( ( (vx(ind2)-vx(ind1)) * &
-        ( (vy(ind3)-vy(ind1))*(vz(ind4)-vz(ind1)) - (vy(ind4)-vy(ind1))*(vz(ind3)-vz(ind1)) ) + &
-                    (vy(ind2)-vy(ind1)) * &
-        ( (vx(ind4)-vx(ind1))*(vz(ind3)-vz(ind1)) - (vx(ind3)-vx(ind1))*(vz(ind4)-vz(ind1)) ) + &
-                    (vz(ind2)-vz(ind1)) * &
-        ( (vx(ind3)-vx(ind1))*(vy(ind4)-vy(ind1)) - (vx(ind4)-vx(ind1))*(vy(ind3)-vy(ind1)) ) ) &
-        / 6.d0 )
+    w = [ u(2)*v(3) - u(3)*v(2), u(3)*v(1) - u(1)*v(3), u(1)*v(2) - u(2)*v(1) ]
 
-  end function tvol
+  end function cross
 
 
   subroutine compute_metric_tensor (b, ib, level)

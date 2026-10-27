@@ -13,7 +13,14 @@ $$
 
 with $\Omega_i$ the cell volume, $A_f$ the face area and $\hat{\mathbf{n}}_f$ the outward
 unit normal. Face areas, normals, cell volumes and the three cell lengths are computed
-once at setup from the node coordinates and stored.
+once at setup from the node coordinates and stored. The volume of a cell is the integral
+of the Jacobian determinant of the trilinear map of its eight nodes,
+$\Omega = \frac{1}{6} \sum_d \mathbf{e}_d \cdot (\mathbf{S}_d^- + \mathbf{S}_d^+)$, with
+$\mathbf{e}_d$ the mean edge of direction $d$ and $\mathbf{S}_d^\mp$ the area vectors (half
+the cross product of the diagonals, both along $+d$) of its two faces of that direction:
+exact on every cell, twisted faces included, so that the volumes of the cells add up to
+the volume their boundary faces enclose. A cell whose volume is zero, or has not the sign
+of the determinant of its mean edges (it is then turned over somewhere), stops the setup.
 
 Each block carries **two ghost layers** on every face. The dimensionality is inferred
 from the blocks: the mesh is 3-D if a block has more than one cell in $k$, 2-D if not and
