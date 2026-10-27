@@ -3,7 +3,7 @@ module ICE_Mod_Metrics
 
   implicit none
   private
-  public :: setup_metrics, delthe, meshType, ncollapsed_corners
+  public :: setup_metrics, mirror_planes, delthe, meshType, ncollapsed_corners
 
   integer(kind=I4) :: meshType ! 1 -> 1D, 2 -> 2D, 3 -> 3D
   real(kind=R8)    :: delthe = 0._R8  ! angle of the axisymmetric wedge of a 2-D mesh, 0 on any other mesh
@@ -239,7 +239,6 @@ contains
     shift = node(0,0,1)%c - node(0,0,0)%c
     turn_off = 0._R8
     move_off = 0._R8
-    thick    = 0._R8
     d00      = 0._R8
     worst_turn = 0
     worst_move = 0
@@ -257,8 +256,8 @@ contains
         move_off   = d
         worst_move = [i, j]
       end if
-      thick = max(thick, maxval(abs(c - a)))
     end do ; end do
+    thick = thickness(node, [im, jm, 1], 3)
 
     if (d00 > mesh_fit*thick) then
       write(*,'(A,ES9.2,A)') ' [ERROR] [ICE::node_planes] the node (0,0) moves from the plane k = 0 to k = 1 by ', &
@@ -279,6 +278,81 @@ contains
     end if
 
   end subroutine node_planes
+
+
+  !> The thickness of a block of n cells across its node planes 0 and 1 of index direction d (2: j,
+  !> 3: k), the direction of a single cell: the largest move of a node from one plane to the other
+  !> (the largest component). The nodes come in through a dummy of explicit bounds (see node_planes).
+  pure function thickness (node, n, d) result(thick)
+    use ICE_Base_Types_m, only: ICE_vector_3D_type
+    implicit none
+    type(ICE_vector_3D_type), intent(in) :: node(-1:,-1:,-1:)
+    integer(kind=I4),         intent(in) :: n(3), d
+    real(kind=R8)    :: thick
+    integer(kind=I4) :: c
+
+    thick = 0._R8
+    do c = 1, 3
+      if (d == 2) then
+        thick = max(thick, maxval(abs(node(0:n(1),1,0:n(3))%c(c) - node(0:n(1),0,0:n(3))%c(c))))
+      else
+        thick = max(thick, maxval(abs(node(0:n(1),0:n(2),1)%c(c) - node(0:n(1),0:n(2),0)%c(c))))
+      end if
+    end do
+
+  end function thickness
+
+
+  !> Whether the node planes 0 and 1 of index direction d (2: j, 3: k), the direction of a single
+  !> cell, are in every block mirror planes of a flow that does not vary along it: on a plane mesh
+  !> the planes normal to the axis of d (y for j, z for k), on a wedge the planes through the x axis
+  !> at -delthe/2 (k = 0) and +delthe/2 (k = 1), about which the wedge is symmetric, each to within
+  !> mesh_fit of the thickness of the block. fit: the largest distance of a node from its plane
+  !> (from the plane normal to the axis through the first node of its plane), over the thickness.
+  subroutine mirror_planes (grid, d, mirror, fit)
+    use ICE_Advanced_Types_m
+    implicit none
+    type(ICE_domain_type), intent(in)  :: grid
+    integer(kind=I4),      intent(in)  :: d
+    logical,               intent(out) :: mirror
+    real(kind=R8),         intent(out) :: fit
+    integer(kind=I4) :: b
+
+    fit = 0._R8
+    do b = 1, grid%nb
+      fit = max(fit, plane_fit(grid%blk(b)%node, grid%blk(b)%dim, d))
+    end do
+    mirror = fit <= mesh_fit
+
+  end subroutine mirror_planes
+
+
+  !> mirror_planes for one block of n cells: the largest distance of a node of its planes 0 and 1 of
+  !> direction d from its mirror plane, over the thickness of the block (huge for a block without one).
+  pure function plane_fit (node, n, d) result(fit)
+    use ICE_Base_Types_m, only: ICE_vector_3D_type
+    implicit none
+    type(ICE_vector_3D_type), intent(in) :: node(-1:,-1:,-1:)
+    integer(kind=I4),         intent(in) :: n(3), d
+    real(kind=R8)    :: fit, thick, off, ang
+    integer(kind=I4) :: s
+
+    thick = thickness(node, n, d)
+    off   = 0._R8
+    do s = 0, 1
+      if (d == 2) then
+        off = max(off, maxval(abs(node(0:n(1),s,0:n(3))%c(2) - node(0,s,0)%c(2))))
+      elseif (delthe == 0._R8) then
+        off = max(off, maxval(abs(node(0:n(1),0:n(2),s)%c(3) - node(0,0,s)%c(3))))
+      else
+        ang = (s - 0.5_R8)*delthe
+        off = max(off, maxval(abs(node(0:n(1),0:n(2),s)%c(3)*cos(ang) - node(0:n(1),0:n(2),s)%c(2)*sin(ang))))
+      end if
+    end do
+    fit = huge(1._R8)
+    if (thick > 0._R8) fit = off/thick
+
+  end function plane_fit
 
 
   !> A cell is the image of the unit cube by the trilinear map of its eight nodes, and a finite

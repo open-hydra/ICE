@@ -50,7 +50,7 @@ Required column says otherwise, and omitting one selects the default.
 | Parameter | Default | Allowed | Required | Description |
 |-----------|---------|---------|----------|-------------|
 | `time-scheme` | RK2 | euler, RK2, RK3 | yes | Time integration solver |
-| `cfl` | 0.5 | > 0 | yes | CFL number |
+| `cfl` | 0.5 | > 0 | yes | CFL number of the signal speeds summed over the directions (RK2 <= 1, RK3 <= 1.17) |
 | `dt-max` | 1e-4 | > 0 |  no | Ceiling on the time step [s], applied after the CFL factor |
 | `tau-factor` | 1.0 | >= 0 |  no | Ceiling on the time step as a multiple of the particle relaxation time, coupled runs only (0 = off) |
 | `cfl-rise-threshold` | 0 | >= 0 |  no | CFL rise threshold |

@@ -29,9 +29,9 @@ def exact(ph, t, up0=0.0):
     return ph.ug + (up0 - ph.ug) * math.exp(-t / ph.tau_stokes)
 
 
-def relax_case(ph, t_end, cfl=0.8, rk='RK2', nx=8, Lx=1.0, Ly=None, dt_max=None, name='relax'):
+def relax_case(ph, t_end, cfl=0.8, rk='RK2', nx=8, ny=1, Lx=1.0, Ly=None, dt_max=None, name='relax'):
     """Uniform cloud, one-way coupled to a uniform gas, run to t_end."""
-    case = Case(WORK / name, nx=nx, Lx=Lx, Ly=Ly)
+    case = Case(WORK / name, nx=nx, ny=ny, Lx=Lx, Ly=Ly)
     case.particles(rho=ph.rho_p, u=0.0, v=ph.vg, w=0.0, T=ph.Tg, n=ph.n)
     case.gas(rho=ph.rho_g, u=ph.ug, v=ph.vg, w=0.0, T=ph.Tg,
              R=ph.R, gam=ph.gam, k=ph.kg, mu=ph.mu)
@@ -90,9 +90,10 @@ def main():
               'the shorter step still matches the exact solution')
 
     # --- Time-step refinement ------------------------------------------------------
-    # A transverse velocity common to gas and particles keeps the CFL condition, not
+    # A transverse velocity common to gas and particles, across two cells in y (the
+    # step counts only the directions the mesh resolves), keeps the CFL condition, not
     # ICE's 1e-4 s ceiling, in charge of dt, so halving the CFL halves the step. The
-    # cell sizes put dt just at that ceiling at CFL 0.8, making the steps as long as
+    # cell sizes put dt just below that ceiling at CFL 0.8, making the steps as long as
     # the solver allows so that RK3 stays clear of the round-off floor.
     ph2 = Physics(vg=50.0)
     t_end, floor = 0.02, 1e-12
@@ -100,7 +101,7 @@ def main():
     for rk, expected in (('RK2', 2.0), ('RK3', 3.0)):
         errors = []
         for cfl in cfls:
-            sol = relax_case(ph2, t_end, cfl=cfl, rk=rk, nx=10, Lx=0.01, Ly=5e-3,
+            sol = relax_case(ph2, t_end, cfl=cfl, rk=rk, nx=10, ny=2, Lx=0.01, Ly=1e-2,
                              name='%s-cfl%s' % (rk.lower(), cfl))
             errors.append(abs(sol['var'][U][0] - exact(ph2, sol['time'])) / ph2.ug)
         orders = observed_order(errors, [1.0 / c for c in cfls])

@@ -11,20 +11,26 @@ module ICE_Mod_Sources
 
 contains
 
+  !> The sources of family p. The slots frozen at set-up (setup_freeze) exchange nothing with the gas:
+  !> their source is zero, also for a coupled solver, which takes the source of the gas from this array.
   subroutine compute_source (grid, p)
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m, only: obj_condensed
     use ICE_Mod_ThreadGroups, only: n_tgroups
+    use ICE_Mod_Freeze,       only: nfrozen, frozen
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
-    integer(kind=I4) :: b, i, j, k
+    integer(kind=I4) :: b, i, j, k, nf
 
     if (n_tgroups > 1) then
       call compute_source_grouped(grid, p)
       return
     end if
+
+    nf = 0
+    if (allocated(nfrozen)) nf = nfrozen(p)
 
     !$OMP PARALLEL
     do b = 1, grid%nb
@@ -44,6 +50,7 @@ contains
                               grid%blk(b)%gas_phase%mu(i,j,k),           &
                               grid%blk(b)%cond_phase(p)%source(:,i,j,k), &
                               obj_condensed(mat_of(p)), nbase(p)         )
+        if (nf > 0) grid%blk(b)%cond_phase(p)%source(frozen(1:nf,p),i,j,k) = 0._R8
   
       enddo ; enddo ; enddo
       !$OMP END DO nowait
@@ -60,10 +67,14 @@ contains
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Mod_Freeze,       only: nfrozen, frozen
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
-    integer(kind=I4) :: b, i, j, k, n, tid, g, m, s, i1, j1, k1, i2, j2, k2
+    integer(kind=I4) :: b, i, j, k, n, tid, g, m, s, i1, j1, k1, i2, j2, k2, nf
+
+    nf = 0
+    if (allocated(nfrozen)) nf = nfrozen(p)
 
     !$OMP PARALLEL PRIVATE(b, i, j, k, n, tid, g, m, s, i1, j1, k1, i2, j2, k2)
     tid = 0
@@ -84,6 +95,7 @@ contains
                                 grid%blk(b)%gas_phase%mu(i,j,k),           &
                                 grid%blk(b)%cond_phase(p)%source(:,i,j,k), &
                                 obj_condensed(mat_of(p)), nbase(p)         )
+          if (nf > 0) grid%blk(b)%cond_phase(p)%source(frozen(1:nf,p),i,j,k) = 0._R8
       enddo ; enddo ; enddo
     enddo
     !$OMP END PARALLEL

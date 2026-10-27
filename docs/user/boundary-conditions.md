@@ -100,6 +100,30 @@ radial momentum. A pressureless MK cloud has no flux through these faces.
 
 The axis face (face 3) of such a mesh mirrors whether it carries `200` or `300`.
 
+## Faces of a direction with one cell
+
+Faces 5 and 6 of a 2-D mesh, and faces 3 to 6 of a 1-D one, bound a direction the mesh does
+not resolve. Where both faces of such a direction mirror the flow (`200`, `300` or `301`), the
+components of the state that are odd across them have a mode the time step does not follow:
+between two mirror planes $\Delta z$ apart, $dw/dt = -2a\,w/\Delta z$ ($a$ the signal speed of the
+closure), which on a layer thin against its in-plane cells makes round-off in $w$ grow until the
+run fails. The flow between two mirror planes has those components zero, so ICE sets them to zero
+at set-up and does not integrate them, and says so in a warning:
+
+| Mesh | Faces | Not integrated (with AG also) |
+|---|---|---|
+| 2-D plane | 5 and 6 all `200`, `300` or `301`, each $k$ node plane normal to $z$ | $w$ ($P_{13}$, $P_{23}$) |
+| 2-D axisymmetric wedge | 5 and 6 all `200`, the $k$ node planes at $\mp\theta/2$ about $z = 0$ | $w$, the swirl ($P_{13}$, $P_{23}$) |
+| 1-D | 3 and 4 as above, each $j$ node plane normal to $y$ | $v$ ($P_{12}$, $P_{23}$) |
+| 1-D | 5 and 6 as above | $w$ ($P_{13}$, $P_{23}$) |
+
+A plane is checked to 1 % of the thickness of its block. A wedge whose side faces carry any other
+code, or that is not symmetric about $z = 0$, stops the setup. Mirror faces that are not planes
+normal to their axis, as on a layer between parallel planes inclined to $z$, ask the cloud to
+follow them across the layer: the component is then integrated, with a warning, and a layer thin
+against its other cells can still fail. So can a layer with a mirror on one side only and `0` or
+`400` on the other, where the mode is half as fast: give both faces the same code.
+
 ## Inlets (`401`–`403`)
 
 All three prescribe a mass flux, a direction, a temperature and a particle radius; they

@@ -172,6 +172,25 @@ ATLAS BCB writes all of them in one pass when `MG-levels` is set in its own
 count against that level's mesh and stops if they disagree, so a stale or missing file
 is reported rather than absorbed.
 
+## Time step: `cfl`
+
+`cfl` is the Courant number of the **sum over the directions** of the signal speeds,
+$|\mathbf u\cdot\nabla\xi_d| + a_d|\nabla\xi_d|$, measured on the width of the cell across its
+faces ([theory](../theory/time-integration.md#the-time-step)). Stability limits of the linearised
+scheme (MUSCL with upwind fluxes; the van Leer, van Albada and MC limiters in smooth flow), up to
+which the rule is stable:
+
+| `time-scheme` | `cfl` ≤ |
+|---|---|
+| `RK2` (Heun) | 1 |
+| `RK3` | 1.17 (1.256 with `first-order` reconstruction) |
+| `euler` | 1 with `first-order` reconstruction (unstable with `MUSCL`) |
+
+Keep a margin below them where shocks and limiters act (for example `cfl = 0.8`). The rule
+used to take the smallest of the direction limits, on the length of the cell edge, which let
+the step exceed these limits by up to a factor 2 on square 2-D cells, 3 on cubes and more on
+skewed cells: **the same `cfl` now gives a smaller step than before.**
+
 ## Stopping conditions
 
 `iter-threshold`, `time-threshold` and `res-threshold` are independent, and the run

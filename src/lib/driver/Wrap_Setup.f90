@@ -23,6 +23,7 @@ contains
     use ICE_Mod_BC_Fluxes
     use ICE_Mod_Phase
     use ICE_Mod_Multigrid,  only: Setup_Multigrid
+    use ICE_Mod_Freeze,     only: setup_freeze
     use ICE_Mod_MPI,        only: mpi_is_root, partition_blocks
     use ICE_Mod_ThreadGroups, only: setup_thread_groups
     use ICE_Mod_GhostExchange, only: build_ghost_schedule, build_local_bc_index, report_bc_mix
@@ -109,6 +110,10 @@ contains
 
     ! Setup condensed phase (fine level)
     call setup_cond(sim%domain(1), sim%ODP(1))
+
+    ! The components odd across mirror faces one cell apart (the k faces of a 2-D mesh, the j and k
+    ! faces of a 1-D one): set to zero before the coarse levels take the field, and not integrated
+    call setup_freeze(sim%domain(1))
 
     ! With multigrid, build the coarse levels: grid, metrics, boundaries, halo
     ! schedule and the initial solution restricted onto each of them.

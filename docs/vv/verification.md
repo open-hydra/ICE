@@ -63,12 +63,12 @@ $\mu_g = 1.8\times10^{-5}$ Pa s, $\tau_p = 0.030864$ s.
 
 | $t/\tau_p$ | $u_p/u_g$ (ICE) | $u_p/u_g$ (exact) | Relative error |
 |---|---|---|---|
-| 0.1 | 0.096146407 | 0.096146510 | $1.0\times10^{-7}$ |
-| 0.5 | 0.393624252 | 0.393624592 | $3.4\times10^{-7}$ |
-| 1.0 | 0.632308452 | 0.632308865 | $4.1\times10^{-7}$ |
-| 2.0 | 0.864802926 | 0.864803229 | $3.0\times10^{-7}$ |
-| 3.0 | 0.950289178 | 0.950289346 | $1.7\times10^{-7}$ |
-| 5.0 | 0.993279242 | 0.993279280 | $3.8\times10^{-8}$ |
+| 0.1 | 0.095560464 | 0.095560623 | $1.6\times10^{-7}$ |
+| 0.5 | 0.394801708 | 0.394802241 | $5.3\times10^{-7}$ |
+| 1.0 | 0.632546406 | 0.632547052 | $6.5\times10^{-7}$ |
+| 2.0 | 0.864977857 | 0.864978331 | $4.7\times10^{-7}$ |
+| 3.0 | 0.950224617 | 0.950224879 | $2.6\times10^{-7}$ |
+| 5.0 | 0.993279221 | 0.993279280 | $5.9\times10^{-8}$ |
 
 The case also checks what must *not* move: the density, the number density and the
 particle temperature stay at their initial values, and the field stays uniform to
@@ -78,15 +78,18 @@ there would show up as spurious heating.
 
 **Time-step refinement.** Since the field stays uniform the space discretisation
 contributes nothing, and the error is purely the time integration of the source term.
-Halving the CFL number halves the step, and the observed order is the scheme's. The case
+The refinement runs on two cells in $y$ with a velocity along $y$ shared by the gas and the
+cloud, which the CFL limit then reads (a direction of a single cell sets no limit, and the
+run of the table above, on one cell in $y$, takes `dt-max`). Halving the CFL number halves the
+step, and the observed order is the scheme's. The case
 also checks the `dt-max` ceiling, by giving a run a ceiling well below its CFL limit and
 confirming that its end time is an exact multiple of it — every step is `dt-max` itself,
 not `cfl * dt-max`:
 
 | CFL | 0.8 | 0.4 | 0.2 | Observed order |
 |---|---|---|---|---|
-| RK2 | $3.8\times10^{-7}$ | $9.5\times10^{-8}$ | $2.4\times10^{-8}$ | 2.00 |
-| RK3 | $2.5\times10^{-10}$ | $3.1\times10^{-11}$ | $3.9\times10^{-12}$ | 3.00 |
+| RK2 | $2.47\times10^{-7}$ | $6.17\times10^{-8}$ | $1.54\times10^{-8}$ | 2.00 |
+| RK3 | $1.32\times10^{-10}$ | $1.64\times10^{-11}$ | $2.05\times10^{-12}$ | 3.00 |
 
 ### J. The step at the relaxation time
 
@@ -200,11 +203,11 @@ the expected behaviour and not an error.
 $du/dt = (u_g-u)/\tau(u)$ using the same correlation, evaluated independently in
 Python. Two sweeps are run, at $Re = 67$ and at $Re = 1333$, the second one to reach
 the branches that only switch formula above $Re = 1000$. All twelve agree with the
-reference to between $5\times10^{-10}$ and $2\times10^{-6}$ of $u_g$.
+reference to between $4\times10^{-10}$ and $4.4\times10^{-6}$ of $u_g$.
 
 **At transonic and supersonic slip** ($Ma = 1.30$ and $Ma = 2.59$) the four laws with a
 compressible branch — Carlson-Hoglund, Henderson, Crowe and Hermsen — are compared the
-same way, and agree to between $9\times10^{-8}$ and $2\times10^{-6}$ of $u_g$. This is
+same way, and agree to between $1.3\times10^{-8}$ and $1.4\times10^{-6}$ of $u_g$. This is
 the range in which Henderson leaves its subsonic fit, crosses the linear bridge and
 reaches its supersonic fit, so the case also checks that the two branches meet: the
 coefficient of the bridge is fixed by requiring continuity at $Ma = 1.75$, and both

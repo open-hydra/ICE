@@ -132,7 +132,7 @@ The face flux is a two-state flux solved via three possible schemes.
 | **Rusanov** | $\tfrac12(\mathbf F_L + \mathbf F_R) - \tfrac12 A\,(\mathbf U_R - \mathbf U_L)$, with $A$ the largest of $|u_n \pm a|$ on the two sides and $a$ the signal speed across the face: $\sqrt{3P/\rho_p}$ for IG, $\sqrt{3P_{nn}/\rho_p}$ for AG | Any closure; the default for IG and AG |
 | **HLLE** | Two-wave solver with Roe-averaged speed estimates, falling back to the upwind flux when both waves run the same way | Any closure with a sound speed |
 
-The time step uses the same directional speed, direction by direction.
+The time step adds up the same directional speed over the directions the mesh resolves ([Time Integration](time-integration.md#the-time-step)).
 
 HLLE is less dissipative than Rusanov on a contact and is worth trying when a contact is being smeared, at the cost of a Roe average per face.
 

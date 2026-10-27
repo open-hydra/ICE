@@ -30,7 +30,8 @@ contains
 
     ! Stability coefficients and related options
     call reg%add(trim(section), 'cfl', obj_time_scheme%cfl,                            &
-                 '0.5',    'CFL number', '> 0', .true.)
+                 '0.5',    'CFL number of the signal speeds summed over the directions (RK2 <= 1, RK3 <= 1.17)', &
+                 '> 0', .true.)
     call reg%add(trim(section), 'dt-max', obj_time_scheme%dt_max,                      &
                  '1e-4',   'Ceiling on the time step [s], applied after the CFL factor', &
                  '> 0', .false.)
