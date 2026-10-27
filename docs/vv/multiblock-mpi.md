@@ -33,11 +33,11 @@ input for the connections.
 
 A connection passes the two cells behind the interface to the neighbour's ghost layers, so
 the four-block run uses the same stencil as the single block and matches it to round-off.
-The shock detector would break this: a face on a block boundary takes the detector value of
-its own block's cell, while inside a block every face takes the one of the cell on its
-low-index side, so wherever a jet edge crosses a block boundary the two runs switch that
-face differently; with the detector on, the four-block run differs from the single block by
-$2.3 \times 10^{-2}$ of the peak density at 5000 iterations. The MPI runs exchange exactly
+With the shock detector on, a face on a block boundary takes the detector weight of its own
+block's cell, while a face inside a block takes the smaller weight of its two cells, so
+wherever a jet edge crosses a block boundary the two runs weight that face differently: the
+four-block run then differs from the single block by $3.4 \times 10^{-6}$ of the peak density
+at 5000 iterations. The MPI runs exchange exactly
 the values a serial run reads, so the number of ranks does not change the result at all;
 the rank rows above and the timings below were measured with the detector on.
 

@@ -591,6 +591,9 @@ contains
   !> A face next to a boundary whose first ghost holds an injected state (inj)
   !> takes that ghost's length as 0: the state sits at the boundary face, and the
   !> slope between it and the first cell is the one-sided slope from the face.
+  !> The face's shock-detector weight is the smaller of its two cells' weights:
+  !> the face is the same seen from either side, and takes the weight of the
+  !> more shocked cell.
   subroutine face_flux(blk, b, p, nc, d, i, j, k, flux)
     use ICE_Advanced_Types_m
     use ICE_Global_m,       only: mat_of, solid_of
@@ -599,10 +602,11 @@ contains
     type(ICE_block_type), intent(in)  :: blk
     integer(kind=I4),     intent(in)  :: b, p, nc, d, i, j, k
     real(kind=R8),        intent(out) :: flux(nc)
-    real(kind=R8) :: prim(nc,-1:2), length(-1:2)
+    real(kind=R8) :: prim(nc,-1:2), length(-1:2), bf
 
     select case (d)
     case (1)
+      bf = min(blk%cond_phase(p)%beta(i,j,k), blk%cond_phase(p)%beta(i+1,j,k))
       length = [blk%dl(i-1,j,k)%c(1), blk%dl(i,j,k)%c(1), blk%dl(i+1,j,k)%c(1), blk%dl(i+2,j,k)%c(1)]
       if (i == 1) then
         if (blk%cond_phase(p)%inj(i-1,j,k)) length(-1) = 0._R8
@@ -612,9 +616,10 @@ contains
       end if
       call compute_flux_ (blk%cond_phase(p)%prim(1:nc,i-1:i+2,j,k), length,                    &
                           blk%dir(1)%f(i,j,k)%N, blk%dir(1)%f(i,j,k)%A, flux, nc,              &
-                          blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p),  &
+                          bf, obj_condensed(mat_of(p)), solid_of(p),                             &
                           [b, i, j, k, 2*d])
     case (2)
+      bf = min(blk%cond_phase(p)%beta(i,j,k), blk%cond_phase(p)%beta(i,j+1,k))
       prim(1:nc,-1:2) = blk%cond_phase(p)%prim(1:nc,i,j-1:j+2,k)
       length = [blk%dl(i,j-1,k)%c(2), blk%dl(i,j,k)%c(2), blk%dl(i,j+1,k)%c(2), blk%dl(i,j+2,k)%c(2)]
       if (j == 1) then
@@ -625,9 +630,10 @@ contains
       end if
       call compute_flux_ (prim, length,                                                        &
                           blk%dir(2)%f(i,j,k)%N, blk%dir(2)%f(i,j,k)%A, flux, nc,              &
-                          blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p),  &
+                          bf, obj_condensed(mat_of(p)), solid_of(p),                             &
                           [b, i, j, k, 2*d])
     case (3)
+      bf = min(blk%cond_phase(p)%beta(i,j,k), blk%cond_phase(p)%beta(i,j,k+1))
       prim(1:nc,-1:2) = blk%cond_phase(p)%prim(1:nc,i,j,k-1:k+2)
       length = [blk%dl(i,j,k-1)%c(3), blk%dl(i,j,k)%c(3), blk%dl(i,j,k+1)%c(3), blk%dl(i,j,k+2)%c(3)]
       if (k == 1) then
@@ -638,7 +644,7 @@ contains
       end if
       call compute_flux_ (prim, length,                                                        &
                           blk%dir(3)%f(i,j,k)%N, blk%dir(3)%f(i,j,k)%A, flux, nc,              &
-                          blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p),  &
+                          bf, obj_condensed(mat_of(p)), solid_of(p),                             &
                           [b, i, j, k, 2*d])
     end select
   end subroutine face_flux

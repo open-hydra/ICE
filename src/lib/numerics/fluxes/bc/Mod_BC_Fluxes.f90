@@ -97,6 +97,8 @@ contains
       ip  = i +   guide(f,1) ; jp  = j +   guide(f,2) ; kp  = k +   guide(f,3)
 
       dir      = (f+1)/2
+      !> The face's shock-detector weight is its cell's, the only one of its two cells the block holds
+      !> (an interior face takes the smaller of its two cells' weights, face_flux)
       beta_val = grid%blk(b)%cond_phase(p)%beta(i,j,k)
 
       select case (f)

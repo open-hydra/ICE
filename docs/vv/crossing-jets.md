@@ -65,15 +65,16 @@ mirror images about the centre of row 51 ($y = 0.005$), which takes the delta.
 - **AG** is the only closure that lets the jets cross. Downstream they are much wider and
   weaker than the exact bands.
 
-MK and AG run with the [shock detector](../theory/numerics.md#shock-detector), because without
-it their collisions go wrong. MK's delta shock creeps upstream and piles mass against the
-inlet wall along its row: a density of 0.16 kg/m³ moving at 0.1 m/s in the cell next to the
-wall, where the jets leave $1.3 \times 10^{-7}$ kg/m³ moving at their own 7.07 m/s. AG
-clips its pressure tensor at the floor in about 450 populated cells where the jets cross.
-With the detector the two do not settle into a steady state: after about 1750 iterations
-the density residual levels off at $2 \times 10^{-3}$ (MK) and $5 \times 10^{-3}$ (AG), as
-cells at the jet edges switch between first and second order, so their fields above and
-their stored references are those at iteration 5000. IG needs no detector: it converges
+MK and AG run with the [shock detector](../theory/numerics.md#shock-detector). Without it, AG
+clips its pressure tensor at the floor in 22 populated cells where the jets cross, and its
+residual cycles between $4 \times 10^{-5}$ and $9 \times 10^{-5}$. MK without it stays nearer
+its exact solution (an RMS distance of $5.6 \times 10^{-3}$ kg/m³ against $1.4 \times 10^{-2}$;
+at $x = 0.15$, upstream of where the jets meet, row 51 holds $8 \times 10^{-4}$ kg/m³ against
+0.069), but its residual stalls at $1.6 \times 10^{-5}$ and its jets are $1.2 \times 10^{-2}$
+from their mirror image at the outer edges of the inlets. With the detector both converge: MK reaches the default residual threshold at iteration
+2493, where its run stops, and AG's residual is below $10^{-8}$ at iteration 5000, where the
+test stops (it reaches the threshold at iteration 6907, $4 \times 10^{-8}$ away from the field
+at 5000). IG needs no detector: it converges
 (a residual of $3 \times 10^{-6}$ at 5000 iterations), and its chimera and multi-block
 versions then match it to round-off ([Chimera Overset](chimera.md),
 [Multi-block and MPI](multiblock-mpi.md)).

@@ -67,23 +67,42 @@ from which the weight multiplying every limited slope is
 
 $$
 \beta = \begin{cases}
-1 - \tanh\!\big(10\,(s/\Delta)^3\big), & s < 1/\Delta \\[2pt]
+1 - \tanh\!\big(10\,\varphi^3\big),\quad \varphi = s\,\Delta, & s < 1/\Delta \\[2pt]
 0, & \text{otherwise}
 \end{cases}
 \qquad \Delta = 20 .
 $$
 
-So $\beta = 1$ in smooth flow, where the scheme is the plain MUSCL one, and falls to 0 at a shock, where it drops to first order.
+So $\beta = 1$ in smooth flow, where the scheme is the plain MUSCL one, falls continuously with the sensor, and is 0 at
+a shock ($s \ge 1/\Delta$), where the scheme drops to first order. A face inside a block takes the smaller weight of its
+two cells, $\min(\beta_L, \beta_R)$; a face on a block boundary takes the weight of its own block's cell, the only one of
+its two cells the block holds.
 
-The weight is close to a switch, and that has two consequences. In a steady computation the
-cells near the threshold can keep switching from one iteration to the next, so the residual
-levels off instead of converging. And a face on a block boundary takes the weight of its own
-block's cell, while inside a block every face takes the weight of the cell on its low-index
-side, so a domain split into blocks switches some faces differently from the same domain in
-one block. The detector earns its place where a collision would otherwise go wrong: it keeps
-the MK delta shock of the [crossing jets](../vv/crossing-jets.md) from creeping upstream and
-the AG pressure tensor from reaching its floor where the jets cross. The IG crossing-jets
-cases run without it.
+The form is that of Tramel, Nichols and Buning (AIAA 2009-3988, Eqs. 29-30), with one change. There the weight is
+$1 - \tanh(10\,\varphi^3)$ with $\varphi = s/\Delta$, and $\Delta$ between 1 and 10 was found adequate. With
+$\varphi = s/\Delta$ and $\Delta = 20$, $\tanh(10\,\varphi^3)$ stays below $1.6\times10^{-7}$ for every $s$ below the
+threshold $1/\Delta$, so $\beta$ is a switch: 1 below the threshold and 0 above it. ICE takes $\varphi = s\,\Delta$, which
+keeps the threshold and spreads the fall of $\beta$ over $0 \le s < 1/\Delta$, from 1 at $s = 0$ to $1 - \tanh 10$
+($4\times10^{-9}$) at the threshold. The paper also thickens the sensor (its Eq. 31 takes, for each cell, the largest $s$
+of the 27 cells around it); the face weight $\min(\beta_L, \beta_R)$ gives each face the weight of the more shocked of the
+two cells it separates, and treats a face the same from both sides. With the switch and the weight of the cell on the
+face's low-index side, the crossing jets of MK and AG, mirror images of each other, were $1.0\times10^{-2}$ and
+$1.7\times10^{-2}$ away from their own mirror image at iteration 5000; MK is now symmetric to round-off, and AG to
+$3\times10^{-5}$, about the asymmetry of its run without the detector.
+
+A switch also kept steady computations from converging: the cells near the threshold switched from one iteration to the
+next, so the density residual levelled off (at about $2\times10^{-3}$ for MK and $4\times10^{-3}$ for AG on the crossing
+jets) instead of falling. With the continuous weight both converge: MK reaches the default `res-threshold` at iteration
+2493 and AG at iteration 6907. Below the threshold the weight is smaller than the switch's wherever the sensor is not
+zero, so the scheme is more dissipative there: the peak where the AG jets cross falls from 0.16 to 0.12 kg/m³ (the exact
+peak is 0.2). A domain split into blocks still differs from the same domain in one block where the detector acts at a
+block boundary, whose face sees one cell's weight, but by little: the four-block crossing jets differ from the single
+block by $3\times10^{-6}$ of the peak density ([Multi-block and MPI](../vv/multiblock-mpi.md)).
+
+On the [crossing jets](../vv/crossing-jets.md) the detector lets the MK and AG runs converge and keeps the AG
+pressure tensor off its floor where the jets cross. It costs accuracy where the flow is smooth: without it MK is nearer
+its exact solution, but its residual stalls and its jets are not each other's mirror image at the edges of the inlets.
+The IG crossing-jets cases run without it.
 
 ## Riemann solvers
 

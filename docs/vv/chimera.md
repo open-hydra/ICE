@@ -21,11 +21,12 @@ chimera path must reproduce the single-block solution.
 |---|---|
 | Split with chimera vs single block | $7 \times 10^{-13}$ (round-off) |
 
-The shock detector would break this. A face on a block boundary takes the detector value of
-its own block's cell, while inside a block every face takes the one of the cell on its
-low-index side, so where a jet edge crosses the interface the split and the single block
-switch that face differently: with the detector on, the split differs from the single block
-by $3.6 \times 10^{-2}$ of the peak density at 5000 iterations.
+The shock detector changes this. A face on a block boundary takes the detector weight of its
+own block's cell, while a face inside a block takes the smaller weight of its two cells, so
+where a jet edge crosses the interface the split and the single block weight that face
+differently: with the detector on, block 1 of the overlapping case below differs from the
+single block by up to $1.3 \times 10^{-3}$ of the peak density at 5000 iterations, against
+$3.7 \times 10^{-4}$ without it.
 
 ## Overlapping blocks with non-matching cells
 
