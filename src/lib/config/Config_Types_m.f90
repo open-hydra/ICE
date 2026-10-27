@@ -49,6 +49,7 @@ module ICE_Config_Types_m
     character(len=llen) :: description
     ! USER-DEFINED INPUTS
     integer             :: sol_diter, shell_diter, ini_diter, res_diter
+    character(len=llen) :: ini_error         ! input.ini read again with an error: warn (not taken) or stop
     real(R8)            :: sol_dtime
     logical             :: sol_overwrite
     logical             :: timers            ! Per-iteration wall/cycle instrumentation

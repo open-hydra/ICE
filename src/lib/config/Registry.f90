@@ -6,7 +6,7 @@ module ICE_Input_Registry
 
   integer, parameter :: TYPE_INT=1, TYPE_REAL=2, TYPE_LOG=3, TYPE_STR=4
 
-  public :: registry_t, Validate_Registry, param_is_set
+  public :: registry_t, Validate_Registry, param_is_set, Save_Values, Restore_Values
 
   !--------------------------------------------------------
   ! Value container (typed pointers)
@@ -60,6 +60,22 @@ module ICE_Input_Registry
   end type
 
   type(registry_t), public :: reg
+
+  !--------------------------------------------------------
+  ! Copy of the registry's values and of the fields Load_Ini writes (Save_Values, Restore_Values)
+  !--------------------------------------------------------
+  type :: saved_value_t
+    integer  :: i = 0
+    real(R8) :: r = 0._R8
+    logical  :: l = .false.
+    character(len=:), allocatable :: s
+    integer,  allocatable :: iarr(:)
+    real(R8), allocatable :: rarr(:)
+    logical :: is_set = .false., multi = .false., unread = .false., has_text = .false.
+    character(len=:), allocatable :: text
+  end type
+
+  type(saved_value_t), allocatable :: saved(:)
 
 contains
 
@@ -325,6 +341,50 @@ contains
       end select
     end do
   end function Validate_Registry
+
+  !> A copy of every parameter's value, whatever its type, and of the fields Load_Ini writes
+  !  (is_set, multi, unread, text): Restore_Values puts every parameter back as it was here.
+  !  Taken before input.ini is read again during the run (Read_Inifile_Runtime).
+  subroutine Save_Values()
+    integer :: i
+    if (allocated(saved)) then
+      if (size(saved) /= reg%size) deallocate(saved)
+    end if
+    if (.not. allocated(saved)) allocate(saved(reg%size))
+    do i = 1, reg%size
+      if (associated(reg%params(i)%value%i))    saved(i)%i    = reg%params(i)%value%i
+      if (associated(reg%params(i)%value%r))    saved(i)%r    = reg%params(i)%value%r
+      if (associated(reg%params(i)%value%l))    saved(i)%l    = reg%params(i)%value%l
+      if (associated(reg%params(i)%value%s))    saved(i)%s    = reg%params(i)%value%s
+      if (associated(reg%params(i)%value%iarr)) saved(i)%iarr = reg%params(i)%value%iarr
+      if (associated(reg%params(i)%value%rarr)) saved(i)%rarr = reg%params(i)%value%rarr
+      saved(i)%is_set   = reg%params(i)%is_set
+      saved(i)%multi    = reg%params(i)%multi
+      saved(i)%unread   = reg%params(i)%unread
+      saved(i)%has_text = allocated(reg%params(i)%text)
+      if (saved(i)%has_text) saved(i)%text = reg%params(i)%text
+    end do
+  end subroutine Save_Values
+
+  !> Every parameter back as Save_Values kept it: the variables the registry points at hold
+  !  again what they held then, and so do the fields Load_Ini writes.
+  subroutine Restore_Values()
+    integer :: i
+    if (.not. allocated(saved)) return
+    do i = 1, min(reg%size, size(saved))
+      if (associated(reg%params(i)%value%i))    reg%params(i)%value%i    = saved(i)%i
+      if (associated(reg%params(i)%value%r))    reg%params(i)%value%r    = saved(i)%r
+      if (associated(reg%params(i)%value%l))    reg%params(i)%value%l    = saved(i)%l
+      if (associated(reg%params(i)%value%s))    reg%params(i)%value%s    = saved(i)%s
+      if (associated(reg%params(i)%value%iarr)) reg%params(i)%value%iarr = saved(i)%iarr
+      if (associated(reg%params(i)%value%rarr)) reg%params(i)%value%rarr = saved(i)%rarr
+      reg%params(i)%is_set = saved(i)%is_set
+      reg%params(i)%multi  = saved(i)%multi
+      reg%params(i)%unread = saved(i)%unread
+      if (allocated(reg%params(i)%text)) deallocate(reg%params(i)%text)
+      if (saved(i)%has_text) reg%params(i)%text = saved(i)%text
+    end do
+  end subroutine Restore_Values
 
   !> The key i of input.ini as the messages give it: the file, the section, the key and the
   !  value as written, when the file holds one.

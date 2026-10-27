@@ -40,6 +40,9 @@ contains
                  '10',         'Residual history iter frequency',    '> 0', .false.)
     call reg%add(section, 'ini-diter',     obj_io%ini_diter,     &
                  '1000000000', 'input.ini update iter frequency', '> 0', .false.)
+    call reg%add(section, 'ini-error',     obj_io%ini_error,     &
+                 'warn',       'input.ini read again with an error: warn and keep every value held before '// &
+                 'the reading, or stop (at set-up every error stops)', 'warn, stop', .false.)
     call reg%add(section, 'gas-path',      obj_io%gaspath,       &
                  'INPUT/',     'Directory holding the coupling gas field, named gas.tec or '// \
                  'gas.szplt according to ic-format', '', .false.)

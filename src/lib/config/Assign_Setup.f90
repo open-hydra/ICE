@@ -107,19 +107,28 @@ contains
   !> Saurel upwinds on the mean normal velocity and assembles the flux from the MK variable
   !> layout, so it is meaningless for the Gaussian closures. riemann-solver is resolved at
   !> every step (Mod_Explicit), so the choice is checked at set-up and after each re-read
-  !> of input.ini.
-  subroutine Check_Riemann_Solver()
+  !> of input.ini. With err present (a re-read with ini-error = warn) err returns the error,
+  !> blank when there is none, instead of the stop.
+  subroutine Check_Riemann_Solver(err)
     use ICE_Config_Types_m, only: obj_time_scheme
     use ICE_Global_m,       only: ngroups
     implicit none
+    character(len=*), intent(out), optional :: err
+    character(len=256) :: msg
     integer :: p
 
+    if (present(err)) err = ''
     if (trim(obj_time_scheme%riemann) /= 'Saurel') return
     do p = 1, ngroups
       if (trim(obj_time_scheme%model(p)) /= 'MK') then
-        write(*,'(A,I0,A)') ' [ERROR] [ICE-Numerics] riemann-solver = Saurel is specific to the MK closure, '// &
-                            'and family ', p, ' is '//trim(obj_time_scheme%model(p))//'; use Rusanov or HLLE '// &
-                            'with IG and AG.'
+        write(msg,'(A,I0,A)') ' [ERROR] [ICE-Numerics] riemann-solver = Saurel is specific to the MK closure, '// &
+                              'and family ', p, ' is '//trim(obj_time_scheme%model(p))//'; use Rusanov or HLLE '// &
+                              'with IG and AG.'
+        if (present(err)) then
+          err = msg
+          return
+        end if
+        write(*,'(A)') trim(msg)
         error stop 1
       end if
     end do

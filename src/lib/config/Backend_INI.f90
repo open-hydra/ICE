@@ -21,33 +21,40 @@ contains
   !  ini-diter) would then make them call their collectives in different orders. A
   !  file that cannot be opened or read, that holds no key, or that FiNeR cannot load
   !  stops every rank, where the run went on with the defaults (at a re-read, with the
-  !  previous values) or stopped later on the first required key.
-  subroutine Open_Ini(fini)
+  !  previous values) or stopped later on the first required key. With failure present (a
+  !  re-read with ini-error = warn) such a file does not stop the run: failure returns why,
+  !  blank when the file is loaded, and the caller decides; every rank finds the same.
+  subroutine Open_Ini(fini, failure)
     use Finer,           only: file_ini
     use ICE_Mod_MPI,     only: mpi_is_root, mpi_bcast_integer, mpi_bcast_chars
     use iso_fortran_env, only: output_unit
     implicit none
-    type(file_ini), intent(inout) :: fini
+    type(file_ini),   intent(inout)         :: fini
+    character(len=*), intent(out), optional :: failure
     character(len=*), parameter   :: comments = '!;#'
     character(len=:), allocatable :: source
     character(len=1024)           :: line
+    character(len=512)            :: reason
     character(len=256)            :: msg
     integer :: unitfile, ios, state, error
     logical :: exists
 
+    if (present(failure)) failure = ''
+
     ! Rank 0 reads; state 0 read, 1 missing, 2 cannot be opened, 3 read error, 4 no key
     state  = 0
     source = ''
+    reason = ''
     if (mpi_is_root) then
       inquire(file='input.ini', exist=exists)
       if (.not. exists) then
-        state = 1
-        write(*,'(A)') '[ERROR ICE] input.ini not found in the working directory.'
+        state  = 1
+        reason = '[ERROR ICE] input.ini not found in the working directory.'
       else
         open(newunit=unitfile, file='input.ini', status='old', action='read', iostat=ios, iomsg=msg)
         if (ios /= 0) then
-          state = 2
-          write(*,'(A)') '[ERROR] input.ini cannot be opened: '//trim(msg)
+          state  = 2
+          reason = '[ERROR] input.ini cannot be opened: '//trim(msg)
         else
           do
             read(unitfile, '(A)', iostat=ios, iomsg=msg) line
@@ -58,25 +65,39 @@ contains
           end do
           close(unitfile)
           if (ios > 0) then
-            state = 3
-            write(*,'(A)') '[ERROR] input.ini cannot be read: '//trim(msg)
+            state  = 3
+            reason = '[ERROR] input.ini cannot be read: '//trim(msg)
           else if (len(source) == 0) then
-            state = 4
-            write(*,'(A)') '[ERROR] input.ini holds no key: it is empty or holds comment lines only'
+            state  = 4
+            reason = '[ERROR] input.ini holds no key: it is empty or holds comment lines only'
           end if
         end if
       end if
-      if (state /= 0) flush(output_unit)
+      if (state /= 0 .and. .not. present(failure)) then
+        write(*,'(A)') trim(reason)
+        flush(output_unit)
+      end if
     end if
     call mpi_bcast_integer(state)
-    if (state /= 0) error stop 1
+    if (state /= 0) then
+      if (.not. present(failure)) error stop 1
+      ! Rank 0 has the reason and alone writes it
+      failure = reason
+      if (.not. mpi_is_root) failure = 'input.ini cannot be used'
+      return
+    end if
 
     ! Every rank parses the text of rank 0, so every rank finds the same values and errors
     call mpi_bcast_chars(source)
     call fini%load(source=source, error=error)
     if (error /= 0) then
-      write(*,'(A,I0,A)') '[ERROR] input.ini cannot be read by the INI reader (FiNeR error ', error, &
-                          '; a line FiNeR could not parse is named above, if any)'
+      write(reason,'(A,I0,A)') '[ERROR] input.ini cannot be read by the INI reader (FiNeR error ', error, &
+                               '; a line FiNeR could not parse is named above, if any)'
+      if (present(failure)) then
+        failure = reason
+        return
+      end if
+      write(*,'(A)') trim(reason)
       error stop 1
     end if
 

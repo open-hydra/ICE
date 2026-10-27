@@ -223,6 +223,16 @@ If `ini-diter` is set, `input.ini` is re-read every that many iterations. Thresh
 and output frequencies then take effect during a run: an `iter-threshold` or
 `level<n>-iter` lowered below the iterations already done ends that level at the next
 iteration. Anything consumed once at setup does not: the scheme, and the materials with
-their properties, models and property table. A change of `levels` or of a family's
-`closure`, which setup has sized the run for, stops the run, as does a value that breaks
-its rule; `irs = true` in a time-accurate run is ignored, with a warning.
+their properties, models and property table; `irs = true` in a time-accurate run is
+ignored, with a warning.
+
+An error in a re-read does what `ini-error` of `[ICE-IO]` says: a file that cannot be
+read or holds no key, a value that does not read as its type or breaks its rule, a change
+of `levels` or of a family's `closure` (which setup has sized the run for), or
+`riemann-solver = Saurel` with an IG or AG family. With `warn`, the default, the re-read
+is not taken: ICE prints a warning with the iteration and the error, and the run goes on
+with every value it had before the re-read, those of the keys the same re-read had right
+too, so that keys that go together (`cfl` and `dt-max`, an output and its frequency)
+never change one without the other. With `stop` the run stops with the error and exit
+code 1. The value of `ini-error` in force when a re-read starts decides, whatever the
+file read then says. At setup every error stops the run, whatever `ini-error` says.

@@ -242,7 +242,7 @@ contains
     ! test (Mod_Explicit) and the level switch (Wrap_Solve) read each level's itermax,
     ! set from them here as at set-up (Setup_Multigrid, ICE_setup).
     if (mod(simulation%domain(level)%iter, obj_io%ini_diter) == 0d0) then
-      call Read_Inifile_Runtime()
+      call Read_Inifile_Runtime(simulation%domain(level)%iter)
       block
         integer :: m
         do m = 2, obj_multigrid%MGL

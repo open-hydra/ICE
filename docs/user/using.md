@@ -199,5 +199,7 @@ missing (for example a probe added before the restart).
 If `ini-diter` is set, ICE re-reads `input.ini` every that many iterations, so
 thresholds (the iteration budgets included) and output frequencies can be changed while
 the run is in progress. Values that are consumed once at setup — the mesh, the scheme,
-the materials and their properties — are not affected; changing `levels` or a family's
-`closure` stops the run.
+the materials and their properties — are not affected. An edit with an error (a value
+that breaks its rule, a changed `levels` or `closure`, a file saved half-written) is not
+taken by default: ICE warns and the run keeps every value it had; with
+`ini-error = stop` it stops instead (see [Re-reading at runtime](input.md#re-reading-at-runtime)).

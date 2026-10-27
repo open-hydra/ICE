@@ -48,6 +48,7 @@ test/
 │   ├── common.sh              # Shared helpers (short run, compare byte for byte)
 │   ├── openmp-equiv/          # 1 vs 4 threads bit-identical
 │   ├── refusals/              # Broken inputs and a diverging run must exit non-zero
+│   ├── ini-error/             # input.ini edited mid-run with an error: warn keeps every value, stop stops
 │   ├── mirror-modes/          # Components odd across mirror faces one cell apart stay zero
 │   └── mpi-equiv/             # 1 vs 2 ranks bit-identical (connection and chimera)
 └── unit/                      # Programs linked against the library, no solver run

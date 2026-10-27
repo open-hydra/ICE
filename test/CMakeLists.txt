@@ -198,6 +198,10 @@ ice_add_fast_script(Refusals fast/refusals "fast;implementation;refusal")
 # 1 and 2^-16, a cloud at rest whose first residual is zero, a run in which nothing moves
 ice_add_fast_script(ResThreshold fast/res-threshold "fast;implementation")
 
+# input.ini edited during the run with an error: with ini-error = warn the reading is not
+# taken and the run keeps every value it had, with ini-error = stop it stops
+ice_add_fast_script(IniError fast/ini-error "fast;implementation")
+
 # An inlet on a face whose normal points out of the domain injects into it: `normal` along the
 # inward normal, a 401's speed signed by the gas entering, one `normal` with one number refused
 ice_add_fast_script(InletDirection fast/inlet-direction "fast;implementation;bc")
