@@ -58,7 +58,11 @@ contains
 
 
   !> The boundary fluxes of boundary cell c of family p, its records in face order: the
-  !> body of compute_bound's loop.
+  !> body of compute_bound's loop. A first ghost that holds an injected state (inj) has
+  !> length 0: its side of the face is that state, and the cell's side takes the one-sided
+  !> slope from the face; the length between the two ghosts stays, as both hold the state
+  !> and their slope is 0. In a block one cell across, ip is the opposite face's first
+  !> ghost, which inj may flag as well; inj is never set on an interior cell.
   subroutine bound_cell(grid, p, c)
     use ICE_Global_m
     use ICE_Advanced_Types_m
@@ -107,6 +111,10 @@ contains
         dl_4th= grid%blk(b)%dl(ip,jp,kp)%c(dir)
         dl0 = dl_g1 ;  dl1 = 0.5_R8*(dl_g1+dl_m) ;  dl2 = 0.5_R8*(dl_m+dl_4th)
         dll = 0.5_R8*dl_g1 ;  dlr = 0.5_R8*dl_m
+        if (grid%blk(b)%cond_phase(p)%inj(ig,jg,kg)) then
+          dl1 = 0.5_R8*dl_m ;  dll = 0._R8
+        end if
+        if (grid%blk(b)%cond_phase(p)%inj(ip,jp,kp)) dl2 = 0.5_R8*dl_m
 
         call state_reconstruction(grid%blk(b)%cond_phase(p)%prim(1:ncond(p),ig2,jg2,kg2), &
                                   grid%blk(b)%cond_phase(p)%prim(1:ncond(p),ig,jg,kg),    &
@@ -128,6 +136,10 @@ contains
         dl_g1 = grid%blk(b)%dl(ig,jg,kg)%c(dir)   ! dl_g2 ≈ dl_g1 (out of bounds)
         dl0 = 0.5_R8*(dl_4th+dl_m) ;  dl1 = 0.5_R8*(dl_m+dl_g1) ;  dl2 = dl_g1
         dll = 0.5_R8*dl_m ;  dlr = 0.5_R8*dl_g1
+        if (grid%blk(b)%cond_phase(p)%inj(ig,jg,kg)) then
+          dl1 = 0.5_R8*dl_m ;  dlr = 0._R8
+        end if
+        if (grid%blk(b)%cond_phase(p)%inj(ip,jp,kp)) dl0 = 0.5_R8*dl_m
 
         call state_reconstruction(grid%blk(b)%cond_phase(p)%prim(1:ncond(p),ip,jp,kp),    &
                                   grid%blk(b)%cond_phase(p)%prim(1:ncond(p),i,j,k),       &

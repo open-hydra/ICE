@@ -106,6 +106,11 @@ reaches the flux loop through the same path. The ghost fill is described under [
 On the side faces of an axisymmetric wedge the ghost is the cell's mirror image, so the flux carries no mass, and for IG and
 AG the pressure on those faces is the hoop term of the radial momentum; MK has no flux there.
 
+The state an inlet injects is the state of the boundary face, not of the ghost cell's centre: the reconstructions take the
+length of an injecting ghost as zero, so the first cell's slope toward the inlet is the one-sided slope from the face, on
+the face itself and on the first interior face, and the scheme stays second order at the inlet. Where the particles leave
+through an inlet face, or its mass flux is zero, the ghost is a copy or a mirror of the cell and keeps its length.
+
 A reconstructed state that is unphysical has its slopes halved until it is not. If it is still unphysical at first order —
 a ghost that nothing filled, a NaN in the stencil — ICE prints the stencil and stops with a non-zero status.
 

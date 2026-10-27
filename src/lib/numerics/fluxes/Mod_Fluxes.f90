@@ -588,6 +588,9 @@ contains
   !> stencils are gathered into four columns first, which is the copy the
   !> compiler made for the scatter form's strided sections. b, the number of the
   !> block, only names the face (face 2d of the cell) in an error message.
+  !> A face next to a boundary whose first ghost holds an injected state (inj)
+  !> takes that ghost's length as 0: the state sits at the boundary face, and the
+  !> slope between it and the first cell is the one-sided slope from the face.
   subroutine face_flux(blk, b, p, nc, d, i, j, k, flux)
     use ICE_Advanced_Types_m
     use ICE_Global_m,       only: mat_of, solid_of
@@ -596,29 +599,44 @@ contains
     type(ICE_block_type), intent(in)  :: blk
     integer(kind=I4),     intent(in)  :: b, p, nc, d, i, j, k
     real(kind=R8),        intent(out) :: flux(nc)
-    real(kind=R8) :: prim(nc,-1:2)
+    real(kind=R8) :: prim(nc,-1:2), length(-1:2)
 
     select case (d)
     case (1)
-      call compute_flux_ (blk%cond_phase(p)%prim(1:nc,i-1:i+2,j,k),                            &
-                          [blk%dl(i-1,j,k)%c(1), blk%dl(i,j,k)%c(1),                           &
-                           blk%dl(i+1,j,k)%c(1), blk%dl(i+2,j,k)%c(1)],                        &
+      length = [blk%dl(i-1,j,k)%c(1), blk%dl(i,j,k)%c(1), blk%dl(i+1,j,k)%c(1), blk%dl(i+2,j,k)%c(1)]
+      if (i == 1) then
+        if (blk%cond_phase(p)%inj(i-1,j,k)) length(-1) = 0._R8
+      end if
+      if (i == blk%dim(1)-1) then
+        if (blk%cond_phase(p)%inj(i+2,j,k)) length(2) = 0._R8
+      end if
+      call compute_flux_ (blk%cond_phase(p)%prim(1:nc,i-1:i+2,j,k), length,                    &
                           blk%dir(1)%f(i,j,k)%N, blk%dir(1)%f(i,j,k)%A, flux, nc,              &
                           blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p),  &
                           [b, i, j, k, 2*d])
     case (2)
       prim(1:nc,-1:2) = blk%cond_phase(p)%prim(1:nc,i,j-1:j+2,k)
-      call compute_flux_ (prim,                                                                &
-                          [blk%dl(i,j-1,k)%c(2), blk%dl(i,j,k)%c(2),                           &
-                           blk%dl(i,j+1,k)%c(2), blk%dl(i,j+2,k)%c(2)],                        &
+      length = [blk%dl(i,j-1,k)%c(2), blk%dl(i,j,k)%c(2), blk%dl(i,j+1,k)%c(2), blk%dl(i,j+2,k)%c(2)]
+      if (j == 1) then
+        if (blk%cond_phase(p)%inj(i,j-1,k)) length(-1) = 0._R8
+      end if
+      if (j == blk%dim(2)-1) then
+        if (blk%cond_phase(p)%inj(i,j+2,k)) length(2) = 0._R8
+      end if
+      call compute_flux_ (prim, length,                                                        &
                           blk%dir(2)%f(i,j,k)%N, blk%dir(2)%f(i,j,k)%A, flux, nc,              &
                           blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p),  &
                           [b, i, j, k, 2*d])
     case (3)
       prim(1:nc,-1:2) = blk%cond_phase(p)%prim(1:nc,i,j,k-1:k+2)
-      call compute_flux_ (prim,                                                                &
-                          [blk%dl(i,j,k-1)%c(3), blk%dl(i,j,k)%c(3),                           &
-                           blk%dl(i,j,k+1)%c(3), blk%dl(i,j,k+2)%c(3)],                        &
+      length = [blk%dl(i,j,k-1)%c(3), blk%dl(i,j,k)%c(3), blk%dl(i,j,k+1)%c(3), blk%dl(i,j,k+2)%c(3)]
+      if (k == 1) then
+        if (blk%cond_phase(p)%inj(i,j,k-1)) length(-1) = 0._R8
+      end if
+      if (k == blk%dim(3)-1) then
+        if (blk%cond_phase(p)%inj(i,j,k+2)) length(2) = 0._R8
+      end if
+      call compute_flux_ (prim, length,                                                        &
                           blk%dir(3)%f(i,j,k)%N, blk%dir(3)%f(i,j,k)%A, flux, nc,              &
                           blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p),  &
                           [b, i, j, k, 2*d])

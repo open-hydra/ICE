@@ -47,6 +47,9 @@ module ICE_Advanced_Types_m
     real(R8), dimension(:,:,:),     allocatable :: dt, tau, beta
     real(R8), dimension(:,:,:,:),   allocatable :: prim, prim_old
     real(R8), dimension(:,:,:,:),   allocatable :: source, residual
+    ! First ghost cells that hold an injected state (ghost_record, codes 401-403), which the
+    ! reconstructions place at the boundary face; over prim's cells, never set on an interior one
+    logical,  dimension(:,:,:),     allocatable :: inj
   end type ICE_cond_phase_type
 
   type, extends(block_type) :: ICE_block_type

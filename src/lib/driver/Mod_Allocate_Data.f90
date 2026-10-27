@@ -81,6 +81,7 @@ contains
     do p = 1, ngroups
       allocate( blk%cond_phase(p)%dt       (1:ni, 1:nj, 1:nk) )
       allocate( blk%cond_phase(p)%tau      (1-gc:ni+gc, 1-gc:nj+gc, 1-gc:nk+gc) )
+      allocate( blk%cond_phase(p)%inj      (1-gc:ni+gc, 1-gc:nj+gc, 1-gc:nk+gc) )
       allocate( blk%cond_phase(p)%beta     (1:ni, 1:nj, 1:nk) )
       allocate( blk%cond_phase(p)%prim     (1:ncond(p), 1-gc:ni+gc, 1-gc:nj+gc, 1-gc:nk+gc) )
       allocate( blk%cond_phase(p)%prim_old (1:ncond(p), 1-gc:ni+gc, 1-gc:nj+gc, 1-gc:nk+gc) )
@@ -98,6 +99,7 @@ contains
         blk%cond_phase(p)%prim    (:,:,:,k) = ieee_value(1._R8, ieee_quiet_nan)
         blk%cond_phase(p)%prim_old(:,:,:,k) = ieee_value(1._R8, ieee_quiet_nan)
         blk%cond_phase(p)%tau     (:,:,k)   = ieee_value(1._R8, ieee_positive_inf)
+        blk%cond_phase(p)%inj     (:,:,k)   = .false.
       end do
       !$OMP END PARALLEL DO
       end if
@@ -162,6 +164,7 @@ contains
             blk%cond_phase(p)%prim    (:,:,:,k) = qnan
             blk%cond_phase(p)%prim_old(:,:,:,k) = qnan
             blk%cond_phase(p)%tau     (:,:,k)   = pinf
+            blk%cond_phase(p)%inj     (:,:,k)   = .false.
           end if
           if (k >= 1 .and. k <= nk) then
             blk%cond_phase(p)%beta    (:,:,k)   = 1d0

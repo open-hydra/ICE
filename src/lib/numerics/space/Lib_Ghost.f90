@@ -83,7 +83,7 @@ contains
     integer(kind=I4) :: bm, pm, im, jm, km, fm
     integer(kind=I4) :: ig, jg, kg
     integer(kind=I4) :: bs, is, js, ks, fs
-    integer(kind=I4) :: ic, jc, kc, ph
+    integer(kind=I4) :: ic, jc, kc, ph, rule
     real(kind=R8)    :: area, normal(1:3), velocity(1:3), veln, inward(1:3)
 
 
@@ -159,15 +159,20 @@ contains
 
           velocity = grid%blk(bm)%cond_phase(pm)%prim(2:4,im,jm,km)
           veln     = dot_product(velocity,normal)
+          rule     = ghost_rule(grid%bc(i), veln)
+
+          !> The reconstructions place an injected state at the face (face_flux, bound_cell); the flag is
+          !>  written at every fill, so a record that stops injecting clears it
+          grid%blk(bm)%cond_phase(pm)%inj(ig,jg,kg) = (rule == GHOST_INJECT)
 
           !> Switch to extrapolation boundary condition
-          if (ghost_rule(grid%bc(i), veln) == GHOST_COPY) then
+          if (rule == GHOST_COPY) then
             grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),im,jm,km)
             return
           endif
 
           !> Switch to symmetry boundary condtion
-          if (ghost_rule(grid%bc(i), veln) == GHOST_MIRROR) then
+          if (rule == GHOST_MIRROR) then
             grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),ig,jg,kg) = grid%blk(bm)%cond_phase(pm)%prim(1:ncond(pm),im,jm,km)
             velocity = velocity - 2._R8*veln*normal
             grid%blk(bm)%cond_phase(pm)%prim(2:4,ig,jg,kg) = velocity(1:3)
