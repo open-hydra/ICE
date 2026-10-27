@@ -53,10 +53,10 @@ input used for the donor search.
 
 | Check | Result |
 |---|---|
-| Block 1 vs single block (mean, relative to peak density) | $3.0 \times 10^{-6}$ |
+| Block 1 vs single block (mean, relative to peak density) | $3.2 \times 10^{-6}$ |
 | Block 1 vs block 2 inside the overlap (mean / max, relative to peak density) | $2.9 \times 10^{-4}$ / $2.5 \times 10^{-3}$ |
 | Mass flux $\int \rho u\,dy$, block 1 vs single block | $-0.06\%$ to $+0.03\%$ |
-| Mass flux $\int \rho u\,dy$, block 2 vs single block | $-0.08\%$ to $+0.14\%$ |
+| Mass flux $\int \rho u\,dy$, block 2 vs single block | $-0.09\%$ to $+0.13\%$ |
 
 The two blocks agree with each other across the overlap, and the jet passes the chimera
 interface without a visible step in density or mass flux.

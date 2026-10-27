@@ -103,16 +103,18 @@ keeps the threshold and spreads the fall of $\beta$ over $0 \le s < 1/\Delta$, f
 of the 27 cells around it); the face weight $\min(\beta_L, \beta_R)$ gives each face the weight of the more shocked of the
 two cells it separates, and treats a face the same from both sides. With the switch and the weight of the cell on the
 face's low-index side, the crossing jets of MK and AG, mirror images of each other, were $1.0\times10^{-2}$ and
-$1.7\times10^{-2}$ away from their own mirror image at iteration 5000; MK is now symmetric to round-off, and AG to
-$3\times10^{-5}$, about the asymmetry of its run without the detector.
+$1.7\times10^{-2}$ away from their own mirror image at iteration 5000; MK is now symmetric to round-off. AG keeps an
+asymmetry of $3\times10^{-5}$: its steady state with the detector is one of a pair of steady states that are each other's
+mirror image, and round-off decides which one a run reaches.
 
 A switch also kept steady computations from converging: the cells near the threshold switched from one iteration to the
 next, so the density residual levelled off (at about $2\times10^{-3}$ for MK and $4\times10^{-3}$ for AG on the crossing
 jets) instead of falling. With the continuous weight both converge: MK reaches the default `res-threshold` at iteration
 2493 and AG at iteration 6907. Below the threshold the weight is smaller than the switch's wherever the sensor is not
 zero, so the scheme is more dissipative there: on the AG crossing jets the RMS distance to the exact solution grows from
-$2.7\times10^{-2}$ to $2.8\times10^{-2}$ kg/m³, and the field's maximum, on a jet where the jets meet (0.1 kg/m³ in the
-exact solution), falls from 0.16 to 0.12. A domain split into connected blocks gets the weights of the same domain in
+$2.7\times10^{-2}$ to $2.8\times10^{-2}$ kg/m³, and the field's maximum, which lies on a jet (0.1 kg/m³ in the exact
+solution), falls from 0.16, where the jets meet, to 0.12, just upstream of the crossing. A domain split into connected
+blocks gets the weights of the same domain in
 one block, so the two differ by round-off only — which the detector amplifies where the crossing jets collide: the
 four-block crossing jets, cut at $y = 0$ through the collision, differ from the single block by $3\times10^{-10}$ of the
 peak density at iteration 5000, less than a change of one inlet value in its last digit moves the single block
