@@ -6,9 +6,13 @@ module ICE_Mod_Metrics
   public :: setup_metrics, delthe, meshType, ncollapsed_corners
 
   integer(kind=I4) :: meshType ! 1 -> 1D, 2 -> 2D, 3 -> 3D
-  real(kind=R8)    :: delthe   ! grid axisymmetric angle
+  real(kind=R8)    :: delthe = 0._R8  ! angle of the axisymmetric wedge of a 2-D mesh, 0 on any other mesh
   integer(kind=I4) :: ncollapsed_corners = 0 ! cell corners of the last setup_metrics on a collapsed edge, not checked
                                              ! for folding (check_folded_cells)
+  real(kind=R8), parameter :: mesh_fit   = 1d-2  ! k node planes match a turn or a translation to this fraction of
+                                                 ! the thickness of the block (check_mesh_type)
+  real(kind=R8), parameter :: mesh_angle = 1d-6  ! an azimuth (rad) turned by a node, or a distance from the x axis
+                                                 ! relative to the largest one, is zero up to this
 
 contains
 
@@ -35,7 +39,9 @@ contains
       ncollapsed_corners = ncollapsed_corners + ncollapsed
     end do
 
-    call check_mesh_type (grid)
+    ! The type of the mesh is that of its fine level: a coarse level, with fewer cells in a
+    ! direction, keeps it
+    if (lev == 1) call check_mesh_type (grid)
 
     do b = 1, grid%nb
       call extrapolate_nodes (grid%blk(b)%dim(1), &
@@ -77,33 +83,202 @@ contains
   end subroutine import_nodes
 
 
+  !> The type of the mesh, from the nodes of every block.
+  !>  - meshType, and ndir, count the index directions with more than one cell: 3 if a block has
+  !>    more than one cell in k, otherwise 2 if a block has more than one cell in j, otherwise 1.
+  !>  - delthe is the angle of the axisymmetric wedge of a 2-D mesh, 0 on any other mesh. A 2-D
+  !>    mesh is a wedge when, in every block, the k = 1 node plane is the k = 0 plane turned about
+  !>    the x axis by the same angle (x and r = sqrt(y^2 + z^2) kept), and plane when, in every
+  !>    block, it is the k = 0 plane translated; node_planes checks every node. Blocks of both
+  !>    kinds, wedges whose angles differ by more than mesh_fit of the angle, and a block of neither
+  !>    kind (nearer one than the other but not to mesh_fit, or as near both) stop the setup.
+  !>  - The misfits are lengths, measured against the thickness of the block, not against the size
+  !>    of the coordinates: on a mesh written with a finite number of digits, what a turn or a
+  !>    translation leaves over is the round-off of the nodes, a fraction of their move from one
+  !>    plane to the other. A plane slab far from the axis, which a small turn nearly fits, stays
+  !>    plane: the translation fits it better. A node on the axis needs no exception, unlike the
+  !>    corners of its collapsed edge in check_folded_cells: its misfit is at most the length of
+  !>    its k edge plus its distance from the axis times the angle, a few 1e-10 m where the axis row
+  !>    lies at r = 1e-8, against mesh_fit of a thickness of the order of r times the angle.
   subroutine check_mesh_type (grid)
     use ICE_Advanced_Types_m
     use ICE_Global_m, only: ndir
     implicit none
-    type(ICE_domain_type), intent(inout) :: grid
-    real(kind=R8) :: theta(2)
+    type(ICE_domain_type), intent(in) :: grid
+    integer(kind=I4) :: b, nturn, first, flat, worst_turn(2), worst_move(2)
+    real(kind=R8)    :: sr, ang, ang_b, fit, fit_move
+    logical          :: turned, moved, nearer_turn, nearer_move
 
-    if (grid%blk(1)%dim(3) > 1) then
-      meshType = 3
-    elseif (grid%blk(1)%dim(3) == 1 .and. grid%blk(1)%dim(2) == 1) then
-      meshType = 1
-    else
-      meshType = 2
-      associate( node => grid%blk(1)%node, jm => grid%blk(1)%dim(2) )
-        theta(1) = atan2( node(0,jm,1)%c(3), node(0,jm,1)%c(2) ) - atan2( node(0,jm,0)%c(3), node(0,jm,0)%c(2) )
-        theta(2) = atan2( node(0,1,1)%c(3),  node(0,1,1)%c(2) )  - atan2( node(0,1,0)%c(3),  node(0,1,0)%c(2) )
-      end associate
-      if ( abs(theta(1) - theta(2)) < 1.d-5 .and. theta(1) /= 0.d0 ) then
-        delthe = theta(1)
-      else
-        delthe = 0.d0
-      endif
-    endif
-
+    meshType = 1
+    do b = 1, grid%nb
+      if (grid%blk(b)%dim(2) > 1) meshType = max(meshType, 2)
+      if (grid%blk(b)%dim(3) > 1) meshType = 3
+    end do
     ndir = meshType
 
+    delthe = 0._R8
+    if (meshType /= 2) return
+
+    ! The largest distance of a node from the x axis, to tell a probe node on the axis
+    sr = 0._R8
+    do b = 1, grid%nb
+      sr = max(sr, axis_distance(grid%blk(b)%node, grid%blk(b)%dim(1), grid%blk(b)%dim(2)))
+    end do
+
+    nturn = 0
+    first = 0
+    flat  = 0
+    ang   = 0._R8
+    do b = 1, grid%nb
+      call node_planes (grid%blk(b)%node, grid%blk(b)%dim(1), grid%blk(b)%dim(2), sr, turned, ang_b, moved, fit, &
+                        fit_move, nearer_turn, nearer_move, worst_turn, worst_move)
+      if (nearer_turn .and. .not. turned) then
+        write(*,'(A,I0,A,ES12.5,A,ES9.2,A,2(1X,I0),A,ES8.1,A)') ' [ERROR] [ICE::check_mesh_type] block ', b, &
+          ': nearer a wedge of ', ang_b, ' rad than a plane block, but its nodes match the turn only to ', fit, &
+          ' of its thickness (node', worst_turn, '; ', mesh_fit, ' needed): more significant digits are needed'
+        error stop 1
+      end if
+      if (nearer_move .and. .not. moved) then
+        write(*,'(A,I0,A,ES9.2,A,2(1X,I0),A,ES8.1,A)') ' [ERROR] [ICE::check_mesh_type] block ', b, &
+          ': nearer a plane block than a wedge, but its k = 1 node plane is the k = 0 plane translated only to ', &
+          fit_move, ' of its thickness (node', worst_move, '; ', mesh_fit, ' needed): the k node planes must be '// &
+          'parallel, or written with more significant digits'
+        error stop 1
+      end if
+      if (.not. (turned .or. moved)) then
+        write(*,'(A,I0,A,ES9.2,A,ES9.2,A)') ' [ERROR] [ICE::check_mesh_type] block ', b, ': its k = 1 node plane '// &
+          'is neither the k = 0 plane turned about the x axis nor translated (the turn fits to ', fit, &
+          ' of its thickness, the translation to ', fit_move, ')'
+        error stop 1
+      end if
+      if (.not. turned) then
+        if (flat == 0) flat = b
+        cycle
+      end if
+      nturn = nturn + 1
+      if (nturn == 1) then
+        ang   = ang_b
+        first = b
+      elseif (abs(ang_b - ang) > mesh_fit*abs(ang)) then
+        write(*,'(A,I0,A,ES12.5,A,I0,A,ES12.5,A)') ' [ERROR] [ICE::check_mesh_type] block ', b, ' is a wedge of ', &
+          ang_b, ' rad, block ', first, ' one of ', ang, ' rad'
+        error stop 1
+      end if
+    end do
+    if (nturn == grid%nb) then
+      delthe = ang
+    elseif (nturn > 0) then
+      write(*,'(A,I0,A,I0,A,I0,A,I0,A)') ' [ERROR] [ICE::check_mesh_type] ', nturn, ' of the ', grid%nb, &
+        ' blocks of the 2-D mesh are axisymmetric wedges (block ', first, '), the others plane (block ', flat, ')'
+      error stop 1
+    end if
+
   end subroutine check_mesh_type
+
+
+  !> The largest distance from the x axis of a node of the planes k = 0 and k = 1 of a 2-D block.
+  pure function axis_distance (node, im, jm) result(rmax)
+    use ICE_Base_Types_m, only: ICE_vector_3D_type
+    implicit none
+    type(ICE_vector_3D_type), intent(in) :: node(-1:,-1:,-1:)
+    integer(kind=I4),         intent(in) :: im, jm
+    real(kind=R8)                        :: rmax
+    rmax = maxval(sqrt(node(0:im,0:jm,0:1)%c(2)**2 + node(0:im,0:jm,0:1)%c(3)**2))
+  end function axis_distance
+
+
+  !> Compare the node planes k = 0 and k = 1 of a 2-D block of im x jm cells. Its thickness is the
+  !> largest move of a node from one plane to the other (the largest component). turned: every node
+  !> of the plane 1 is the node of the plane 0 turned about the x axis by ang, with |ang| >
+  !> mesh_angle, to within mesh_fit of the thickness, and closer than as a translation. moved: every
+  !> node is the node of the plane 0 translated by the move of the node (0,0), to within mesh_fit of
+  !> the thickness, and closer than as a turn or with |ang| <= mesh_angle (a turn by a null angle is a
+  !> translation). ang is the azimuth turned by the node (0,jm), or by the node of the plane 0
+  !> farthest from the axis when (0,jm) lies on it (no farther than mesh_angle of sr, the largest
+  !> distance of a node of the mesh from the axis). fit, fit_move: the misfits of the turn and of the
+  !> translation over the thickness, the largest at the nodes worst_turn and worst_move; nearer_turn,
+  !> nearer_move: the turn, the translation, fits better.
+  !> The nodes come in as a dummy with the block's lower bounds: read through blk%node (or an
+  !> associate name for it), ifx 2023.1 at -O2 loaded the nodes (0,0,0) and (0,0,1) as zeros here, so
+  !> the move of the node (0,0) was 0 and every plane block was refused, while gfortran and the reads
+  !> of the loop below were right. The move of the node (0,0) the loop reads is also checked against
+  !> that shift: a build that misreads the nodes stops instead of taking the wrong type.
+  subroutine node_planes (node, im, jm, sr, turned, ang, moved, fit, fit_move, nearer_turn, nearer_move, &
+                          worst_turn, worst_move)
+    use ICE_Base_Types_m, only: ICE_vector_3D_type
+    use ICE_Parameters_m, only: pi
+    implicit none
+    type(ICE_vector_3D_type), intent(in)  :: node(-1:,-1:,-1:)
+    integer(kind=I4),         intent(in)  :: im, jm
+    real(kind=R8),            intent(in)  :: sr
+    logical,                  intent(out) :: turned, moved, nearer_turn, nearer_move
+    real(kind=R8),            intent(out) :: ang, fit, fit_move
+    integer(kind=I4),         intent(out) :: worst_turn(2), worst_move(2)
+    integer(kind=I4) :: i, j, i0, j0
+    real(kind=R8)    :: ca, sa, r, rmax, a(3), c(3), shift(3), d, d00, turn_off, move_off, thick
+
+    i0 = 0
+    j0 = jm
+    if (sqrt(node(0,jm,0)%c(2)**2 + node(0,jm,0)%c(3)**2) <= mesh_angle*sr) then
+      rmax = -1._R8
+      do j = 0, jm ; do i = 0, im
+        r = sqrt(node(i,j,0)%c(2)**2 + node(i,j,0)%c(3)**2)
+        if (r > rmax) then
+          rmax = r
+          i0 = i
+          j0 = j
+        end if
+      end do ; end do
+    end if
+    ang = atan2(node(i0,j0,1)%c(3), node(i0,j0,1)%c(2)) - atan2(node(i0,j0,0)%c(3), node(i0,j0,0)%c(2))
+    if (ang >  pi) ang = ang - 2._R8*pi
+    if (ang < -pi) ang = ang + 2._R8*pi
+
+    ca = cos(ang)
+    sa = sin(ang)
+    shift = node(0,0,1)%c - node(0,0,0)%c
+    turn_off = 0._R8
+    move_off = 0._R8
+    thick    = 0._R8
+    d00      = 0._R8
+    worst_turn = 0
+    worst_move = 0
+    do j = 0, jm ; do i = 0, im
+      a = node(i,j,0)%c
+      c = node(i,j,1)%c
+      d = max(abs(c(1) - a(1)), abs(c(2) - (a(2)*ca - a(3)*sa)), abs(c(3) - (a(2)*sa + a(3)*ca)))
+      if (d > turn_off) then
+        turn_off   = d
+        worst_turn = [i, j]
+      end if
+      d = maxval(abs(c - a - shift))
+      if (i == 0 .and. j == 0) d00 = d
+      if (d > move_off) then
+        move_off   = d
+        worst_move = [i, j]
+      end if
+      thick = max(thick, maxval(abs(c - a)))
+    end do ; end do
+
+    if (d00 > mesh_fit*thick) then
+      write(*,'(A,ES9.2,A)') ' [ERROR] [ICE::node_planes] the node (0,0) moves from the plane k = 0 to k = 1 by ', &
+        d00/thick, ' of the thickness more when read in the loop than when read alone: this build misreads the '// &
+        'node array'
+      error stop 1
+    end if
+
+    nearer_turn = abs(ang) > mesh_angle .and. turn_off < move_off
+    nearer_move = move_off < turn_off .or. abs(ang) <= mesh_angle
+    turned = nearer_turn .and. turn_off <= mesh_fit*thick
+    moved  = nearer_move .and. move_off <= mesh_fit*thick
+    fit      = huge(1._R8)
+    fit_move = huge(1._R8)
+    if (thick > 0._R8) then
+      fit      = turn_off/thick
+      fit_move = move_off/thick
+    end if
+
+  end subroutine node_planes
 
 
   !> A cell is the image of the unit cube by the trilinear map of its eight nodes, and a finite
@@ -232,8 +407,8 @@ contains
       end do ; end do
     endif
 
-    ! k-faces
-    if ( meshType == 2 .and. delthe == 0d0 .or. meshType == 1 ) then
+    ! k-faces: cubic needs two cells, which a block of a 3-D mesh, or its coarse level, may lack
+    if ( meshType == 2 .and. delthe == 0d0 .or. meshType == 1 .or. meshType == 3 .and. km < 2 ) then
       do j = -1, jm+1 ; do i = -1, im+1
         node(i,j,-1)%c   = 2._R8*node(i,j,0)%c  - node(i,j,1)%c
         node(i,j,km+1)%c = 2._R8*node(i,j,km)%c - node(i,j,km-1)%c

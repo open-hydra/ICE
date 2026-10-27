@@ -303,6 +303,7 @@ contains
 
     subroutine print_simulation_info()
       integer :: m
+      character(len=16) :: angle
 
       write(*,*)
       write(*,'(A)') " Checking input file..."
@@ -310,6 +311,20 @@ contains
       !> The fine level's corners left out of the folding check (check_folded_cells)
       if (ncollapsed_corners > 0) write(*,'(A,I0,A)') "   (", ncollapsed_corners, &
         " cell corners on a collapsed edge, as at an axis, not checked for folding)"
+      !> The type check_mesh_type takes from the nodes of every block
+      write(angle,'(F16.6)') delthe * 180._8 / pi
+      select case (meshType)
+      case (1)
+        write(*,'(A)') " - Mesh type              ---> 1-D"
+      case (2)
+        if (delthe == 0._8) then
+          write(*,'(A)') " - Mesh type              ---> 2-D, plane"
+        else
+          write(*,'(A)') " - Mesh type              ---> 2-D, axisymmetric wedge of "//trim(adjustl(angle))//" degrees"
+        end if
+      case default
+        write(*,'(A)') " - Mesh type              ---> 3-D"
+      end select
       write(*,'(A)') " - Initial conditions     ---> OK"
       write(*,'(A)') " - Boundary conditions    ---> OK"
       write(*,'(A)') " - Particle properties    ---> OK"

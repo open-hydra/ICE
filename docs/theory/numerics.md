@@ -16,12 +16,17 @@ unit normal. Face areas, normals, cell volumes and the three cell lengths are co
 once at setup from the node coordinates and stored.
 
 Each block carries **two ghost layers** on every face. The dimensionality is inferred
-from the first block: a mesh with one cell in $k$ is 2-D, one cell in both $j$ and $k$
-is 1-D. Nothing has to be declared — the flux loops over a direction with a single
-cell simply do no work. A 2-D mesh whose two node planes make the same angle about the $x$
-axis at both ends of its first node line is an axisymmetric wedge of that angle: the ghost
-nodes beyond its side faces are then rotated by the angle, not extrapolated in a straight
-line.
+from the blocks: the mesh is 3-D if a block has more than one cell in $k$, 2-D if not and
+a block has more than one cell in $j$, 1-D otherwise. Nothing has to be declared — the
+flux loops over a direction with a single cell simply do no work. A 2-D mesh is an
+axisymmetric wedge when, in every block, the $k = 1$ node plane is the $k = 0$ plane turned
+about the $x$ axis by the same angle ($x$ and $r = \sqrt{y^2+z^2}$ kept), and plane when, in
+every block, it is the $k = 0$ plane translated. Every node is checked against 1 % of the
+thickness of its block, the largest move of a node from one plane to the other; a mesh
+with blocks of both kinds, or a block that fits neither to 1 % (coordinates written with
+too few digits, or $k$ planes neither parallel nor turned about $x$), stops at setup, and
+the setup summary names the type. The ghost nodes beyond the side faces of a wedge are
+rotated by its angle, not extrapolated in a straight line.
 
 The interior faces of a block are swept in two passes, odd faces then even, so that two
 faces sharing a cell never accumulate into it at the same time. This is what makes the
