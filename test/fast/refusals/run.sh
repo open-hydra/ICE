@@ -89,6 +89,11 @@ refuse Refuse/MK   "drag not set (coupled run)"  "sed -i '/^drag /d' input.ini" 
        "drag is not set;Schiller-Naumann"
 refuse Refuse/MK   "heat not set (coupled run)"  "sed -i '/^heat-transfer /d' input.ini" \
        "heat-transfer is not set;Kavanau-Drake"
+# An inlet that takes its speed from the gas (401, 403) in a run without one (Doisneau/MK is 0-way)
+refuse Doisneau/MK "inlet 401 without a gas"     "sed -i 's/ 402\$/ 401/' INPUT/part-bc.txt" \
+       "takes its speed from the gas"
+refuse Doisneau/MK "inlet 403 without a gas"     "sed -i 's/ 402\$/ 403/' INPUT/part-bc.txt" \
+       "takes its speed from the gas"
 refuse Refuse/MK   "heat Chang points to JAXA3"  "sed -i 's/^heat-transfer .*/heat-transfer = Chang/' input.ini" \
        "Chang is now JAXA3;Mach-corrected law is JAXA4;- JAXA4"
 # The property table (Doisneau/MK ships one, cp 1500, density 2000, and sets neither key in the INI)

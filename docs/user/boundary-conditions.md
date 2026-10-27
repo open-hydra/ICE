@@ -131,7 +131,8 @@ Two cases are handled before any of that:
 - if the mass flux is **zero**, the inlet becomes a symmetry, which is how a partly
   active inlet face is expressed.
 
-`401` needs a gas field to be meaningful, and `403` needs one for its velocity.
+`401` takes its density, velocity and temperature from the gas, and `403` its velocity: a run without a gas
+phase (0-way) refuses an injecting `401` or `403` record at set-up; use `402` there.
 
 ## Chimera (`102`) { #chimera }
 

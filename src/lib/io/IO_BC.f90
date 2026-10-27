@@ -3,6 +3,7 @@ module ICE_IO_BC
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
   use ICE_Global_m,         only: ICE_phase_prefix
   use ICE_Advanced_Types_m, only: ICE_domain_type, ICE_bc_type
+  use ICE_Config_Types_m,   only: obj_sim_param
   implicit none
   private
 
@@ -259,6 +260,12 @@ contains
               if (ios == 0) read(line,*,iostat=ios) massflux, velocity, alpha_tok, beta_tok, temperature, radius
               if (ios == 0) call check_inlet(level, nline, nrec, code, massflux, velocity, alpha_tok, beta_tok, &
                                              temperature, radius, alpha, beta, normal_dir)
+              !> 401 and 403 take the speed of what they inject from the gas (401 also its density and
+              !  temperature): a run without a gas phase has none to read
+              if (ios == 0 .and. code /= 402 .and. massflux /= 0._R8 .and. &
+                  .not. (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled)) &
+                call field_error(level, nline, nrec, code, 'the inlet takes its speed from the gas, and this run '// &
+                  'has no gas phase: use 402, which takes the speed in m/s')
 
             case (0)
               continue
