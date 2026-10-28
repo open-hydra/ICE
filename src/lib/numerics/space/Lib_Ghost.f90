@@ -194,9 +194,7 @@ contains
             if (grid%bc(i)%type == 401) then
               veln = dot_product(grid%blk(bm)%gas_phase%prim(2:4,im,jm,km),inward)
               !> Velocity
-              prim(2,ig,jg,kg) = grid%bc(i)%velocity * veln * cos(grid%bc(i)%beta) * cos(grid%bc(i)%alpha)
-              prim(3,ig,jg,kg) = grid%bc(i)%velocity * veln * cos(grid%bc(i)%beta) * sin(grid%bc(i)%alpha)
-              prim(4,ig,jg,kg) = grid%bc(i)%velocity * veln * sin(grid%bc(i)%beta)
+              prim(2:4,ig,jg,kg) = injected_velocity(grid%bc(i)%velocity * veln, grid%bc(i), inward)
               !> Density: the mixture rule, krho over 1 - the cell's krho sum
               prim(1,ig,jg,kg) = grid%bc(i)%massflux/(1._R8-grid%bc(i)%krho_sum) * grid%blk(bm)%gas_phase%prim(1,im,jm,km) / grid%bc(i)%velocity
               !> Temperature

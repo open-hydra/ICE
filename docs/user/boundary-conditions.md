@@ -131,15 +131,19 @@ differ in whether those are absolute or ratios to the local gas.
 
 | | Mass term | Velocity | Temperature |
 |---|---|---|---|
-| `401` | `krho`, the family's share of the mixture flow: $\rho_{p,i} = \frac{krho_i}{1-\sum_j krho_j}\,\rho_g / kV$ | `kV` times the gas velocity normal to the face | `kT` times the gas temperature |
+| `401` | `krho`, the family's share of the mixture flow: $\rho_{p,i} = \frac{krho_i}{1-\sum_j krho_j}\,\rho_g / kV$ | `kV` times the gas velocity into the domain across the face | `kT` times the gas temperature |
 | `402` | `gp`, a mass flux in kg s⁻¹ m⁻²: $\rho_p = gp/|v_n|$ | `v`, an absolute speed | `Tp`, absolute |
 | `403` | `gp`, as `402` | `kV` times the gas speed | `Tp`, absolute |
 
 In the `401` formula the sum runs over the families of the cell, as in IGLOO; with one copy of the table, its
 record counts once for every family. A cell whose `krho` sum reaches 1, or a negative `krho`, stops the setup.
 
-`alpha` and `beta` are the injection angles about the $x$ axis; written as the literal
-`normal`, they are replaced by the angles of the face normal, which is the usual choice.
+`alpha` and `beta` give the injection direction: written as the literal `normal` (both of
+them, the usual choice), the particles enter along the face normal into the domain, on any
+face and whatever way the face is turned; written as numbers, they are angles in the global
+frame, $\alpha$ in the $x$-$y$ plane from $x$ and $\beta$ out of it, so the direction is
+$(\cos\beta\cos\alpha, \cos\beta\sin\alpha, \sin\beta)$ — $0$ and $0$ included, which is $+x$.
+One `normal` and one number is refused at set-up.
 The number density follows from the prescribed radius,
 $n = \rho_p / \big(\rho_{al}(T_p)\tfrac43\pi r_p^3\big)$, with the condensed density at the
 inlet temperature: the property table's when the case has one, the constant `density` of
