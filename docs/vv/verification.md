@@ -471,8 +471,9 @@ not a round trip, so K2's cloud drifts 201 K towards 299 K in 200 steps, and K3'
 heats (error 0.64 of the gap). K2c and K3c are the controls with nothing to vary.
 
 K2's tolerance: a round trip $T \to e \to T$ returns $T$ to a few ulp, $10^{-13}$ K at
-500 K, and the 400 of the run stay below $10^{-10}$ K; the output holds 15 digits, so the
-check resolves $10^{-12}$ K. K3's: RK2 at $\Delta t = \tau_T/1000$ leaves
+500 K, and the 400 of the run stay below $10^{-10}$ K; the output holds 17 digits, which
+give the double back, so the check resolves its last bit ($10^{-13}$ K). K3's: RK2 at
+$\Delta t = \tau_T/1000$ leaves
 $e^{-1}(\Delta t/\tau_T)^2/6 = 6\times10^{-8}$ of the gap at $t = \tau_T$, which the
 constant-$c_s$ control measures too; the kinks of $e$ at the rows add at most
 $10^{-9}$ each over the 300 rows crossed. $10^{-6}$ sits a decade above both.

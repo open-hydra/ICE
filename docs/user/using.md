@@ -133,9 +133,10 @@ independent — a case may be given in Tecplot ASCII and written in VTK.
 
 The file holds the node coordinates followed by the primitive variables of every
 family, cell-centred, named `rho_p1`, `u_p1`, … `n_p1`, `rho_p2`, …, a solidifying family adding `f_p1` and
-`chi_p1` after `n_p1` (a probe takes the same names). The solution time
-is recorded in the zone header; in steady-state mode it carries the iteration count
-instead, negated.
+`chi_p1` after `n_p1` (a probe takes the same names), every value to 17 significant
+digits in the ASCII formats. The solution time is recorded in the zone header
+(`SOLUTIONTIME`) and in the `TIME` field data of a vtk file; in steady-state mode it
+carries the global iteration count instead, negated.
 
 `sol-diter` and `sol-dtime` control how often the solution is written. With
 `sol-overwrite = false` each write appends a counter to the name, giving a numbered
@@ -147,9 +148,18 @@ row is appended to `OUTPUT/part-residual-history.dat`.
 ## Restarting
 
 Set `newrun = false`. ICE then reads its initial state from `OUTPUT/part-field.*`
-instead of `INPUT/part-ic.*`, picks up the simulation time from the zone header, and
-continues appending to the residual history. The restart file is a solution ICE wrote
-itself, so it is `sol-format` — not `ic-format` — that names it.
+instead of `INPUT/part-ic.*`, goes on from the time of that solution, and continues
+appending to the residual history. The restart file is a solution ICE wrote itself, so
+it is `sol-format` — not `ic-format` — that names it.
+
+The time of the solution is its `SOLUTIONTIME` (Tecplot, ASCII or binary) or its `TIME`
+(vtk). A negative one marks a steady solution, and a steady restart goes on from its
+iteration count; the Tecplot files of earlier versions, which hold the count positive with
+`STRANDID = 0` in their zone headers, are read the same way. A time-accurate restart goes
+on from the time of a time-accurate solution, and starts at $t = 0$ from a steady one. A
+Tecplot solution whose zone header has no `SOLUTIONTIME` cannot tell where to go on: the
+restart stops (use the file as the initial condition instead, with `newrun = true`). A vtk
+solution without `TIME` reads as time 0.
 
 A run that went on past the solution the restart reads (it stopped after its last
 output) left in the residual history and in the probe files rows that the restart writes
@@ -157,8 +167,8 @@ again. From a `tecplot ascii` solution the restart drops them first: a steady re
 rows of later iterations, a time-accurate one the residual rows and the time-based probe
 rows of later times (the iteration rows of a probe stay: a time-accurate restart counts
 its iterations from 0). A last row cut in the middle goes too, and a file whose last line
-has no newline gets one. From the other formats, whose solution time ICE does not read
-back, nothing is dropped: remove those rows by hand, and end the file with a newline.
+has no newline gets one. From the other formats nothing is dropped: remove those rows
+by hand, and end the file with a newline.
 
 With `sol-overwrite = false` the solutions form a numbered series; restarting from a
 particular one means renaming it back to `part-field`.
