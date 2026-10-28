@@ -33,8 +33,12 @@ contains
     implicit none
     type(ICE_simulation_type), intent(inout)  :: sim
     type(orion_data), intent(inout), optional :: IOgas
-    logical :: coupled
-    integer :: ios, b
+    !> The time of a steady run, which has none: a value no time-based test
+    !> reaches, written in the residual rows, the same in a new run and in a
+    !> restart
+    real(8), parameter :: steady_time = -1.12358132135_8
+    logical :: coupled, resume
+    integer :: ios, b, m
 
     ! Print header
     if (mpi_is_root) call Print_Header()
@@ -131,6 +135,11 @@ contains
     end if
 
     call output_solution_setup(sim%ODP(1))
+    ! The output buffers of the coarse levels, at their sizes: a level writes its own
+    ! solution and diagnostic files (field-level<n>, residuals-level<n>, ICE_postprocess)
+    do m = 2, obj_multigrid%MGL
+      call output_solution_setup(sim%ODP(m))
+    end do
 
     ! Setup probes (no-op if nprobes == 0)
     call Setup_Probes(sim%domain(1))
@@ -154,16 +163,19 @@ contains
         backspace(obj_io%unitRES)
       end if
 
+      ! The time of the solution read (restart_time): its physical time, or the
+      ! global iteration count of a steady one. A time-accurate run that starts
+      ! from a steady solution starts at t = 0.
       if (obj_time_scheme%time_accurate) then
-        sim%domain(1)%time           = sim%ODP(1)%solutiontime
+        if (restart_steady) then
+          sim%domain(1)%time         = 0._8
+        else
+          sim%domain(1)%time         = sim%ODP(1)%solutiontime
+        end if
         obj_sim_param%iter_general   = 0
       else
         obj_sim_param%iter_general   = int(sim%ODP(1)%solutiontime)
-        sim%domain(1)%time           = -1._8
-        ! The solution does not carry the first residual of the run it continues
-        if (mpi_is_root .and. obj_sim_param%res_threshold > 0._R8) write(*,'(A)') &
-          ' [WARNING] restart: res-threshold is relative to the first non-zero density residual of this run, '// &
-          'not of the run it continues'
+        sim%domain(1)%time           = steady_time
       end if
 
       ! Time-based probe rows fall on the multiples of their dtime: a restart
@@ -173,7 +185,7 @@ contains
       if (obj_time_scheme%time_accurate) then
         sim%domain(1)%time = 0._8
       else
-        sim%domain(1)%time = -1.12358132135_8
+        sim%domain(1)%time = steady_time
       end if
       obj_sim_param%iter_general = 0
     end if
@@ -182,6 +194,29 @@ contains
     sim%domain(1)%iter           = 0
     obj_sim_param%iter_from_call = 0
     obj_sim_param%res_reference  = 0._R8
+
+    ! The counters stored with the solution (read_vtk_tec): the restart goes on
+    ! as the uninterrupted run would -- CFL ramp, output cadence and numbering,
+    ! residual and probe rows, grid level, the unit of res-threshold -- when
+    ! that run was of the same kind, steady or time-accurate. Otherwise, or
+    ! from a solution without them, the counters start as those of a new run.
+    resume = .not. obj_sim_param%newrun .and. obj_io%restart%found .and. &
+             (restart_steady .neqv. obj_time_scheme%time_accurate)
+    if (resume) then
+      obj_sim_param%iter_general   = obj_io%restart%cycle
+      ! The solution is that of the finest level, and so is its iteration count
+      sim%domain(1)%iter           = obj_io%restart%iteration
+      obj_multigrid%MG_level       = max(1, min(obj_multigrid%MGL, obj_io%restart%grid_level))
+      obj_sim_param%time_from_call = obj_io%restart%last_output_time
+      obj_io%output_number         = obj_io%restart%output_number
+      obj_sim_param%res_reference  = obj_io%restart%res_reference
+    end if
+    ! Without them a steady restart takes the first non-zero density residual
+    ! of its own for the unit of res-threshold, as a new run
+    if (.not. (obj_sim_param%newrun .or. obj_time_scheme%time_accurate .or. resume) .and. mpi_is_root .and. &
+        obj_sim_param%res_threshold > 0._R8) write(*,'(A)') &
+      ' [WARNING] restart: the solution holds no ICE_RES_REFERENCE, so res-threshold is relative to the first '// &
+      'non-zero density residual of this run, not of the run it continues'
 
     write(obj_io%unitRES_format, '(A11,I0,A7)') '(I8,E20.10,', 5, 'E20.10)'
 
@@ -238,15 +273,19 @@ contains
     !> after the solution a restart reads (it went on past its last output and
     !> stopped, killed or at the time limit of a queue): the restart writes those
     !> iterations again, so they are dropped (Drop_Rows_After). Only where the
-    !> solution places them exactly: a Tecplot ASCII solution holds its time and
-    !> marks a steady one (STRANDID = 0). A steady restart takes back the global
-    !> iteration count, and the rows of later iterations go. A time-accurate one
-    !> takes back the time and counts the iterations from 0: the residual rows of
-    !> later times go (their time, written E20.10, against the restart time
-    !> rounded up to those digits), the time rows of a probe too, and its
-    !> iteration rows stay. Any other solution (vtk and Tecplot binary, whose time
-    !> ICE does not read back, a file without SOLUTIONTIME, a solution of the
-    !> other mode) drops nothing.
+    !> solution places them exactly. One that holds the counters, in any format
+    !> (restart_counters), gives its global iteration count, CYCLE: the residual
+    !> rows and the iteration rows of a probe of later iterations go, and in a
+    !> time-accurate run the time rows of a probe of later times too. A Tecplot
+    !> ASCII solution without them holds its time and tells a steady one
+    !> (restart_time): a steady restart takes back the global iteration count,
+    !> and the rows of later iterations go; a time-accurate one takes back the
+    !> time and counts the iterations from 0: the residual rows of later times go
+    !> (their time, written E20.10, against the restart time rounded up to those
+    !> digits), the time rows of a probe too, and its iteration rows stay. Any
+    !> other solution (vtk and Tecplot binary without the counters, a solution of
+    !> the other mode) drops nothing; one without a time stopped the run before
+    !> (check_ic).
     subroutine Drop_History_Rows(IOfield)
       use iso_fortran_env, only: R8 => real64
       use ICE_IO_Probes,   only: Drop_Probe_Rows, Drop_Rows_After
@@ -256,14 +295,20 @@ contains
       real(R8)          :: last
       integer           :: ncol
 
-      if (trim(obj_io%ini_fmt(1)) /= 'tecplot' .or. trim(obj_io%ini_fmt(2)) /= 'ascii') return
-      ! ORION gives -10 when the file holds no SOLUTIONTIME; ICE writes abs(time)
-      if (.not. IOfield%solutiontime >= 0._R8) return
-      if (obj_time_scheme%time_accurate .eqv. (IOfield%strandid == 0)) return
+      if (restart_steady .eqv. obj_time_scheme%time_accurate) return
 
       ! A residual row: the global iteration, the time and the residuals
       resfile = 'OUTPUT/'//trim(ICE_phase_prefix)//'residual-history.dat'
       ncol = 2 + size(obj_sim_param%residuotot)
+      if (obj_io%restart%found) then
+        last = real(obj_io%restart%cycle, R8)
+        if (mpi_is_root) call Drop_Rows_After(trim(resfile), ncol, 1, last, times=.false.)
+        call Drop_Probe_Rows(last, times=.false.)
+        if (obj_time_scheme%time_accurate) call Drop_Probe_Rows(IOfield%solutiontime * (1._R8 + 1.e-12_R8), times=.true.)
+        return
+      end if
+
+      if (trim(obj_io%ini_fmt(1)) /= 'tecplot' .or. trim(obj_io%ini_fmt(2)) /= 'ascii') return
       if (obj_time_scheme%time_accurate) then
         write(printed, '(RU,E20.10)') IOfield%solutiontime
         read(printed, *) last

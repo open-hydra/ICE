@@ -212,9 +212,10 @@ gas starts to move can have no density change at its first step (none with the o
 `iter-threshold` ends a run in which nothing moves. A `res-threshold` switched on by a
 re-read of `input.ini` (from 0) measures from the first non-zero residual after it. If a
 residual rises before it falls, the run ends when it is `res-threshold` times the first
-one, later than a test relative to the peak would. A restart takes the first non-zero
-residual of its own run as the reference (the solution files do not carry the first
-run's) and says so. An input written for the former absolute test keeps its stop with
+one, later than a test relative to the peak would. A steady restart takes back the
+reference of the run it continues, which the solution stores (`ICE_RES_REFERENCE`, see
+[Restarting](using.md#restarting)); from a solution without it, the first non-zero
+residual of its own run, and says so. An input written for the former absolute test keeps its stop with
 `res-threshold` divided by that first residual.
 
 ## Re-reading at runtime

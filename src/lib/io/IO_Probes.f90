@@ -170,19 +170,27 @@ contains
   end subroutine Resolve_Variables
 
 
+  !> The cell of a probe given by position: the one whose centre, the mean of
+  !> its eight nodes, is nearest, over the cells of every block (every rank
+  !> holds the whole domain, so every rank finds the same cell); of two at the
+  !> same distance, the first in block, k, j, i order.
   subroutine Place(self, domain)
     implicit none
     class(obj_probe),                  intent(inout) :: self
     type(ICE_domain_type), intent(in)                :: domain
     integer :: i, j, k, b
-    real(R8) :: d0, d
+    real(R8) :: d0, d, centre(3)
 
     d0 = huge(1._R8)
     do b = 1, domain%nb
-      do k = 0, domain%blk(b)%dim(3)
-      do j = 0, domain%blk(b)%dim(2)
+      do k = 1, domain%blk(b)%dim(3)
+      do j = 1, domain%blk(b)%dim(2)
       do i = 1, domain%blk(b)%dim(1)
-        d = norm2(self%location%c - domain%blk(b)%node(i,j,k)%c)
+        centre = 0.125_R8 * (domain%blk(b)%node(i-1,j-1,k-1)%c + domain%blk(b)%node(i,j-1,k-1)%c + &
+                             domain%blk(b)%node(i-1,j  ,k-1)%c + domain%blk(b)%node(i,j  ,k-1)%c + &
+                             domain%blk(b)%node(i-1,j-1,k  )%c + domain%blk(b)%node(i,j-1,k  )%c + &
+                             domain%blk(b)%node(i-1,j  ,k  )%c + domain%blk(b)%node(i,j  ,k  )%c)
+        d = norm2(self%location%c - centre)
         if (d < d0) then
           d0 = d
           self%ilocation = [b, i, j, k]
@@ -214,12 +222,13 @@ contains
 
 
   !> The time counter of the time-based rows at a restart. Write_Probes_Data
-  !> writes a time-based row when time >= dtime*ntime and then counts it, so the
-  !> rows fall on the multiples of dtime, from the first (ntime starts at 1). A
-  !> restart that goes on in time (resume) takes for ntime the first multiple
-  !> its time has not reached, computed with the same product as
-  !> Write_Probes_Data so that an exact multiple counts as written; otherwise,
-  !> and in a steady run (time < 0), the rows start again from the first.
+  !> writes a time-based row when time >= dtime*ntime and then takes for ntime
+  !> the first multiple of dtime that the time has not reached (Next_Time_Row),
+  !> so the rows fall on the multiples of dtime, from the first (ntime starts
+  !> at 1), and ntime is a function of the time. A restart that goes on in time
+  !> (resume) takes the ntime of its time, that of the uninterrupted run;
+  !> otherwise, and in a steady run (time < 0), the rows start again from the
+  !> first.
   subroutine Restart_Probes(time, resume)
     implicit none
     real(R8), intent(in) :: time
@@ -229,14 +238,28 @@ contains
     do i = 1, nprobes
       probe(i)%ntime = 1
       if (.not. resume .or. time < 0._R8) cycle
-      if (time / probe(i)%dtime >= 0.5_R8 * real(huge(1), R8)) cycle
-      probe(i)%ntime = max(0, int(time / probe(i)%dtime) - 1)
-      do while (time >= probe(i)%dtime * probe(i)%ntime)
-        probe(i)%ntime = probe(i)%ntime + 1
-      end do
+      call Next_Time_Row(probe(i), time)
     end do
 
   end subroutine Restart_Probes
+
+
+  !> The first multiple of dtime that time has not reached, for ntime, computed
+  !> with the product that Write_Probes_Data compares so that an exact multiple
+  !> counts as reached. A count that would not fit an integer leaves ntime as
+  !> it is.
+  subroutine Next_Time_Row(probe, time)
+    implicit none
+    type(obj_probe), intent(inout) :: probe
+    real(R8),        intent(in)    :: time
+
+    if (time / probe%dtime >= 0.5_R8 * real(huge(1), R8)) return
+    probe%ntime = max(probe%ntime, int(time / probe%dtime) - 1)
+    do while (time >= probe%dtime * probe%ntime)
+      probe%ntime = probe%ntime + 1
+    end do
+
+  end subroutine Next_Time_Row
 
 
   !> At a restart, the rows of the probe files written after its solution
@@ -272,10 +295,12 @@ contains
   !> a line; written list-directed it may take more than one line, so the values
   !> are counted to find where each row starts. Value col of a row places it: a
   !> time (written with a decimal point or an exponent) when times, else an
-  !> iteration. The first row whose value is of that kind and greater than last
-  !> is dropped, with every row after it; a row whose value is of the other kind
-  !> is not compared (the iteration rows of a probe in a time-accurate run, whose
-  !> iteration count a restart starts again). A last row with fewer than ncol
+  !> iteration; a row whose value is of the other kind is not compared (the
+  !> iteration rows and the time rows of a probe). The first row greater than
+  !> last that follows the last row not greater than last is dropped, with
+  !> every row after it: in a file written by several runs whose count started
+  !> again (restarts from solutions without the counters), the rows before the
+  !> last one not later than the solution stay. A last row with fewer than ncol
   !> values (a file cut in the middle of a row) is dropped too, and a line that
   !> starts with '#' is kept and holds no values. The file is truncated and ends
   !> with a newline (End_With_Newline); a missing file is left alone.
@@ -286,16 +311,15 @@ contains
     real(R8),         intent(in) :: last
     logical,          intent(in) :: times
     character(len=32768) :: line
-    integer  :: unit, ios, nkeep, nrow, nval, k1, k2
+    integer  :: unit, ios, nkeep, nrow, nval, ncut, k1, k2
     real(R8) :: v
-    logical  :: later
 
     open(newunit=unit, file=file, status='OLD', action='READWRITE', iostat=ios)
     if (ios /= 0) return
     nkeep = 0      ! lines kept
     nrow  = 0      ! lines kept before the row being read
     nval  = 0      ! values counted
-    later = .false.
+    ncut  = -1     ! lines before the first later row after the last row not later (-1: none)
     do
       read(unit, '(A)', iostat=ios) line
       if (ios /= 0) exit
@@ -317,16 +341,21 @@ contains
         nval = nval + 1
         if (mod(nval - 1, ncol) + 1 == col .and. ((scan(line(k1:k2), '.eEdD') > 0) .eqv. times)) then
           read(line(k1:k2), *, iostat=ios) v
-          if (ios == 0) later = v > last
-          if (later) exit
+          if (ios == 0) then
+            if (v <= last) then
+              ncut = -1
+            else if (ncut < 0) then
+              ncut = nrow
+            end if
+          end if
         end if
         if (k2 >= len(line)) exit
       end do
-      if (later) exit
       nkeep = nkeep + 1
     end do
-    ! The row later than the solution, or a last row cut short: dropped from its first line
-    if (later .or. mod(nval, ncol) /= 0) nkeep = nrow
+    ! A last row cut short goes from its first line, and the rows from the first later one
+    if (mod(nval, ncol) /= 0) nkeep = nrow
+    if (ncut >= 0) nkeep = min(nkeep, ncut)
     rewind(unit)
     do k1 = 1, nkeep
       read(unit, '(A)', iostat=ios) line
@@ -380,10 +409,13 @@ contains
       if (mod(iter, probe(i)%diter) == 0) then
         write(probe(i)%unit,*) iter, (probe(i)%variables(v)%p, v=1,probe(i)%nvar)
         flush(probe(i)%unit)
-      else if (time >= probe(i)%dtime * probe(i)%ntime) then
+      end if
+      ! A time row at the first step at or past each multiple of dtime, at a step
+      ! that writes an iteration row too, one row for a step past several
+      if (time >= probe(i)%dtime * probe(i)%ntime) then
         write(probe(i)%unit,*) time, (probe(i)%variables(v)%p, v=1,probe(i)%nvar)
         flush(probe(i)%unit)
-        probe(i)%ntime = probe(i)%ntime + 1
+        call Next_Time_Row(probe(i), time)
       end if
     end do
 

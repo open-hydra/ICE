@@ -133,9 +133,13 @@ independent — a case may be given in Tecplot ASCII and written in VTK.
 
 The file holds the node coordinates followed by the primitive variables of every
 family, cell-centred, named `rho_p1`, `u_p1`, … `n_p1`, `rho_p2`, …, a solidifying family adding `f_p1` and
-`chi_p1` after `n_p1` (a probe takes the same names). The solution time
-is recorded in the zone header; in steady-state mode it carries the iteration count
-instead, negated.
+`chi_p1` after `n_p1` (a probe takes the same names), every value to 17 significant
+digits in the ASCII formats. The solution time is recorded in the zone header
+(`SOLUTIONTIME`) and in the `TIME` field data of a vtk file; in steady-state mode it
+carries the global iteration count instead, negated. Next to it every solution stores the
+counters a restart takes back (see [Restarting](#restarting)): data set auxiliary data
+records after the zones of a Tecplot file (`DATASETAUXDATA CYCLE = "40"`, ...), field data
+of every block file of a vtk one.
 
 `sol-diter` and `sol-dtime` control how often the solution is written. With
 `sol-overwrite = false` each write appends a counter to the name, giving a numbered
@@ -147,21 +151,54 @@ row is appended to `OUTPUT/part-residual-history.dat`.
 ## Restarting
 
 Set `newrun = false`. ICE then reads its initial state from `OUTPUT/part-field.*`
-instead of `INPUT/part-ic.*`, picks up the simulation time from the zone header, and
-continues appending to the residual history. The restart file is a solution ICE wrote
-itself, so it is `sol-format` — not `ic-format` — that names it.
+instead of `INPUT/part-ic.*`, goes on from the time of that solution, and continues
+appending to the residual history. The restart file is a solution ICE wrote itself, so
+it is `sol-format` — not `ic-format` — that names it.
+
+The time of the solution is its `SOLUTIONTIME` (Tecplot, ASCII or binary) or its `TIME`
+(vtk). A negative one marks a steady solution, and a steady restart goes on from its
+iteration count; the Tecplot files of earlier versions, which hold the count positive with
+`STRANDID = 0` in their zone headers, are read the same way. A time-accurate restart goes
+on from the time of a time-accurate solution, and starts at $t = 0$ from a steady one. A
+Tecplot solution whose zone header has no `SOLUTIONTIME` cannot tell where to go on: the
+restart stops (use the file as the initial condition instead, with `newrun = true`). A vtk
+solution without `TIME` reads as time 0.
+
+Every solution also stores the counters that make a restart go on as the uninterrupted
+run would: `CYCLE`, the global iteration count (the first column of the residual
+history), `ICE_ITERATION`, the iterations of the grid level of the solution, the finest
+for `part-field` (which the CFL ramp of `cfl-rise-threshold` and the `sol-diter` and
+`res-diter` cadences count),
+`ICE_OUTPUT_NUMBER`, the last number of the series of `sol-overwrite = false`,
+`ICE_GRID_LEVEL`, the grid level being solved, `ICE_LAST_OUTPUT_TIME`, the time of the
+last `sol-dtime` solution, and `ICE_RES_REFERENCE`, the unit of `res-threshold`. A
+restart of the same kind as the run that wrote the solution, steady after steady or
+time-accurate after time-accurate, takes them back, and writes the solutions, the
+residual history and the probe rows that the uninterrupted run would have written; every
+run writes a residual row at its last iteration, so a restart that does not fall on a
+multiple of `res-diter` adds that one row. A restart of the other kind, or from a solution
+without them (written by an earlier version of ICE, or by another program), starts them
+as a new run does: a steady one then measures `res-threshold` from its own first non-zero
+residual, and says so. A multigrid run resumes on the grid level of its solution;
+`part-field` is written on the finest level only, so a restart from it skips the coarse
+levels. A counter that is not finite, or a count out of range, stops the run.
 
 A run that went on past the solution the restart reads (it stopped after its last
 output) left in the residual history and in the probe files rows that the restart writes
-again. From a `tecplot ascii` solution the restart drops them first: a steady restart the
-rows of later iterations, a time-accurate one the residual rows and the time-based probe
-rows of later times (the iteration rows of a probe stay: a time-accurate restart counts
-its iterations from 0). A last row cut in the middle goes too, and a file whose last line
-has no newline gets one. From the other formats, whose solution time ICE does not read
-back, nothing is dropped: remove those rows by hand, and end the file with a newline.
+again, and the restart drops them first. From a solution that holds the counters, in any
+format, it drops the rows of the iterations after its `CYCLE` (the residual rows and the
+iteration rows of a probe) and, time-accurate, the time rows of a probe after its time.
+From a `tecplot ascii` solution without them, a steady restart drops the rows of later
+iterations, a time-accurate one the residual rows and the time-based probe rows of later
+times (the iteration rows of a probe stay: such a restart counts its iterations from 0).
+In a file written by several runs whose count started again, the rows before the last one
+not later than the solution stay. A last row cut in the middle goes too, and a file whose
+last line has no newline gets one. From the other solutions nothing is dropped: remove
+those rows by hand, and end the file with a newline.
 
 With `sol-overwrite = false` the solutions form a numbered series; restarting from a
-particular one means renaming it back to `part-field`.
+particular one means renaming it back to `part-field`. A restart that finds no
+`part-field` (a run stopped before its last write) reads the last of the series.
 
 ## Probes
 
@@ -178,12 +215,15 @@ position       = 0.5 0.0 0.0
 dtime          = 1e-4
 ```
 
-Give either `position` (physical coordinates, and ICE finds the nearest cell) or
+Give either `position` (physical coordinates: the probe takes the cell whose centre is
+nearest, over every block) or
 `index-position` as `b i j k`; an `index-position` that is not a cell of the mesh stops
 the run. `dtime` and `diter` set how often the probe samples: a row every `diter`
 iterations of the global count (the first column of the residual history), written on the
-finest grid level, and a row at each multiple of `dtime` of physical time, from the first,
-with the time in its first column.
+finest grid level, and a row at the first step at or past each multiple of `dtime` of
+physical time, from the first, with the time in its first column (one row for a step past
+several multiples; a step can write both rows). A restart that goes on in time writes the
+time rows the uninterrupted run would.
 
 The variables of family `n` are those of the solution files, `rho_p<n>`, `u_p<n>`,
 `v_p<n>`, `w_p<n>`, `T_p<n>`, `n_p<n>`, and `f_p<n>`, `chi_p<n>` for a solidifying family;

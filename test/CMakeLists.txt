@@ -216,6 +216,19 @@ ice_add_fast_script(Inflow400 fast/inflow-400 "fast;implementation;bc")
 # exactly zero, and a wedge whose side faces do not carry 200 is refused.
 ice_add_fast_script(MirrorModes fast/mirror-modes "fast;implementation;bc;1D;2D")
 
+# A restart goes on from the time of its solution: a steady one from its iteration count (minus
+# the solution time), Tecplot ASCII and vtk raw, a time-accurate one from the TIME of a vtk solution
+ice_add_fast_script(RestartTime fast/restart "fast;implementation")
+
+# A run of 2N iterations and one of N restarted for N more write the same OUTPUT, byte for byte: the
+# counters of a solution (CFL ramp, numbering and clock of the outputs, grid level, unit of
+# res-threshold) and the probe rows; steady and time-accurate, Tecplot ASCII and vtk raw, a multigrid ring
+ice_add_fast_script(RestartExact fast/restart-exact "fast;implementation")
+
+# A probe given by position takes the cell whose centre is nearest, in the block that holds it: against a probe by
+# index in that cell and against the solution, on the 1-D stream and on a two-block ring
+ice_add_fast_script(ProbePosition fast/probe-position "fast;implementation")
+
 # The 3-D gates: a generated 24x16x12 box in 3x2x2 blocks with an MK, an IG and
 # an AG family, compared on the raw-binary VTK payload (test/fast/equiv3d/run.py).
 # The binary under test is this build's own, so a serial build is reported as a
@@ -335,6 +348,10 @@ ice_add_unit_test(SolidificationUnit unit/test_solidification.f90 "fast;unit;imp
 # scalars poisoned, against the scalars set to the tables' values, for d2-law, CEM, ASM and TC
 ice_add_unit_test(VapourSourcesUnit unit/test_vapour_sources.f90 "fast;unit;implementation")
 
+# The rows of a history file that a restart drops (Drop_Rows_After), on files written for it: a run gone past its
+# solution, a file whose count started again, a solution older than every row, a row cut short, time rows
+ice_add_unit_test(DropRowsUnit unit/test_drop_rows.f90 "fast;unit;implementation")
+
 # Rank count must not change the answer either. Needs an MPI build, so it is
 # registered only when there is one.
 if(USE_MPI)
@@ -365,6 +382,11 @@ if(USE_MPI)
     ice_add_fast_script(MPIEquivMultigrid fast/multigrid "fast;implementation;multigrid;needs-mpi")
     set_tests_properties(MPIEquivMultigrid PROPERTIES
         ENVIRONMENT "${_ICE_TEST_ENV};ICE_MG_RANKS=2")
+
+    # The restart legs on two ranks: the ring's blocks, and its probe, on different ranks
+    ice_add_fast_script(RestartExactMPI fast/restart-exact "fast;implementation;needs-mpi")
+    set_tests_properties(RestartExactMPI PROPERTIES
+        ENVIRONMENT "${_ICE_TEST_ENV};ICE_RESTART_RANKS=2")
 
     # The 3-D box on 1 vs 2, 3, 4, 5 ranks (12 blocks: 5 is uneven) and 2 blocks on
     # 3 ranks (one idle), the full run, every cell compared; then ranks x threads,

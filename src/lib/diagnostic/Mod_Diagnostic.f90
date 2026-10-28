@@ -89,7 +89,7 @@ contains
     use ICE_Global_m
     use ICE_Config_Types_m,     only: obj_io
     use ICE_IO_Solution,        only: io_extension
-    use ICE_Mod_MPI,            only: mpi_is_root
+    use ICE_Mod_MPI,            only: mpi_is_root, mpi_abort_all
     use ICE_Mod_GhostExchange,  only: gather_diagnostic_to_root, mpi_io_barrier
     use IR_Precision,           only: str
     use strings,                only: parse
@@ -100,9 +100,9 @@ contains
     type(orion_data),      intent(inout) :: IOfield
     character(len=*),      intent(in)    :: file
     ! Local
-    character(len=llen) :: path, localpath_vtk
+    character(len=llen) :: path, localpath_vtk, written
     character(len=clen) :: format(2)
-    character(len=hlen) :: varnames, vtknames
+    character(len=hlen) :: varnames, vtknames, what
     character(len=8)    :: f
     real(R8), allocatable :: full(:,:,:,:)
     integer(kind=I4)    :: E_IO, b, p, c, nstart, nend, ndiag, nfield
@@ -145,6 +145,7 @@ contains
         end do
       end do
 
+      E_IO = 0
       select case(trim(format(1)))
       case('vtk')
         IOfield%vtk%format = trim(format(2))
@@ -161,17 +162,27 @@ contains
         call keep_columns(ndiag)
         localpath_vtk = trim(path)//'vtk/'
         call execute_command_line('mkdir -p '//trim(localpath_vtk))
+        written = trim(path)//trim(file)//'.vtm'
+        ! TIME as the solution's (write_vtk_tec)
         E_IO = vtk_write_structured_multiblock(orion=IOfield,            &
                  vtspath=trim(localpath_vtk)//trim(file),                &
                  vtmpath=trim(path)//trim(file),                         &
-                 varnames=vtknames, time=domain%time)
+                 varnames=vtknames, time=IOfield%solutiontime)
         call keep_columns(nfield)
       case('tecplot')
         IOfield%tec%format = trim(format(2))
+        written = trim(path)//trim(file)//io_extension(format)
         E_IO = tec_write_structured_multiblock(orion=IOfield,            &
                  varnames=varnames, Nvars=ndiag,                         &
-                 filename=trim(path)//trim(file)//io_extension(format))
+                 filename=trim(written))
       end select
+
+      ! A write that the library refuses or that fails stops the run, with the
+      ! file (as the solution's, write_vtk_tec)
+      if (E_IO /= 0) then
+        write(what,'(A,I0,A)') 'cannot write '//trim(written)//' (error ', E_IO, ' of the writer)'
+        call mpi_abort_all(trim(what))
+      end if
 
     end if
 

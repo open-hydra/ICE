@@ -283,8 +283,9 @@ def o0(rep):
             runs[tag] = (case.dir / 'OUTPUT/part-field.tec').read_text()
         nb, nc = len(N.LAYOUT[closure]), 120
         def tokens(text):
+            # The values after the zone header: the data set auxiliary data records (the counters of a restart) are not
             body = text.split('ZONE', 1)[1].split('\n', 1)[1]
-            return body.split()
+            return [t for line in body.split('\n') if not line.lstrip().startswith('DATASETAUXDATA') for t in line.split()]
         tp, ts = tokens(runs['plain']), tokens(runs['solid'])
         nn = 3 * 121 * 2 * 2
         same = tp[:nn + nb * nc] == ts[:nn + nb * nc]
