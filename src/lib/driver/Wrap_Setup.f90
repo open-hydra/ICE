@@ -19,10 +19,11 @@ contains
     use ICE_IO_BC,          only: Setup_BC
     use ICE_Setup_Materials, only: Setup_Materials
     use ICE_Lib_Heat,       only: heat_formula
-    use ICE_IO_Probes,      only: Setup_Probes
+    use ICE_IO_Probes,      only: Setup_Probes, Restart_Probes
     use ICE_Mod_BC_Fluxes
     use ICE_Mod_Phase
     use ICE_Mod_Multigrid,  only: Setup_Multigrid
+    use ICE_Mod_Freeze,     only: setup_freeze
     use ICE_Mod_MPI,        only: mpi_is_root, partition_blocks
     use ICE_Mod_ThreadGroups, only: setup_thread_groups
     use ICE_Mod_GhostExchange, only: build_ghost_schedule, build_local_bc_index, report_bc_mix
@@ -70,6 +71,10 @@ contains
       call read_ic(sim%ODP(1))
     end if
 
+    ! An error of the read, or a value that is not finite, stops the run here,
+    ! before anything takes the values
+    call check_ic(sim%ODP(1), gas_read = coupled .and. .not. present(IOgas))
+
     ! The blocks over the ranks and, inside the rank, over the thread groups
     ! (ICE_THREAD_GROUPS, default one group: every block over the whole team), decided
     ! before anything is allocated: with several groups a block's fields are first
@@ -106,6 +111,10 @@ contains
     ! Setup condensed phase (fine level)
     call setup_cond(sim%domain(1), sim%ODP(1))
 
+    ! The components odd across mirror faces one cell apart (the k faces of a 2-D mesh, the j and k
+    ! faces of a 1-D one): set to zero before the coarse levels take the field, and not integrated
+    call setup_freeze(sim%domain(1))
+
     ! With multigrid, build the coarse levels: grid, metrics, boundaries, halo
     ! schedule and the initial solution restricted onto each of them.
     if (obj_multigrid%MGL > 1) then
@@ -125,6 +134,10 @@ contains
 
     ! Setup probes (no-op if nprobes == 0)
     call Setup_Probes(sim%domain(1))
+
+    ! A restart from a solution that a run went on past: the history rows
+    ! written after it go, before the files take new rows
+    if (.not. obj_sim_param%newrun) call Drop_History_Rows(sim%ODP(1))
 
     ! Open residuals file (written by root only)
     if (mpi_is_root) &
@@ -147,7 +160,15 @@ contains
       else
         obj_sim_param%iter_general   = int(sim%ODP(1)%solutiontime)
         sim%domain(1)%time           = -1._8
+        ! The solution does not carry the first residual of the run it continues
+        if (mpi_is_root .and. obj_sim_param%res_threshold > 0._R8) write(*,'(A)') &
+          ' [WARNING] restart: res-threshold is relative to the first non-zero density residual of this run, '// &
+          'not of the run it continues'
       end if
+
+      ! Time-based probe rows fall on the multiples of their dtime: a restart
+      ! that goes on in time writes the next one its time has not reached
+      call Restart_Probes(sim%domain(1)%time, resume = obj_time_scheme%time_accurate)
     else
       if (obj_time_scheme%time_accurate) then
         sim%domain(1)%time = 0._8
@@ -160,6 +181,7 @@ contains
     obj_sim_param%time_from_call = sim%domain(1)%time
     sim%domain(1)%iter           = 0
     obj_sim_param%iter_from_call = 0
+    obj_sim_param%res_reference  = 0._R8
 
     write(obj_io%unitRES_format, '(A11,I0,A7)') '(I8,E20.10,', 5, 'E20.10)'
 
@@ -212,6 +234,50 @@ contains
   contains
 
 
+    !> The rows of residual-history.dat and of the probe files that a run wrote
+    !> after the solution a restart reads (it went on past its last output and
+    !> stopped, killed or at the time limit of a queue): the restart writes those
+    !> iterations again, so they are dropped (Drop_Rows_After). Only where the
+    !> solution places them exactly: a Tecplot ASCII solution holds its time and
+    !> marks a steady one (STRANDID = 0). A steady restart takes back the global
+    !> iteration count, and the rows of later iterations go. A time-accurate one
+    !> takes back the time and counts the iterations from 0: the residual rows of
+    !> later times go (their time, written E20.10, against the restart time
+    !> rounded up to those digits), the time rows of a probe too, and its
+    !> iteration rows stay. Any other solution (vtk and Tecplot binary, whose time
+    !> ICE does not read back, a file without SOLUTIONTIME, a solution of the
+    !> other mode) drops nothing.
+    subroutine Drop_History_Rows(IOfield)
+      use iso_fortran_env, only: R8 => real64
+      use ICE_IO_Probes,   only: Drop_Probe_Rows, Drop_Rows_After
+      type(orion_data), intent(in) :: IOfield
+      character(len=20) :: printed
+      character(llen)   :: resfile
+      real(R8)          :: last
+      integer           :: ncol
+
+      if (trim(obj_io%ini_fmt(1)) /= 'tecplot' .or. trim(obj_io%ini_fmt(2)) /= 'ascii') return
+      ! ORION gives -10 when the file holds no SOLUTIONTIME; ICE writes abs(time)
+      if (.not. IOfield%solutiontime >= 0._R8) return
+      if (obj_time_scheme%time_accurate .eqv. (IOfield%strandid == 0)) return
+
+      ! A residual row: the global iteration, the time and the residuals
+      resfile = 'OUTPUT/'//trim(ICE_phase_prefix)//'residual-history.dat'
+      ncol = 2 + size(obj_sim_param%residuotot)
+      if (obj_time_scheme%time_accurate) then
+        write(printed, '(RU,E20.10)') IOfield%solutiontime
+        read(printed, *) last
+        if (mpi_is_root) call Drop_Rows_After(trim(resfile), ncol, 2, last, times=.true.)
+        call Drop_Probe_Rows(IOfield%solutiontime * (1._R8 + 1.e-12_R8), times=.true.)
+      else
+        last = real(int(IOfield%solutiontime), R8)
+        if (mpi_is_root) call Drop_Rows_After(trim(resfile), ncol, 1, last, times=.false.)
+        call Drop_Probe_Rows(last, times=.false.)
+      end if
+
+    end subroutine Drop_History_Rows
+
+
     !> Cells in the whole domain, for the throughput figure in the timer
     !> summary. Ghost cells are excluded: they are work, but they are not part
     !> of the problem being solved.
@@ -242,10 +308,28 @@ contains
 
     subroutine print_simulation_info()
       integer :: m
+      character(len=16) :: angle
 
       write(*,*)
       write(*,'(A)') " Checking input file..."
       write(*,'(A)') " - Mesh                   ---> OK"
+      !> The fine level's corners left out of the folding check (check_folded_cells)
+      if (ncollapsed_corners > 0) write(*,'(A,I0,A)') "   (", ncollapsed_corners, &
+        " cell corners on a collapsed edge, as at an axis, not checked for folding)"
+      !> The type check_mesh_type takes from the nodes of every block
+      write(angle,'(F16.6)') delthe * 180._8 / pi
+      select case (meshType)
+      case (1)
+        write(*,'(A)') " - Mesh type              ---> 1-D"
+      case (2)
+        if (delthe == 0._8) then
+          write(*,'(A)') " - Mesh type              ---> 2-D, plane"
+        else
+          write(*,'(A)') " - Mesh type              ---> 2-D, axisymmetric wedge of "//trim(adjustl(angle))//" degrees"
+        end if
+      case default
+        write(*,'(A)') " - Mesh type              ---> 3-D"
+      end select
       write(*,'(A)') " - Initial conditions     ---> OK"
       write(*,'(A)') " - Boundary conditions    ---> OK"
       write(*,'(A)') " - Particle properties    ---> OK"

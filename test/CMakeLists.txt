@@ -194,6 +194,28 @@ ice_add_fast_script(Multigrid fast/multigrid "fast;implementation;multigrid")
 # required model left unset in a coupled run, a NaN after the update).
 ice_add_fast_script(Refusals fast/refusals "fast;implementation;refusal")
 
+# res-threshold relative to the first non-zero density residual: the same stop at loadings
+# 1 and 2^-16, a cloud at rest whose first residual is zero, a run in which nothing moves
+ice_add_fast_script(ResThreshold fast/res-threshold "fast;implementation")
+
+# input.ini edited during the run with an error: with ini-error = warn the reading is not
+# taken and the run keeps every value it had, with ini-error = stop it stops
+ice_add_fast_script(IniError fast/ini-error "fast;implementation")
+
+# An inlet on a face whose normal points out of the domain injects into it: `normal` along the
+# inward normal, a 401's speed signed by the gas entering, one `normal` with one number refused
+ice_add_fast_script(InletDirection fast/inlet-direction "fast;implementation;bc")
+
+# Particles entering through extrapolation faces (400) are reported: a line at the first such stage of a face
+# of a block, with the level, and its stages at the end of the run; no line where nothing enters, where the
+# cells at the face are empty (below rho_empty) or where the inflow is round-off (MK, IG, AG, 2 threads, 2 levels)
+ice_add_fast_script(Inflow400 fast/inflow-400 "fast;implementation;bc")
+
+# Between mirror faces one cell apart (a thin plane layer, a 1-D tube) the
+# components odd across them are set to zero and not integrated: they stay
+# exactly zero, and a wedge whose side faces do not carry 200 is refused.
+ice_add_fast_script(MirrorModes fast/mirror-modes "fast;implementation;bc;1D;2D")
+
 # The 3-D gates: a generated 24x16x12 box in 3x2x2 blocks with an MK, an IG and
 # an AG family, compared on the raw-binary VTK payload (test/fast/equiv3d/run.py).
 # The binary under test is this build's own, so a serial build is reported as a
@@ -244,14 +266,30 @@ ice_add_equiv3d(Equiv3DGroups groups "" "fast;implementation;3D;openmp")
 # its sweep lacks above: the group's shared k-face planes start every round as NaN
 # and k-face tile 1 sleeps 2 ms before writing, so without that barrier another
 # thread of the group takes sweep tile 1, reads the NaN and the run stops. Covers
-# only that barrier of the grouped rounds (not the round-start or shock-detector
-# barriers, not the ungrouped kernel). Label race, not fast: a local / pre-merge
+# only that barrier of the grouped rounds (not the round-start barrier, not the
+# ungrouped kernel). Label race, not fast: a local / pre-merge
 # check (ctest -L race), outside the gfortran CI, which runs -L fast on a normal
 # build where this test is not registered. RED/GREEN record:
 # plan-bucket/records/2026-10-08-openmp-loose-ends/.
 if (ICE_RACE_PROBE)
     ice_add_equiv3d(Equiv3DGroupsRace groups "ICE_EQ_PROBE=1" "race;implementation;3D;openmp")
 endif()
+
+# The threads and groups legs with the shock detector on, which no other test runs on
+# more than one thread: compute_beta computes its weights over the flux kernel's tiles
+# (by group with thread groups) after the ghost fill, and the boundary fluxes read them.
+# Every run's banner must report the detector, or the leg FAILs (RED, both legs, with
+# ICE_EQ_EXTRA not forwarded to make_case.py, where both passed without the check).
+# Measured RED, both legs: 3 of 3 runs on a variant that computes the weights of the
+# last tile of every block after the boundary fluxes (4608 cells differ at every thread
+# count), 10 of 10 on one that lets the boundary loop start while the weight pass still
+# runs (no barrier between them, tile 1 of every block delayed 2 ms); GREEN 11 of 11 on
+# the real code. They compare thread counts: a weight equally stale on every thread
+# count passes them.
+ice_add_equiv3d(Equiv3DThreadsSD threads "ICE_EQ_EXTRA='--shock-detector Jameson'"
+    "fast;implementation;3D;openmp")
+ice_add_equiv3d(Equiv3DGroupsSD groups "ICE_EQ_EXTRA='--shock-detector Jameson'"
+    "fast;implementation;3D;openmp")
 
 # Each family alone against the three together: the ghost fill and the halo
 # must carry every family.
@@ -302,11 +340,25 @@ ice_add_unit_test(VapourSourcesUnit unit/test_vapour_sources.f90 "fast;unit;impl
 if(USE_MPI)
     ice_add_fast_script(MPIEquivConnection fast/mpi-equiv "fast;implementation;needs-mpi")
     set_tests_properties(MPIEquivConnection PROPERTIES
-        ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-split4")
+        ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-split4"
+        RESOURCE_LOCK fast-mpi-equiv-work)
+
+    # The same with the shock detector on: a connection face whose two cells lie on two ranks
+    # takes the smaller of their weights, which the partner cell's rank sends to the owner's
+    # (exchange_conn_beta); with the detector off every weight is 1 and nothing would show it.
+    # On two ranks the cut at x = 0.5 separates them, and the detector acts on it from about
+    # iteration 300, so this leg runs 400: a serial stand-in for a missing weight message (weight
+    # 1 for a partner cell on the other rank) is identical to the real run up to iteration 250 and
+    # 2.5e-3 of the peak density away at 400.
+    ice_add_fast_script(MPIEquivConnectionSD fast/mpi-equiv "fast;implementation;needs-mpi")
+    set_tests_properties(MPIEquivConnectionSD PROPERTIES
+        ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-split4;ICE_FAST_SD=Jameson;ICE_FAST_ITER=400"
+        RESOURCE_LOCK fast-mpi-equiv-work)
 
     ice_add_fast_script(MPIEquivChimera fast/mpi-equiv "fast;implementation;chimera;needs-mpi")
     set_tests_properties(MPIEquivChimera PROPERTIES
-        ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-chimera")
+        ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-chimera"
+        RESOURCE_LOCK fast-mpi-equiv-work)
 
     # The same multigrid case again, this time also across ranks: each level carries
     # its own halo schedule, so a level switch has to move the exchange with it.
@@ -320,6 +372,13 @@ if(USE_MPI)
     # loop of 2026-09-30 made the corners thread-invariant).
     ice_add_equiv3d(Equiv3DRanks ranks "" "fast;implementation;3D;needs-mpi")
     ice_add_equiv3d(Equiv3DHybrid hybrid "" "fast;implementation;3D;openmp;needs-mpi")
+
+    # The ranks leg with the shock detector on, on 2 ranks: the cuts between the two ranks'
+    # blocks are connection faces whose partner cell's weight crosses ranks (exchange_conn_beta).
+    # A serial stand-in for a missing weight message (weight 1 for a partner cell on the other
+    # rank) differs from the real run in every cell, by 2e-2 of the MK density.
+    ice_add_equiv3d(Equiv3DRanksSD ranks "ICE_EQ_RANKS=2 ICE_EQ_EXTRA='--shock-detector Jameson'"
+        "fast;implementation;3D;needs-mpi")
 
     # The two-block solidifying stream of SolidAdvection (leg O6) on two ranks, against the serial runs
     ice_add_verification(SolidAdvectionMPI O-solid-advection "fast;verification;phase-change;needs-mpi")

@@ -57,22 +57,25 @@ So a phase with two materials, one of them in two populations, needs three
 | Code | Type | Payload | ICE treatment |
 |------|------|---------|---------------|
 | `0` | Null | none | The ghost copies the interior cell; no boundary flux. This is the code for the faces of a direction the mesh does not resolve — faces 5 and 6 of a planar 2-D case |
-| `101` | Connection | `b2 i2 j2 k2 f2 c1 c2 c3 c4` | Both ghost layers copied from the interior cells of the neighbouring block |
+| `101` | Connection | `b2 i2 j2 k2 f2 c1 c2 c3 c4` | Both ghost layers copied from the interior cells of the neighbouring block; the face's flux is computed once and the neighbouring block takes its negative |
 | `201` | Periodic | as `101` | As `101` |
 | `102` | Chimera (overset) | donor counts per layer, then `b i j k weight` per donor | Each ghost layer set to the weighted blend of its own donors, in conservative variables |
 | `200` | Axisymmetry | none | The side faces of an axisymmetric wedge: see below |
 | `300` | Symmetry | none | See below |
-| `400` | Extrapolation | none | Ghost copies the interior cell: zero gradient |
+| `400` | Extrapolation | none | Ghost copies the interior cell: zero gradient. Particles that move into the domain through it enter with the state of the boundary cell, and the run says so: a line the first time a cell that carries the phase (density above the empty-cell density, $10^{-6}$ kg/m³) moves into the domain faster than round-off (above $10^{-12}$ of the signal speed $\sqrt{P/\rho}$ for IG and AG, of its own speed for MK, which has no signal speed) through the `400` faces of a face of a block (per family and grid level), with the iteration, the faces and the largest $\lvert w\rvert$ ($w$ the velocity along the normal out of the domain; $\lvert w\rvert/\sqrt{P/\rho}$ for IG, $\lvert w\rvert/\sqrt{P_{nn}/\rho}$ for AG), another each time that largest value is more than 10 times that of the last line, and at the end of a standalone run the stages each such face let particles in (under MPI the rank that owns the block prints its lines, at once, and rank 0 the end lines; inside hydra only the first-inflow and 10-times lines print, not the end lines, since hydra never runs ICE's end of run) |
 | `401` | Inlet, ratios to the gas | `krho kV alpha beta kT rp` | See below |
 | `402` | Inlet, absolute | `gp v alpha beta Tp rp` | |
 | `403` | Inlet, speed as a ratio | `gp kV alpha beta Tp rp` | |
 
 Any other code stops ICE at setup.
 
-The second ghost layer is copied from the neighbour for `101`/`201`, taken from its own
-donors for `102`, the mirror image of the second interior cell for `200`, and otherwise
-built by a second-order extrapolation $P_{g2} = 3P_{g1} - 3P_m + P_{m+1}$; `0` leaves it
-unfilled, since no stencil reaches it.
+The second ghost layer is copied from the neighbour for `101`/`201` and taken from its own
+donors for `102`. On a `200`, `300`/`301` or inlet face it follows the rule of the first:
+the mirror image of the second interior cell where the first ghost mirrors the first, a copy
+of it where the first is a copy, and the injected state again where an inlet injects. `400`
+builds it by a second-order extrapolation $P_{g2} = 3P_{g1} - 3P_m + P_{m+1}$, which from its
+copied first ghost is the second interior cell too; `0` leaves it unfilled, since no stencil
+reaches it.
 
 ## Symmetry (`300`)
 
@@ -97,6 +100,30 @@ radial momentum. A pressureless MK cloud has no flux through these faces.
 
 The axis face (face 3) of such a mesh mirrors whether it carries `200` or `300`.
 
+## Faces of a direction with one cell
+
+Faces 5 and 6 of a 2-D mesh, and faces 3 to 6 of a 1-D one, bound a direction the mesh does
+not resolve. Where both faces of such a direction mirror the flow (`200`, `300` or `301`), the
+components of the state that are odd across them have a mode the time step does not follow:
+between two mirror planes $\Delta z$ apart, $dw/dt = -2a\,w/\Delta z$ ($a$ the signal speed of the
+closure), which on a layer thin against its in-plane cells makes round-off in $w$ grow until the
+run fails. The flow between two mirror planes has those components zero, so ICE sets them to zero
+at set-up and does not integrate them, and says so in a warning:
+
+| Mesh | Faces | Not integrated (with AG also) |
+|---|---|---|
+| 2-D plane | 5 and 6 all `200`, `300` or `301`, each $k$ node plane normal to $z$ | $w$ ($P_{13}$, $P_{23}$) |
+| 2-D axisymmetric wedge | 5 and 6 all `200`, the $k$ node planes at $\mp\theta/2$ about $z = 0$ | $w$, the swirl ($P_{13}$, $P_{23}$) |
+| 1-D | 3 and 4 as above, each $j$ node plane normal to $y$ | $v$ ($P_{12}$, $P_{23}$) |
+| 1-D | 5 and 6 as above | $w$ ($P_{13}$, $P_{23}$) |
+
+A plane is checked to 1 % of the thickness of its block. A wedge whose side faces carry any other
+code, or that is not symmetric about $z = 0$, stops the setup. Mirror faces that are not planes
+normal to their axis, as on a layer between parallel planes inclined to $z$, ask the cloud to
+follow them across the layer: the component is then integrated, with a warning, and a layer thin
+against its other cells can still fail. So can a layer with a mirror on one side only and `0` or
+`400` on the other, where the mode is half as fast: give both faces the same code.
+
 ## Inlets (`401`–`403`)
 
 All three prescribe a mass flux, a direction, a temperature and a particle radius; they
@@ -104,12 +131,16 @@ differ in whether those are absolute or ratios to the local gas.
 
 | | Mass term | Velocity | Temperature |
 |---|---|---|---|
-| `401` | `krho`, a loading ratio: $\rho_p = \frac{krho}{1-krho}\,\rho_g / kV$ | `kV` times the gas velocity normal to the face | `kT` times the gas temperature |
+| `401` | `krho`, a loading ratio: $\rho_p = \frac{krho}{1-krho}\,\rho_g / kV$ | `kV` times the gas velocity into the domain across the face | `kT` times the gas temperature |
 | `402` | `gp`, a mass flux in kg s⁻¹ m⁻²: $\rho_p = gp/|v_n|$ | `v`, an absolute speed | `Tp`, absolute |
 | `403` | `gp`, as `402` | `kV` times the gas speed | `Tp`, absolute |
 
-`alpha` and `beta` are the injection angles about the $x$ axis; written as the literal
-`normal`, they are replaced by the angles of the face normal, which is the usual choice.
+`alpha` and `beta` give the injection direction: written as the literal `normal` (both of
+them, the usual choice), the particles enter along the face normal into the domain, on any
+face and whatever way the face is turned; written as numbers, they are angles in the global
+frame, $\alpha$ in the $x$-$y$ plane from $x$ and $\beta$ out of it, so the direction is
+$(\cos\beta\cos\alpha, \cos\beta\sin\alpha, \sin\beta)$ — $0$ and $0$ included, which is $+x$.
+One `normal` and one number is refused at set-up.
 The number density follows from the prescribed radius,
 $n = \rho_p / \big(\rho_{al}(T_p)\tfrac43\pi r_p^3\big)$, with the condensed density at the
 inlet temperature: the property table's when the case has one, the constant `density` of
@@ -124,7 +155,8 @@ Two cases are handled before any of that:
 - if the mass flux is **zero**, the inlet becomes a symmetry, which is how a partly
   active inlet face is expressed.
 
-`401` needs a gas field to be meaningful, and `403` needs one for its velocity.
+`401` takes its density, velocity and temperature from the gas, and `403` its velocity: a run without a gas
+phase (0-way) refuses an injecting `401` or `403` record at set-up; use `402` there.
 
 ## Chimera (`102`) { #chimera }
 

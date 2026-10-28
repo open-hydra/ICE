@@ -57,7 +57,6 @@ contains
     use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan, ieee_positive_inf
     use ICE_Global_m
     use ICE_Advanced_Types_m
-    use ICE_Config_Types_m, only: obj_irs
     use ICE_Mod_ThreadGroups, only: block_group
     implicit none
     type(ICE_block_type), intent(inout) :: blk
@@ -82,6 +81,7 @@ contains
     do p = 1, ngroups
       allocate( blk%cond_phase(p)%dt       (1:ni, 1:nj, 1:nk) )
       allocate( blk%cond_phase(p)%tau      (1-gc:ni+gc, 1-gc:nj+gc, 1-gc:nk+gc) )
+      allocate( blk%cond_phase(p)%inj      (1-gc:ni+gc, 1-gc:nj+gc, 1-gc:nk+gc) )
       allocate( blk%cond_phase(p)%beta     (1:ni, 1:nj, 1:nk) )
       allocate( blk%cond_phase(p)%prim     (1:ncond(p), 1-gc:ni+gc, 1-gc:nj+gc, 1-gc:nk+gc) )
       allocate( blk%cond_phase(p)%prim_old (1:ncond(p), 1-gc:ni+gc, 1-gc:nj+gc, 1-gc:nk+gc) )
@@ -99,16 +99,11 @@ contains
         blk%cond_phase(p)%prim    (:,:,:,k) = ieee_value(1._R8, ieee_quiet_nan)
         blk%cond_phase(p)%prim_old(:,:,:,k) = ieee_value(1._R8, ieee_quiet_nan)
         blk%cond_phase(p)%tau     (:,:,k)   = ieee_value(1._R8, ieee_positive_inf)
+        blk%cond_phase(p)%inj     (:,:,k)   = .false.
       end do
       !$OMP END PARALLEL DO
       end if
 
-      if (obj_irs%enabled) then
-        allocate( blk%cond_phase(p)%RS1 (1:ncond(p), 0:ni+1, 0:nj+1, 0:nk+1) )
-        allocate( blk%cond_phase(p)%RS2 (1:ncond(p), 0:ni+1, 0:nj+1, 0:nk+1) )
-        blk%cond_phase(p)%RS1 = 0._R8
-        blk%cond_phase(p)%RS2 = 0._R8
-      end if
       if (g < 0) then
       !$OMP PARALLEL DO SCHEDULE(STATIC)
       do k = 1, nk
@@ -169,6 +164,7 @@ contains
             blk%cond_phase(p)%prim    (:,:,:,k) = qnan
             blk%cond_phase(p)%prim_old(:,:,:,k) = qnan
             blk%cond_phase(p)%tau     (:,:,k)   = pinf
+            blk%cond_phase(p)%inj     (:,:,k)   = .false.
           end if
           if (k >= 1 .and. k <= nk) then
             blk%cond_phase(p)%beta    (:,:,k)   = 1d0

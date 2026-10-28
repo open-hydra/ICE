@@ -63,12 +63,12 @@ $\mu_g = 1.8\times10^{-5}$ Pa s, $\tau_p = 0.030864$ s.
 
 | $t/\tau_p$ | $u_p/u_g$ (ICE) | $u_p/u_g$ (exact) | Relative error |
 |---|---|---|---|
-| 0.1 | 0.096146407 | 0.096146510 | $1.0\times10^{-7}$ |
-| 0.5 | 0.393624252 | 0.393624592 | $3.4\times10^{-7}$ |
-| 1.0 | 0.632308452 | 0.632308865 | $4.1\times10^{-7}$ |
-| 2.0 | 0.864802926 | 0.864803229 | $3.0\times10^{-7}$ |
-| 3.0 | 0.950289178 | 0.950289346 | $1.7\times10^{-7}$ |
-| 5.0 | 0.993279242 | 0.993279280 | $3.8\times10^{-8}$ |
+| 0.1 | 0.095560464 | 0.095560623 | $1.6\times10^{-7}$ |
+| 0.5 | 0.394801708 | 0.394802241 | $5.3\times10^{-7}$ |
+| 1.0 | 0.632546406 | 0.632547052 | $6.5\times10^{-7}$ |
+| 2.0 | 0.864977857 | 0.864978331 | $4.7\times10^{-7}$ |
+| 3.0 | 0.950224617 | 0.950224879 | $2.6\times10^{-7}$ |
+| 5.0 | 0.993279221 | 0.993279280 | $5.9\times10^{-8}$ |
 
 The case also checks what must *not* move: the density, the number density and the
 particle temperature stay at their initial values, and the field stays uniform to
@@ -78,15 +78,18 @@ there would show up as spurious heating.
 
 **Time-step refinement.** Since the field stays uniform the space discretisation
 contributes nothing, and the error is purely the time integration of the source term.
-Halving the CFL number halves the step, and the observed order is the scheme's. The case
+The refinement runs on two cells in $y$ with a velocity along $y$ shared by the gas and the
+cloud, which the CFL limit then reads (a direction of a single cell sets no limit, and the
+run of the table above, on one cell in $y$, takes `dt-max`). Halving the CFL number halves the
+step, and the observed order is the scheme's. The case
 also checks the `dt-max` ceiling, by giving a run a ceiling well below its CFL limit and
 confirming that its end time is an exact multiple of it — every step is `dt-max` itself,
 not `cfl * dt-max`:
 
 | CFL | 0.8 | 0.4 | 0.2 | Observed order |
 |---|---|---|---|---|
-| RK2 | $3.8\times10^{-7}$ | $9.5\times10^{-8}$ | $2.4\times10^{-8}$ | 2.00 |
-| RK3 | $2.5\times10^{-10}$ | $3.1\times10^{-11}$ | $3.9\times10^{-12}$ | 3.00 |
+| RK2 | $2.47\times10^{-7}$ | $6.17\times10^{-8}$ | $1.54\times10^{-8}$ | 2.00 |
+| RK3 | $1.32\times10^{-10}$ | $1.64\times10^{-11}$ | $2.05\times10^{-12}$ | 3.00 |
 
 ### J. The step at the relaxation time
 
@@ -200,11 +203,11 @@ the expected behaviour and not an error.
 $du/dt = (u_g-u)/\tau(u)$ using the same correlation, evaluated independently in
 Python. Two sweeps are run, at $Re = 67$ and at $Re = 1333$, the second one to reach
 the branches that only switch formula above $Re = 1000$. All twelve agree with the
-reference to between $5\times10^{-10}$ and $2\times10^{-6}$ of $u_g$.
+reference to between $4\times10^{-10}$ and $4.4\times10^{-6}$ of $u_g$.
 
 **At transonic and supersonic slip** ($Ma = 1.30$ and $Ma = 2.59$) the four laws with a
 compressible branch — Carlson-Hoglund, Henderson, Crowe and Hermsen — are compared the
-same way, and agree to between $9\times10^{-8}$ and $2\times10^{-6}$ of $u_g$. This is
+same way, and agree to between $1.3\times10^{-8}$ and $1.4\times10^{-6}$ of $u_g$. This is
 the range in which Henderson leaves its subsonic fit, crosses the linear bridge and
 reaches its supersonic fit, so the case also checks that the two branches meet: the
 coefficient of the bridge is fixed by requiring continuity at $Ma = 1.75$, and both
@@ -405,12 +408,12 @@ multiple of 3 so that a cycle of period 2 or 3 shows, in $T_p$, $f$ and $\chi$ c
 |---|---|---|---|
 | O0 | `T-melt = 200` (every cell liquid), MUSCL; MK/Saurel and IG/Rusanov | the plain run's blocks byte for byte, $f$ and $\chi$ all zero | identical |
 | O1 | first order, $n_x$ = 120, gas 600 K | every cell on the recursion (front cell 31, exit 914.2832 K) and the energy balance | $T$ $1.3\times10^{-14}$, $f$ $3\times10^{-15}$; balance $3\times10^{-15}$ |
-| O2 | MUSCL, $n_x$ = 120, 240, 480 | the front in the cell of $x_n$ = 37.805 mm; $T_p = T_m$ exactly and $\chi = 1$ on the plateau; the liquid error falling at first order (the inlet state is held at the ghost-cell centre, half a cell upstream of the face) | fronts 31, 61, 121; exits 904.1445, 905.4689, 906.1498 K; liquid errors 10.5, 5.3, 2.6 K; every $n_x$ a fixed point |
+| O2 | MUSCL, $n_x$ = 120, 240, 480 | the front in the cell of $x_n$ = 37.805 mm; $T_p = T_m$ exactly and $\chi = 1$ on the plateau; the liquid error over $x < x_n/2$ falling at second order (the injected state sits at the inlet face) | fronts 31, 61, 122; exits 906.8681, 906.8465, 907.3422 K; liquid errors 0.0290, 0.0075, 0.0019 K (0.054, 0.022, 0.0019 K up to $2\Delta x$ before $x_n$, where the limiter at the front's kink acts); every $n_x$ a fixed point |
 | O3 | IG/Rusanov, MUSCL, $n_x$ = 240 | the front of O2, $\chi \le 10^{-4}$ upstream | front 61; $\chi$ $2.5\times10^{-5}$ upstream, the Rusanov leak with van Leer ($5.0\times10^{-5}$ at first order) |
 | O3b | IG/Rusanov, first order, O1's stream at 0.1 m/s where the inlet's $P$ gives $c$ = 2.5 $u$ and 4 $u$ | every cell on an independent Rusanov model of $e$ and $\chi$; the front one and two cells above the upwind one | fronts 30 and 29; $T$ $7\times10^{-14}$, $1.5\times10^{-13}$ |
 | O4 | a solid at 1500 K into a 3000 K gas, `h-fus = 4e5`, from an empty domain; MK and IG, $n_x$ = 120, 240 | the melting recursion: solid to $T_m$, the plateau, the liquid; no cell with $f > 0$ above $T_m$ | first mush and liquid cells 34/74 and 66/147, exits 2608.6368 and 2610.1672 K; MK $10^{-14}$, IG $2\times10^{-7}$ |
 | O5 | a steady run with the gas at 300 K, then restarted in place with the gas at 1000 K | the front moves back to the 1000 K run's cell: no lock | fronts 26, then 42; per cell $3\times10^{-14}$ from a fresh run |
-| O6 | O2's stream at $n_x$ = 120 on two blocks joined by a connection on the plateau; first order (RK2) and MUSCL (RK3); in an MPI build also on two ranks | fixed points; the two-block run against the one-block run, the MPI run against the serial two-block run | first order value for value; MUSCL $T$ $8.6\times10^{-15}$, $f$ $10^{-15}$ (the connection face's lengths differ from the interior's in the last bits); two ranks value for value |
+| O6 | O2's stream at $n_x$ = 120 on two blocks joined by a connection on the plateau; first order (RK2) and MUSCL (RK3); in an MPI build also on two ranks | fixed points; the two-block run against the one-block run, the MPI run against the serial two-block run | first order value for value; MUSCL $T$ $4.8\times10^{-15}$, $f$ $10^{-15}$ (the connection face's lengths differ from the interior's in the last bits); two ranks value for value |
 
 The fixed-point test is what a reconstruction of $T_p$ fails: the limiter then sees the recalescence jump, and the
 front cell alternates between liquid and nucleated, or its $\chi$ and the $f$ of the cells after it cycle (O2 at

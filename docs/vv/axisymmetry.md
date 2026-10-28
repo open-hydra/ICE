@@ -33,8 +33,9 @@ face read as anything else is caught before the field is looked at. The output m
 finite everywhere and come from the full run (`Time of operation` in the log, and a
 solution time of 200 iterations).
 
-`res-threshold = 0` is required: the density residual of this field is at roundoff from
-the first iteration, and the default threshold of $10^{-10}$ would end the run there.
+`res-threshold = 0` makes the run end on `iter-threshold`: the density residual of this
+field is at roundoff from the first iteration, and a residual at roundoff does not fall by
+the default relative threshold of $10^{-10}$ either.
 
 ### A cloud at rest in a closed wedge (`Axis/IG`, `Axis/AG`)
 
@@ -57,5 +58,6 @@ pressure each cell feels a net force $P\,\delta\,\Delta x\,\Delta r$ towards the
 $2P/(\rho\,\Delta r) = 800$ m/s² on the axis row, and the cloud collapses onto the axis —
 for IG, $\lvert v\rvert/c = 0.23$ after 50 iterations and 1.1 after 300.
 
-`res-threshold = 0` is required here too: at equilibrium the density residual is exactly
-zero, and the default threshold would stop the run after one iteration.
+`res-threshold = 0` says the same here: at equilibrium the density residual is exactly
+zero, which ends nothing (the test is relative to the first non-zero residual), and the
+run ends on `iter-threshold`.

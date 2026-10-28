@@ -6,7 +6,7 @@ module ICE_Input_Registry
 
   integer, parameter :: TYPE_INT=1, TYPE_REAL=2, TYPE_LOG=3, TYPE_STR=4
 
-  public :: registry_t, Validate_Registry, param_is_set
+  public :: registry_t, Validate_Registry, param_is_set, Save_Values, Restore_Values
 
   !--------------------------------------------------------
   ! Value container (typed pointers)
@@ -33,6 +33,8 @@ module ICE_Input_Registry
     logical :: is_set   = .false.
     logical :: per_material = .false.   ! may hold one value per material (Setup_Materials reads them)
     logical :: multi        = .false.   ! holds several values: the scalar target keeps its default
+    logical :: unread       = .false.   ! in input.ini with a value that does not read as its type (Load_Ini)
+    character(len=:), allocatable :: text   ! the value as written in input.ini, when the key is there (Load_Ini)
     integer :: type_id  = 0
     type(param_value_t) :: value
   end type
@@ -58,6 +60,22 @@ module ICE_Input_Registry
   end type
 
   type(registry_t), public :: reg
+
+  !--------------------------------------------------------
+  ! Copy of the registry's values and of the fields Load_Ini writes (Save_Values, Restore_Values)
+  !--------------------------------------------------------
+  type :: saved_value_t
+    integer  :: i = 0
+    real(R8) :: r = 0._R8
+    logical  :: l = .false.
+    character(len=:), allocatable :: s
+    integer,  allocatable :: iarr(:)
+    real(R8), allocatable :: rarr(:)
+    logical :: is_set = .false., multi = .false., unread = .false., has_text = .false.
+    character(len=:), allocatable :: text
+  end type
+
+  type(saved_value_t), allocatable :: saved(:)
 
 contains
 
@@ -228,18 +246,70 @@ contains
     end do
   end function set_by_alias
 
+  !> The first error of the values read, '' when there is none. A key whose value does not read
+  !  as its type (Load_Ini) comes first, then a required key not set, then a real given in
+  !  input.ini that is not finite (every comparison with a NaN is false and an infinity passes
+  !  a bound such as > 0; gfortran reads 1e999 as an infinity), then the rule of the column
+  !  Allowed: a bound (> x, >= x, < x, <= x) or an interval (in (a, b), [ or ] for an end that
+  !  belongs to it) on a number and on each value of a list of numbers, a list of names for a
+  !  string, logical for a logical. A rule of another form is an error of the registry itself,
+  !  so that no rule is skipped in silence.
   function Validate_Registry() result(out)
+    use ICE_Finite_m, only: Not_Finite
     character(len=1024) :: out
-    integer  :: i
+    integer  :: i, k
     real(R8) :: val
+    character(len=16) :: nth
     out = ""
     do i = 1, reg%size
+      if (reg%params(i)%unread) then
+        out = Unread_Message(i)
+        return
+      end if
       if (reg%params(i)%required .and. .not. reg%params(i)%is_set) then
         out = "[ERROR] Required parameter not set: "//trim(reg%params(i)%name)
         return
       end if
+      ! An unset key keeps its default; the values of a per-material list are Setup_Materials'
+      if (reg%params(i)%is_set .and. .not. reg%params(i)%multi) then
+        if (associated(reg%params(i)%value%r)) then
+          if (Not_Finite(reg%params(i)%value%r)) then
+            out = "[ERROR] "//Key_And_Value(i)//": the value is not a finite real number"
+            return
+          end if
+        else if (associated(reg%params(i)%value%rarr)) then
+          do k = 1, size(reg%params(i)%value%rarr)
+            if (Not_Finite(reg%params(i)%value%rarr(k))) then
+              write(nth,'(I0)') k
+              out = "[ERROR] "//Key_And_Value(i)//": value "//trim(nth)//" of the list is not a finite real number"
+              return
+            end if
+          end do
+        end if
+      end if
       if (reg%params(i)%allowed == "") cycle
-      if (associated(reg%params(i)%value%iarr) .or. associated(reg%params(i)%value%rarr)) cycle
+      ! A list of numbers: the rule holds for each of its values
+      if (associated(reg%params(i)%value%iarr)) then
+        do k = 1, size(reg%params(i)%value%iarr)
+          val = real(reg%params(i)%value%iarr(k), R8)
+          call validate_numeric(reg%params(i)%name, val, reg%params(i)%allowed, out)
+          if (out /= "") exit
+        end do
+      else if (associated(reg%params(i)%value%rarr)) then
+        do k = 1, size(reg%params(i)%value%rarr)
+          val = reg%params(i)%value%rarr(k)
+          call validate_numeric(reg%params(i)%name, val, reg%params(i)%allowed, out)
+          if (out /= "") exit
+        end do
+      end if
+      if (associated(reg%params(i)%value%iarr) .or. associated(reg%params(i)%value%rarr)) then
+        if (out /= "") then
+          write(nth,'(I0)') k
+          out = trim(out)//" (value "//trim(nth)//" of the list)"
+          return
+        end if
+        cycle
+      end if
       select case(reg%params(i)%type_id)
       case(TYPE_INT)
         if (.not. associated(reg%params(i)%value%i)) cycle
@@ -258,29 +328,164 @@ contains
         if (trim(reg%params(i)%value%s) == "") cycle
         call validate_string(reg%params(i)%name, reg%params(i)%value%s, reg%params(i)%allowed, out)
         if (out /= "") return
+      case(TYPE_LOG)
+        ! FiNeR takes a logical only as a logical (Load_Ini marks any other value): nothing is
+        ! left to check, if the rule says no more than that
+        if (.not. logical_rule(reg%params(i)%allowed)) then
+          out = "[ERROR] "//trim(reg%params(i)%name)//": the registry does not check its rule "// &
+                trim(reg%params(i)%allowed)
+          return
+        end if
       case default
         cycle
       end select
     end do
   end function Validate_Registry
 
+  !> A copy of every parameter's value, whatever its type, and of the fields Load_Ini writes
+  !  (is_set, multi, unread, text): Restore_Values puts every parameter back as it was here.
+  !  Taken before input.ini is read again during the run (Read_Inifile_Runtime).
+  subroutine Save_Values()
+    integer :: i
+    if (allocated(saved)) then
+      if (size(saved) /= reg%size) deallocate(saved)
+    end if
+    if (.not. allocated(saved)) allocate(saved(reg%size))
+    do i = 1, reg%size
+      if (associated(reg%params(i)%value%i))    saved(i)%i    = reg%params(i)%value%i
+      if (associated(reg%params(i)%value%r))    saved(i)%r    = reg%params(i)%value%r
+      if (associated(reg%params(i)%value%l))    saved(i)%l    = reg%params(i)%value%l
+      if (associated(reg%params(i)%value%s))    saved(i)%s    = reg%params(i)%value%s
+      if (associated(reg%params(i)%value%iarr)) saved(i)%iarr = reg%params(i)%value%iarr
+      if (associated(reg%params(i)%value%rarr)) saved(i)%rarr = reg%params(i)%value%rarr
+      saved(i)%is_set   = reg%params(i)%is_set
+      saved(i)%multi    = reg%params(i)%multi
+      saved(i)%unread   = reg%params(i)%unread
+      saved(i)%has_text = allocated(reg%params(i)%text)
+      if (saved(i)%has_text) saved(i)%text = reg%params(i)%text
+    end do
+  end subroutine Save_Values
+
+  !> Every parameter back as Save_Values kept it: the variables the registry points at hold
+  !  again what they held then, and so do the fields Load_Ini writes.
+  subroutine Restore_Values()
+    integer :: i
+    if (.not. allocated(saved)) return
+    do i = 1, min(reg%size, size(saved))
+      if (associated(reg%params(i)%value%i))    reg%params(i)%value%i    = saved(i)%i
+      if (associated(reg%params(i)%value%r))    reg%params(i)%value%r    = saved(i)%r
+      if (associated(reg%params(i)%value%l))    reg%params(i)%value%l    = saved(i)%l
+      if (associated(reg%params(i)%value%s))    reg%params(i)%value%s    = saved(i)%s
+      if (associated(reg%params(i)%value%iarr)) reg%params(i)%value%iarr = saved(i)%iarr
+      if (associated(reg%params(i)%value%rarr)) reg%params(i)%value%rarr = saved(i)%rarr
+      reg%params(i)%is_set = saved(i)%is_set
+      reg%params(i)%multi  = saved(i)%multi
+      reg%params(i)%unread = saved(i)%unread
+      if (allocated(reg%params(i)%text)) deallocate(reg%params(i)%text)
+      if (saved(i)%has_text) reg%params(i)%text = saved(i)%text
+    end do
+  end subroutine Restore_Values
+
+  !> The key i of input.ini as the messages give it: the file, the section, the key and the
+  !  value as written, when the file holds one.
+  function Key_And_Value(i) result(out)
+    integer, intent(in) :: i
+    character(len=:), allocatable :: out
+    out = "input.ini, ["//trim(reg%params(i)%section)//"] "//trim(reg%params(i)%name)//" ="
+    if (allocated(reg%params(i)%text)) out = out//" "//trim(reg%params(i)%text)
+  end function Key_And_Value
+
+  !> The error of a key whose value does not read as the type of its parameter (Load_Ini).
+  function Unread_Message(i) result(out)
+    integer, intent(in) :: i
+    character(len=:), allocatable :: out
+    character(len=16) :: n
+    out = "[ERROR] "//Key_And_Value(i)//": the value "
+    if (.not. allocated(reg%params(i)%text)) then
+      out = out//"is empty"
+    else if (len_trim(reg%params(i)%text) == 0) then
+      out = out//"is empty"
+    else if (associated(reg%params(i)%value%iarr)) then
+      write(n,'(I0)') size(reg%params(i)%value%iarr)
+      out = out//"is not a list of at most "//trim(n)//" integers"
+    else if (associated(reg%params(i)%value%rarr)) then
+      write(n,'(I0)') size(reg%params(i)%value%rarr)
+      out = out//"is not a list of at most "//trim(n)//" finite real numbers"
+    else
+      select case (reg%params(i)%type_id)
+      case (TYPE_INT)
+        out = out//"is not an integer"
+      case (TYPE_REAL)
+        out = out//"is not a finite real number"
+      case (TYPE_LOG)
+        out = out//"is not a logical (true or false)"
+      case default
+        out = out//"cannot be read"
+      end select
+    end if
+  end function Unread_Message
+
+  !> The rule of a logical: logical, or the list of its two values (with or without the periods).
+  logical function logical_rule(rule)
+    character(*), intent(in) :: rule
+    character(len=:), allocatable :: r
+    integer :: k
+    r = ""
+    do k = 1, len(rule)
+      if (rule(k:k) /= " " .and. rule(k:k) /= ".") r = r//rule(k:k)
+    end do
+    logical_rule = r == "logical" .or. r == "true,false" .or. r == "false,true"
+  end function logical_rule
+
+  !> The rule of a number, read from its start: a bound (> x, >= x, < x, <= x) or an interval,
+  !  in (a, b), where ( and ) leave the end out and [ and ] take it in. A rule of another form,
+  !  or whose numbers do not read, is an error of the registry itself.
   subroutine validate_numeric(name, val, rule, out)
     character(*), intent(in)    :: name, rule
     real(R8),     intent(in)    :: val
     character(*), intent(inout) :: out
-    real(R8) :: limit
-    if (index(rule,">=") > 0) then
-      read(rule(index(rule,">=")+2:),*) limit
-      if (val < limit) out = "[ERROR] "//trim(name)//" must be "//trim(rule)
-    else if (index(rule,"<=") > 0) then
-      read(rule(index(rule,"<=")+2:),*) limit
-      if (val > limit) out = "[ERROR] "//trim(name)//" must be "//trim(rule)
-    else if (index(rule,">") > 0) then
-      read(rule(index(rule,">")+1:),*) limit
-      if (val <= limit) out = "[ERROR] "//trim(name)//" must be "//trim(rule)
-    else if (index(rule,"<") > 0) then
-      read(rule(index(rule,"<")+1:),*) limit
-      if (val >= limit) out = "[ERROR] "//trim(name)//" must be "//trim(rule)
+    real(R8) :: limit, lo, hi
+    character(len=:), allocatable :: r
+    integer :: c, n, ios1, ios2
+    logical :: ok, known
+    r = trim(adjustl(rule))
+    known = .true.
+    ok    = .true.
+    ios1  = 0
+    ios2  = 0
+    if (index(r,"in") == 1) then
+      ! the first and last characters after "in" open and close the interval
+      r = trim(adjustl(r(3:)))
+      n = len(r)
+      c = index(r,",")
+      known = n >= 5 .and. c > 2 .and. c < n - 1
+      if (known) known = scan(r(1:1),"([") == 1 .and. scan(r(n:n),")]") == 1
+      if (known) then
+        read(r(2:c-1),*,iostat=ios1) lo
+        read(r(c+1:n-1),*,iostat=ios2) hi
+        known = ios1 == 0 .and. ios2 == 0
+      end if
+      if (known) ok = merge(val >= lo, val > lo, r(1:1) == "[") .and. merge(val <= hi, val < hi, r(n:n) == "]")
+      r = "in "//r
+    else if (index(r,">=") == 1) then
+      read(r(3:),*,iostat=ios1) limit
+      ok = val >= limit
+    else if (index(r,"<=") == 1) then
+      read(r(3:),*,iostat=ios1) limit
+      ok = val <= limit
+    else if (index(r,">") == 1) then
+      read(r(2:),*,iostat=ios1) limit
+      ok = val > limit
+    else if (index(r,"<") == 1) then
+      read(r(2:),*,iostat=ios1) limit
+      ok = val < limit
+    else
+      known = .false.
+    end if
+    if (.not. known .or. ios1 /= 0) then
+      out = "[ERROR] "//trim(name)//": the registry does not check its rule "//trim(rule)
+    else if (.not. ok) then
+      out = "[ERROR] "//trim(name)//" must be "//r
     end if
   end subroutine validate_numeric
 

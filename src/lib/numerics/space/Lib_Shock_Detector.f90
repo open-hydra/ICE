@@ -9,6 +9,11 @@ module ICE_Lib_Shock_Detector
 
 contains
 
+  !> The weight of the limited slopes from a Jameson-type sensor on density, s (the largest of the three
+  !> directions): 1 - tanh(10 phi^3) below the threshold s = 1/DELTA, 0 above it. The form is that of Tramel,
+  !> Nichols and Buning (AIAA 2009-3988, Eqs. 29-30), whose phi is s/DELTA: with DELTA = 20 their tanh term
+  !> stays below 1.6e-7 under the threshold, a switch. phi = s*DELTA keeps the threshold and spreads the fall
+  !> of the weight over 0 <= s < 1/DELTA, from 1 to 1 - tanh(10).
   pure function SD_rho(rho_matrix) result(beta)
     implicit none
     real(R8), intent(in) :: rho_matrix(0:2, 0:2, 0:2)
@@ -28,7 +33,7 @@ contains
     sw = max(kp1, kp2, kp3)
 
     if (sw < 1d0/DELTA) then
-      phi = max(sw/DELTA, 0d0)
+      phi = max(sw*DELTA, 0d0)
       beta = 1d0 - tanh(10d0 * phi*phi*phi)
     else
       beta = 0d0

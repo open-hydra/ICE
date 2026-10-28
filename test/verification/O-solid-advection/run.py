@@ -10,12 +10,18 @@ liquid); chi is the inflow's between T_nuc and T_m, 1 below, 0 above. It is ICE'
   O0  every cell liquid (T-melt 200 K): the solidifying run's file holds the plain run's blocks byte for byte, and
       two blocks of zeros for f and chi. MK/Saurel and IG/Rusanov, MUSCL.
   O1  first order, nx = 120, against the recursion per cell, with its energy balance.
-  O2  MUSCL at nx = 120, 240, 480 against the closed form: the front within a cell, T = T_m on the plateau, the
-      liquid error falling with dx - at first order: ICE holds the inlet state at the ghost-cell centre, half a cell
-      upstream of the face, which shifts the profile by dx/2, (T_0 - T_g) dx/(2 L_l) = 10.6 K at nx = 120 - and the
-      exit within the solid's first-order bound. Every nx must be a fixed point: the family reconstructs
-      T_liq = e/c_l, continuous through the recalescence, so the front does not depend on its own cell's phase
-      (reconstructing T instead, nx = 480 cycles with period 2, the front cell's chi 0.6/1.0 and an f ripple of 2.9e-3).
+  O2  MUSCL at nx = 120, 240, 480 against the closed form: the front within a cell (at nx = 480 in cell 122, the one
+      after x_n's), T = T_m on the plateau, the liquid error over x < x_n/2 falling at second order - 0.0290, 0.0075
+      and 0.0019 K: the injected state sits at the inlet face, so the first cell's slope toward it is the one-sided
+      slope from the face (with the state at the first ghost's centre, half a cell upstream, the error was first order,
+      2.68, 1.36 and 0.68 K) - and the exit within the solid's first-order bound. The cells nearer the front are left
+      out of the order: the limiter at the kink of T_liq where the stream nucleates leaves an error that alternates in
+      sign and grows about fourfold per cell toward the front, first order at a fixed number of cells from it (the
+      same, digit for digit, with the state at the ghost's centre), so over every liquid cell up to 2 dx before x_n
+      the error is 0.054, 0.022 and 0.0019 K, the largest in the last one at nx = 120 and 240; it is held to 0.07,
+      0.03 and 0.004 K. Every nx must be a fixed point: the family reconstructs T_liq = e/c_l, continuous through the
+      recalescence, so the front does not depend on its own cell's phase (reconstructing T instead, nx = 480 cycles
+      with period 2, the front cell's chi 0.6/1.0 and an f ripple of 2.9e-3).
   O3  IG/Rusanov, MUSCL nx = 240: the front of O2 within a cell and chi at most 1e-4 in every cell upstream of it.
       At the inlet's P = 1e-6 the Rusanov leak is c/(2u + c) = 5.04e-5 at first order and 2.52e-5 with MUSCL and van
       Leer (measured here), and with T_liq reconstructed nothing else reaches upstream (reconstructing T, the cell
@@ -33,7 +39,7 @@ liquid); chi is the inflow's between T_nuc and T_m, 1 below, 0 above. It is ICE'
       cells, a zero slope keeps the cell lengths out of the faces, and a cell's residual sums the same two fluxes. With
       MUSCL the connection face is reconstructed with compute_bound's lengths, which differ from the interior's in the
       last bits (the pre-existing dl_g2 ~ dl_g1 of the ledger), so they agree to 1e-13 in T (relative) and 1e-14 in f
-      and chi (measured 8.6e-15 and 1.0e-15). The MPI run equals the serial two-block run value for value.
+      and chi (measured 4.8e-15 and 1.0e-15). The MPI run equals the serial two-block run value for value.
 
 Every steady run is compared with a twin at 40 nx + 1 iterations - an odd gap, not a multiple of 3, so a cycle of
 period 2 or 3 shows - in T, f and chi, cell by cell, to 1e-12 (else it is not a fixed point).
@@ -311,7 +317,7 @@ def o2(rep):
     f0 = N.CL * (N.TM - N.TN) / N.HF
     xs = xn + U_IN * (1.0 - f0) * N.M * N.HF / (N.A * (N.TM - 600.0))
     Ls = U_IN * N.TAU_S
-    errs, fronts = [], {}
+    errs, near, fronts = [], [], {}
     for nx in (120, 240, 480):
         print('   O2  MUSCL, nx = %d' % nx)
         sol = steady(rep, 'O2-%d' % nx, stream, nx=nx, Tg=600.0, order='MUSCL')
@@ -327,15 +333,24 @@ def o2(rep):
         rep.check(all(cs[i][0] == N.TM and cs[i][2] == 1.0 for i in plateau),
                   'O2-%d: T = T_m exactly and chi = 1 in the %d plateau cells' % (nx, len(plateau)))
         liquid = [i for i in range(nx) if (i + 1) * dx < xn - 2 * dx]
-        errs.append(max(abs(cs[i][0] - closed_form((i + 0.5) * dx)) for i in liquid))
+        err = [abs(cs[i][0] - closed_form((i + 0.5) * dx)) for i in liquid]
+        errs.append(max(e for i, e in zip(liquid, err) if (i + 1) * dx < xn / 2))
+        near.append(max(err))
         xc = (nx - 0.5) * dx
         Tcf = closed_form(xc)
         bound = (Tcf - 600.0) / Ls * 2 * dx
         rep.check(abs(cs[-1][0] - Tcf) <= bound, 'O2-%d: exit %.4f K, closed form %.4f K, within %.1f K'
                   % (nx, cs[-1][0], Tcf, bound))
     ratios = [errs[i] / errs[i + 1] for i in range(len(errs) - 1)]
-    print('       liquid errors %s, ratios %s' % (', '.join('%.3e' % e for e in errs), ', '.join('%.2f' % r for r in ratios)))
-    rep.check(all(r >= 1.8 for r in ratios), 'O2: the liquid error falls at first order (at least 1.8x per refinement)')
+    print('       liquid errors over x < x_n/2 %s, ratios %s; up to 2 dx before x_n %s'
+          % (', '.join('%.3e' % e for e in errs), ', '.join('%.2f' % r for r in ratios),
+             ', '.join('%.3e' % e for e in near)))
+    rep.check(all(r >= 3.5 for r in ratios) and errs[0] <= 0.035,
+              'O2: the liquid error over x < x_n/2 falls at second order (at least 3.5x per refinement; '
+              '%.4f K at nx = 120, at most 0.035 K)' % errs[0])
+    rep.check(all(e <= b for e, b in zip(near, (0.07, 0.03, 0.004))),
+              'O2: up to 2 dx before x_n the liquid error stays within 0.07 / 0.03 / 0.004 K (%s; the last cells '
+              'carry the limiter tail of the nucleation front)' % ', '.join('%.4f' % e for e in near))
     return fronts
 
 

@@ -133,7 +133,7 @@ contains
     !$OMP END PARALLEL
     end if
     if (bad_state) then
-      write(*,'(A)') ' [ERROR] [ICE::state_update] invalid state after the update (negative density or NaN)'
+      write(*,'(A)') ' [ERROR] [ICE::state_update] invalid state after the update (negative density, NaN or infinity)'
       error stop 1
     endif
 

@@ -23,6 +23,7 @@ contains
     use ICE_Lib_IRS,        only: residual_smoothing
     use ICE_Mod_Diagnostic, only: residual_norm
     use ICE_Mod_MPI,        only: is_local_block, mpi_allreduce_min_r8
+    use ICE_Mod_Inflow400,  only: count_400_inflow
     use ICE_Mod_Timers,     only: timer_source_begin, timer_source_end,   &
                                   timer_flux_begin,   timer_flux_end,     &
                                   timer_halo_begin,   timer_halo_end,     &
@@ -34,7 +35,7 @@ contains
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4) :: p, srk
     real(R8)         :: dtlocal
-    logical          :: endsim, iosim, need_norm
+    logical          :: endsim, iosim, need_norm, res_stop
 
     grid%iter                    = grid%iter + 1
     obj_sim_param%iter_from_call = obj_sim_param%iter_from_call + 1
@@ -79,14 +80,8 @@ contains
         case default;    call assign_riemann('Rusanov')
         end select
       else
-        !> Saurel upwinds on the mean normal velocity and assembles the flux from the
-        !  MK variable layout, so it is meaningless for the Gaussian closures.
-        if (trim(obj_time_scheme%riemann) == 'Saurel' .and. &
-            trim(obj_time_scheme%model(p)) /= 'MK') then
-          write(*,'(A)') '  [ICE] the Saurel solver is specific to the MK closure; '// &
-                         'use Rusanov or HLLE with IG and AG.'
-          error stop 'ICE: Saurel with a non-MK family'
-        endif
+        !> Saurel with a non-MK family is refused at set-up and at each re-read
+        !  (Check_Riemann_Solver).
         call assign_riemann(trim(obj_time_scheme%riemann), solid_of(p))
       endif
       select case (trim(obj_time_scheme%solver_type))
@@ -96,7 +91,7 @@ contains
       case default
         write(*,'(A)') '  [ERROR] unknown time-scheme "'//trim(obj_time_scheme%solver_type)// &
                        '"; choose euler, RK2 or RK3.'
-        error stop 'ICE: unknown time-scheme'
+        error stop 1
       end select
 
       do srk = 1, nrk
@@ -120,7 +115,20 @@ contains
         call timer_region_begin(TR_GHOST2)
         call fill_second_ghost(grid, p)
         call timer_region_end(TR_GHOST2)
+        call timer_halo_end()
 
+        !> Particles entering through extrapolation faces (400): counted, the flux unchanged
+        call count_400_inflow(grid, p)
+
+        !> The shock-detector weights of this stage, before any face reads them: the
+        !  boundary fluxes as well as the interior ones. Timed as flux.
+        call timer_flux_begin()
+        call timer_region_begin(TR_FLUX)
+        call compute_beta(grid, p)
+        call timer_region_end(TR_FLUX)
+        call timer_flux_end()
+
+        call timer_halo_begin()
         call timer_region_begin(TR_BOUND)
         call compute_bound(grid, p)
         call timer_region_end(TR_BOUND)
@@ -150,10 +158,18 @@ contains
 
     end do
 
+    !> res-threshold ends steady runs only, on the finest level: the density change of a
+    !  time step says nothing of convergence, and a transient whose density happens to be
+    !  stationary -- a cloud relaxing in velocity only -- would be declared converged at
+    !  its first iteration. A time-accurate run ends on time-threshold or iter-threshold.
+    !  res-threshold = 0 means "never stop on the residual".
+    res_stop = .not. obj_time_scheme%time_accurate .and. obj_multigrid%MG_level == 1 &
+               .and. obj_sim_param%res_threshold > 0._R8
+
     !> The residual norm, only on a step that reads it: the stop test, the
     !  residual file, the shell line, the last step. Every key can change at run
     !  time, so the conditions are evaluated here, every step.
-    need_norm = (obj_multigrid%MG_level == 1 .and. obj_sim_param%res_threshold > 0._R8) &
+    need_norm = res_stop &
            .or. due(grid%iter, obj_io%res_diter) .or. due(grid%iter, obj_io%shell_diter) &
            .or. (obj_sim_param%iter_from_call >= grid%itermax)                          &
            .or. (grid%time >= obj_sim_param%time_threshold)
@@ -163,15 +179,22 @@ contains
       call timer_region_end(TR_DIAG)
     end if
 
+    !> A steady run ends when its density residual has fallen by res-threshold from the first
+    !  non-zero one: the residual scales with the loading and with the square root of the cell
+    !  count, so an absolute threshold stops the same flow at different iterations, and a dilute
+    !  cloud at its first iteration. Not the first iteration's own: a cloud at rest that the gas
+    !  starts to move can have no density change at its first step (none with a one-stage
+    !  scheme, whose step reads the velocities at its start). While no non-zero residual has
+    !  come, the residual ends nothing.
+    if (res_stop .and. obj_sim_param%res_reference == 0._R8) &
+      obj_sim_param%res_reference = obj_sim_param%residuotot(1)
+
     iosim  = (mod(grid%iter, obj_io%sol_diter) == 0) &
          .or. (grid%time >= obj_sim_param%time_from_call + obj_io%sol_dtime)
 
-    !> res-threshold = 0 means "never stop on the residual". Without it a transient
-    !> whose density happens to be stationary -- a cloud relaxing in velocity only --
-    !> reports a zero density residual and is declared converged at the first iteration.
-    endsim = (obj_sim_param%iter_from_call >= grid%itermax)                                        &
-         .or. (obj_multigrid%MG_level == 1 .and. obj_sim_param%res_threshold > 0._R8 .and.       &
-               obj_sim_param%residuotot(1) <= obj_sim_param%res_threshold)                       &
+    endsim = (obj_sim_param%iter_from_call >= grid%itermax)                                   &
+         .or. (res_stop .and. obj_sim_param%res_reference > 0._R8 .and.                       &
+               obj_sim_param%residuotot(1) <= obj_sim_param%res_threshold * obj_sim_param%res_reference) &
          .or. (grid%time >= obj_sim_param%time_threshold)
 
     if (endsim) then

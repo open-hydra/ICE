@@ -11,6 +11,7 @@ export OMP_STACKSIZE=${OMP_STACKSIZE:-100M}
 export KMP_STACKSIZE=${KMP_STACKSIZE:-100M}
 
 # ice_fast_prepare <workdir> <case> <iterations> <run-id>...
+# ICE_FAST_SD=<detector> replaces the case's shock-detector key (ice_fast_detector checks the runs took it).
 ice_fast_prepare() {
   local work=$1 case=$2 iter=$3; shift 3
   local src=$ROOT/test/$case id
@@ -25,7 +26,20 @@ ice_fast_prepare() {
     mkdir -p "$work/run$id/OUTPUT"
     cp -rL "$src/INPUT" "$work/run$id/"
     sed -e "s/^iter-threshold.*/iter-threshold = $iter/" \
-        -e "s/^shell-diter.*/shell-diter = $iter/" "$src/input.ini" > "$work/run$id/input.ini"
+        -e "s/^shell-diter.*/shell-diter = $iter/" \
+        ${ICE_FAST_SD:+-e "s/^shock-detector.*/shock-detector = $ICE_FAST_SD/"} "$src/input.ini" > "$work/run$id/input.ini"
+  done
+}
+
+# ice_fast_detector <dir>... -- with ICE_FAST_SD set (not none), every run's banner must report that detector
+ice_fast_detector() {
+  local d
+  [[ -z ${ICE_FAST_SD:-} || ${ICE_FAST_SD} == none ]] && return 0
+  for d in "$@"; do
+    if ! grep -q "Shock *--> *$ICE_FAST_SD detector" "$d/log"; then
+      echo "[fast] FAIL: ICE_FAST_SD=$ICE_FAST_SD, but the banner of $d/log reports no $ICE_FAST_SD detector"
+      exit 1
+    fi
   done
 }
 

@@ -10,7 +10,8 @@
 #  a Psat column an evaporation model cannot use, Lv, Mv and Cpv columns that do
 #  not fit the Psat column or meet a vapour key set non-zero, a latent heat or
 #  molar mass of 0 with no column to replace it, a key given together with its
-#  alias, a phase file whose materials or model tokens ICE cannot honour);
+#  alias, a phase file whose materials or model tokens ICE cannot honour, a
+#  mesh with flat cells);
 #  the last one diverges at run time (a NaN source in one cell) and must be
 #  caught after the update. A solver that reports success on
 #  any of these would let a harness read a broken run as a pass. Ten rows go the
@@ -89,6 +90,16 @@ refuse Refuse/MK   "drag not set (coupled run)"  "sed -i '/^drag /d' input.ini" 
        "drag is not set;Schiller-Naumann"
 refuse Refuse/MK   "heat not set (coupled run)"  "sed -i '/^heat-transfer /d' input.ini" \
        "heat-transfer is not set;Kavanau-Drake"
+# An inlet that takes its speed from the gas (401, 403) in a run without one (Doisneau/MK is 0-way)
+refuse Doisneau/MK "inlet 401 without a gas"     "sed -i 's/ 402\$/ 401/' INPUT/part-bc.txt" \
+       "takes its speed from the gas"
+refuse Doisneau/MK "inlet 403 without a gas"     "sed -i 's/ 402\$/ 403/' INPUT/part-bc.txt" \
+       "takes its speed from the gas"
+# A mesh with flat cells: the nodes of row j = 1 laid onto row j = 0 from i = 5 on, so that the cells of row 1 from
+# i = 6 on have no thickness (check_folded_cells leaves out the corners of their collapsed edges)
+refuse Doisneau/MK "mesh: flat cells" \
+       "python3 -c \"L=open('INPUT/part-ic.tec').read().split(chr(10)); z=[n for n,l in enumerate(L) if 'ZONE' in l][0]; d=dict(t.split('=') for t in L[z].replace(' ','').split(',') if t[:2] in ('I=','J=','K=')); I,J,K=int(d['I']),int(d['J']),int(d['K']); b=z+1+I*J*K; [L.__setitem__(b+(k*J+1)*I+i, L[b+k*J*I+i]) for k in range(K) for i in range(5,I)]; open('INPUT/part-ic.tec','w').write(chr(10).join(L))\"" \
+       "cell 6 1 1: turned over or flat"
 refuse Refuse/MK   "heat Chang points to JAXA3"  "sed -i 's/^heat-transfer .*/heat-transfer = Chang/' input.ini" \
        "Chang is now JAXA3;Mach-corrected law is JAXA4;- JAXA4"
 # The property table (Doisneau/MK ships one, cp 1500, density 2000, and sets neither key in the INI)

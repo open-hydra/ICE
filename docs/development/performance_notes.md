@@ -34,10 +34,13 @@ threads as well as many small ones. Two details shape the scaling:
   and plane buffers, and applies the two faces of each direction to each cell in the
   order the earlier odd-then-even scatter passes gave them — so the residual is bit
   for bit the scatter form's, and independent of the thread count. Per block and stage
-  there are three worksharing loops (the shock-detector pass, the faces on the tile
-  seams, the sweep) where the scatter form had a pass per parity per direction.
+  there are two worksharing loops (the faces on the tile seams, the sweep) where the
+  scatter form had a pass per parity per direction. The shock-detector weights are a
+  pass of their own over the same tiles (`compute_beta`), after the ghost fill and
+  before the boundary fluxes, which read them too (`Equiv3DThreadsSD`, `Equiv3DGroupsSD`:
+  the threads and groups legs with the detector on).
 - The boundary flux loop is `SCHEDULE(DYNAMIC, 16)` over the rank's boundary cells of
-  the family, each cell accumulating its records in table order on one thread — a
+  the family, each cell accumulating its records in face order on one thread — a
   block corner in 3-D carries three — so 2-D and 3-D runs are bit-identical across
   thread counts (`test/fast/equiv3d`: RED on the record-parallel `ATOMIC` loop, GREEN
   since 2026-09-30). The cost per cell varies a great deal by type: a chimera cell
@@ -95,6 +98,8 @@ phase then keeps a block on its group:
   `collapse(3)` makes) of its group's blocks;
 - the ghost fill and the boundary fluxes take each record or boundary cell on a thread of the
   group owning its block (group-ordered lists built by `build_local_bc_index`);
+- the shock-detector pass gives the tiles of each block to the threads of its group
+  (`compute_beta_grouped`);
 - the flux kernel runs in rounds, round r sweeping the r-th block of every group at once with
   the group's own tiles, shared planes and tile counter, so its barriers stay team barriers
   (`compute_flux_grouped`).
@@ -120,7 +125,7 @@ tile 1 sleeps 2 ms before writing; the group's other threads empty the k-face co
 so without the barrier one of them takes sweep tile 1, reads the NaN and `state_update` stops the
 run. Measured 2026-10-08: RED 10 of 10 with the barrier removed, GREEN on the real code (record
 `plan-bucket/records/2026-10-08-openmp-loose-ends/`). It covers that barrier only: not the
-round-start or shock-detector barriers, not the ungrouped `compute_flux`. Run it before merging a
+round-start barrier, not the ungrouped `compute_flux`. Run it before merging a
 change to the grouped kernel. Without the option the code compiled is the normal one.
 
 ## MPI
