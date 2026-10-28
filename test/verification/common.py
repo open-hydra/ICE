@@ -787,7 +787,7 @@ def nusselt(law, Re, Pr, Ma):
 
     if law == 'JAXA4':
 
-        return 1.0 / (1.0 / (2.0 + 0.654 * Re ** 0.5 * Pr ** (1.0 / 3.0)) + 3.42 * Ma / (Re * Pr))
+        return 1.0 / (1.0 / (2.0 + 0.654 * Re ** 0.5 * Pr ** 0.5) + 3.42 * Ma / (Re * Pr))
 
     if law == 'Ranz-Marshall':
 

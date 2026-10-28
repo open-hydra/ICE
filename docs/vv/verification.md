@@ -236,10 +236,10 @@ $2.6\times10^{-6}$ of the initial temperature gap.
 
 A last leg holds the slip constant: under `NoDrag` the particles stay at rest in the
 moving gas, so $Re = 67$, $Ma = 0.029$ and $Nu$ are frozen and the cooling is an exact
-exponential. `JAXA4` meets it to $8\times10^{-6}$ of the gap at $t = 0.01$ s, which is the
+exponential. `JAXA4` meets it to $7\times10^{-6}$ of the gap at $t = 0.01$ s, which is the
 RK2 error of the default step; the tolerance, $3\times10^{-4}$, is about 40 times that.
 This is the leg with margin on the law's constant: a 1.4 % change of
-it moves the result by $3.5\times10^{-3}$ of the gap, against $1.4\times10^{-3}$ in the
+it moves the result by $3.4\times10^{-3}$ of the gap, against $1.4\times10^{-3}$ in the
 finite-slip leg.
 
 ## Phase change
