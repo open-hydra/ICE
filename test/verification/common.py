@@ -109,15 +109,16 @@ def write_tec_blocks(path, names, blocks):
 
 
 def inlet_payload(massflux, speed, T, radius):
-    """Payload of a code-402 record: mass flux, speed, temperature, radius."""
+    """Payload of an inlet record: mass flux, speed, temperature, radius (code 402); code 401 reads the
+    same columns as krho, kV, kT, radius, the first three ratios to the local gas."""
     return '%.10e %.10e normal normal %.10e %.10e 0.0 Dirac 0.0' % (
         massflux, speed, T, radius)
 
 
-def bc_rows(nx, ny, nz, mode='extrapolation', block=1, inlet=None):
+def bc_rows(nx, ny, nz, mode='extrapolation', block=1, inlet=None, code=402):
     """Return ATLAS-format BC rows for one mesh block.
 
-    ``inlet`` is an already formatted code-402 payload for face 1.
+    ``inlet`` is an already formatted inlet payload for face 1, written under ``code``.
     """
     rows = []
 
@@ -136,7 +137,7 @@ def bc_rows(nx, ny, nz, mode='extrapolation', block=1, inlet=None):
         for k in range(1, nz + 1):
             for j in range(1, ny + 1):
                 if f == 1 and inlet is not None:
-                    rows.append(header(i0, j, k, f, 402))
+                    rows.append(header(i0, j, k, f, code))
                     rows.append('   ' + inlet)
                     continue
 
@@ -157,12 +158,12 @@ def bc_rows(nx, ny, nz, mode='extrapolation', block=1, inlet=None):
     return rows
 
 
-def write_bc(path, nx, ny, nz, mode='extrapolation', inlets=None):
+def write_bc(path, nx, ny, nz, mode='extrapolation', inlets=None, code=402):
     """Write an ATLAS-format BC file for a single block.
 
     With ``inlets`` set, one complete BC table is written per family in
     ATLAS material/population order. Each inlet is a formatted payload
-    (inlet_payload) or a dict with the keys gp, v, T and r.
+    (inlet_payload) or a dict with the keys gp, v, T and r, written under ``code``.
     """
     def payload(spec):
         if isinstance(spec, str):
@@ -175,7 +176,7 @@ def write_bc(path, nx, ny, nz, mode='extrapolation', inlets=None):
         rows = [
             row
             for spec in inlets
-            for row in bc_rows(nx, ny, nz, mode, inlet=payload(spec))
+            for row in bc_rows(nx, ny, nz, mode, inlet=payload(spec), code=code)
         ]
 
     Path(path).write_text('\n'.join(rows) + '\n')
@@ -461,10 +462,10 @@ class Case(object):
 
                   [self.cells(f) for f in (rho, u, v, w, T, R, gam, k, mu, 0.0)], zone='B1-GAS')
 
-    def boundaries(self, mode='extrapolation', inlets=None):
-        """Write part-bc.txt, optionally with one inlet payload per family."""
+    def boundaries(self, mode='extrapolation', inlets=None, code=402):
+        """Write part-bc.txt, optionally with one inlet payload per family, under the inlet code ``code``."""
         write_bc(self.dir / 'INPUT/part-bc.txt', self.nx, self.ny, self.nz,
-                 mode, inlets)
+                 mode, inlets, code)
 
     def properties(self, Tmin, Tmax, cp, rho, **kw):
         """Write part-properties.dat and mark the case as table-backed."""

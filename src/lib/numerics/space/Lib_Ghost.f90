@@ -195,8 +195,8 @@ contains
               veln = dot_product(grid%blk(bm)%gas_phase%prim(2:4,im,jm,km),inward)
               !> Velocity
               prim(2:4,ig,jg,kg) = injected_velocity(grid%bc(i)%velocity * veln, grid%bc(i), inward)
-              !> Density
-              prim(1,ig,jg,kg) = grid%bc(i)%massflux/(1._R8-grid%bc(i)%massflux) * grid%blk(bm)%gas_phase%prim(1,im,jm,km) / grid%bc(i)%velocity
+              !> Density: the mixture rule, krho over 1 - the cell's krho sum
+              prim(1,ig,jg,kg) = grid%bc(i)%massflux/(1._R8-grid%bc(i)%krho_sum) * grid%blk(bm)%gas_phase%prim(1,im,jm,km) / grid%bc(i)%velocity
               !> Temperature
               prim(nbase(pm)-1,ig,jg,kg) = grid%bc(i)%temperature * grid%blk(bm)%gas_phase%prim(5,im,jm,km)
 
