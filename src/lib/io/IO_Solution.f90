@@ -179,14 +179,15 @@ contains
     use Lib_Tecplot
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m, only: obj_io
-    use ICE_Mod_MPI,           only: mpi_is_root
+    use ICE_Mod_MPI,           only: mpi_is_root, mpi_abort_all
     use ICE_Mod_GhostExchange, only: gather_prim_to_root, mpi_io_barrier
     implicit none
     type(ICE_domain_type), intent(inout)        :: grid
     type(orion_data),      intent(inout)        :: IOfield
     character(len=*),      intent(in)           :: file
     character(len=*),      intent(in), optional :: format(2)
-    character(len=llen) :: path, localpath_vtk
+    character(len=llen) :: path, localpath_vtk, written
+    character(len=hlen) :: what
     character(len=len(obj_io%Ovarnames)) :: vtknames
     integer(kind=I4)    :: b, p, c, nstart, nend, E_IO
 
@@ -213,6 +214,7 @@ contains
         end do
       end do
 
+      E_IO = 0
       select case (format(1))
       case ('vtk')
         IOfield%vtk%format = format(2)
@@ -224,14 +226,24 @@ contains
         end do
         localpath_vtk = trim(path)//'vtk/'
         call execute_command_line('mkdir -p '//trim(localpath_vtk))
+        written = trim(path)//trim(file)//'.vtm'
         E_IO = vtk_write_structured_multiblock(orion=IOfield, &
                  vtspath=trim(localpath_vtk)//trim(file), &
                  vtmpath=trim(path)//trim(file), varnames=vtknames, time=grid%time)
       case ('tecplot')
         IOfield%tec%format = format(2)
+        written = trim(path)//trim(file)//io_extension(format)
         E_IO = tec_write_structured_multiblock(orion=IOfield, varnames=obj_io%Ovarnames, &
-                 filename=trim(path)//trim(file)//io_extension(format))
+                 filename=trim(written))
       end select
+
+      !> A write that the library refuses or that fails returns a non-zero
+      !  value, and may leave no file: the run stops on it, with the file. The
+      !  other ranks wait in the barrier below; MPI_ABORT ends them.
+      if (E_IO /= 0) then
+        write(what,'(A,I0,A)') 'cannot write '//trim(written)//' (error ', E_IO, ' of the writer)'
+        call mpi_abort_all(trim(what))
+      end if
 
     end if
 
