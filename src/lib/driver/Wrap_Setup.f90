@@ -154,8 +154,15 @@ contains
         backspace(obj_io%unitRES)
       end if
 
+      ! The time of the solution read (restart_time): its physical time, or the
+      ! global iteration count of a steady one. A time-accurate run that starts
+      ! from a steady solution starts at t = 0.
       if (obj_time_scheme%time_accurate) then
-        sim%domain(1)%time           = sim%ODP(1)%solutiontime
+        if (restart_steady) then
+          sim%domain(1)%time         = 0._8
+        else
+          sim%domain(1)%time         = sim%ODP(1)%solutiontime
+        end if
         obj_sim_param%iter_general   = 0
       else
         obj_sim_param%iter_general   = int(sim%ODP(1)%solutiontime)
@@ -239,14 +246,14 @@ contains
     !> stopped, killed or at the time limit of a queue): the restart writes those
     !> iterations again, so they are dropped (Drop_Rows_After). Only where the
     !> solution places them exactly: a Tecplot ASCII solution holds its time and
-    !> marks a steady one (STRANDID = 0). A steady restart takes back the global
+    !> tells a steady one (restart_time). A steady restart takes back the global
     !> iteration count, and the rows of later iterations go. A time-accurate one
     !> takes back the time and counts the iterations from 0: the residual rows of
     !> later times go (their time, written E20.10, against the restart time
     !> rounded up to those digits), the time rows of a probe too, and its
-    !> iteration rows stay. Any other solution (vtk and Tecplot binary, whose time
-    !> ICE does not read back, a file without SOLUTIONTIME, a solution of the
-    !> other mode) drops nothing.
+    !> iteration rows stay. Any other solution (vtk and Tecplot binary, a
+    !> solution of the other mode) drops nothing; one without a time stopped the
+    !> run before (check_ic).
     subroutine Drop_History_Rows(IOfield)
       use iso_fortran_env, only: R8 => real64
       use ICE_IO_Probes,   only: Drop_Probe_Rows, Drop_Rows_After
@@ -257,9 +264,7 @@ contains
       integer           :: ncol
 
       if (trim(obj_io%ini_fmt(1)) /= 'tecplot' .or. trim(obj_io%ini_fmt(2)) /= 'ascii') return
-      ! ORION gives -10 when the file holds no SOLUTIONTIME; ICE writes abs(time)
-      if (.not. IOfield%solutiontime >= 0._R8) return
-      if (obj_time_scheme%time_accurate .eqv. (IOfield%strandid == 0)) return
+      if (restart_steady .eqv. obj_time_scheme%time_accurate) return
 
       ! A residual row: the global iteration, the time and the residuals
       resfile = 'OUTPUT/'//trim(ICE_phase_prefix)//'residual-history.dat'

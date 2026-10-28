@@ -5,6 +5,7 @@ module ICE_IO_Solution
   use ICE_Global_m,      only: ICE_phase_prefix, ngroups, ncond, solid_of
   use ICE_Config_Types_m, only: obj_time_scheme
   use ICE_Parameters_m,  only: llen, hlen
+  use ICE_Finite_m,      only: Not_Finite
 
   implicit none
 
@@ -12,6 +13,11 @@ module ICE_IO_Solution
   real(kind=R8)    :: IOtime
 
   character(llen)  :: condinit, gasinit
+
+  !> A restart: whether the solution read holds its time, and whether it is a
+  !> steady one, whose solution time is then its global iteration count
+  !> (restart_time)
+  logical :: restart_time_found = .true., restart_steady = .false.
 
   !> Concrete procedure pointing to one of the subroutine realizations
   procedure(r_solution_if), pointer, public :: read_ic
@@ -255,7 +261,7 @@ contains
   subroutine read_vtk_tec(IOfield_cond, IOfield_gas)
     use Lib_Tecplot
     use Lib_VTK
-    use ICE_Config_Types_m, only: obj_io
+    use ICE_Config_Types_m, only: obj_io, obj_sim_param
     implicit none
     type(orion_data), intent(inout)           :: IOfield_cond
     type(orion_data), intent(inout), optional :: IOfield_gas
@@ -294,13 +300,78 @@ contains
       error stop 1
     end select
 
+    if (.not. obj_sim_param%newrun) call restart_time(IOfield_cond)
+
   end subroutine read_vtk_tec
 
 
+  !> The time of the solution that a restart reads, as Wrap_Setup takes it.
+  !> ORION's Tecplot readers give the time of the zone headers: a steady
+  !> solution holds minus its global iteration count (the sign written since
+  !> ORION a978930) or the count with STRANDID = 0 (the files of earlier
+  !> ORION), a time-accurate one its time, >= 0. The count of a steady solution
+  !> is kept positive. A file whose zone header has no SOLUTIONTIME holds no
+  !> time, and check_ic stops the run: ORION reads it as -10 (8cda645) or -huge
+  !> (a978930), and -10 is also the time a978930 reads for a steady solution at
+  !> iteration 10, so an ASCII file is asked itself (tec_has_time). A time that
+  !> is not finite is left to check_ic.
+  subroutine restart_time(IOfield)
+    use ICE_Config_Types_m, only: obj_io
+    implicit none
+    type(orion_data), intent(inout) :: IOfield
+
+    restart_time_found = .true.
+    restart_steady     = .false.
+    if (Not_Finite(IOfield%solutiontime)) return
+    if (trim(obj_io%ini_fmt(1)) /= 'tecplot') return
+
+    restart_time_found = IOfield%solutiontime > -0.5_R8 * huge(1._R8)
+    if (trim(obj_io%ini_fmt(2)) == 'ascii') restart_time_found = restart_time_found .and. tec_has_time(condinit)
+    restart_steady = restart_time_found .and. (IOfield%solutiontime < 0._R8 .or. IOfield%strandid == 0)
+    if (restart_steady) IOfield%solutiontime = abs(IOfield%solutiontime)
+
+  end subroutine restart_time
+
+
+  !> Whether the first zone header of a Tecplot ASCII file names SOLUTIONTIME:
+  !> the lines from the one that starts with ZONE to the first that starts with
+  !> a number, in any case. A file that cannot be opened names none.
+  logical function tec_has_time(file)
+    implicit none
+    character(len=*), intent(in) :: file
+    character(len=32768) :: line
+    integer :: unit, ios, i, c
+    logical :: zone
+
+    tec_has_time = .false.
+    zone = .false.
+    open(newunit=unit, file=file, status='old', action='read', iostat=ios)
+    if (ios /= 0) return
+    do
+      read(unit, '(A)', iostat=ios) line
+      if (ios /= 0) exit
+      line = adjustl(line)
+      do i = 1, len_trim(line)
+        c = iachar(line(i:i))
+        if (c >= iachar('a') .and. c <= iachar('z')) line(i:i) = achar(c - 32)
+      end do
+      if (zone .and. scan(line(1:1), '0123456789+-.') > 0) exit
+      if (line(1:4) == 'ZONE') zone = .true.
+      if (zone .and. index(line, 'SOLUTIONTIME') > 0) then
+        tec_has_time = .true.
+        exit
+      end if
+    end do
+    close(unit)
+
+  end function tec_has_time
+
+
   !> An error of the read of the initial condition (or of the solution a
-  !> restart reads, or of the gas field it was read with), the time of a
-  !> restart solution, or a value the condensed field gives the domain that is
-  !> not finite (NaN, infinity) stops the run at set-up, with the file and the
+  !> restart reads, or of the gas field it was read with), a restart solution
+  !> that holds no time (restart_time), or the time of a restart solution or a
+  !> value the condensed field gives the domain that is not finite (NaN,
+  !> infinity) stops the run at set-up, with the file and the
   !> place: the node coordinates of every block and the cell variables that
   !> setup_cond reads, the first sum(ncond) of each cell. Every rank reads the
   !> files: the ranks decide together (the largest of a flag), the first rank
@@ -327,8 +398,11 @@ contains
       write(what,'(A,I0,A)') 'cannot read '//trim(gasinit)//' (error ', error_gas, ' of the reader)'
     elseif (.not. allocated(IOfield_cond%block)) then
       what = 'cannot read '//trim(condinit)//': it gives no block'
-    elseif (.not. obj_sim_param%newrun .and. .not. ieee_is_finite(IOfield_cond%solutiontime)) then
+    elseif (.not. obj_sim_param%newrun .and. Not_Finite(IOfield_cond%solutiontime)) then
       what = trim(condinit)//': the solution time is not finite (NaN or infinity)'
+    elseif (.not. obj_sim_param%newrun .and. .not. restart_time_found) then
+      what = trim(condinit)//': the solution holds no time (its zone header has no SOLUTIONTIME), and a restart '// &
+             'goes on from the time of its solution; to start from it, use it as the initial condition (newrun = true)'
     else
       blocks: do b = 1, size(IOfield_cond%block)
         associate (mesh => IOfield_cond%block(b)%mesh)
