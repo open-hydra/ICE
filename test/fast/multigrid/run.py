@@ -18,12 +18,26 @@ level. Three things are pinned here.
               with no region to bind to and ran on one thread.
   ranks       1 vs ICE_MG_RANKS ranks, bit-identical, at MG-levels 3. Needs an
               MPI build; skipped when ICE_MG_RANKS is 1.
+  level files MG-levels 2: the files of the coarse level written at the level
+              switch, field-level2 and residuals-level2, hold that level's grid
+              and fields: those of a run of the same 10 iterations on the coarse
+              grid alone, from the restriction of the initial field, to round-off
+              (1e-12 of each variable's range: to the bit with gfortran TESTING;
+              ifx RELEASE differs by 6e-16 in the fields, 2e-15 in the residuals).
+              The initial field is constant on every 2 x 2 group of fine cells,
+              binary fractions, so that its restriction is that constant up to
+              the rounding of the build. field-level2 carries ICE_GRID_LEVEL 2,
+              the level's iteration count and its solution time. While a coarse
+              level wrote from the fine one, these files held the fine grid and
+              the initial field. Also on ICE_MG_RANKS ranks when that is more
+              than 1.
 
 The case is two blocks closed onto each other in x, so every i-face is a
 connection and at two ranks every one of them crosses a rank boundary.
 """
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -136,6 +150,82 @@ def build(work, levels):
     return work
 
 
+# Density of the groups of 2 x 2 fine cells along x, repeated: binary fractions, so that every sum of the
+# restriction is exact
+GROUP = [1.0, 1.25, 1.5, 1.75]
+
+
+def build_groups(work, nx, ny, levels, iters, coarse_iters):
+    """The ring with nx x ny cells per block, its initial field constant on every group of 2 x 2 fine cells
+    (nx = NXB) or on every cell (nx = NXB/2, the coarse grid): density GROUP[g % 4] at group g along x, 10 m/s,
+    300 K, n = 1e6 per unit density; the thickness of the fine cells in z. iters on the finest level, coarse_iters
+    on the second one, a solution every coarse_iters iterations."""
+    work = Path(work)
+    if work.exists():
+        shutil.rmtree(str(work))
+    (work / 'INPUT').mkdir(parents=True)
+    (work / 'OUTPUT').mkdir()
+    g = 2 if nx == NXB else 1
+    zones = []
+    for b in range(NB):
+        rho = [GROUP[(i // g) % 4] for _ in range(ny) for i in range(nx)]
+        zones.append(('B%d' % (b + 1), linspace(b * 0.5, (b + 1) * 0.5, nx + 1), linspace(0.0, 0.125, ny + 1),
+                      [0.0, 0.125 / NY],
+                      [rho, [10.0] * len(rho), [0.0] * len(rho), [0.0] * len(rho), [300.0] * len(rho),
+                       [1.0e6 * x for x in rho]]))
+    write_tec_multi(work / 'INPUT/part-ic.tec', ['rp1', 'up1', 'vp1', 'wp1', 'Tp1', 'np1'], zones)
+    for m in range(1, levels + 1):
+        r = 2 ** (m - 1)
+        write_bc_chain(work / 'INPUT' / ('part-bc.txt' if m == 1 else 'part-bc%d.txt' % m), NB, nx // r, ny // r, 1)
+    sections = {
+        'ICE-Parameters': {'iter-threshold': iters, 'time-threshold': 1e30, 'res-threshold': 0.0},
+        'ICE-Numerics': {'time-scheme': 'RK2', 'cfl': 0.8, 'time-accurate': False,
+                         'space-reconstruction': 'MUSCL', 'flux-limiter': 'vanleer'},
+        'ICE-Family1': {'closure': 'MK'},
+        'ICE-Physics': {'drag': 'Stokes', 'heat-transfer': 'Stokes',
+                        'density': 1000.0, 'specific-heat': 900.0, 'emissivity': 0.0},
+        'ICE-IO': {'ic-format': 'tecplot ascii', 'sol-format': 'tecplot ascii',
+                   'shell-diter': 1000000000, 'sol-diter': coarse_iters, 'res-diter': 1000000000},
+    }
+    if levels > 1:
+        sections['ICE-Multigrid'] = {'levels': levels, 'level1-iter': iters, 'level2-iter': coarse_iters}
+    write_ini(work / 'input.ini', sections)
+    return work
+
+
+def level_files(r, ranks, tol=1.0e-12):
+    """The coarse level's files of a 2-level run against the files of the same 10 iterations on the coarse grid."""
+    n = 10
+    mg = build_groups(WORK / ('groups-L2-r%d' % ranks), NXB, NY, 2, 4, n)
+    cg = build_groups(WORK / ('groups-coarse-r%d' % ranks), NXB // 2, NY // 2, 1, n, n)
+    run(mg, ranks=ranks)
+    run(cg, ranks=ranks)
+    for level_file, alone in (('field-level2.tec', 'part-field.tec'), ('residuals-level2.tec', 'part-residuals.tec')):
+        diffs, worst = [], 0.0
+        for z in range(NB):
+            a = read_solution(mg / 'OUTPUT' / ('part-' + level_file), zone=z)
+            b = read_solution(cg / 'OUTPUT' / alone, zone=z)
+            if (a['nx'], a['ny']) != (b['nx'], b['ny']):
+                diffs.append('block %d has %d x %d cells, the coarse grid %d x %d'
+                             % (z + 1, a['nx'], a['ny'], b['nx'], b['ny']))
+                continue
+            d = worst_rel(b, a)
+            worst = max(worst, d)
+            if d > tol:
+                diffs.append('block %d differs by %.3g of the field range' % (z + 1, d))
+        r.check(not diffs, '%d rank(s): part-%s holds the coarse grid and its fields, those of %d iterations on the '
+                'coarse grid alone (%s)' % (ranks, level_file, n, '; '.join(diffs) if diffs else
+                                            'largest difference %.3g of the field range' % worst))
+    text = (mg / 'OUTPUT' / 'part-field-level2.tec').read_text()
+    aux = dict((k, float(v)) for k, v in re.findall(r'DATASETAUXDATA (\w+) = "([^"]*)"', text))
+    time = re.search(r'SOLUTIONTIME\s*=\s*([-+0-9.EDed]+)', text)
+    got = (aux.get('ICE_GRID_LEVEL'), aux.get('ICE_ITERATION'), aux.get('CYCLE'),
+           float(time.group(1)) if time else None)
+    r.check(got == (2.0, float(n), float(n), -float(n)),
+            '%d rank(s): part-field-level2.tec carries ICE_GRID_LEVEL, ICE_ITERATION, CYCLE, SOLUTIONTIME = %s '
+            '(want 2, %d, %d, -%d)' % (ranks, got, n, n, n))
+
+
 def run(work, ranks=1, threads=1):
     if not ICE_BIN.exists():
         raise SystemExit('[fast] no ICE binary at %s -- build first' % ICE_BIN)
@@ -181,6 +271,8 @@ def main():
     r.check(base['var'] == sol['var'],
             '%d threads give a bit-identical MG-levels=3 result' % THREADS)
 
+    level_files(r, 1)
+
     if RANKS > 1:
         work = build(WORK / 'ranks', 3)
         sol = run(work, ranks=RANKS)
@@ -191,6 +283,7 @@ def main():
         else:
             r.check(base['var'] == sol['var'],
                     '%d ranks give a bit-identical MG-levels=3 result' % RANKS)
+            level_files(r, RANKS)
 
     r.close(WORK)
 

@@ -6,7 +6,7 @@ whatever the thread count, the rank count, or the company of its families.
 
 The gates before this one (openmp-equiv, mpi-equiv) run 2-D single-family cases
 in which no populated cell crosses a block interface within their 200 iterations,
-and compare a Tecplot ASCII file written with 15 significant digits. This one
+and compare a Tecplot ASCII file written with 17 significant digits. This one
 runs the `small` preset of test/bench/make_case.py -- 24x16x12 cells in 3x2x2
 blocks, three closures, periodic in x and y, symmetry/outlet in z, a density that
 is nowhere empty and moves across every interface from iteration 1 -- and

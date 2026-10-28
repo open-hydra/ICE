@@ -30,12 +30,14 @@ def cc(X, Y, Z):                              # cell centres from the 8 nodes
     m = lambda A: 0.125*(A[:-1,:-1,:-1]+A[1:,:-1,:-1]+A[:-1,1:,:-1]+A[1:,1:,:-1]+A[:-1,:-1,1:]+A[1:,:-1,1:]+A[:-1,1:,1:]+A[1:,1:,1:])
     return m(X), m(Y), m(Z)
 def read_field(path):
-    """returns (I,J,K, solutiontime, [cell arrays (I-1,J-1,K-1) per variable]) of an ICE part-field.tec"""
+    """returns (I,J,K, solutiontime, [cell arrays (I-1,J-1,K-1) per variable]) of an ICE part-field.tec; its data set
+    auxiliary data records (DATASETAUXDATA, the counters of a restart) hold no field value and are skipped"""
     import re
     L = open(path).read().split('\n'); zi = next(i for i, l in enumerate(L) if 'ZONE' in l)
     g = lambda k: int(re.search(r'\b%s\s*=\s*(\d+)' % k, L[zi]).group(1)); I, J, K = g('I'), g('J'), g('K')
     st = re.search(r'SOLUTIONTIME\s*=\s*([-+.\dE]+)', L[zi]); st = float(st.group(1)) if st else None
-    v = np.array([float(t) for l in L[zi+1:] for t in l.split()]); Nn = I*J*K; Nc = (I-1)*(J-1)*max(K-1, 1)
+    v = np.array([float(t) for l in L[zi+1:] if not l.lstrip().startswith('DATASETAUXDATA') for t in l.split()])
+    Nn = I*J*K; Nc = (I-1)*(J-1)*max(K-1, 1)
     nv = (len(v) - 3*Nn)//Nc
     return I, J, K, st, [v[3*Nn+q*Nc:3*Nn+(q+1)*Nc].reshape((I-1, J-1, max(K-1, 1)), order='F') for q in range(nv)]
 
