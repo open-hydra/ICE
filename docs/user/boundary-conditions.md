@@ -62,7 +62,7 @@ So a phase with two materials, one of them in two populations, needs three
 | `102` | Chimera (overset) | donor counts per layer, then `b i j k weight` per donor | Each ghost layer set to the weighted blend of its own donors, in conservative variables |
 | `200` | Axisymmetry | none | The side faces of an axisymmetric wedge: see below |
 | `300` | Symmetry | none | See below |
-| `400` | Extrapolation | none | Ghost copies the interior cell: zero gradient |
+| `400` | Extrapolation | none | Ghost copies the interior cell: zero gradient. Particles that move into the domain through it enter with the state of the boundary cell, and the run says so: a line the first time a cell that carries the phase (density above the empty-cell density, $10^{-6}$ kg/m³) moves into the domain faster than round-off (above $10^{-12}$ of the signal speed $\sqrt{P/\rho}$ for IG and AG, of its own speed for MK, which has no signal speed) through the `400` faces of a face of a block (per family and grid level), with the iteration, the faces and the largest $\lvert w\rvert$ ($w$ the velocity along the normal out of the domain; $\lvert w\rvert/\sqrt{P/\rho}$ for IG, $\lvert w\rvert/\sqrt{P_{nn}/\rho}$ for AG), another each time that largest value is more than 10 times that of the last line, and at the end of a standalone run the stages each such face let particles in (under MPI the rank that owns the block prints its lines, at once, and rank 0 the end lines; inside hydra only the first-inflow and 10-times lines print, not the end lines, since hydra never runs ICE's end of run) |
 | `401` | Inlet, ratios to the gas | `krho kV alpha beta kT rp` | See below |
 | `402` | Inlet, absolute | `gp v alpha beta Tp rp` | |
 | `403` | Inlet, speed as a ratio | `gp kV alpha beta Tp rp` | |

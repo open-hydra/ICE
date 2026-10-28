@@ -206,6 +206,11 @@ ice_add_fast_script(IniError fast/ini-error "fast;implementation")
 # inward normal, a 401's speed signed by the gas entering, one `normal` with one number refused
 ice_add_fast_script(InletDirection fast/inlet-direction "fast;implementation;bc")
 
+# Particles entering through extrapolation faces (400) are reported: a line at the first such stage of a face
+# of a block, with the level, and its stages at the end of the run; no line where nothing enters, where the
+# cells at the face are empty (below rho_empty) or where the inflow is round-off (MK, IG, AG, 2 threads, 2 levels)
+ice_add_fast_script(Inflow400 fast/inflow-400 "fast;implementation;bc")
+
 # Between mirror faces one cell apart (a thin plane layer, a 1-D tube) the
 # components odd across them are set to zero and not integrated: they stay
 # exactly zero, and a wedge whose side faces do not carry 200 is refused.

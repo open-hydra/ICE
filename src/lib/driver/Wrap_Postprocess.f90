@@ -27,6 +27,7 @@ contains
     use ICE_Read_Ini,          only: Read_Inifile_Runtime
     use ICE_Mod_MPI,           only: mpi_is_root
     use ICE_Mod_Timers,        only: timer_report, timer_summary
+    use ICE_Mod_Inflow400,     only: report_400_inflow
     implicit none
     type(ICE_simulation_type), intent(inout) :: simulation
     character(llen) :: solfile, bckfile, dgsfile
@@ -59,6 +60,10 @@ contains
       ! The last window, before the final write so that the I/O stays out of
       ! it. Collective, so every rank calls it.
       call timer_report(simulation%domain(1)%iter)
+
+      ! The 400 faces through which particles entered, over the run. Collective, so every
+      ! rank calls it.
+      call report_400_inflow(simulation%domain(1)%nb)
 
       if (mpi_is_root) then
         write(obj_io%unitRES, trim(obj_io%unitRES_format)) obj_sim_param%iter_general, &

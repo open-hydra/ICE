@@ -23,6 +23,7 @@ contains
     use ICE_Lib_IRS,        only: residual_smoothing
     use ICE_Mod_Diagnostic, only: residual_norm
     use ICE_Mod_MPI,        only: is_local_block, mpi_allreduce_min_r8
+    use ICE_Mod_Inflow400,  only: count_400_inflow
     use ICE_Mod_Timers,     only: timer_source_begin, timer_source_end,   &
                                   timer_flux_begin,   timer_flux_end,     &
                                   timer_halo_begin,   timer_halo_end,     &
@@ -115,6 +116,9 @@ contains
         call fill_second_ghost(grid, p)
         call timer_region_end(TR_GHOST2)
         call timer_halo_end()
+
+        !> Particles entering through extrapolation faces (400): counted, the flux unchanged
+        call count_400_inflow(grid, p)
 
         !> The shock-detector weights of this stage, before any face reads them: the
         !  boundary fluxes as well as the interior ones. Timed as flux.
