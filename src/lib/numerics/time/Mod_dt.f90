@@ -47,7 +47,6 @@ contains
         do i = merge(i1, 1, k == k1 .and. j == j1), merge(i2, grid%blk(b)%dim(1), k == k2 .and. j == j2)
             grid%blk(b)%cond_phase(p)%dt(i,j,k) = 1e+5
             call compute_dt_ (grid%blk(b)%cond_phase(p)%prim(:,i,j,k), &
-                              grid%blk(b)%dl(i,j,k)%c,                 &
                               grid%blk(b)%M(i,j,k)%c,                  &
                               grid%blk(b)%cond_phase(p)%dt(i,j,k))
             grid%blk(b)%cond_phase(p)%dt(i,j,k) = grid%blk(b)%cond_phase(p)%dt(i,j,k) * cfl
@@ -75,7 +74,6 @@ contains
         grid%blk(b)%cond_phase(p)%dt(i,j,k) = 1e+5
 
         call compute_dt_ (grid%blk(b)%cond_phase(p)%prim(:,i,j,k), &
-                          grid%blk(b)%dl(i,j,k)%c,                 &
                           grid%blk(b)%M(i,j,k)%c,                  &
                           grid%blk(b)%cond_phase(p)%dt(i,j,k))
 
@@ -114,27 +112,35 @@ contains
   end subroutine compute_dt    
   
   
-  subroutine compute_dt_ (prim, length, tensor, dt)
+  !> The step of a cell, one rule over the directions the mesh resolves:
+  !>   1/dt = sum_d ( |u . grad xi_d| + a_d |grad xi_d| ),  d = 1, ..., ndir,
+  !> with grad xi_d the row d of the metric tensor, normal to the d faces with the modulus of the
+  !> inverse width of the cell across them (the edge of a skewed cell is longer), and a_d the signal
+  !> speed of the closure along it. A scheme that is not split by direction needs the sum of the
+  !> direction limits, not the smallest of them. The directions of a single cell add no limit: their
+  !> faces give a mode only to the components odd across mirror faces, which setup_freeze does not
+  !> integrate (it warns where the faces are not mirror planes). With the linearised MUSCL scheme
+  !> (the van Leer, van Albada and MC slopes in smooth flow) the rule is stable for cfl <= 1 with RK2
+  !> (Heun) and cfl <= 1.17 with RK3. The caller applies the cfl factor, the ramp and the ceilings; a
+  !> cell with nothing to carry (rate 0) keeps the dt it was given.
+  subroutine compute_dt_ (prim, tensor, dt)
     use ICE_Lib_Model
+    use ICE_Global_m, only: ndir
     implicit none
     real(kind=R8), dimension(:),   intent(in)    :: prim
-    real(kind=R8), dimension(:),   intent(in)    :: length
     real(kind=R8), dimension(:,:), intent(in)    :: tensor
     real(kind=R8),                 intent(inout) :: dt
-    
+
     integer(kind=I4) :: d
-    real(kind=R8)    :: versor(3)
-    real(kind=R8)    :: speed, sound, dtd
+    real(kind=R8)    :: versor(3), gn, rate
 
-    do d = 1, 3
-      versor = tensor(d,:) / norm2 ( tensor(d,:) )
-      speed  = abs( dot_product (prim(2:4), versor) )
-      sound  = wavespeed_make(prim, versor)
-      
-      dtd = length(d) / (speed + sound)
-      dt = min (dt,dtd)
-
-    enddo    
+    rate = 0._R8
+    do d = 1, ndir
+      gn     = norm2 ( tensor(d,:) )
+      versor = tensor(d,:) / gn
+      rate   = rate + ( abs( dot_product (prim(2:4), versor) ) + wavespeed_make(prim, versor) ) * gn
+    enddo
+    if (rate > 0._R8) dt = min (dt, 1._R8/rate)
 
   end subroutine compute_dt_
 

@@ -100,6 +100,7 @@ the least work so far. At startup it prints how even the split is:
 ```
   MPI partition: 4 blocks over 2 ranks, balance 100.0% of ideal
   MPI halo: 400 cells exchanged per ghost fill
+  MPI halo: 100 connection faces whose flux crosses ranks
 ```
 
 - A block is never split, so ranks beyond the number of blocks sit idle. To use more
@@ -107,7 +108,9 @@ the least work so far. At startup it prints how even the split is:
 - Every rank reads the whole mesh and solution, and updates only its own blocks. Before
   each ghost-cell fill — that is, once per Runge-Kutta stage — the interior cells that
   a connection (`101`/`201`) or chimera (`102`) face reads from a block owned by
-  another rank are sent to it.
+  another rank are sent to it. The flux through a connection face is computed once, by
+  the rank of one of its two blocks, and sent to the rank of the other, which first sends
+  the shock-detector weight of its cell.
 - Rank 0 gathers the blocks and writes the output files.
 
 The result does not depend on the number of ranks: the solution is bit-for-bit the same
@@ -130,7 +133,7 @@ independent — a case may be given in Tecplot ASCII and written in VTK.
 
 The file holds the node coordinates followed by the primitive variables of every
 family, cell-centred, named `rho_p1`, `u_p1`, … `n_p1`, `rho_p2`, …, a solidifying family adding `f_p1` and
-`chi_p1` after `n_p1` (a probe takes them as `f_1` and `chi_1`). The solution time
+`chi_p1` after `n_p1` (a probe takes the same names). The solution time
 is recorded in the zone header; in steady-state mode it carries the iteration count
 instead, negated.
 
@@ -147,6 +150,15 @@ Set `newrun = false`. ICE then reads its initial state from `OUTPUT/part-field.*
 instead of `INPUT/part-ic.*`, picks up the simulation time from the zone header, and
 continues appending to the residual history. The restart file is a solution ICE wrote
 itself, so it is `sol-format` — not `ic-format` — that names it.
+
+A run that went on past the solution the restart reads (it stopped after its last
+output) left in the residual history and in the probe files rows that the restart writes
+again. From a `tecplot ascii` solution the restart drops them first: a steady restart the
+rows of later iterations, a time-accurate one the residual rows and the time-based probe
+rows of later times (the iteration rows of a probe stay: a time-accurate restart counts
+its iterations from 0). A last row cut in the middle goes too, and a file whose last line
+has no newline gets one. From the other formats, whose solution time ICE does not read
+back, nothing is dropped: remove those rows by hand, and end the file with a newline.
 
 With `sol-overwrite = false` the solutions form a numbered series; restarting from a
 particular one means renaming it back to `part-field`.
@@ -167,11 +179,27 @@ dtime          = 1e-4
 ```
 
 Give either `position` (physical coordinates, and ICE finds the nearest cell) or
-`index-position` as `b i j k`. `dtime` and `diter` set how often the probe samples.
+`index-position` as `b i j k`; an `index-position` that is not a cell of the mesh stops
+the run. `dtime` and `diter` set how often the probe samples: a row every `diter`
+iterations of the global count (the first column of the residual history), written on the
+finest grid level, and a row at each multiple of `dtime` of physical time, from the first,
+with the time in its first column.
+
+The variables of family `n` are those of the solution files, `rho_p<n>`, `u_p<n>`,
+`v_p<n>`, `w_p<n>`, `T_p<n>`, `n_p<n>`, and `f_p<n>`, `chi_p<n>` for a solidifying family;
+the same names without the `p` (`rho_<n>`, …) are accepted too. Any other name stops the
+run at set-up.
+
+A new run replaces the probe files; a restart appends to them, after the rows written past
+its solution are dropped (see [Restarting](#restarting)), and creates any that are
+missing (for example a probe added before the restart).
 
 ## Re-steering a running simulation
 
 If `ini-diter` is set, ICE re-reads `input.ini` every that many iterations, so
-thresholds and output frequencies can be changed while the run is in progress. Values
-that are consumed once at setup — the closures, the mesh, the scheme, the materials and
-their properties — are not affected.
+thresholds (the iteration budgets included) and output frequencies can be changed while
+the run is in progress. Values that are consumed once at setup — the mesh, the scheme,
+the materials and their properties — are not affected. An edit with an error (a value
+that breaks its rule, a changed `levels` or `closure`, a file saved half-written) is not
+taken by default: ICE warns and the run keeps every value it had; with
+`ini-error = stop` it stops instead (see [Re-reading at runtime](input.md#re-reading-at-runtime)).

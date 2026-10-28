@@ -22,7 +22,7 @@ then keep a stored reference so a change is caught.
 
 | Test | Dim | Closures | What it exercises | Compared against | Cases |
 |---|---|---|---|---|---|
-| [Crossing Jets](crossing-jets.md) | 2D | MK, IG, AG | Free streaming, inlets, how each closure handles crossing streams | Exact free-streaming solution | `Doisneau/MK`, `Doisneau/IG`, `Doisneau/AG` |
+| [Crossing Jets](crossing-jets.md) | 2D | MK, IG, AG | Free streaming, inlets, how each closure handles crossing streams | Exact free-streaming solution (IG, AG) and sticky merger (MK) | `Doisneau/MK`, `Doisneau/IG`, `Doisneau/AG` |
 | [Chimera Overset](chimera.md) | 2D | IG | Overset interpolation between overlapping non-matching blocks | The same case on a single block, plus a matched-resolution control | `Doisneau/IG-chimera` |
 | [Multi-block and MPI](multiblock-mpi.md) | 2D | IG | Block connections and the rank decomposition | The single block; and 1 to 4 ranks against each other | `Doisneau/IG-split4` |
 | [Berthon Riemann Problems](berthon.md) | 1D | AG | Shocks, contacts and rarefactions of the Gaussian system | Analytical wave patterns | `Berthon/SCS`, `Berthon/RCS`, `Berthon/RCR` |

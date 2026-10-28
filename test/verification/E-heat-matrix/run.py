@@ -92,9 +92,9 @@ def main():
 
     # --- Constant slip: JAXA4 against the exact exponential -------------------------
     # The particles keep u = 0, so Nu is frozen at Re = 67, Ma = 0.029; the same law
-    # with 0.645 in place of 0.654 lands 3.5e-3 of the gap away at T_CONST. RK2 at the
-    # default dt-max 1e-4 (dt/tau = 0.0115) leaves (dt/tau)^2 (t/tau) exp(-t/tau)/6 = 8e-6,
-    # so 3e-4 is about 40 times the time error and 1/12 of that signal.
+    # with 0.645 in place of 0.654 lands 3.4e-3 of the gap away at T_CONST. RK2 at the
+    # default dt-max 1e-4 (dt/tau = 0.0110) leaves (dt/tau)^2 (t/tau) exp(-t/tau)/6 = 7e-6,
+    # so 3e-4 is about 40 times the time error and 1/11 of that signal.
     Re = 2.0 * ph.rho_g * ph.rp * ph.ug / ph.mu
     Ma = ph.ug / ph.sound
     tau = ph.tau_thermal * 2.0 / nusselt('JAXA4', Re, ph.Pr, Ma)

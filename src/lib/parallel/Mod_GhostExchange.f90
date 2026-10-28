@@ -46,11 +46,37 @@ module ICE_Mod_GhostExchange
     type(rank_group_type), allocatable :: send_groups(:), recv_groups(:)
     real(R8), allocatable :: send_buf(:), recv_buf(:)
     integer,  allocatable :: send_req(:), recv_req(:)  !< Persistent requests
+    integer,  allocatable :: stats(:,:)                !< Statuses of their waits (no MPI_STATUSES_IGNORE)
     logical :: persistent_init = .false.
+    !> The connection faces whose two records lie in blocks of different ranks: the rank of the owner
+    !> record sends the face's flux (ncond values) to the rank of the partner (exchange_conn_flux).
+    !> Face numbers (bc%cf), grouped by remote rank, table order inside a group.
+    integer :: cf_n_send = 0, cf_n_recv = 0
+    integer, allocatable :: cf_send(:), cf_recv(:)
+    integer :: cf_n_send_ranks = 0, cf_n_recv_ranks = 0
+    type(rank_group_type), allocatable :: cf_send_groups(:), cf_recv_groups(:)
+    real(R8), allocatable :: cf_send_buf(:), cf_recv_buf(:)
+    integer,  allocatable :: cf_send_req(:), cf_recv_req(:), cf_stats(:,:)
+    logical :: cf_persistent_init = .false.
+    !> The same faces the other way, before the owner pass (exchange_conn_beta): the partner's rank
+    !> sends its cell's detector weight (one value per face, cf_recv's faces) to the owner's rank,
+    !> which receives it for cf_send's faces.
+    real(R8), allocatable :: cb_send_buf(:), cb_recv_buf(:)
+    integer,  allocatable :: cb_send_req(:), cb_recv_req(:)
     logical :: built = .false.
   end type ghost_schedule_type
 
+  !> Message tags, within 32767, the least MPI_TAG_UB the MPI standard allows. The
+  !> halo exchange of family p uses halo_tag + p, its connection-face fluxes
+  !> conn_tag + p and the partner cells' weights cbeta_tag + p. The gathers and the scatter of the
+  !> output use io_tag for every block: each receive names its source rank, and both
+  !> sides post the messages of a pair of ranks in increasing block order, which MPI
+  !> matches in the order they were started (MPI 4.1, Sec. 3.7.4), so the k-th
+  !> receive from a rank takes the k-th block that rank sends.
   integer, parameter :: halo_tag = 7101
+  integer, parameter :: io_tag   = 7100
+  integer, parameter :: conn_tag = 7600
+  integer, parameter :: cbeta_tag = 7700
 
   !> One schedule per (level, family): a stage of family p fills only p's ghosts,
   !> so only p's cells cross. ghost_sched points at the one being used.
@@ -64,6 +90,8 @@ module ICE_Mod_GhostExchange
   public :: select_ghost_level
   public :: cleanup_ghost_schedule
   public :: exchange_ghost_prim
+  public :: exchange_conn_flux
+  public :: exchange_conn_beta
   public :: gather_prim_to_root
   public :: gather_diagnostic_to_root
   public :: scatter_prim_from_root
@@ -122,8 +150,8 @@ contains
       deallocate(pos)
     end block
 
-    ! One list of boundary cells per family, each cell with its records in the
-    ! order of the table. compute_bound then accumulates a cell's boundary
+    ! One list of boundary cells per family, each cell with its records in
+    ! face order. compute_bound then accumulates a cell's boundary
     ! fluxes from one thread in one fixed order: an edge or corner cell carries
     ! two or three records, and (a+b)+c is not (a+c)+b.
     if (allocated(grid%bcells)) deallocate(grid%bcells)
@@ -132,15 +160,58 @@ contains
       call collect_boundary_cells(grid, i, grid%bcells(i))
     end do
 
-    ! With thread groups, both lists again by the group owning each record's block
+    ! The connection faces whose flux this rank computes, one per face (compute_bound)
+    if (.not. allocated(grid%conn)) allocate(grid%conn(ngroups))
+    do i = 1, ngroups
+      call collect_owner_records(grid, i, grid%conn(i))
+    end do
+
+    ! With thread groups, the lists again by the group owning each record's block
     if (n_tgroups > 1) call build_group_order(grid)
 
   end subroutine build_local_bc_index
 
 
-  !> The records of local_bc_grp and the boundary cells of every family, re-ordered
-  !> by the thread group owning their block (stable: table order inside a group), so a
-  !> group's threads sweep only their own blocks' ghosts and boundary fluxes.
+  !> The owner records of family p's connection faces in this rank's blocks, in table order, and
+  !> the flux and the partner cell's weight of every face of the family: a face keeps its number on
+  !> every rank, and a rank holds the faces it computes and those it receives (exchange_conn_flux,
+  !> exchange_conn_beta).
+  subroutine collect_owner_records(grid, p, conn)
+    use ICE_Advanced_Types_m
+    implicit none
+    type(ICE_domain_type),     intent(in)    :: grid
+    integer,                   intent(in)    :: p
+    type(ICE_conn_faces_type), intent(inout) :: conn
+    integer :: ii, n, k
+
+    if (allocated(conn%F))   deallocate(conn%F)
+    if (allocated(conn%bp))  deallocate(conn%bp)
+    if (allocated(conn%own)) deallocate(conn%own)
+    allocate(conn%F(ncond(p), max(conn%n, 1)), conn%bp(max(conn%n, 1)))
+    conn%F = 0._R8
+    conn%bp = 1._R8
+    k = 0
+    do ii = grid%grp_first(p), grid%grp_first(p+1) - 1
+      n = grid%local_bc_grp(ii)
+      if ((grid%bc(n)%type == 101 .or. grid%bc(n)%type == 201) .and. grid%bc(n)%owner) k = k + 1
+    end do
+    conn%nown = k
+    allocate(conn%own(max(k, 1)))
+    k = 0
+    do ii = grid%grp_first(p), grid%grp_first(p+1) - 1
+      n = grid%local_bc_grp(ii)
+      if ((grid%bc(n)%type == 101 .or. grid%bc(n)%type == 201) .and. grid%bc(n)%owner) then
+        k = k + 1
+        conn%own(k) = n
+      end if
+    end do
+  end subroutine collect_owner_records
+
+
+  !> The records of local_bc_grp, the boundary cells and the connection owner records of
+  !> every family, re-ordered by the thread group owning their block (stable: table order
+  !> inside a group), so a group's threads sweep only their own blocks' ghosts and
+  !> boundary fluxes.
   subroutine build_group_order(grid)
     use ICE_Global_m,         only: ngroups
     use ICE_Advanced_Types_m
@@ -148,6 +219,7 @@ contains
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer :: p, g, ii, c, pos
+    integer, allocatable :: own(:)
 
     if (allocated(grid%tg_bc))       deallocate(grid%tg_bc)
     if (allocated(grid%tg_bc_first)) deallocate(grid%tg_bc_first)
@@ -182,11 +254,30 @@ contains
       cells%tg_first(n_tgroups) = pos
       end associate
     end do
+
+    do p = 1, ngroups
+      associate (cn => grid%conn(p))
+      if (allocated(cn%tg_first)) deallocate(cn%tg_first)
+      allocate(cn%tg_first(0:n_tgroups), own(max(cn%nown, 1)))
+      pos = 1
+      do g = 0, n_tgroups - 1
+        cn%tg_first(g) = pos
+        do ii = 1, cn%nown
+          if (block_group(grid%bc(cn%own(ii))%b) /= g) cycle
+          own(pos) = cn%own(ii)
+          pos = pos + 1
+        end do
+      end do
+      cn%tg_first(n_tgroups) = pos
+      cn%own(1:cn%nown) = own(1:cn%nown)
+      deallocate(own)
+      end associate
+    end do
   end subroutine build_group_order
 
 
   !> The boundary cells of family p on this rank, block by block in cell order,
-  !> each with its records in table order. Type-0 records (no condition) are
+  !> each with its records in face order. Type-0 records (no condition) are
   !> left out. Linear in the records and the cells of the owned blocks.
   subroutine collect_boundary_cells(grid, p, cells)
     use ICE_Advanced_Types_m
@@ -195,7 +286,7 @@ contains
     integer,                 intent(in)    :: p
     type(ICE_bc_cells_type), intent(inout) :: cells
     integer, allocatable :: head(:,:,:), tail(:,:,:), next(:)
-    integer :: b, nn, n, i, j, k, c, r, ncell, nrec
+    integer :: b, nn, n, i, j, k, c, r, ncell, nrec, m, l
 
     ! Pass 1 counts, pass 2 fills; the chains are rebuilt per block each pass.
     nrec = 0 ; ncell = 0
@@ -249,6 +340,18 @@ contains
           cells%rec(r) = grid%local_bc_idx(nn)
           nn = next(nn)
         end do
+        ! The cell's records by face, stably (at most six): a file that lists them in
+        ! another order gives the sum of a file that lists them by face
+        do m = cells%first(c) + 1, r
+          n = cells%rec(m)
+          l = m - 1
+          do while (l >= cells%first(c))
+            if (grid%bc(cells%rec(l))%f <= grid%bc(n)%f) exit
+            cells%rec(l+1) = cells%rec(l)
+            l = l - 1
+          end do
+          cells%rec(l+1) = n
+        end do
       end do ; end do ; end do
       deallocate(head, tail)
     end do
@@ -270,7 +373,7 @@ contains
     integer :: p
 #ifdef USE_MPI
     integer, allocatable :: send_per_rank(:), recv_per_rank(:), send_pos(:), recv_pos(:)
-    integer :: ns_total, ndup
+    integer :: ns_total, ndup, nf_total
 #endif
 
     if (.not. allocated(mg_sched)) allocate(mg_sched(max(1, obj_multigrid%MGL), ngroups))
@@ -288,7 +391,7 @@ contains
     end if
 
 #ifdef USE_MPI
-    ns_total = 0 ; ndup = 0
+    ns_total = 0 ; ndup = 0 ; nf_total = 0
     do p = 1, ngroups
       ghost_sched => mg_sched(level, p)
       ghost_sched%group = p
@@ -358,24 +461,33 @@ contains
 
         call init_persistent_requests()
 
-        ns = ghost_sched%n_send
-        call MPI_ALLREDUCE(MPI_IN_PLACE, ns, 1, MPI_INTEGER, MPI_SUM, ice_comm, ierr)
+        call MPI_ALLREDUCE(ghost_sched%n_send, ns, 1, MPI_INTEGER, MPI_SUM, ice_comm, ierr)
+        call check_mpi_error(ierr)
         ns_total = ns_total + ns
+
+        call build_conn_lists(p)
+        call MPI_ALLREDUCE(ghost_sched%cf_n_send, ns, 1, MPI_INTEGER, MPI_SUM, ice_comm, ierr)
+        call check_mpi_error(ierr)
+        nf_total = nf_total + ns
 
         deallocate(send_per_rank, recv_per_rank, expect, send_pos, recv_pos)
       end block
       ghost_sched%built = .true.
     end do
     ! The sum over the families: what a set-up fill exchanges; a stage of
-    ! family p exchanges p's share of it.
+    ! family p exchanges p's share of it. Sent from a copy: no MPI_IN_PLACE
+    ! (see mpi_allreduce_sum_r8_array).
     block
       use mpi
-      integer :: ierr
-      call MPI_ALLREDUCE(MPI_IN_PLACE, ndup, 1, MPI_INTEGER, MPI_SUM, ice_comm, ierr)
+      integer :: ierr, ndup_rank
+      ndup_rank = ndup
+      call MPI_ALLREDUCE(ndup_rank, ndup, 1, MPI_INTEGER, MPI_SUM, ice_comm, ierr)
+      call check_mpi_error(ierr)
     end block
     if (mpi_is_root) then
       write(*,'(A,I0,A)') '  MPI halo: ', ns_total, ' cells exchanged per ghost fill'
       if (ndup > 0) write(*,'(A,I0,A)') '  MPI halo: ', ndup, ' records that read a cell already sent, merged'
+      if (nf_total > 0) write(*,'(A,I0,A)') '  MPI halo: ', nf_total, ' connection faces whose flux crosses ranks'
     end if
     ghost_sched => mg_sched(level, 1)
 #endif
@@ -447,6 +559,118 @@ contains
       end do
       n = w
     end subroutine unique_cells
+
+
+    !> The connection faces of family p whose owner record and partner record lie in blocks of
+    !> different ranks: the owner's rank sends the face's flux to the partner's. Pass 1 counts per
+    !> rank, pass 2 places the face numbers grouped by rank, table order inside a group; every rank
+    !> scans the same table in the same order, so both ends of a message list the same faces.
+    subroutine build_conn_lists(p)
+      use mpi
+      integer, intent(in) :: p
+      integer, allocatable :: ns(:), nr(:), spos(:), rpos(:), expect(:)
+      integer :: pass, n, q, ro, rp, r, nv, ierr
+
+      allocate(ns(0:mpi_size_-1), nr(0:mpi_size_-1), spos(0:mpi_size_-1), rpos(0:mpi_size_-1), &
+               expect(0:mpi_size_-1))
+      do pass = 1, 2
+        ns = 0 ; nr = 0
+        do n = 1, size(grid%bc)
+          if (grid%bc(n)%p /= p) cycle
+          if (grid%bc(n)%type /= 101 .and. grid%bc(n)%type /= 201) cycle
+          if (.not. grid%bc(n)%owner) cycle
+          q  = grid%bc(n)%partner
+          ro = block_owner(grid%bc(n)%b)
+          rp = block_owner(grid%bc(q)%b)
+          if (ro == rp) cycle
+          if (ro == mpi_rank_) then
+            ns(rp) = ns(rp) + 1
+            if (pass == 2) ghost_sched%cf_send(spos(rp) + ns(rp)) = grid%bc(n)%cf
+          else if (rp == mpi_rank_) then
+            nr(ro) = nr(ro) + 1
+            if (pass == 2) ghost_sched%cf_recv(rpos(ro) + nr(ro)) = grid%bc(n)%cf
+          end if
+        end do
+        if (pass == 1) then
+          ghost_sched%cf_n_send = sum(ns) ; ghost_sched%cf_n_recv = sum(nr)
+          allocate(ghost_sched%cf_send(max(1, ghost_sched%cf_n_send)), ghost_sched%cf_recv(max(1, ghost_sched%cf_n_recv)))
+          spos(0) = 0 ; rpos(0) = 0
+          do r = 1, mpi_size_-1
+            spos(r) = spos(r-1) + ns(r-1)
+            rpos(r) = rpos(r-1) + nr(r-1)
+          end do
+        end if
+      end do
+
+      ! Each rank must receive exactly the faces its neighbours send it
+      call MPI_ALLTOALL(ns, 1, MPI_INTEGER, expect, 1, MPI_INTEGER, ice_comm, ierr)
+      call check_mpi_error(ierr)
+      if (count(expect /= nr) > 0) call mpi_abort_all('build_ghost_schedule: connection-face send and receive lists disagree')
+
+      nv = ncond(p)
+      call face_groups(ns, nv, ghost_sched%cf_send_groups, ghost_sched%cf_n_send_ranks)
+      call face_groups(nr, nv, ghost_sched%cf_recv_groups, ghost_sched%cf_n_recv_ranks)
+      allocate(ghost_sched%cf_send_buf(max(1, nv*ghost_sched%cf_n_send)))
+      allocate(ghost_sched%cf_recv_buf(max(1, nv*ghost_sched%cf_n_recv)))
+      allocate(ghost_sched%cf_send_req(max(1, ghost_sched%cf_n_send_ranks)))
+      allocate(ghost_sched%cf_recv_req(max(1, ghost_sched%cf_n_recv_ranks)))
+      allocate(ghost_sched%cf_stats(MPI_STATUS_SIZE, max(1, ghost_sched%cf_n_send_ranks, ghost_sched%cf_n_recv_ranks)))
+      do r = 1, ghost_sched%cf_n_recv_ranks
+        associate (g => ghost_sched%cf_recv_groups(r))
+          call MPI_RECV_INIT(ghost_sched%cf_recv_buf(g%off+1), g%len, MPI_DOUBLE_PRECISION, &
+                             g%rank, conn_tag + p, ice_comm, ghost_sched%cf_recv_req(r), ierr)
+          call check_mpi_error(ierr)
+        end associate
+      end do
+      do r = 1, ghost_sched%cf_n_send_ranks
+        associate (g => ghost_sched%cf_send_groups(r))
+          call MPI_SEND_INIT(ghost_sched%cf_send_buf(g%off+1), g%len, MPI_DOUBLE_PRECISION, &
+                             g%rank, conn_tag + p, ice_comm, ghost_sched%cf_send_req(r), ierr)
+          call check_mpi_error(ierr)
+        end associate
+      end do
+      ! The partner cells' weights take the same messages the other way, one value per face: the owner's
+      ! rank receives on its send groups, the partner's rank sends on its receive groups
+      allocate(ghost_sched%cb_send_buf(max(1, ghost_sched%cf_n_recv)), ghost_sched%cb_recv_buf(max(1, ghost_sched%cf_n_send)))
+      allocate(ghost_sched%cb_send_req(max(1, ghost_sched%cf_n_recv_ranks)))
+      allocate(ghost_sched%cb_recv_req(max(1, ghost_sched%cf_n_send_ranks)))
+      do r = 1, ghost_sched%cf_n_send_ranks
+        associate (g => ghost_sched%cf_send_groups(r))
+          call MPI_RECV_INIT(ghost_sched%cb_recv_buf(g%first), g%count, MPI_DOUBLE_PRECISION, &
+                             g%rank, cbeta_tag + p, ice_comm, ghost_sched%cb_recv_req(r), ierr)
+          call check_mpi_error(ierr)
+        end associate
+      end do
+      do r = 1, ghost_sched%cf_n_recv_ranks
+        associate (g => ghost_sched%cf_recv_groups(r))
+          call MPI_SEND_INIT(ghost_sched%cb_send_buf(g%first), g%count, MPI_DOUBLE_PRECISION, &
+                             g%rank, cbeta_tag + p, ice_comm, ghost_sched%cb_send_req(r), ierr)
+          call check_mpi_error(ierr)
+        end associate
+      end do
+      ghost_sched%cf_persistent_init = .true.
+      deallocate(ns, nr, spos, rpos, expect)
+    end subroutine build_conn_lists
+
+
+    !> One message per remote rank with faces to exchange: per_rank(r) faces of nv values each,
+    !> in rank order, as build_conn_lists placed them.
+    subroutine face_groups(per_rank, nv, groups, n_groups)
+      integer, intent(in) :: per_rank(0:), nv
+      type(rank_group_type), allocatable, intent(out) :: groups(:)
+      integer, intent(out) :: n_groups
+      integer :: r, g, first
+
+      n_groups = count(per_rank > 0)
+      allocate(groups(n_groups))
+      g = 0 ; first = 1
+      do r = 0, size(per_rank) - 1
+        if (per_rank(r) == 0) cycle
+        g = g + 1
+        groups(g) = rank_group_type(r, first, per_rank(r), (first - 1) * nv, per_rank(r) * nv)
+        first = first + per_rank(r)
+      end do
+    end subroutine face_groups
 #endif
 
   end subroutine build_ghost_schedule
@@ -547,7 +771,7 @@ contains
 
       call timer_region_begin(TR_WAIT)
       if (ghost_sched%n_recv_ranks > 0) then
-        call MPI_WAITALL(ghost_sched%n_recv_ranks, ghost_sched%recv_req, MPI_STATUSES_IGNORE, ierr)
+        call MPI_WAITALL(ghost_sched%n_recv_ranks, ghost_sched%recv_req, ghost_sched%stats, ierr)
         call check_mpi_error(ierr)
       end if
       call timer_region_end(TR_WAIT)
@@ -567,13 +791,106 @@ contains
 
       call timer_region_begin(TR_WAIT)
       if (ghost_sched%n_send_ranks > 0) then
-        call MPI_WAITALL(ghost_sched%n_send_ranks, ghost_sched%send_req, MPI_STATUSES_IGNORE, ierr)
+        call MPI_WAITALL(ghost_sched%n_send_ranks, ghost_sched%send_req, ghost_sched%stats, ierr)
         call check_mpi_error(ierr)
       end if
       call timer_region_end(TR_WAIT)
     end block
 #endif
   end subroutine exchange_family
+
+
+  !> The connection-face fluxes of family p whose owner record lies on another rank than its
+  !> partner: the owner's rank sends the flux its owner pass computed (compute_bound), the
+  !> partner's rank writes it into its copy of the face, where the partner record reads it.
+  !> Call on every rank, outside a parallel region, between that pass and the boundary cells,
+  !> on the level select_ghost_level chose.
+  subroutine exchange_conn_flux(grid, p)
+    use ICE_Advanced_Types_m
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer, intent(in)                  :: p
+
+    if (mpi_size_ <= 1) return
+    ghost_sched => mg_sched(level_cur, p)
+#ifdef USE_MPI
+    block
+      use mpi
+      integer :: n, nv, ierr
+
+      nv = ncond(p)
+      if (ghost_sched%cf_n_recv_ranks > 0) then
+        call MPI_STARTALL(ghost_sched%cf_n_recv_ranks, ghost_sched%cf_recv_req, ierr)
+        call check_mpi_error(ierr)
+      end if
+      do n = 1, ghost_sched%cf_n_send
+        ghost_sched%cf_send_buf((n-1)*nv+1:n*nv) = grid%conn(p)%F(1:nv, ghost_sched%cf_send(n))
+      end do
+      if (ghost_sched%cf_n_send_ranks > 0) then
+        call MPI_STARTALL(ghost_sched%cf_n_send_ranks, ghost_sched%cf_send_req, ierr)
+        call check_mpi_error(ierr)
+      end if
+      if (ghost_sched%cf_n_recv_ranks > 0) then
+        call MPI_WAITALL(ghost_sched%cf_n_recv_ranks, ghost_sched%cf_recv_req, ghost_sched%cf_stats, ierr)
+        call check_mpi_error(ierr)
+      end if
+      do n = 1, ghost_sched%cf_n_recv
+        grid%conn(p)%F(1:nv, ghost_sched%cf_recv(n)) = ghost_sched%cf_recv_buf((n-1)*nv+1:n*nv)
+      end do
+      if (ghost_sched%cf_n_send_ranks > 0) then
+        call MPI_WAITALL(ghost_sched%cf_n_send_ranks, ghost_sched%cf_send_req, ghost_sched%cf_stats, ierr)
+        call check_mpi_error(ierr)
+      end if
+    end block
+#endif
+    ghost_sched => mg_sched(level_cur, 1)
+  end subroutine exchange_conn_flux
+
+
+  !> The detector weights of family p's partner cells that the owner pass needs from another rank:
+  !> the rank of a face's partner record sends the weight of its cell, computed by compute_beta in
+  !> this stage, to the rank of the owner record, which keeps it in conn(p)%bp. Call on every rank,
+  !> outside a parallel region, after compute_beta and before the owner pass (compute_bound).
+  subroutine exchange_conn_beta(grid, p)
+    use ICE_Advanced_Types_m
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer, intent(in)                  :: p
+
+    if (mpi_size_ <= 1) return
+    ghost_sched => mg_sched(level_cur, p)
+#ifdef USE_MPI
+    block
+      use mpi
+      integer :: n, q, ierr
+
+      if (ghost_sched%cf_n_send_ranks > 0) then
+        call MPI_STARTALL(ghost_sched%cf_n_send_ranks, ghost_sched%cb_recv_req, ierr)
+        call check_mpi_error(ierr)
+      end if
+      do n = 1, ghost_sched%cf_n_recv
+        q = grid%conn(p)%prt(ghost_sched%cf_recv(n))
+        ghost_sched%cb_send_buf(n) = grid%blk(grid%bc(q)%b)%cond_phase(p)%beta(grid%bc(q)%i, grid%bc(q)%j, grid%bc(q)%k)
+      end do
+      if (ghost_sched%cf_n_recv_ranks > 0) then
+        call MPI_STARTALL(ghost_sched%cf_n_recv_ranks, ghost_sched%cb_send_req, ierr)
+        call check_mpi_error(ierr)
+      end if
+      if (ghost_sched%cf_n_send_ranks > 0) then
+        call MPI_WAITALL(ghost_sched%cf_n_send_ranks, ghost_sched%cb_recv_req, ghost_sched%cf_stats, ierr)
+        call check_mpi_error(ierr)
+      end if
+      do n = 1, ghost_sched%cf_n_send
+        grid%conn(p)%bp(ghost_sched%cf_send(n)) = ghost_sched%cb_recv_buf(n)
+      end do
+      if (ghost_sched%cf_n_recv_ranks > 0) then
+        call MPI_WAITALL(ghost_sched%cf_n_recv_ranks, ghost_sched%cb_send_req, ghost_sched%cf_stats, ierr)
+        call check_mpi_error(ierr)
+      end if
+    end block
+#endif
+    ghost_sched => mg_sched(level_cur, 1)
+  end subroutine exchange_conn_beta
 
 
   !> How many of this rank's boundary records carry each type. The face mix is
@@ -666,7 +983,7 @@ contains
           if (.not. is_local_block(b)) then
             nreq = nreq + 1
             call MPI_IRECV(buf(blk_offset(b,1)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           block_owner(b), b, ice_comm, reqs(nreq), ierr)
+                           block_owner(b), io_tag, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -686,7 +1003,7 @@ contains
             end do
             nreq = nreq + 1
             call MPI_ISEND(buf(blk_offset(b,1)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           0, b, ice_comm, reqs(nreq), ierr)
+                           0, io_tag, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -777,7 +1094,7 @@ contains
           if (.not. is_local_block(b)) then
             nreq = nreq + 1
             call MPI_IRECV(buf(blk_offset(b,1)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           block_owner(b), b, ice_comm, reqs(nreq), ierr)
+                           block_owner(b), io_tag, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -802,7 +1119,7 @@ contains
             end do
             nreq = nreq + 1
             call MPI_ISEND(buf(blk_offset(b,1)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           0, b, ice_comm, reqs(nreq), ierr)
+                           0, io_tag, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -900,7 +1217,7 @@ contains
             end do
             nreq = nreq + 1
             call MPI_ISEND(buf(blk_offset(b)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           block_owner(b), b, ice_comm, reqs(nreq), ierr)
+                           block_owner(b), io_tag, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -910,7 +1227,7 @@ contains
           if (is_local_block(b)) then
             nreq = nreq + 1
             call MPI_IRECV(buf(blk_offset(b)+1), blk_ncells(b), MPI_DOUBLE_PRECISION, &
-                           0, b, ice_comm, reqs(nreq), ierr)
+                           0, io_tag, ice_comm, reqs(nreq), ierr)
             call check_mpi_error(ierr)
           end if
         end do
@@ -960,7 +1277,11 @@ contains
 
 
 #ifdef USE_MPI
-  !> Initialize one persistent receive and one persistent send per neighbour rank.
+  !> Initialize one persistent receive and one persistent send per neighbour rank,
+  !> and the statuses their waits fill. MPI_STATUSES_IGNORE, like MPI_IN_PLACE,
+  !> lives in a COMMON block of the mpi module, which -fno-underscoring renames
+  !> (see mpi_allreduce_sum_r8_array): the library would write the statuses
+  !> through an ordinary address.
   subroutine init_persistent_requests()
     use mpi
     implicit none
@@ -968,6 +1289,7 @@ contains
 
     allocate(ghost_sched%recv_req(max(ghost_sched%n_recv_ranks, 1)))
     allocate(ghost_sched%send_req(max(ghost_sched%n_send_ranks, 1)))
+    allocate(ghost_sched%stats(MPI_STATUS_SIZE, max(ghost_sched%n_recv_ranks, ghost_sched%n_send_ranks, 1)))
 
     do r = 1, ghost_sched%n_recv_ranks
       associate (g => ghost_sched%recv_groups(r))
@@ -995,6 +1317,17 @@ contains
     implicit none
     integer :: ierr, r
 
+    if (ghost_sched%cf_persistent_init) then
+      do r = 1, ghost_sched%cf_n_send_ranks
+        call MPI_REQUEST_FREE(ghost_sched%cf_send_req(r), ierr)
+        call MPI_REQUEST_FREE(ghost_sched%cb_recv_req(r), ierr)
+      end do
+      do r = 1, ghost_sched%cf_n_recv_ranks
+        call MPI_REQUEST_FREE(ghost_sched%cf_recv_req(r), ierr)
+        call MPI_REQUEST_FREE(ghost_sched%cb_send_req(r), ierr)
+      end do
+      ghost_sched%cf_persistent_init = .false.
+    end if
     if (.not. ghost_sched%persistent_init) return
     do r = 1, ghost_sched%n_send_ranks
       call MPI_REQUEST_FREE(ghost_sched%send_req(r), ierr)

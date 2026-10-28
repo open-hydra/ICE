@@ -6,8 +6,6 @@ module ICE_Mod_Diagnostic
   private
   public :: residual_norm, Write_Diagnostic
 
-  character(len=llen), private :: Dvarnames = '"rho_p" "rhou_p" "rhov_p" "rhow_p" "rhoe_p" "dt"'
-
 contains
 
 
@@ -83,6 +81,9 @@ contains
   end subroutine residual_sq
 
 
+  !> The residuals of rho, rho u, rho v, rho w and rho e and the local time step
+  !> of every family, one named column each (rho_p<n> ... dt_p<n>), in the
+  !> output buffer of the field.
   subroutine Write_Diagnostic(domain, IOfield, file)
     use ICE_Advanced_Types_m
     use ICE_Global_m
@@ -90,6 +91,7 @@ contains
     use ICE_IO_Solution,        only: io_extension
     use ICE_Mod_MPI,            only: mpi_is_root
     use ICE_Mod_GhostExchange,  only: gather_diagnostic_to_root, mpi_io_barrier
+    use IR_Precision,           only: str
     use strings,                only: parse
     use Lib_VTK
     use Lib_Tecplot
@@ -100,7 +102,10 @@ contains
     ! Local
     character(len=llen) :: path, localpath_vtk
     character(len=clen) :: format(2)
-    integer(kind=I4)    :: E_IO, b, p, nstart, nend
+    character(len=hlen) :: varnames, vtknames
+    character(len=8)    :: f
+    real(R8), allocatable :: full(:,:,:,:)
+    integer(kind=I4)    :: E_IO, b, p, c, nstart, nend, ndiag, nfield
 
     call gather_diagnostic_to_root(domain)
 
@@ -108,6 +113,14 @@ contains
 
       path = 'OUTPUT/'
       call parse(obj_io%sol_format, ' ', format)
+
+      ndiag = 6*ngroups
+      varnames = ''
+      do p = 1, ngroups
+        f = '_p'//trim(str(.true.,p))
+        varnames = trim(varnames)//' "rho'//trim(f)//'" "rhou'//trim(f)//'" "rhov'//trim(f)//'" "rhow'//trim(f)// &
+                   '" "rhoe'//trim(f)//'" "dt'//trim(f)//'"'
+      end do
 
       do b = 1, domain%nb
         nend = 0
@@ -135,22 +148,51 @@ contains
       select case(trim(format(1)))
       case('vtk')
         IOfield%vtk%format = trim(format(2))
+        ! The names become XML attributes (Name="..."): the quotes of the list go
+        vtknames = varnames
+        do c = 1, len_trim(vtknames)
+          if (vtknames(c:c) == '"') vtknames(c:c) = ' '
+        end do
+        ! The vtk writer writes every column the buffer holds, and the buffer of
+        ! the field has a column per field variable: it gets the diagnostic
+        ! columns only, then the field's count back (the field writer fills
+        ! every column at each write).
+        nfield = size(IOfield%block(1)%vars, 1)
+        call keep_columns(ndiag)
         localpath_vtk = trim(path)//'vtk/'
         call execute_command_line('mkdir -p '//trim(localpath_vtk))
         E_IO = vtk_write_structured_multiblock(orion=IOfield,            &
                  vtspath=trim(localpath_vtk)//trim(file),                &
                  vtmpath=trim(path)//trim(file),                         &
-                 varnames=Dvarnames, time=domain%time)
+                 varnames=vtknames, time=domain%time)
+        call keep_columns(nfield)
       case('tecplot')
         IOfield%tec%format = trim(format(2))
         E_IO = tec_write_structured_multiblock(orion=IOfield,            &
-                 varnames=Dvarnames, Nvars=6*ngroups,                    &
+                 varnames=varnames, Nvars=ndiag,                         &
                  filename=trim(path)//trim(file)//io_extension(format))
       end select
 
     end if
 
     call mpi_io_barrier()
+
+  contains
+
+    !> Every block of the buffer with n columns, the first of them kept.
+    subroutine keep_columns(n)
+      integer, intent(in) :: n
+      integer :: b, m
+
+      do b = 1, size(IOfield%block)
+        call move_alloc(IOfield%block(b)%vars, full)
+        allocate(IOfield%block(b)%vars(n, lbound(full,2):ubound(full,2), lbound(full,3):ubound(full,3), &
+                                          lbound(full,4):ubound(full,4)))
+        m = min(n, size(full, 1))
+        IOfield%block(b)%vars(1:m,:,:,:) = full(1:m,:,:,:)
+        deallocate(full)
+      end do
+    end subroutine keep_columns
 
   end subroutine Write_Diagnostic
 

@@ -36,7 +36,7 @@ module ICE_Mod_MPI
   public :: mpi_allreduce_sum_r8_array, mpi_allreduce_max_r8_array
   public :: mpi_reduce_sum_r8, mpi_reduce_sum_r8_array
   public :: mpi_allreduce_norm2
-  public :: mpi_bcast_logical, mpi_bcast_integer
+  public :: mpi_bcast_logical, mpi_bcast_integer, mpi_bcast_chars
   public :: mpi_abort_all
   public :: check_mpi_error
 
@@ -60,6 +60,7 @@ contains
       call check_mpi_error(ierr)
       if (provided < MPI_THREAD_FUNNELED) then
         write(*,'(A)') ' ERROR: MPI does not support the required threading level (MPI_THREAD_FUNNELED)'
+        call flush_output_units()
         call MPI_ABORT(MPI_COMM_WORLD, 1, ierr)
       end if
       mpi_init_here = .true.
@@ -266,26 +267,34 @@ contains
   end subroutine mpi_allreduce_max_r8
 
 
-  !> MPI_ALLREDUCE with MPI_SUM for an array of real(R8).
-  !> Works in-place: local_arr is overwritten with the global result.
+  !> MPI_ALLREDUCE with MPI_SUM for an array of real(R8): arr is overwritten
+  !> with the global result, sent from a copy. No MPI_IN_PLACE (nor any other
+  !> sentinel the mpi module keeps in a COMMON block: MPI_BOTTOM,
+  !> MPI_STATUS(ES)_IGNORE): with -fno-underscoring (cmake/SetFortranFlags.cmake)
+  !> gfortran names those blocks without the underscore of the library's, and
+  !> the library takes the sentinel for an ordinary buffer.
   subroutine mpi_allreduce_sum_r8_array(arr, n)
     integer, intent(in)     :: n
     real(R8), intent(inout) :: arr(n)
 #ifdef USE_MPI
     integer :: ierr
-    call MPI_ALLREDUCE(MPI_IN_PLACE, arr, n, MPI_DOUBLE_PRECISION, MPI_SUM, ice_comm, ierr)
+    real(R8), allocatable :: send(:)
+    send = arr
+    call MPI_ALLREDUCE(send, arr, n, MPI_DOUBLE_PRECISION, MPI_SUM, ice_comm, ierr)
     call check_mpi_error(ierr)
 #endif
   end subroutine mpi_allreduce_sum_r8_array
 
 
-  !> MPI_ALLREDUCE with MPI_MAX for an array of real(R8), in place.
+  !> MPI_ALLREDUCE with MPI_MAX for an array of real(R8), sent from a copy.
   subroutine mpi_allreduce_max_r8_array(arr, n)
     integer, intent(in)     :: n
     real(R8), intent(inout) :: arr(n)
 #ifdef USE_MPI
     integer :: ierr
-    call MPI_ALLREDUCE(MPI_IN_PLACE, arr, n, MPI_DOUBLE_PRECISION, MPI_MAX, ice_comm, ierr)
+    real(R8), allocatable :: send(:)
+    send = arr
+    call MPI_ALLREDUCE(send, arr, n, MPI_DOUBLE_PRECISION, MPI_MAX, ice_comm, ierr)
     call check_mpi_error(ierr)
 #endif
   end subroutine mpi_allreduce_max_r8_array
@@ -308,16 +317,16 @@ contains
   end function mpi_allreduce_norm2
 
 
-  !> MPI_REDUCE with MPI_SUM for a scalar real(R8) to root rank 0.
+  !> MPI_REDUCE with MPI_SUM for a scalar real(R8) to root rank 0, every rank
+  !> sending a copy (no MPI_IN_PLACE, and no buffer passed twice); val is left
+  !> as it is elsewhere, where the receive buffer is not significant.
   subroutine mpi_reduce_sum_r8(val)
     real(R8), intent(inout) :: val
 #ifdef USE_MPI
     integer :: ierr
-    if (mpi_rank_ == 0) then
-      call MPI_REDUCE(MPI_IN_PLACE, val, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, ice_comm, ierr)
-    else
-      call MPI_REDUCE(val, val, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, ice_comm, ierr)
-    end if
+    real(R8) :: send
+    send = val
+    call MPI_REDUCE(send, val, 1, MPI_DOUBLE_PRECISION, MPI_SUM, 0, ice_comm, ierr)
     call check_mpi_error(ierr)
 #endif
   end subroutine mpi_reduce_sum_r8
@@ -325,17 +334,16 @@ contains
 
   !> MPI_REDUCE with MPI_SUM for an array of real(R8) to root rank 0.
   !> Result is only valid on root. More efficient than ALLREDUCE when
-  !> only root needs the result (e.g. for residual output).
+  !> only root needs the result (e.g. for residual output). Every rank sends a
+  !> copy, as mpi_reduce_sum_r8.
   subroutine mpi_reduce_sum_r8_array(arr, n)
     integer, intent(in)     :: n
     real(R8), intent(inout) :: arr(n)
 #ifdef USE_MPI
     integer :: ierr
-    if (mpi_rank_ == 0) then
-      call MPI_REDUCE(MPI_IN_PLACE, arr, n, MPI_DOUBLE_PRECISION, MPI_SUM, 0, ice_comm, ierr)
-    else
-      call MPI_REDUCE(arr, arr, n, MPI_DOUBLE_PRECISION, MPI_SUM, 0, ice_comm, ierr)
-    end if
+    real(R8), allocatable :: send(:)
+    send = arr
+    call MPI_REDUCE(send, arr, n, MPI_DOUBLE_PRECISION, MPI_SUM, 0, ice_comm, ierr)
     call check_mpi_error(ierr)
 #endif
   end subroutine mpi_reduce_sum_r8_array
@@ -350,6 +358,30 @@ contains
     call check_mpi_error(ierr)
 #endif
   end subroutine mpi_bcast_logical
+
+
+  !> Broadcast a string from root (rank 0) to all ranks: its length first, which every
+  !> rank needs to receive it, then its characters.
+  subroutine mpi_bcast_chars(text)
+    character(len=:), allocatable, intent(inout) :: text
+    integer :: n
+#ifdef USE_MPI
+    integer :: ierr
+#endif
+    n = 0
+    if (mpi_is_root .and. allocated(text)) n = len(text)
+    call mpi_bcast_integer(n)
+    if (.not. mpi_is_root) then
+      if (allocated(text)) deallocate(text)
+      allocate(character(len=n) :: text)
+    end if
+#ifdef USE_MPI
+    if (n > 0) then
+      call MPI_BCAST(text, n, MPI_CHARACTER, 0, ice_comm, ierr)
+      call check_mpi_error(ierr)
+    end if
+#endif
+  end subroutine mpi_bcast_chars
 
 
   !> Broadcast an integer value from root (rank 0) to all ranks.
@@ -370,24 +402,42 @@ contains
     integer :: abort_ierr
     if (ierr /= 0) then
       write(*,'(A,I4,A,I6)') ' [RANK ', mpi_rank_, '] MPI error code: ', ierr
+      call flush_output_units()
       call MPI_ABORT(MPI_COMM_WORLD, 1, abort_ierr)
     end if
 #endif
   end subroutine check_mpi_error
 
 
-  !> MPI-aware abort: prints message, then aborts all ranks.
+  !> MPI-aware abort: prints message, writes out the output of this process
+  !> (flush_output_units), then aborts all ranks.
   subroutine mpi_abort_all(message)
     character(len=*), intent(in) :: message
 #ifdef USE_MPI
     integer :: ierr
     write(*,'(A,I4,A,A)') ' [RANK ', mpi_rank_, '] ABORT: ', trim(message)
+    call flush_output_units()
     call MPI_ABORT(MPI_COMM_WORLD, 1, ierr)
 #else
     write(*,'(A,A)') ' ABORT: ', trim(message)
-    error stop
+    error stop 1
 #endif
   end subroutine mpi_abort_all
+
+
+#ifdef USE_MPI
+  !> What this process still holds for output_unit and error_unit, written out
+  !> before MPI_ABORT. MPI_ABORT makes only a "best attempt" to end the
+  !> processes (MPI-4.1, Sec. 11.4.2) and need not end this one through the end
+  !> of the program, where the run-time library writes out its units: gfortran
+  !> keeps the lines of a unit on a file in memory until then, and the message
+  !> would be lost with them. The other ranks' units are not written by it.
+  subroutine flush_output_units()
+    use iso_fortran_env, only: output_unit, error_unit
+    flush(output_unit)
+    flush(error_unit)
+  end subroutine flush_output_units
+#endif
 
 
 end module ICE_Mod_MPI

@@ -68,7 +68,7 @@ contains
         end do ; end do ; end do
       end do
 
-      call setup_metrics(simulation%domain(m), simulation%ODP(m))
+      call setup_metrics(simulation%domain(m), simulation%ODP(m), m)
 
       call Setup_BC(simulation%domain(m), m)
       call build_local_bc_index(simulation%domain(m))

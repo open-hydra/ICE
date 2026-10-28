@@ -2,7 +2,7 @@
 """Fast tests: a 3-D multi-block, multi-family case must give the same answer
 whatever the thread count, the rank count, or the company of its families.
 
-    ICE_EQ_MODE=threads|groups|ranks|hybrid|family [ICE_EQ_ITERS=n] [ICE_EQ_MASK_CORNERS=1] [ICE_EQ_EXTRA='--scheme euler'] python3 -B run.py
+    ICE_EQ_MODE=threads|groups|ranks|hybrid|family [ICE_EQ_ITERS=n] [ICE_EQ_MASK_CORNERS=1] [ICE_EQ_EXTRA='--scheme euler'] [ICE_EQ_RANKS='2'] python3 -B run.py
 
 The gates before this one (openmp-equiv, mpi-equiv) run 2-D single-family cases
 in which no populated cell crosses a block interface within their 200 iterations,
@@ -42,7 +42,11 @@ compares the raw-binary VTK payload byte for byte.
             The case carries the three families, so this is also the halo's
             per-family gate: measured RED on 2026-09-30 with the exchange stubbed
             to use family 1's schedule for every family (the `family` leg is
-            single-rank and stayed green under that stub).
+            single-rank and stayed green under that stub). ICE_EQ_RANKS='2'
+            (a list) runs those rank counts only; the 2x1x1 layout runs when 3 is
+            listed. With the shock detector on, a connection face whose two cells
+            lie on two ranks takes the smaller of their weights only if the
+            partner's rank sends its cell's weight (exchange_conn_beta).
   hybrid    (2 ranks, 2 threads), (3, 4) and (4, 3) against 1x1. Needs both.
   family    the MK+IG+AG run against each family run alone (`--solo K`): the
             families are independent within a step and dt-max binds every cell,
@@ -54,6 +58,7 @@ compares the raw-binary VTK payload byte for byte.
 Every leg first checks the banner: a serial binary reports no thread count, and
 `OMP_NUM_THREADS` is then ignored, so the run would compare a file with itself.
 Such a build is a SKIP (exit 77), never a PASS.
+A `--shock-detector X` (not none) in ICE_EQ_EXTRA must show in every run's banner, or the leg FAILs.
 """
 import glob
 import os
@@ -75,6 +80,7 @@ ITERS = int(os.environ.get('ICE_EQ_ITERS', '0'))          # 0: the crossing coun
 MASK = os.environ.get('ICE_EQ_MASK_CORNERS', '0') == '1'
 EXTRA = os.environ.get('ICE_EQ_EXTRA', '').split()      # extra make_case.py arguments, e.g. --scheme euler
 MPIRUN = os.environ.get('MPIRUN', 'mpirun')
+RANKS = [int(r) for r in os.environ.get('ICE_EQ_RANKS', '2 3 4 5').replace(',', ' ').split()]   # the ranks leg's counts
 PROBE = os.environ.get('ICE_EQ_PROBE', '0') == '1'    # the binary must be an ICE_RACE_PROBE build
 SKIP = 77
 
@@ -85,7 +91,7 @@ def say(ok, what, yes, no):
 
 
 def run(case, threads, ranks, extra_env=None):
-    """Run ICE in case; returns the log text. Raises on a non-zero exit."""
+    """Run ICE in case; returns the log text. Raises on a non-zero exit or a missing detector banner."""
     env = dict(os.environ, OMP_NUM_THREADS=str(threads), KMP_STACKSIZE='100M', OMP_STACKSIZE='100M')
     env.update(extra_env or {})
     cmd = [str(ICE_BIN)] if ranks == 1 else [MPIRUN, '-np', str(ranks), str(ICE_BIN)]
@@ -95,6 +101,7 @@ def run(case, threads, ranks, extra_env=None):
     if rc != 0:
         print(log[-2000:])
         raise SystemExit('[equiv3d] ICE failed (exit %d) in %s' % (rc, case))
+    assert_detector(log, case)
     return log
 
 
@@ -114,6 +121,15 @@ def assert_build(log, threads, ranks):
             sys.exit(SKIP)
         if int(m.group(1)) != ranks:
             raise SystemExit('[equiv3d] FAIL: asked for %d ranks, the banner says %s' % (ranks, m.group(1)))
+
+
+def assert_detector(log, case):
+    """The shock detector ICE_EQ_EXTRA asks for must be in the run's banner: FAIL otherwise."""
+    args = ' '.join(EXTRA).replace('--shock-detector=', '--shock-detector ').split()
+    sd = args[args.index('--shock-detector') + 1] if '--shock-detector' in args[:-1] else 'none'
+    if sd != 'none' and not re.search(r'Shock\s+-->\s+%s detector' % re.escape(sd), log):
+        raise SystemExit("[equiv3d] FAIL: ICE_EQ_EXTRA asks for the %s shock detector, but the log of %s "
+                         "has no ' - Shock   --> %s detector' line" % (sd, case, sd))
 
 
 # --- raw-appended VTK -------------------------------------------------------
@@ -263,16 +279,17 @@ def leg_ranks():
     run(ref, 1, 1)
     check_payload(ref)
     ok = True
-    for r in (2, 3, 4, 5):
+    for r in RANKS:
         case = make('r%d' % r)
         assert_build(run(case, 1, r), 1, r)
         ok &= compare(ref, case, '1 rank vs %d ranks:' % r)
-    # more ranks than blocks: two blocks on three ranks, one of them idle
-    ref2 = make('r1-2blk', ['--blocks', '2', '1', '1'])
-    run(ref2, 1, 1)
-    case = make('r3-2blk', ['--blocks', '2', '1', '1'])
-    assert_build(run(case, 1, 3), 1, 3)
-    ok &= compare(ref2, case, '2 blocks on 1 rank vs 3 ranks (one idle):')
+    # more ranks than blocks: two blocks on three ranks, one of them idle (when ICE_EQ_RANKS lists 3)
+    if 3 in RANKS:
+        ref2 = make('r1-2blk', ['--blocks', '2', '1', '1'])
+        run(ref2, 1, 1)
+        case = make('r3-2blk', ['--blocks', '2', '1', '1'])
+        assert_build(run(case, 1, 3), 1, 3)
+        ok &= compare(ref2, case, '2 blocks on 1 rank vs 3 ranks (one idle):')
     return ok
 
 

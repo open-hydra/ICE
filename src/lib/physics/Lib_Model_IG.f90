@@ -85,12 +85,13 @@ contains
 
 
   function check_prim_IG(prim) result(prim_status)
+    use ICE_Finite_m, only: Any_Not_Finite
     implicit none
     real(kind=R8), intent(in) :: prim(:)
     logical                   :: prim_status
 
-    !> Check density and pseudo pressure
-    if (prim(1) < 0._R8 .or. prim(5) < 0._R8 .or. any(isnan(prim))) then
+    !> Check density and pseudo pressure, and NaN or infinity in any variable
+    if (prim(1) < 0._R8 .or. prim(5) < 0._R8 .or. Any_Not_Finite(prim)) then
       prim_status = .false.
     else
       prim_status = .true.

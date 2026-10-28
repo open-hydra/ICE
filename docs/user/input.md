@@ -172,17 +172,67 @@ ATLAS BCB writes all of them in one pass when `MG-levels` is set in its own
 count against that level's mesh and stops if they disagree, so a stale or missing file
 is reported rather than absorbed.
 
+## Time step: `cfl`
+
+`cfl` is the Courant number of the **sum over the directions** of the signal speeds,
+$|\mathbf u\cdot\nabla\xi_d| + a_d|\nabla\xi_d|$, measured on the width of the cell across its
+faces ([theory](../theory/time-integration.md#the-time-step)). Stability limits of the linearised
+scheme (MUSCL with upwind fluxes; the van Leer, van Albada and MC limiters in smooth flow), up to
+which the rule is stable:
+
+| `time-scheme` | `cfl` ≤ |
+|---|---|
+| `RK2` (Heun) | 1 |
+| `RK3` | 1.17 (1.256 with `first-order` reconstruction) |
+| `euler` | 1 with `first-order` reconstruction (unstable with `MUSCL`) |
+
+Keep a margin below them where shocks and limiters act (for example `cfl = 0.8`). The rule
+used to take the smallest of the direction limits, on the length of the cell edge, which let
+the step exceed these limits by up to a factor 2 on square 2-D cells, 3 on cubes and more on
+skewed cells: **the same `cfl` now gives a smaller step than before.**
+
 ## Stopping conditions
 
 `iter-threshold`, `time-threshold` and `res-threshold` are independent, and the run
-stops at whichever is met first. Their defaults are effectively infinite for the first
-two and $10^{-10}$ for the third, so a file that sets none of them will stop on the
-residual — which for a genuinely unsteady problem may be immediately. Set
-`res-threshold = 0` to disable it.
+stops at whichever is met first. `res-threshold` ends steady runs only
+(`time-accurate = false`): the density change of a time step says nothing about
+convergence, so a time-accurate run ends on the other two. Their defaults are
+effectively infinite for the first two and $10^{-10}$ for the third, so a steady run
+that sets none of them stops on the residual. Set `res-threshold = 0` to disable it.
+
+`res-threshold` is relative: a steady run ends when its density residual (the L2 norm
+over the cells of the change of density in one iteration, the third column of
+`residual-history.dat`, after the iteration and the time) has fallen by that factor from the first non-zero one, on the
+finest level. The residual scales with the loading and with the square root of the
+number of cells, so a relative test stops the same flow at the same iteration whatever
+its density, and a dilute cloud does not stop at its first iteration. The reference is
+the first non-zero residual rather than the first one, because a cloud at rest that the
+gas starts to move can have no density change at its first step (none with the one-stage
+`euler` scheme); while every residual is zero, the residual ends nothing, and
+`iter-threshold` ends a run in which nothing moves. A `res-threshold` switched on by a
+re-read of `input.ini` (from 0) measures from the first non-zero residual after it. If a
+residual rises before it falls, the run ends when it is `res-threshold` times the first
+one, later than a test relative to the peak would. A restart takes the first non-zero
+residual of its own run as the reference (the solution files do not carry the first
+run's) and says so. An input written for the former absolute test keeps its stop with
+`res-threshold` divided by that first residual.
 
 ## Re-reading at runtime
 
 If `ini-diter` is set, `input.ini` is re-read every that many iterations. Thresholds
-and output frequencies then take effect during a run; anything consumed once at setup
-does not: the closures, the scheme, and the materials with their properties, models and
-property table.
+and output frequencies then take effect during a run: an `iter-threshold` or
+`level<n>-iter` lowered below the iterations already done ends that level at the next
+iteration. Anything consumed once at setup does not: the scheme, and the materials with
+their properties, models and property table; `irs = true` in a time-accurate run is
+ignored, with a warning.
+
+An error in a re-read does what `ini-error` of `[ICE-IO]` says: a file that cannot be
+read or holds no key, a value that does not read as its type or breaks its rule, a change
+of `levels` or of a family's `closure` (which setup has sized the run for), or
+`riemann-solver = Saurel` with an IG or AG family. With `warn`, the default, the re-read
+is not taken: ICE prints a warning with the iteration and the error, and the run goes on
+with every value it had before the re-read, those of the keys the same re-read had right
+too, so that keys that go together (`cfl` and `dt-max`, an output and its frequency)
+never change one without the other. With `stop` the run stops with the error and exit
+code 1. The value of `ini-error` in force when a re-read starts decides, whatever the
+file read then says. At setup every error stops the run, whatever `ini-error` says.

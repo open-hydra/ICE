@@ -41,17 +41,23 @@ contains
   end subroutine zero_residual
 
 
+  !> The residual of the stage. The slots frozen at set-up (setup_freeze) are not integrated: their
+  !> residual is zero, and residual smoothing keeps it zero.
   subroutine compute_residual(grid, p)
     use ICE_Mod_ThreadGroups, only: n_tgroups
+    use ICE_Mod_Freeze,       only: nfrozen, frozen
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
-    integer(kind=I4) :: b, i, j, k
+    integer(kind=I4) :: b, i, j, k, nf
 
     if (n_tgroups > 1) then
       call compute_residual_grouped(grid, p)
       return
     end if
+
+    nf = 0
+    if (allocated(nfrozen)) nf = nfrozen(p)
 
     !$OMP PARALLEL
     do b = 1, grid%nb
@@ -66,6 +72,7 @@ contains
                                grid%blk(b)%cond_phase(p)%dt(i,j,k),                 &
                                grid%blk(b)%vol(i,j,k),                              &
                                grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) )
+        if (nf > 0) grid%blk(b)%cond_phase(p)%residual(frozen(1:nf,p),i,j,k) = 0._R8
 
       enddo ; enddo ; enddo
       !$omp end do nowait
@@ -105,11 +112,15 @@ contains
   !> compute_residual with thread groups: each thread sweeps its slice of its group's blocks.
   subroutine compute_residual_grouped(grid, p)
     use ICE_Mod_ThreadGroups, only: n_tgroups, tg_first, tg_blocks, thread_group, cell_slice
+    use ICE_Mod_Freeze,       only: nfrozen, frozen
     !$ use omp_lib, only: omp_get_thread_num
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
-    integer(kind=I4) :: b, i, j, k, n, tid, g, m, s, i1, j1, k1, i2, j2, k2
+    integer(kind=I4) :: b, i, j, k, n, tid, g, m, s, i1, j1, k1, i2, j2, k2, nf
+
+    nf = 0
+    if (allocated(nfrozen)) nf = nfrozen(p)
 
     !$OMP PARALLEL PRIVATE(b, i, j, k, n, tid, g, m, s, i1, j1, k1, i2, j2, k2)
     tid = 0
@@ -125,6 +136,7 @@ contains
                                  grid%blk(b)%cond_phase(p)%dt(i,j,k),                 &
                                  grid%blk(b)%vol(i,j,k),                              &
                                  grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) )
+          if (nf > 0) grid%blk(b)%cond_phase(p)%residual(frozen(1:nf,p),i,j,k) = 0._R8
       enddo ; enddo ; enddo
     enddo
     !$OMP END PARALLEL

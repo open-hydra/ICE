@@ -36,13 +36,16 @@ thermal energy $\rho c_s T = \rho$ on the scale of the pressure energy $\tfrac32
 `INPUT/` holds no `part-properties.dat`, because a table overrides the INI value (a copied
 Doisneau table, $c_p = 1500$, would shrink the signature to $6.7\times10^{-4}$). `verify.py`
 refuses to judge when a table is present. The slab thickness is 0.01, not the writer's
-default $10^{-3}$: the time step takes the smallest of the three directional limits, and a thin
-slab would make $z$ bind. IG runs at CFL 0.5, AG at 0.8. The step is the minimum of the
-per-direction limits, so on the diagonals of a radial flow the two Courant numbers add; for the
-odd-even mode of a first-order Rusanov flux that puts RK3 at $z = -4\,\mathrm{CFL}$, outside its
-real stability interval $[-2.51, 0]$ at CFL 0.8. The IG blob, the faster of the two, grows that
-mode and floors 24 cells by $t = 0.08$, which spoils its mass balance by 0.5 %; at CFL 0.5 it
-stays clean.
+default $10^{-3}$, a choice made when the time step took the smallest of the three directional
+limits and a thin slab made $z$ bind; a direction of a single cell now adds no limit
+([Time integration](../theory/time-integration.md)), so the thickness no longer sets the step.
+IG runs at CFL 0.5, AG at 0.8. Under the old rule the Courant numbers of the two directions
+added on the diagonals of a radial flow: for the odd-even mode of a first-order Rusanov flux
+that put RK3 at $z = -4\,\mathrm{CFL}$, outside its real stability interval $[-2.51, 0]$ at
+CFL 0.8, and the IG blob, the faster of the two, grew that mode and floored 24 cells by
+$t = 0.08$, which spoiled its mass balance by 0.5 %. The step now sums the direction limits,
+which puts that mode at $z = -2\,\mathrm{CFL}$, inside the interval up to CFL 1.25; IG keeps
+CFL 0.5.
 
 The total energy $\sum E V$ is printed but is not the gate: the scheme is conservative whatever
 the flux, so the sum moves only through floors and boundaries. It is conserved to

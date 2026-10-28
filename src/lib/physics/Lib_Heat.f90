@@ -126,13 +126,13 @@ contains
   end function heat_JAXA_3
 
 
-  !> JAXA report 4 heat model: rarefaction correction in Ma/(Re Pr); 0.654 per Shimada 2006 eq. 50 / NASA SP-8039.
+  !> JAXA report 4 heat model: rarefaction correction in Ma/(Re Pr); 0.654 Re^(1/2) Pr^(1/2), the last row of NASA SP-8039 Table II.
   pure function heat_JAXA_4(Re,Pr,Ma) result(Nu)
     implicit none
     real(kind=R8), intent(in) :: Re, Pr, Ma
     real(kind=R8) :: Nu
 
-    Nu = ((2._R8+0.654_R8*Re**0.5_R8*Pr**(1._R8/3._R8))**(-1._I4) + 3.42_R8*Ma/(Re*Pr+toll))**(-1._I4)
+    Nu = ((2._R8+0.654_R8*Re**0.5_R8*Pr**0.5_R8)**(-1._I4) + 3.42_R8*Ma/(Re*Pr+toll))**(-1._I4)
 
   end function heat_JAXA_4
 
@@ -176,7 +176,7 @@ contains
     case (4)
       txt = 'Nu = 2 + 0.459 Re^0.55 Pr^1/3'
     case (5)
-      txt = '1/Nu = 1/(2 + 0.654 Re^0.5 Pr^1/3) + 3.42 Ma/(Re Pr)'
+      txt = '1/Nu = 1/(2 + 0.654 Re^0.5 Pr^1/2) + 3.42 Ma/(Re Pr)'
     case (6)
       txt = 'Nu = 2 + 0.6 Re^0.5 Pr^1/3'
     case (7)

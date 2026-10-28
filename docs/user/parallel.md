@@ -28,6 +28,7 @@ prints what it decided at startup:
 ```text
   MPI partition: 12 blocks over 12 ranks, balance 100.0% of ideal
   MPI halo: <n> cells exchanged per ghost fill
+  MPI halo: <m> connection faces whose flux crosses ranks
 ```
 
 A balance well under 100 % means the blocks are unequal, and the fix is in the

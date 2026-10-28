@@ -69,9 +69,10 @@ module ICE_Mod_Timers
 
   !> The regions of an iteration. `dt` to `diag` are the steps of Explicit_Step
   !> in the order they run (each once per family and stage, `dt`, `copy` and
-  !> `diag` once per step); `pack`, `wait`, `unpack` are the parts of the halo
-  !> exchange, inside `ghost1`; `sync` is the three collectives, the same time
-  !> the `collective wait` figure reports.
+  !> `diag` once per step), except that `flux` also holds the shock-detector
+  !> weights, computed before `bound`; `pack`, `wait`, `unpack` are the parts of
+  !> the halo exchange, inside `ghost1`; `sync` is the three collectives, the
+  !> same time the `collective wait` figure reports.
   integer, parameter, public :: TR_DT = 1, TR_COPY = 2, TR_ZERO = 3, TR_SOURCE = 4, &
                                 TR_GHOST1 = 5, TR_GHOST2 = 6, TR_BOUND = 7, TR_FLUX = 8, &
                                 TR_RESID = 9, TR_IRS = 10, TR_UPDATE = 11, TR_DIAG = 12, &

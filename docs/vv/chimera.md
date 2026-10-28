@@ -21,11 +21,14 @@ chimera path must reproduce the single-block solution.
 |---|---|
 | Split with chimera vs single block | $7 \times 10^{-13}$ (round-off) |
 
-The shock detector would break this. A face on a block boundary takes the detector value of
-its own block's cell, while inside a block every face takes the one of the cell on its
-low-index side, so where a jet edge crosses the interface the split and the single block
-switch that face differently: with the detector on, the split differs from the single block
-by $3.6 \times 10^{-2}$ of the peak density at 5000 iterations.
+The shock detector changes this. A chimera face takes the detector weight of its own block's
+cell: its ghost is a blend of donor cells, not a cell with a weight of its own. A face inside a
+block takes the smaller weight of its two cells, and so does a face between two connected
+blocks (`101`), whose ghost is the neighbouring block's cell. Where a jet edge crosses a
+chimera interface the split and the single block therefore weight that face differently: with
+the detector on, block 1 of the overlapping case below differs from the single block by up to
+$1.3 \times 10^{-3}$ of the peak density at 5000 iterations, against $3.7 \times 10^{-4}$
+without it.
 
 ## Overlapping blocks with non-matching cells
 
@@ -50,10 +53,10 @@ input used for the donor search.
 
 | Check | Result |
 |---|---|
-| Block 1 vs single block (mean, relative to peak density) | $3.0 \times 10^{-6}$ |
+| Block 1 vs single block (mean, relative to peak density) | $3.2 \times 10^{-6}$ |
 | Block 1 vs block 2 inside the overlap (mean / max, relative to peak density) | $2.9 \times 10^{-4}$ / $2.5 \times 10^{-3}$ |
 | Mass flux $\int \rho u\,dy$, block 1 vs single block | $-0.06\%$ to $+0.03\%$ |
-| Mass flux $\int \rho u\,dy$, block 2 vs single block | $-0.08\%$ to $+0.14\%$ |
+| Mass flux $\int \rho u\,dy$, block 2 vs single block | $-0.09\%$ to $+0.13\%$ |
 
 The two blocks agree with each other across the overlap, and the jet passes the chimera
 interface without a visible step in density or mass flux.

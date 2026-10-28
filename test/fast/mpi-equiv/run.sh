@@ -5,7 +5,8 @@
 #  Runs a short multi-block case on 1 and on 2 ranks and requires the two
 #  solutions to be bit-identical. The case comes from ICE_FAST_CASE, so the
 #  same script covers the connection (IG-split4) and the chimera (IG-chimera)
-#  halo paths. Needs an MPI build.
+#  halo paths; ICE_FAST_SD sets its shock detector, ICE_FAST_ITER its length.
+#  Needs an MPI build.
 #===============================================================================
 set -euo pipefail
 
@@ -26,5 +27,6 @@ if ! grep -q "Number of ranks   -->    2" "$WORK/run2/log"; then
   echo "[fast] FAIL: $ICE_BIN did not run as 2 MPI ranks -- is it the MPI build?"
   exit 1
 fi
+ice_fast_detector "$WORK/run1" "$WORK/run2"
 
 ice_fast_compare "$WORK/run1" "$WORK/run2" "1 rank" "2 ranks"

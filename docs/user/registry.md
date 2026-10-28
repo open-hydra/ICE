@@ -10,7 +10,7 @@ Required column says otherwise, and omitting one selects the default.
 |-----------|---------|---------|----------|-------------|
 | `phase` |  |  |  no | ATLAS name of the condensed phase to read: INPUT/<phase>-{bc.txt,ic,properties.dat}. Absent = keep the prefix in force (standalone default part-) |
 | `newrun` | true | true, false |  no | Start a new simulation (false = restart) |
-| `res-threshold` | 1e-10 | >= 0 |  no | Residual convergence threshold (0 = never stop on it) |
+| `res-threshold` | 1e-10 | >= 0 |  no | Residual convergence threshold, relative to the first non-zero density residual, steady runs only (0 = never stop on it) |
 | `time-threshold` | 1e30 | > 0 |  no | Maximum simulation time |
 | `iter-threshold` | 1000000000 | > 0 |  no | Maximum number of iterations |
 
@@ -26,6 +26,7 @@ Required column says otherwise, and omitting one selects the default.
 | `shell-diter` | 10 | > 0 |  no | Shell update iter frequency |
 | `res-diter` | 10 | > 0 |  no | Residual history iter frequency |
 | `ini-diter` | 1000000000 | > 0 |  no | input.ini update iter frequency |
+| `ini-error` | warn | warn, stop |  no | input.ini read again with an error: warn and keep every value held before the reading, or stop (at set-up every error stops) |
 | `gas-path` | INPUT/ |  |  no | Directory holding the coupling gas field, named gas.tec or gas.szplt according to ic-format |
 | `timers` | false | true, false |  no | Report wall-clock and core-cycle cost per iteration, split into source, flux, halo and collective terms |
 
@@ -50,12 +51,12 @@ Required column says otherwise, and omitting one selects the default.
 | Parameter | Default | Allowed | Required | Description |
 |-----------|---------|---------|----------|-------------|
 | `time-scheme` | RK2 | euler, RK2, RK3 | yes | Time integration solver |
-| `cfl` | 0.5 | > 0 | yes | CFL number |
+| `cfl` | 0.5 | > 0 | yes | CFL number of the signal speeds summed over the directions (RK2 <= 1, RK3 <= 1.17) |
 | `dt-max` | 1e-4 | > 0 |  no | Ceiling on the time step [s], applied after the CFL factor |
 | `tau-factor` | 1.0 | >= 0 |  no | Ceiling on the time step as a multiple of the particle relaxation time, coupled runs only (0 = off) |
 | `cfl-rise-threshold` | 0 | >= 0 |  no | CFL rise threshold |
 | `time-accurate` | .true. | logical | yes | Time accurate switch |
-| `irs` | .false. | logical |  no | Implicit Residual Smoothing |
+| `irs` | .false. | logical |  no | Implicit Residual Smoothing (steady runs only) |
 | `irs-beta` | 0.5 | >= 0 |  no | IRS beta parameter |
 | `space-reconstruction` | first-order | MUSCL, first-order | yes | Space reconstruction method |
 | `flux-limiter` | none | minmod, vanalbada, vanleer, ospre, umist, osher, sweby, mc, koren, superbee, none |  no | Flux limiter for space reconstruction |

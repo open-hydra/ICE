@@ -51,7 +51,11 @@ ENDIF(CMAKE_Fortran_FLAGS_RELEASE AND CMAKE_Fortran_FLAGS_TESTING AND CMAKE_Fort
 ### GENERAL FLAGS ###
 #####################
 
-# Don't add underscores in symbols for C-compatability
+# Don't add underscores in symbols for C-compatability.
+# With it gfortran also names the COMMON blocks of the mpi module without an underscore (mpipriv1),
+# while an MPICH-family library (Intel MPI) defines them with one (mpipriv1_): the sentinels kept
+# there (MPI_IN_PLACE, MPI_BOTTOM, MPI_STATUS_IGNORE, MPI_STATUSES_IGNORE, MPI_ERRCODES_IGNORE,
+# MPI_ARGV_NULL, MPI_ARGVS_NULL) reach the library as ordinary addresses. ICE uses none of them.
 SET_COMPILE_FLAG(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS}"
                  Fortran "-fno-underscoring")
 

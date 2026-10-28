@@ -41,8 +41,8 @@ STOKES_LIMIT = ('Stokes', 'Schlichting', 'Schiller-Naumann', 'Wen-Yu', 'Putnam',
 T_END = 0.03
 
 
-def drag_case(ph, law, t_end, name, Lx=1.0, Ly=None):
-    case = Case(WORK / name, nx=8, Lx=Lx, Ly=Ly)
+def drag_case(ph, law, t_end, name, Lx=1.0, Ly=None, Lz=None, ny=1):
+    case = Case(WORK / name, nx=8, ny=ny, Lx=Lx, Ly=Ly, Lz=Lz)
     case.particles(rho=ph.rho_p, u=0.0, v=ph.vg, w=0.0, T=ph.Tg, n=ph.n)
     case.gas(rho=ph.rho_g, u=ph.ug, v=ph.vg, w=0.0, T=ph.Tg,
              R=ph.R, gam=ph.gam, k=ph.kg, mu=ph.mu)
@@ -81,15 +81,17 @@ def main():
                   '%s leaves the temperature untouched' % law)
 
     # --- Above Re = 1000, where the branched correlations switch formula -----------
-    # A transverse velocity shared with the gas keeps dt small enough for the much
-    # shorter relaxation time; the slip, and so Re, stays purely axial.
+    # A transverse velocity shared with the gas, across two cells in y (the step
+    # counts only the directions the mesh resolves), keeps dt small enough for the
+    # much shorter relaxation time; the slip, and so Re, stays purely axial.
     fast = Physics(ug=200.0, vg=200.0)
     Re = 2.0 * fast.rho_g * fast.rp * fast.ug / fast.mu
     t_fast = 4.0e-3
     print('   High slip (Re = %.0f, Ma = %.2f at t = 0), u_p/u_g after %.4f s:'
           % (Re, fast.ug / fast.sound, t_fast))
     for law in LAWS:
-        sol = drag_case(fast, law, t_fast, 'highre-%s' % law, Lx=0.01, Ly=1.25e-3)
+        sol = drag_case(fast, law, t_fast, 'highre-%s' % law,
+                        Lx=0.01, Ly=2.5e-3, Lz=1.25e-3, ny=2)
         u = sol['var'][U][0]
         ref, _ = fast.reference(sol['time'], drag=law, heat='Stokes')
         err = abs(u - ref) / fast.ug
@@ -109,7 +111,8 @@ def main():
         print('   %s slip (Re = %.0f, Ma = %.2f at t = 0), u_p/u_g after %.4f s:'
               % (tag.capitalize(), Re, comp.ug / comp.sound, t_s))
         for law in COMPRESSIBLE:
-            sol = drag_case(comp, law, t_s, '%s-%s' % (tag, law), Lx=0.01, Ly=1.25e-3)
+            sol = drag_case(comp, law, t_s, '%s-%s' % (tag, law),
+                            Lx=0.01, Ly=2.5e-3, Lz=1.25e-3, ny=2)
             u = sol['var'][U][0]
             ref, _ = comp.reference(sol['time'], drag=law, heat='Stokes')
             err = abs(u - ref) / comp.ug

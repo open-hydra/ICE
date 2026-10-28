@@ -10,7 +10,7 @@ module ICE_Mod_Fluxes
 
   implicit none
   private
-  public :: compute_flux, state_reconstruction, bad_recon
+  public :: compute_beta, compute_flux, state_reconstruction, bad_recon
 
   !> The tile of one thread: the cells (i = 1..ni, j = j1..j2, k = k1..k2) of a block.
   !> Deep tiling cuts ranges of whole k-planes and keeps the k-faces below and above
@@ -61,18 +61,103 @@ module ICE_Mod_Fluxes
 
 contains
 
+  !> The shock-detector weight of every cell of family p, from the state and the ghosts
+  !> of this stage: called after the ghost fill and before the boundary fluxes, which read
+  !> it as the interior faces do -- each face the weight of a cell next to it, which may
+  !> belong to another tile. The tiles are the flux kernel's; the blocks are independent,
+  !> so the only barrier is the end of the region.
+  subroutine compute_beta(grid, p)
+    use ICE_Global_m
+    use ICE_Advanced_Types_m
+    !$ use omp_lib, only: omp_get_max_threads
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4), intent(in)  :: p
+    integer(kind=I4) :: b, t, nthreads, ni, nj, nk, nc
+    logical          :: deep
+    type(tile_type), allocatable :: tiles(:)
+
+    if (n_tgroups > 1) then
+      call compute_beta_grouped(grid, p)
+      return
+    end if
+
+    nc = ncond(p)
+    nthreads = 1
+    !$ nthreads = omp_get_max_threads()
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b, t, ni, nj, nk, deep, tiles)
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      ni = grid%blk(b)%dim(1) ; nj = grid%blk(b)%dim(2) ; nk = grid%blk(b)%dim(3)
+      call make_tiles(ni, nj, nk, nc, nthreads, tiles, deep)
+      !> NOWAIT: a weight reads prim only, never another weight; the end of the region is the barrier before any face reads it.
+      !$OMP DO SCHEDULE (DYNAMIC, 1)
+      do t = 1, size(tiles)
+        call tile_beta(grid%blk(b), p, ni, tiles(t))
+      enddo
+      !$OMP END DO NOWAIT
+      deallocate(tiles)
+    enddo
+    !$OMP END PARALLEL
+
+  end subroutine compute_beta
+
+
+  !> compute_beta with thread groups: the threads of each group take the tiles of their
+  !> group's blocks (cut for the group's size) one at a time, from one counter per block.
+  subroutine compute_beta_grouped(grid, p)
+    use ICE_Global_m
+    use ICE_Advanced_Types_m
+    !$ use omp_lib, only: omp_get_thread_num
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4), intent(in)  :: p
+    integer(kind=I4) :: b, n, t, ni, nj, nk, nc, g, m, s, tid
+    logical          :: deep
+    type(tile_type), allocatable :: tiles(:)
+    integer(kind=I4), allocatable :: cnt(:)
+
+    nc = ncond(p)
+    allocate(cnt(size(tg_blocks)))
+    cnt = 0
+    !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b, n, t, ni, nj, nk, deep, tiles, g, m, s, tid)
+    tid = 0
+    !$ tid = omp_get_thread_num()
+    call thread_group(tid, g, m, s)
+    !> No barrier: a weight reads prim only, never another weight; the end of the region is the barrier before any face reads it.
+    do n = tg_first(g), tg_first(g+1) - 1
+      b = tg_blocks(n)
+      ni = grid%blk(b)%dim(1) ; nj = grid%blk(b)%dim(2) ; nk = grid%blk(b)%dim(3)
+      call make_tiles(ni, nj, nk, nc, s, tiles, deep)
+      do
+        !$OMP ATOMIC CAPTURE
+        t = cnt(n)
+        cnt(n) = cnt(n) + 1
+        !$OMP END ATOMIC
+        t = t + 1
+        if (t > size(tiles)) exit
+        call tile_beta(grid%blk(b), p, ni, tiles(t))
+      end do
+      deallocate(tiles)
+    end do
+    !$OMP END PARALLEL
+    deallocate(cnt)
+
+  end subroutine compute_beta_grouped
+
+
   !> The interior fluxes of family p, gathered by cell. Every face flux is computed
   !> once by the thread that owns the cell below it (the lower i, j or k) and kept in
   !> that thread's line, row or plane buffer; each cell then receives the two faces
   !> of each direction in the order the odd-then-even face passes of the scatter form
   !> gave them -- an odd cell its own face first, then the one below; an even cell the
   !> one below first -- so the residual is bit for bit what those passes produced,
-  !> without their six barriers and the strided copies of the j and k stencils.
+  !> without their six barriers and the strided copies of the j and k stencils. The
+  !> shock-detector weights are compute_beta's, of this stage.
   subroutine compute_flux (grid, p)
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m,     only: obj_space_scheme, obj_condensed
-    use ICE_Lib_Shock_Detector, only: SD_rho
     !$ use omp_lib,             only: omp_get_max_threads
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
@@ -126,28 +211,20 @@ contains
       call make_tiles(ni, nj, nk, nc, nthreads, tiles, deep)
       nt = size(tiles)
 
-      !> The shock-detector weight of every cell, before any face reads it: a face
-      !> takes the weight of the cell below it, which may belong to another tile.
-      !$OMP DO SCHEDULE (DYNAMIC, 1)
-      do t = 1, nt
-        call tile_beta(grid%blk(b), p, ni, tiles(t))
-      enddo
-      !$OMP END DO
-
       !> The k-faces shared between tiles, once, by the owner of the cell below
       !> each: the top faces of every tile's last plane (deep block), or every
       !> k-face of the block (shallow block).
       if (deep .or. nk > 1) then
         !$OMP DO SCHEDULE (DYNAMIC, 1)
         do t = 1, nt
-          call tile_kfaces(grid%blk(b), p, nc, ni, nj, nk, tiles(t), t, deep, seam, kface)
+          call tile_kfaces(grid%blk(b), b, p, nc, ni, nj, nk, tiles(t), t, deep, seam, kface)
         enddo
         !$OMP END DO
       end if
 
       !$OMP DO SCHEDULE (DYNAMIC, 1)
       do t = 1, nt
-        call tile_sweep(grid%blk(b), p, nc, ni, nj, nk, tiles, t, deep, seam, kface, &
+        call tile_sweep(grid%blk(b), b, p, nc, ni, nj, nk, tiles, t, deep, seam, kface, &
                         fi, gj, hk, jlo, jhi, klo, khi)
       enddo
       !$OMP END DO
@@ -167,7 +244,7 @@ contains
   !> compute_flux with thread groups: the blocks in rounds -- round r sweeps the r-th
   !> block of every group at once, each group with its own threads, its own tiles
   !> (cut for the group's size) and its own shared planes -- so the barriers between
-  !> the three phases stay barriers of the whole team, one set per round instead of
+  !> the two phases stay barriers of the whole team, one set per round instead of
   !> one per block. Inside a group the tiles are taken dynamically, one at a time.
   subroutine compute_flux_grouped(grid, p)
     use ICE_Global_m
@@ -204,7 +281,7 @@ contains
     if (allocated(tiles0)) deallocate(tiles0)
     call grow5(seam_g, n1, n2, n3, n4, n_tgroups)
     call grow5(kface_g, n1, n2, n3, n4, n_tgroups)
-    allocate(cnt(0:n_tgroups-1, 3))
+    allocate(cnt(0:n_tgroups-1, 2))
 
 #ifdef ICE_RACE_PROBE
     !$OMP PARALLEL DEFAULT(SHARED) PRIVATE(b, t, nt, ni, nj, nk, deep, tiles, g, m, s, r, tid, ph, &
@@ -234,8 +311,8 @@ contains
 #endif
       if (m == 0) cnt(g,:) = 0
       !$OMP BARRIER
-      do ph = 1, 3
-        if (ph == 2 .and. .not. (deep .or. nk > 1)) then
+      do ph = 1, 2
+        if (ph == 1 .and. .not. (deep .or. nk > 1)) then
           !$OMP BARRIER
           cycle
         end if
@@ -248,14 +325,12 @@ contains
           if (t > nt) exit
           select case (ph)
           case (1)
-            call tile_beta(grid%blk(b), p, ni, tiles(t))
-          case (2)
 #ifdef ICE_RACE_PROBE
             if (t == 1) rc = c_usleep(probe_sleep_us)
 #endif
-            call tile_kfaces(grid%blk(b), p, nc, ni, nj, nk, tiles(t), t, deep, seam_g(:,:,:,:,g), kface_g(:,:,:,:,g))
-          case (3)
-            call tile_sweep(grid%blk(b), p, nc, ni, nj, nk, tiles, t, deep, seam_g(:,:,:,:,g), kface_g(:,:,:,:,g), &
+            call tile_kfaces(grid%blk(b), b, p, nc, ni, nj, nk, tiles(t), t, deep, seam_g(:,:,:,:,g), kface_g(:,:,:,:,g))
+          case (2)
+            call tile_sweep(grid%blk(b), b, p, nc, ni, nj, nk, tiles, t, deep, seam_g(:,:,:,:,g), kface_g(:,:,:,:,g), &
                             fi, gj, hk, jlo, jhi, klo, khi)
           end select
         end do
@@ -313,11 +388,11 @@ contains
 
 
   !> The k-faces one tile shares with the next: its seam (deep) or its planes' k-faces (shallow).
-  subroutine tile_kfaces(blk, p, nc, ni, nj, nk, tile, t, deep, seam_a, kface_a)
+  subroutine tile_kfaces(blk, b, p, nc, ni, nj, nk, tile, t, deep, seam_a, kface_a)
     use ICE_Advanced_Types_m
     implicit none
     type(ICE_block_type), intent(inout) :: blk
-    integer(kind=I4),     intent(in)    :: p, nc, ni, nj, nk, t
+    integer(kind=I4),     intent(in)    :: b, p, nc, ni, nj, nk, t
     type(tile_type),      intent(in)    :: tile
     logical,              intent(in)    :: deep
     real(R8),             intent(inout) :: seam_a(:,:,:,:), kface_a(:,:,:,:)
@@ -327,25 +402,25 @@ contains
       if (k < nk) then
         do j = 1, nj
         do i = 1, ni
-          call face_flux(blk, p, nc, 3, i, j, k, seam_a(1:nc,i,j,t))
+          call face_flux(blk, b, p, nc, 3, i, j, k, seam_a(1:nc,i,j,t))
         enddo ; enddo
       end if
     else
       do k = tile%k1, min(tile%k2, nk-1)
       do j = tile%j1, tile%j2
       do i = 1, ni
-        call face_flux(blk, p, nc, 3, i, j, k, kface_a(1:nc,i,j,k))
+        call face_flux(blk, b, p, nc, 3, i, j, k, kface_a(1:nc,i,j,k))
       enddo ; enddo ; enddo
     end if
   end subroutine tile_kfaces
 
 
   !> The gathered fluxes of the cells of tile t: the sweep of compute_flux's last loop.
-  subroutine tile_sweep(blk, p, nc, ni, nj, nk, tiles, t, deep, seam, kface, fi, gj, hk, jlo, jhi, klo, khi)
+  subroutine tile_sweep(blk, b, p, nc, ni, nj, nk, tiles, t, deep, seam, kface, fi, gj, hk, jlo, jhi, klo, khi)
     use ICE_Advanced_Types_m
     implicit none
     type(ICE_block_type), intent(inout) :: blk
-    integer(kind=I4),     intent(in)    :: p, nc, ni, nj, nk, t
+    integer(kind=I4),     intent(in)    :: b, p, nc, ni, nj, nk, t
     type(tile_type),      intent(in)    :: tiles(:)
     logical,              intent(in)    :: deep
     real(R8),             intent(inout) :: seam(:,:,:,:), kface(:,:,:,:)
@@ -365,7 +440,7 @@ contains
         else
           do j = 1, nj
           do i = 1, ni
-            call face_flux(blk, p, nc, 3, i, j, k, hk(1:nc,i,j,khi))
+            call face_flux(blk, b, p, nc, 3, i, j, k, hk(1:nc,i,j,khi))
           enddo ; enddo
         end if
       end if
@@ -376,18 +451,18 @@ contains
         !> tile's first row and carried afterwards.
         if (j == tiles(t)%j1 .and. j > 1) then
           do i = 1, ni
-            call face_flux(blk, p, nc, 2, i, j-1, k, gj(1:nc,i,jlo))
+            call face_flux(blk, b, p, nc, 2, i, j-1, k, gj(1:nc,i,jlo))
           enddo
         end if
         if (j < nj) then
           do i = 1, ni
-            call face_flux(blk, p, nc, 2, i, j, k, gj(1:nc,i,jhi))
+            call face_flux(blk, b, p, nc, 2, i, j, k, gj(1:nc,i,jhi))
           enddo
         end if
 
         !> The i-faces of the line
         do i = 1, ni-1
-          call face_flux(blk, p, nc, 1, i, j, k, fi(1:nc,i))
+          call face_flux(blk, b, p, nc, 1, i, j, k, fi(1:nc,i))
         enddo
 
         !> The cells of the line, each direction in the odd-then-even face order
@@ -511,43 +586,71 @@ contains
   !> direction d, times the area: the arithmetic of the scatter form, unchanged.
   !> The i stencil is a contiguous slab of prim and goes in as it is; the j and k
   !> stencils are gathered into four columns first, which is the copy the
-  !> compiler made for the scatter form's strided sections.
-  subroutine face_flux(blk, p, nc, d, i, j, k, flux)
+  !> compiler made for the scatter form's strided sections. b, the number of the
+  !> block, only names the face (face 2d of the cell) in an error message.
+  !> A face next to a boundary whose first ghost holds an injected state (inj)
+  !> takes that ghost's length as 0: the state sits at the boundary face, and the
+  !> slope between it and the first cell is the one-sided slope from the face.
+  !> The face's shock-detector weight is the smaller of its two cells' weights:
+  !> the face is the same seen from either side, and takes the weight of the
+  !> more shocked cell.
+  subroutine face_flux(blk, b, p, nc, d, i, j, k, flux)
     use ICE_Advanced_Types_m
     use ICE_Global_m,       only: mat_of, solid_of
     use ICE_Config_Types_m, only: obj_condensed
     implicit none
     type(ICE_block_type), intent(in)  :: blk
-    integer(kind=I4),     intent(in)  :: p, nc, d, i, j, k
+    integer(kind=I4),     intent(in)  :: b, p, nc, d, i, j, k
     real(kind=R8),        intent(out) :: flux(nc)
-    real(kind=R8) :: prim(nc,-1:2)
+    real(kind=R8) :: prim(nc,-1:2), length(-1:2), bf
 
     select case (d)
     case (1)
-      call compute_flux_ (blk%cond_phase(p)%prim(1:nc,i-1:i+2,j,k),                            &
-                          [blk%dl(i-1,j,k)%c(1), blk%dl(i,j,k)%c(1),                           &
-                           blk%dl(i+1,j,k)%c(1), blk%dl(i+2,j,k)%c(1)],                        &
+      bf = min(blk%cond_phase(p)%beta(i,j,k), blk%cond_phase(p)%beta(i+1,j,k))
+      length = [blk%dl(i-1,j,k)%c(1), blk%dl(i,j,k)%c(1), blk%dl(i+1,j,k)%c(1), blk%dl(i+2,j,k)%c(1)]
+      if (i == 1) then
+        if (blk%cond_phase(p)%inj(i-1,j,k)) length(-1) = 0._R8
+      end if
+      if (i == blk%dim(1)-1) then
+        if (blk%cond_phase(p)%inj(i+2,j,k)) length(2) = 0._R8
+      end if
+      call compute_flux_ (blk%cond_phase(p)%prim(1:nc,i-1:i+2,j,k), length,                    &
                           blk%dir(1)%f(i,j,k)%N, blk%dir(1)%f(i,j,k)%A, flux, nc,              &
-                          blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p))
+                          bf, obj_condensed(mat_of(p)), solid_of(p),                             &
+                          [b, i, j, k, 2*d])
     case (2)
+      bf = min(blk%cond_phase(p)%beta(i,j,k), blk%cond_phase(p)%beta(i,j+1,k))
       prim(1:nc,-1:2) = blk%cond_phase(p)%prim(1:nc,i,j-1:j+2,k)
-      call compute_flux_ (prim,                                                                &
-                          [blk%dl(i,j-1,k)%c(2), blk%dl(i,j,k)%c(2),                           &
-                           blk%dl(i,j+1,k)%c(2), blk%dl(i,j+2,k)%c(2)],                        &
+      length = [blk%dl(i,j-1,k)%c(2), blk%dl(i,j,k)%c(2), blk%dl(i,j+1,k)%c(2), blk%dl(i,j+2,k)%c(2)]
+      if (j == 1) then
+        if (blk%cond_phase(p)%inj(i,j-1,k)) length(-1) = 0._R8
+      end if
+      if (j == blk%dim(2)-1) then
+        if (blk%cond_phase(p)%inj(i,j+2,k)) length(2) = 0._R8
+      end if
+      call compute_flux_ (prim, length,                                                        &
                           blk%dir(2)%f(i,j,k)%N, blk%dir(2)%f(i,j,k)%A, flux, nc,              &
-                          blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p))
+                          bf, obj_condensed(mat_of(p)), solid_of(p),                             &
+                          [b, i, j, k, 2*d])
     case (3)
+      bf = min(blk%cond_phase(p)%beta(i,j,k), blk%cond_phase(p)%beta(i,j,k+1))
       prim(1:nc,-1:2) = blk%cond_phase(p)%prim(1:nc,i,j,k-1:k+2)
-      call compute_flux_ (prim,                                                                &
-                          [blk%dl(i,j,k-1)%c(3), blk%dl(i,j,k)%c(3),                           &
-                           blk%dl(i,j,k+1)%c(3), blk%dl(i,j,k+2)%c(3)],                        &
+      length = [blk%dl(i,j,k-1)%c(3), blk%dl(i,j,k)%c(3), blk%dl(i,j,k+1)%c(3), blk%dl(i,j,k+2)%c(3)]
+      if (k == 1) then
+        if (blk%cond_phase(p)%inj(i,j,k-1)) length(-1) = 0._R8
+      end if
+      if (k == blk%dim(3)-1) then
+        if (blk%cond_phase(p)%inj(i,j,k+2)) length(2) = 0._R8
+      end if
+      call compute_flux_ (prim, length,                                                        &
                           blk%dir(3)%f(i,j,k)%N, blk%dir(3)%f(i,j,k)%A, flux, nc,              &
-                          blk%cond_phase(p)%beta(i,j,k), obj_condensed(mat_of(p)), solid_of(p))
+                          bf, obj_condensed(mat_of(p)), solid_of(p),                             &
+                          [b, i, j, k, 2*d])
     end select
   end subroutine face_flux
 
 
-  subroutine compute_flux_ (prim, length, normal, area, flux, nvar, beta, mat, solid)
+  subroutine compute_flux_ (prim, length, normal, area, flux, nvar, beta, mat, solid, loc)
     use ICE_Lib_Riemann
     use ICE_Config_Types_m, only: condensed_phase_t
     implicit none
@@ -560,6 +663,7 @@ contains
     real(kind=R8),                         intent(in)    :: beta
     type(condensed_phase_t),               intent(in)    :: mat
     logical,                               intent(in)    :: solid
+    integer(kind=I4), dimension(5),        intent(in)    :: loc    ! block, cell i j k and face: for the error message
 
     real(kind=R8) :: dl0, dl1, dl2, dll, dlr
     real(kind=R8), dimension(size(prim(:,1))) :: prim_1, prim_4
@@ -571,7 +675,7 @@ contains
     dlr = 0.5d0 * length(1)
 
     call state_reconstruction (prim(:,-1), prim(:,0), prim(:,1), prim(:,2), &
-                               dl0, dl1, dl2, dll, dlr, prim_1, prim_4, beta, mat, solid)
+                               dl0, dl1, dl2, dll, dlr, prim_1, prim_4, beta, mat, solid, loc)
 
     flux = riemann (prim_1, prim_4, normal, mat)
     flux = flux * area
