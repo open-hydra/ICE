@@ -213,7 +213,8 @@ position       = 0.5 0.0 0.0
 dtime          = 1e-4
 ```
 
-Give either `position` (physical coordinates, and ICE finds the nearest cell) or
+Give either `position` (physical coordinates: the probe takes the cell whose centre is
+nearest, over every block) or
 `index-position` as `b i j k`; an `index-position` that is not a cell of the mesh stops
 the run. `dtime` and `diter` set how often the probe samples: a row every `diter`
 iterations of the global count (the first column of the residual history), written on the

@@ -170,19 +170,27 @@ contains
   end subroutine Resolve_Variables
 
 
+  !> The cell of a probe given by position: the one whose centre, the mean of
+  !> its eight nodes, is nearest, over the cells of every block (every rank
+  !> holds the whole domain, so every rank finds the same cell); of two at the
+  !> same distance, the first in block, k, j, i order.
   subroutine Place(self, domain)
     implicit none
     class(obj_probe),                  intent(inout) :: self
     type(ICE_domain_type), intent(in)                :: domain
     integer :: i, j, k, b
-    real(R8) :: d0, d
+    real(R8) :: d0, d, centre(3)
 
     d0 = huge(1._R8)
     do b = 1, domain%nb
-      do k = 0, domain%blk(b)%dim(3)
-      do j = 0, domain%blk(b)%dim(2)
+      do k = 1, domain%blk(b)%dim(3)
+      do j = 1, domain%blk(b)%dim(2)
       do i = 1, domain%blk(b)%dim(1)
-        d = norm2(self%location%c - domain%blk(b)%node(i,j,k)%c)
+        centre = 0.125_R8 * (domain%blk(b)%node(i-1,j-1,k-1)%c + domain%blk(b)%node(i,j-1,k-1)%c + &
+                             domain%blk(b)%node(i-1,j  ,k-1)%c + domain%blk(b)%node(i,j  ,k-1)%c + &
+                             domain%blk(b)%node(i-1,j-1,k  )%c + domain%blk(b)%node(i,j-1,k  )%c + &
+                             domain%blk(b)%node(i-1,j  ,k  )%c + domain%blk(b)%node(i,j  ,k  )%c)
+        d = norm2(self%location%c - centre)
         if (d < d0) then
           d0 = d
           self%ilocation = [b, i, j, k]

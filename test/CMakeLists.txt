@@ -225,6 +225,10 @@ ice_add_fast_script(RestartTime fast/restart "fast;implementation")
 # res-threshold) and the probe rows; steady and time-accurate, Tecplot ASCII and vtk raw, a multigrid ring
 ice_add_fast_script(RestartExact fast/restart-exact "fast;implementation")
 
+# A probe given by position takes the cell whose centre is nearest, in the block that holds it: against a probe by
+# index in that cell and against the solution, on the 1-D stream and on a two-block ring
+ice_add_fast_script(ProbePosition fast/probe-position "fast;implementation")
+
 # The 3-D gates: a generated 24x16x12 box in 3x2x2 blocks with an MK, an IG and
 # an AG family, compared on the raw-binary VTK payload (test/fast/equiv3d/run.py).
 # The binary under test is this build's own, so a serial build is reported as a
