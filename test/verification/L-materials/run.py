@@ -17,7 +17,8 @@ case, so a family that reads another family's material, model or inlet is seen d
   L1c  control: "A 2", one zone (A), two families; every binary passes it.
   L2   tokens. "A 1 evaporation=CEM" / "B 1", [ICE-Physics] evaporation absent (default
        none): family A follows the CEM d-squared slope of case F (frozen T_p, cp 1e12),
-       family B keeps rho_p and n to the 15 digits the solution file prints. L2b: the same case with evaporation = none
+       family B keeps rho_p and n to the last bit (the solution file prints 17 digits, which give the double back).
+       L2b: the same case with evaporation = none
        written out gives the same part-field.tec byte for byte. L2d: evaporation = CEM in
        the INI and "B 1 evaporation=none": A evaporates, B does not.
   L2c  the token alone: one material, "A 1 evaporation=CEM", no table and no INI model.
@@ -108,8 +109,8 @@ def as_written(x):
 
 
 def as_output(x):
-    """An IC value as the solution file prints it, to 15 significant digits."""
-    return float('%.14E' % as_written(x))
+    """An IC value as the solution file gives it back: printed to 17 significant digits, the value itself."""
+    return as_written(x)
 
 
 def vector(*values):
@@ -210,7 +211,7 @@ def evap_legs(rep):
         rho0, n0 = as_output(F.RHO_P0), as_output(F.NDENS)
         print('       family %d: rho_p %.15e (IC %.15e), n %.15e' % (p + 1, rho[0], rho0, n[0]))
         rep.check(all(x == rho0 for x in rho) and all(x == n0 for x in n),
-                  '%s: family %d does not evaporate (rho_p and n kept to the 15 digits printed)' % (label, p + 1))
+                  '%s: family %d does not evaporate (rho_p and n kept to the last bit)' % (label, p + 1))
 
     def log_check(label, case, texts):
         log = (case.dir / 'log').read_text()
