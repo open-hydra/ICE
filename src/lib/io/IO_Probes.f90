@@ -214,12 +214,13 @@ contains
 
 
   !> The time counter of the time-based rows at a restart. Write_Probes_Data
-  !> writes a time-based row when time >= dtime*ntime and then counts it, so the
-  !> rows fall on the multiples of dtime, from the first (ntime starts at 1). A
-  !> restart that goes on in time (resume) takes for ntime the first multiple
-  !> its time has not reached, computed with the same product as
-  !> Write_Probes_Data so that an exact multiple counts as written; otherwise,
-  !> and in a steady run (time < 0), the rows start again from the first.
+  !> writes a time-based row when time >= dtime*ntime and then takes for ntime
+  !> the first multiple of dtime that the time has not reached (Next_Time_Row),
+  !> so the rows fall on the multiples of dtime, from the first (ntime starts
+  !> at 1), and ntime is a function of the time. A restart that goes on in time
+  !> (resume) takes the ntime of its time, that of the uninterrupted run;
+  !> otherwise, and in a steady run (time < 0), the rows start again from the
+  !> first.
   subroutine Restart_Probes(time, resume)
     implicit none
     real(R8), intent(in) :: time
@@ -229,14 +230,28 @@ contains
     do i = 1, nprobes
       probe(i)%ntime = 1
       if (.not. resume .or. time < 0._R8) cycle
-      if (time / probe(i)%dtime >= 0.5_R8 * real(huge(1), R8)) cycle
-      probe(i)%ntime = max(0, int(time / probe(i)%dtime) - 1)
-      do while (time >= probe(i)%dtime * probe(i)%ntime)
-        probe(i)%ntime = probe(i)%ntime + 1
-      end do
+      call Next_Time_Row(probe(i), time)
     end do
 
   end subroutine Restart_Probes
+
+
+  !> The first multiple of dtime that time has not reached, for ntime, computed
+  !> with the product that Write_Probes_Data compares so that an exact multiple
+  !> counts as reached. A count that would not fit an integer leaves ntime as
+  !> it is.
+  subroutine Next_Time_Row(probe, time)
+    implicit none
+    type(obj_probe), intent(inout) :: probe
+    real(R8),        intent(in)    :: time
+
+    if (time / probe%dtime >= 0.5_R8 * real(huge(1), R8)) return
+    probe%ntime = max(probe%ntime, int(time / probe%dtime) - 1)
+    do while (time >= probe%dtime * probe%ntime)
+      probe%ntime = probe%ntime + 1
+    end do
+
+  end subroutine Next_Time_Row
 
 
   !> At a restart, the rows of the probe files written after its solution
@@ -386,10 +401,13 @@ contains
       if (mod(iter, probe(i)%diter) == 0) then
         write(probe(i)%unit,*) iter, (probe(i)%variables(v)%p, v=1,probe(i)%nvar)
         flush(probe(i)%unit)
-      else if (time >= probe(i)%dtime * probe(i)%ntime) then
+      end if
+      ! A time row at the first step at or past each multiple of dtime, at a step
+      ! that writes an iteration row too, one row for a step past several
+      if (time >= probe(i)%dtime * probe(i)%ntime) then
         write(probe(i)%unit,*) time, (probe(i)%variables(v)%p, v=1,probe(i)%nvar)
         flush(probe(i)%unit)
-        probe(i)%ntime = probe(i)%ntime + 1
+        call Next_Time_Row(probe(i), time)
       end if
     end do
 

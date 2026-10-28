@@ -217,8 +217,10 @@ Give either `position` (physical coordinates, and ICE finds the nearest cell) or
 `index-position` as `b i j k`; an `index-position` that is not a cell of the mesh stops
 the run. `dtime` and `diter` set how often the probe samples: a row every `diter`
 iterations of the global count (the first column of the residual history), written on the
-finest grid level, and a row at each multiple of `dtime` of physical time, from the first,
-with the time in its first column.
+finest grid level, and a row at the first step at or past each multiple of `dtime` of
+physical time, from the first, with the time in its first column (one row for a step past
+several multiples; a step can write both rows). A restart that goes on in time writes the
+time rows the uninterrupted run would.
 
 The variables of family `n` are those of the solution files, `rho_p<n>`, `u_p<n>`,
 `v_p<n>`, `w_p<n>`, `T_p<n>`, `n_p<n>`, and `f_p<n>`, `chi_p<n>` for a solidifying family;
