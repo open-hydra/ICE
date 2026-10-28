@@ -59,6 +59,9 @@ def read_field(path):
                for a in 'IJK')
     nums = []
     for line in lines[head + 1:]:
+        # The data set auxiliary data records after the zone (the counters of a restart) hold no field value
+        if line.lstrip().startswith('DATASETAUXDATA'):
+            continue
         nums += [float(t) for t in line.split()]
     nnode = I * J * K
     ncell = (I - 1) * (J - 1) * max(1, K - 1)

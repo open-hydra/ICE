@@ -21,7 +21,8 @@ def fail(why):
 
 def numbers(path):
     L = open(path).read().split('\n'); zi = next(i for i, l in enumerate(L) if 'ZONE' in l)
-    return np.array([float(t) for l in L[zi+1:] for t in l.split()])
+    # every value after the zone header; the data set auxiliary data records (restart counters) are not values
+    return np.array([float(t) for l in L[zi+1:] if not l.lstrip().startswith('DATASETAUXDATA') for t in l.split()])
 
 out = os.path.join(HERE, 'OUTPUT', 'part-field.tec')
 try:
