@@ -233,9 +233,11 @@ contains
         localpath_vtk = trim(path)//'vtk/'
         call execute_command_line('mkdir -p '//trim(localpath_vtk))
         written = trim(path)//trim(file)//'.vtm'
+        !> TIME is the solution time of the Tecplot files (ICE_postprocess):
+        !  minus the global iteration count in a steady run
         E_IO = vtk_write_structured_multiblock(orion=IOfield, &
                  vtspath=trim(localpath_vtk)//trim(file), &
-                 vtmpath=trim(path)//trim(file), varnames=vtknames, time=grid%time)
+                 vtmpath=trim(path)//trim(file), varnames=vtknames, time=IOfield%solutiontime)
       case ('tecplot')
         IOfield%tec%format = format(2)
         written = trim(path)//trim(file)//io_extension(format)

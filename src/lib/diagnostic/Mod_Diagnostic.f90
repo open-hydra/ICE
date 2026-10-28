@@ -163,10 +163,11 @@ contains
         localpath_vtk = trim(path)//'vtk/'
         call execute_command_line('mkdir -p '//trim(localpath_vtk))
         written = trim(path)//trim(file)//'.vtm'
+        ! TIME as the solution's (write_vtk_tec)
         E_IO = vtk_write_structured_multiblock(orion=IOfield,            &
                  vtspath=trim(localpath_vtk)//trim(file),                &
                  vtmpath=trim(path)//trim(file),                         &
-                 varnames=vtknames, time=domain%time)
+                 varnames=vtknames, time=IOfield%solutiontime)
         call keep_columns(nfield)
       case('tecplot')
         IOfield%tec%format = trim(format(2))
