@@ -38,7 +38,7 @@ contains
     !> restart
     real(8), parameter :: steady_time = -1.12358132135_8
     logical :: coupled, resume
-    integer :: ios, b
+    integer :: ios, b, m
 
     ! Print header
     if (mpi_is_root) call Print_Header()
@@ -135,6 +135,11 @@ contains
     end if
 
     call output_solution_setup(sim%ODP(1))
+    ! The output buffers of the coarse levels, at their sizes: a level writes its own
+    ! solution and diagnostic files (field-level<n>, residuals-level<n>, ICE_postprocess)
+    do m = 2, obj_multigrid%MGL
+      call output_solution_setup(sim%ODP(m))
+    end do
 
     ! Setup probes (no-op if nprobes == 0)
     call Setup_Probes(sim%domain(1))

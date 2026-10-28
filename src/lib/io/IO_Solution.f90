@@ -234,8 +234,8 @@ contains
 
       !> The counters that a restart reads back (read_vtk_tec) to go on as the
       !  uninterrupted run would, the same in every format, next to CYCLE, the
-      !  global iteration count. grid is the finest level, whose iteration count
-      !  stays 0 while a coarse one is solved.
+      !  global iteration count. grid is the level being written, with its own
+      !  iteration count: the finest for the solution a restart reads.
       counters = [real(grid%iter, R8P), real(obj_io%output_number, R8P), real(obj_multigrid%MG_level, R8P), &
                   obj_sim_param%time_from_call, obj_sim_param%res_reference]
 

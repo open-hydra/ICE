@@ -166,8 +166,9 @@ solution without `TIME` reads as time 0.
 
 Every solution also stores the counters that make a restart go on as the uninterrupted
 run would: `CYCLE`, the global iteration count (the first column of the residual
-history), `ICE_ITERATION`, the iterations of the finest level (which the CFL ramp of
-`cfl-rise-threshold` and the `sol-diter` and `res-diter` cadences count),
+history), `ICE_ITERATION`, the iterations of the grid level of the solution, the finest
+for `part-field` (which the CFL ramp of `cfl-rise-threshold` and the `sol-diter` and
+`res-diter` cadences count),
 `ICE_OUTPUT_NUMBER`, the last number of the series of `sol-overwrite = false`,
 `ICE_GRID_LEVEL`, the grid level being solved, `ICE_LAST_OUTPUT_TIME`, the time of the
 last `sol-dtime` solution, and `ICE_RES_REFERENCE`, the unit of `res-threshold`. A

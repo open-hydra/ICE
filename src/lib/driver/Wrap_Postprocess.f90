@@ -36,11 +36,13 @@ contains
 
     level = obj_multigrid%MG_level
 
-    ! Update ODP solutiontime
+    ! The solution time of the level being solved, which writes its files from its own
+    ! domain and output buffer: the time of that level in a time-accurate run, minus the
+    ! global iteration count in a steady one
     if (obj_time_scheme%time_accurate) then
-      simulation%ODP(1)%solutiontime = simulation%domain(1)%time
+      simulation%ODP(level)%solutiontime = simulation%domain(level)%time
     else
-      simulation%ODP(1)%solutiontime = -real(obj_sim_param%iter_general, 8)
+      simulation%ODP(level)%solutiontime = -real(obj_sim_param%iter_general, 8)
     end if
 
     if (level == 1) then
@@ -112,18 +114,18 @@ contains
                 write(*,*) ' ... writing time-based solution'
               end if
             end if
-            call Write_Solution(simulation%domain(1), simulation%ODP(1), &
+            call Write_Solution(simulation%domain(level), simulation%ODP(level), &
                                 trim(solfile)//trim(str(.true.,obj_io%output_number)), obj_io%sol_fmt)
             if (.not. obj_time_scheme%time_accurate) &
-              call Write_Diagnostic(simulation%domain(1), simulation%ODP(1), &
+              call Write_Diagnostic(simulation%domain(level), simulation%ODP(level), &
                                     trim(dgsfile)//trim(str(.true.,obj_io%output_number)))
           end if
         end if
       end if
 
-      call Write_Solution(simulation%domain(1), simulation%ODP(1), solfile, obj_io%sol_fmt)
+      call Write_Solution(simulation%domain(level), simulation%ODP(level), solfile, obj_io%sol_fmt)
       if (.not. obj_time_scheme%time_accurate) &
-        call Write_Diagnostic(simulation%domain(1), simulation%ODP(1), dgsfile)
+        call Write_Diagnostic(simulation%domain(level), simulation%ODP(level), dgsfile)
 
       call timer_summary()
 
@@ -181,16 +183,16 @@ contains
       ! Iter-based solution
       if (mod(simulation%domain(level)%iter, obj_io%sol_diter) == 0d0) then
         if (mpi_is_root) write(*,*) ' ... writing iter-based solution'
-        call Write_Solution(simulation%domain(1), simulation%ODP(1), solfile, obj_io%sol_fmt)
+        call Write_Solution(simulation%domain(level), simulation%ODP(level), solfile, obj_io%sol_fmt)
         if (.not. obj_time_scheme%time_accurate) &
-          call Write_Diagnostic(simulation%domain(1), simulation%ODP(1), dgsfile)
+          call Write_Diagnostic(simulation%domain(level), simulation%ODP(level), dgsfile)
       ! Time-based solution
       elseif (simulation%domain(level)%time >= obj_sim_param%time_from_call + obj_io%sol_dtime) then
         obj_sim_param%time_from_call = simulation%domain(level)%time
         if (mpi_is_root) write(*,*) ' ... writing time-based solution'
-        call Write_Solution(simulation%domain(1), simulation%ODP(1), solfile, obj_io%sol_fmt)
+        call Write_Solution(simulation%domain(level), simulation%ODP(level), solfile, obj_io%sol_fmt)
         if (.not. obj_time_scheme%time_accurate) &
-          call Write_Diagnostic(simulation%domain(1), simulation%ODP(1), dgsfile)
+          call Write_Diagnostic(simulation%domain(level), simulation%ODP(level), dgsfile)
       end if
 
       ! MG level switch: change_MG set by Wrap_Solve after coarse level completes
