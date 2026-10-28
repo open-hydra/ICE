@@ -216,6 +216,10 @@ ice_add_fast_script(Inflow400 fast/inflow-400 "fast;implementation;bc")
 # exactly zero, and a wedge whose side faces do not carry 200 is refused.
 ice_add_fast_script(MirrorModes fast/mirror-modes "fast;implementation;bc;1D;2D")
 
+# A restart goes on from the time of its solution: a steady one from its iteration count (minus
+# the solution time), Tecplot ASCII and vtk raw, a time-accurate one from the TIME of a vtk solution
+ice_add_fast_script(RestartTime fast/restart "fast;implementation")
+
 # The 3-D gates: a generated 24x16x12 box in 3x2x2 blocks with an MK, an IG and
 # an AG family, compared on the raw-binary VTK payload (test/fast/equiv3d/run.py).
 # The binary under test is this build's own, so a serial build is reported as a
