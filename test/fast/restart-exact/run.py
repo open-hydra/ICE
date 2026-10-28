@@ -26,6 +26,9 @@ numbered solutions and on a residual row (res-diter divides N: every run writes 
                      and the restart runs N more: the rows of N + 1 .. N + N/2 must go first (the residual rows and
                      the iteration rows of the probe), steady stream, solutions on sol-diter
   past-transient-vtk the same, time-accurate, vtk raw: the probe's time rows after the solution go too
+  killed             B runs N + N/2 iterations and loses its last solution, as a run stopped before its last write
+                     (the numbered series of sol-overwrite = false kept): the restart, with no part-field to read,
+                     takes the last numbered solution and runs N/2 more
 
 ICE_RESTART_RANKS=<n> runs every run on n MPI ranks (an MPI build; the ring's blocks, and its probe, then go to
 different ranks).
@@ -221,6 +224,27 @@ def went_past_leg(name, steady, fmt):
     return compare(name, a, b)
 
 
+def killed_leg(name):
+    """B runs N + N/2 iterations (solutions every N/2, the last one number 3), its part-field and part-residuals are
+    removed, and the restart runs N/2 more."""
+    def make(w):
+        d = stream(w, True, 'tecplot ascii')
+        ini_set(d, 'ICE-IO', sol_diter=N // 2)
+        return d
+    a, b = make(WORK / name / 'A'), make(WORK / name / 'B')
+    ini_set(b, 'ICE-Parameters', iter_threshold=N + N // 2)
+    try:
+        run(a)
+        run(b)
+        for f in ('part-field.tec', 'part-residuals.tec'):
+            (b / 'OUTPUT' / f).unlink()
+        ini_set(b, 'ICE-Parameters', iter_threshold=N // 2, newrun='false')
+        run(b)
+    except RuntimeError as e:
+        return report(name, False, str(e))
+    return compare(name, a, b)
+
+
 def compare(name, a, b, stop=None):
     """The OUTPUT of A against that of B, file by file."""
     ta, tb = tree(a), tree(b)
@@ -276,6 +300,7 @@ def main():
     fails += leg('wedge', wedge)
     fails += went_past_leg('past-steady-tec', True, 'tecplot ascii')
     fails += went_past_leg('past-transient-vtk', False, 'vtk raw')
+    fails += killed_leg('killed')
     print('[fast] %s: a run of 2N iterations and one of N restarted for N more write the same files (%d rank%s)'
           % ('PASS' if fails == 0 else 'FAIL', RANKS, '' if RANKS == 1 else 's'))
     sys.exit(1 if fails else 0)

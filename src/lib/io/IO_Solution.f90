@@ -87,7 +87,6 @@ contains
     implicit none
     logical      :: present
     integer      :: i
-    character(5) :: n
     character(llen) :: try
 
     read_ic => read_vtk_tec
@@ -106,12 +105,14 @@ contains
     else
       condinit = 'OUTPUT/'//trim(ICE_phase_prefix)//'field'//trim(obj_io%extension)
       inquire(file=condinit, exist=present)
+      !> Without it (a run stopped before its last write), the last of the
+      !  numbered solutions of sol-overwrite = false, named as ICE_postprocess
+      !  names them: field1, field2, ...
       if (.not. present) then
         i = 0
         do
           i = i + 1
-          write(n, '(I5.5)') i
-          try = 'OUTPUT/'//trim(ICE_phase_prefix)//'field'//trim(adjustl(n))//trim(obj_io%extension)
+          try = 'OUTPUT/'//trim(ICE_phase_prefix)//'field'//trim(str(.true.,i))//trim(obj_io%extension)
           inquire(file=try, exist=present)
           if (present) then
             condinit = try

@@ -196,7 +196,8 @@ last line has no newline gets one. From the other solutions nothing is dropped: 
 those rows by hand, and end the file with a newline.
 
 With `sol-overwrite = false` the solutions form a numbered series; restarting from a
-particular one means renaming it back to `part-field`.
+particular one means renaming it back to `part-field`. A restart that finds no
+`part-field` (a run stopped before its last write) reads the last of the series.
 
 ## Probes
 
