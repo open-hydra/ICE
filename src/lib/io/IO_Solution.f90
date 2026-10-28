@@ -265,17 +265,22 @@ contains
     implicit none
     type(orion_data), intent(inout)           :: IOfield_cond
     type(orion_data), intent(inout), optional :: IOfield_gas
+    character(len=llen) :: vtspath
 
+    !> A vtk field is a .vtm and the block files it lists, read from the
+    !  prefix vtm_block_path finds, in the format they declare (the reader's
+    !  own default is base64).
     if (present(IOfield_gas)) then
       select case (trim(obj_io%ini_fmt(1)))
       case ('tecplot')
         IOfield_gas%tec%format = obj_io%ini_fmt(2)
         error_gas = tec_read_structured_multiblock(orion=IOfield_gas, filename=trim(gasinit))
       case ('vtk')
-        IOfield_gas%tec%format = obj_io%ini_fmt(2)
+        vtspath = vtm_block_path(gasinit)
+        IOfield_gas%vtk%format = vtk_block_format(gasinit, vtspath, IOfield_gas%vtk%format)
         error_gas = vtk_read_structured_multiblock(orion=IOfield_gas, &
                       vtmpath=gasinit(1:len(trim(gasinit))-4), &
-                      vtspath='INPUT/vtk/field', time=IOtime)
+                      vtspath=trim(vtspath), time=IOtime)
       end select
     end if
 
@@ -284,10 +289,14 @@ contains
       IOfield_cond%tec%format = obj_io%ini_fmt(2)
       error = tec_read_structured_multiblock(orion=IOfield_cond, filename=trim(condinit))
     case ('vtk')
-      IOfield_cond%tec%format = obj_io%ini_fmt(2)
+      vtspath = vtm_block_path(condinit)
+      IOfield_cond%vtk%format = vtk_block_format(condinit, vtspath, IOfield_cond%vtk%format)
       error = vtk_read_structured_multiblock(orion=IOfield_cond, &
                 vtmpath=condinit(1:len(trim(condinit))-4), &
-                vtspath='INPUT/vtk/field', time=IOtime)
+                vtspath=trim(vtspath), time=IOtime)
+      !> The time of the files (their TIME, 0 when they hold none) where the
+      !  Tecplot reader puts the time of the zone headers
+      IOfield_cond%solutiontime = IOtime
     case default
       !> Neither reader matched, so the field would be left EMPTY and every later size()
       !  silently returns zero -- allocate_data then makes a zero-length bc array and the run
@@ -313,8 +322,10 @@ contains
   !> is kept positive. A file whose zone header has no SOLUTIONTIME holds no
   !> time, and check_ic stops the run: ORION reads it as -10 (8cda645) or -huge
   !> (a978930), and -10 is also the time a978930 reads for a steady solution at
-  !> iteration 10, so an ASCII file is asked itself (tec_has_time). A time that
-  !> is not finite is left to check_ic.
+  !> iteration 10, so an ASCII file is asked itself (tec_has_time). A vtk
+  !> solution gives its TIME, negative for a steady one (0 when the files hold
+  !> none, which the reader does not tell). A time that is not finite is left
+  !> to check_ic.
   subroutine restart_time(IOfield)
     use ICE_Config_Types_m, only: obj_io
     implicit none
@@ -323,14 +334,100 @@ contains
     restart_time_found = .true.
     restart_steady     = .false.
     if (Not_Finite(IOfield%solutiontime)) return
-    if (trim(obj_io%ini_fmt(1)) /= 'tecplot') return
 
-    restart_time_found = IOfield%solutiontime > -0.5_R8 * huge(1._R8)
-    if (trim(obj_io%ini_fmt(2)) == 'ascii') restart_time_found = restart_time_found .and. tec_has_time(condinit)
-    restart_steady = restart_time_found .and. (IOfield%solutiontime < 0._R8 .or. IOfield%strandid == 0)
+    select case (trim(obj_io%ini_fmt(1)))
+    case ('tecplot')
+      restart_time_found = IOfield%solutiontime > -0.5_R8 * huge(1._R8)
+      if (trim(obj_io%ini_fmt(2)) == 'ascii') restart_time_found = restart_time_found .and. tec_has_time(condinit)
+      restart_steady = restart_time_found .and. (IOfield%solutiontime < 0._R8 .or. IOfield%strandid == 0)
+    case ('vtk')
+      restart_steady = IOfield%solutiontime < 0._R8
+    end select
     if (restart_steady) IOfield%solutiontime = abs(IOfield%solutiontime)
 
   end subroutine restart_time
+
+
+  !> The first block file that a .vtm lists (its file attribute without
+  !> .vts), '' when the .vtm cannot be read or lists none.
+  function vtm_first_entry(vtmfile) result(block)
+    implicit none
+    character(len=*), intent(in) :: vtmfile
+    character(len=llen) :: block
+    character(len=llen) :: line
+    integer :: unit, ios, i1, i2
+
+    block = ''
+    open(newunit=unit, file=vtmfile, status='old', action='read', iostat=ios)
+    if (ios /= 0) return
+    do
+      read(unit, '(A)', iostat=ios) line
+      if (ios /= 0) exit
+      i1 = index(line, 'file="')
+      if (i1 == 0) cycle
+      i2 = index(line, '.vts"')
+      if (i2 > i1 + 6) block = line(i1+6:i2-1)
+      exit
+    end do
+    close(unit)
+
+  end function vtm_first_entry
+
+
+  !> The prefix that the vtk reader puts before the block files a .vtm lists:
+  !> the folder of the .vtm, which ORION's writer lists them from, or
+  !> INPUT/vtk/field, where earlier versions of ICE took the blocks of a field,
+  !> when the first block file is there and not in the folder.
+  function vtm_block_path(vtmfile) result(vtspath)
+    implicit none
+    character(len=*), intent(in) :: vtmfile
+    character(len=llen) :: vtspath
+    character(len=llen) :: block
+    logical :: there
+
+    vtspath = vtmfile(1:index(vtmfile, '/', back=.true.))
+    block = vtm_first_entry(vtmfile)
+    if (len_trim(block) == 0) return
+    inquire(file=trim(vtspath)//trim(block)//'.vts', exist=there)
+    if (there) return
+    inquire(file='INPUT/vtk/field'//trim(block)//'.vts', exist=there)
+    if (there) vtspath = 'INPUT/vtk/field'
+
+  end function vtm_block_path
+
+
+  !> The vtk format of the block files of a .vtm, 'ascii', 'binary' (base64)
+  !> or 'raw' (appended data), as its first block file declares it in its
+  !> first DataArray (the blocks are written in one call, in one format), or
+  !> fallback when the file cannot tell.
+  function vtk_block_format(vtmfile, vtspath, fallback) result(fmt)
+    implicit none
+    character(len=*), intent(in) :: vtmfile, vtspath, fallback
+    character(len=6) :: fmt
+    character(len=llen) :: line, block
+    integer :: unit, ios
+
+    fmt = fallback
+    block = vtm_first_entry(vtmfile)
+    if (len_trim(block) == 0) return
+    open(newunit=unit, file=trim(vtspath)//trim(block)//'.vts', status='old', action='read', iostat=ios)
+    if (ios /= 0) return
+    do
+      read(unit, '(A)', iostat=ios) line
+      if (ios /= 0) exit
+      if (index(line, '<DataArray') == 0) cycle
+      if (index(line, 'format="appended"') > 0) then
+        fmt = 'raw'
+      else if (index(line, 'format="binary"') > 0) then
+        fmt = 'binary'
+      else if (index(line, 'format="ascii"') > 0) then
+        fmt = 'ascii'
+      end if
+      exit
+    end do
+    close(unit)
+
+  end function vtk_block_format
 
 
   !> Whether the first zone header of a Tecplot ASCII file names SOLUTIONTIME:
