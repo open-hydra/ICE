@@ -43,6 +43,21 @@ module ICE_Config_Types_m
   !! ------------------------------------------------------
   !! Input-Output -----------------------------------------
   !! ------------------------------------------------------
+  !> The counters stored with every solution (data set auxiliary data of the
+  !> Tecplot files, field data of the vtk files) and read back by a restart, so
+  !> that the restarted run goes on as the uninterrupted one would: CFL ramp,
+  !> output cadence and numbering, residual and probe rows, grid level and the
+  !> unit of res-threshold (IO_Solution, restart_counter_names)
+  type :: restart_counters_t
+    logical  :: found = .false.            ! The restart solution holds them all
+    integer  :: cycle = 0                  ! Global iteration count, over every grid level (CYCLE)
+    integer  :: iteration = 0              ! Iteration count of the finest level
+    integer  :: output_number = 0          ! Number of the last numbered solution
+    integer  :: grid_level = 1             ! Grid level being solved
+    real(R8) :: last_output_time = 0._R8   ! Time of the last time-based solution
+    real(R8) :: res_reference = 0._R8      ! The unit of res-threshold (0 = not yet)
+  end type restart_counters_t
+
   type :: io_t
     character(len=llen) :: warning_message
     character(len=llen) :: error_message
@@ -67,6 +82,8 @@ module ICE_Config_Types_m
     ! Residuals file
     integer             :: unitRES
     character(len=llen) :: unitRES_format
+    integer             :: output_number = 0   ! Number of the last numbered solution (sol-overwrite = false)
+    type(restart_counters_t) :: restart        ! The counters of the solution a restart reads
   end type io_t
 
   type :: io_probes_t

@@ -4,7 +4,6 @@ module ICE_Wrap_Postprocess
   private
   public :: ICE_postprocess
 
-  integer,       private :: id_stampa = 0
   !> len=* so the length comes from the literal. Both _MG strings were declared one
   !> character short, which cut the closing parenthesis off the format and made every
   !> shell line on a multigrid run a "syntax error in format" abort.
@@ -103,7 +102,7 @@ contains
         if (nprobes > 0) call Write_Probes_Data(obj_sim_param%iter_general, simulation%domain(1)%time)
         iter_based = mod(simulation%domain(1)%iter, obj_io%sol_diter) == 0
         if (iter_based .or. simulation%domain(1)%time >= obj_sim_param%time_from_call + obj_io%sol_dtime) then
-          id_stampa = id_stampa + 1
+          obj_io%output_number = obj_io%output_number + 1
           if (.not. iter_based) obj_sim_param%time_from_call = simulation%domain(1)%time
           if (.not. obj_io%sol_overwrite) then
             if (mpi_is_root) then
@@ -114,9 +113,10 @@ contains
               end if
             end if
             call Write_Solution(simulation%domain(1), simulation%ODP(1), &
-                                trim(solfile)//trim(str(.true.,id_stampa)), obj_io%sol_fmt)
+                                trim(solfile)//trim(str(.true.,obj_io%output_number)), obj_io%sol_fmt)
             if (.not. obj_time_scheme%time_accurate) &
-              call Write_Diagnostic(simulation%domain(1), simulation%ODP(1), trim(dgsfile)//trim(str(.true.,id_stampa)))
+              call Write_Diagnostic(simulation%domain(1), simulation%ODP(1), &
+                                    trim(dgsfile)//trim(str(.true.,obj_io%output_number)))
           end if
         end if
       end if
@@ -136,9 +136,9 @@ contains
     elseif (obj_sim_param%TODO == 2) then
 
       if (level == 1) then
-        id_stampa = id_stampa + 1
-        if (.not.obj_io%sol_overwrite) solfile = trim(solfile)//trim(str(.true.,id_stampa))
-        if (.not.obj_io%sol_overwrite) dgsfile = trim(dgsfile)//trim(str(.true.,id_stampa))
+        obj_io%output_number = obj_io%output_number + 1
+        if (.not.obj_io%sol_overwrite) solfile = trim(solfile)//trim(str(.true.,obj_io%output_number))
+        if (.not.obj_io%sol_overwrite) dgsfile = trim(dgsfile)//trim(str(.true.,obj_io%output_number))
       end if
 
       ! Probes: on the finest level, whose cells they read, at the global

@@ -7,9 +7,10 @@
                   the restart takes the time with its sign for the count: B goes on from iteration -N.
   vtk-steady      the same with sol-format = vtk raw: B reads OUTPUT/part-field.vtm and the block files it lists
                   in OUTPUT/vtk/; rows N + 1 .. N + n, the TIME of B's solution -(N + n).
-  vtk-transient   time-accurate, vtk raw: B goes on in time from the TIME of A's solution. B counts its
-                  iterations from 1 again, its first row's time is above A's last one by less than 1.5 of A's
-                  last step, its times increase, and the TIME of its solution is its last row's time.
+  vtk-transient   time-accurate, vtk raw: B goes on in time from the TIME of A's solution and with its global
+                  iteration count (CYCLE): B's rows are the iterations N + 1 .. N + n, its first row's time is
+                  above A's last one by less than 1.5 of A's last step, its times increase, and the TIME of its
+                  solution is its last row's time.
 """
 import math
 import re
@@ -121,7 +122,7 @@ def transient_leg(name, fmt):
     its = [r[0] for r in rows_b]
     times = [r[1] for r in rows_b]
     last_step = rows_a[-1][1] - rows_a[-2][1]
-    ok = (its == list(range(1, NB + 1)) and time_a is not None and times and times[0] > rows_a[-1][1]
+    ok = (its == list(range(N + 1, N + NB + 1)) and time_a is not None and times and times[0] > rows_a[-1][1]
           and times[0] - rows_a[-1][1] <= 1.5 * last_step and all(b > a for a, b in zip(times, times[1:]))
           and time_b is not None and abs(time_b - times[-1]) <= 1e-9 * abs(times[-1]))
     return report(name, ok, 'A ends at %.10e (TIME %r); B rows %s..%s, times %.10e .. %.10e, TIME %r'

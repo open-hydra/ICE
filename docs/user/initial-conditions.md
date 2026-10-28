@@ -80,7 +80,8 @@ infers the dimensionality from the resulting cell counts.
 With `newrun = false` the initial state is read from `OUTPUT/part-field<ext>` instead,
 and the run goes on from the time of that solution: the `SOLUTIONTIME` of its zone
 header (Tecplot) or its `TIME` (vtk), negative for a steady solution, whose global
-iteration count it is (see [Restarting](using.md#restarting)). The format and variable
+iteration count it is, and with the counters stored next to that time (see
+[Restarting](using.md#restarting)). The format and variable
 order are identical — it is the same writer. A vtk field, initial condition or
 solution, is read from the folder of its `.vtm`, which lists its block files.
 

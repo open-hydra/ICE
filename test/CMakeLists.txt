@@ -339,6 +339,10 @@ ice_add_unit_test(SolidificationUnit unit/test_solidification.f90 "fast;unit;imp
 # scalars poisoned, against the scalars set to the tables' values, for d2-law, CEM, ASM and TC
 ice_add_unit_test(VapourSourcesUnit unit/test_vapour_sources.f90 "fast;unit;implementation")
 
+# The rows of a history file that a restart drops (Drop_Rows_After), on files written for it: a run gone past its
+# solution, a file whose count started again, a solution older than every row, a row cut short, time rows
+ice_add_unit_test(DropRowsUnit unit/test_drop_rows.f90 "fast;unit;implementation")
+
 # Rank count must not change the answer either. Needs an MPI build, so it is
 # registered only when there is one.
 if(USE_MPI)

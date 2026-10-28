@@ -272,10 +272,12 @@ contains
   !> a line; written list-directed it may take more than one line, so the values
   !> are counted to find where each row starts. Value col of a row places it: a
   !> time (written with a decimal point or an exponent) when times, else an
-  !> iteration. The first row whose value is of that kind and greater than last
-  !> is dropped, with every row after it; a row whose value is of the other kind
-  !> is not compared (the iteration rows of a probe in a time-accurate run, whose
-  !> iteration count a restart starts again). A last row with fewer than ncol
+  !> iteration; a row whose value is of the other kind is not compared (the
+  !> iteration rows and the time rows of a probe). The first row greater than
+  !> last that follows the last row not greater than last is dropped, with
+  !> every row after it: in a file written by several runs whose count started
+  !> again (restarts from solutions without the counters), the rows before the
+  !> last one not later than the solution stay. A last row with fewer than ncol
   !> values (a file cut in the middle of a row) is dropped too, and a line that
   !> starts with '#' is kept and holds no values. The file is truncated and ends
   !> with a newline (End_With_Newline); a missing file is left alone.
@@ -286,16 +288,15 @@ contains
     real(R8),         intent(in) :: last
     logical,          intent(in) :: times
     character(len=32768) :: line
-    integer  :: unit, ios, nkeep, nrow, nval, k1, k2
+    integer  :: unit, ios, nkeep, nrow, nval, ncut, k1, k2
     real(R8) :: v
-    logical  :: later
 
     open(newunit=unit, file=file, status='OLD', action='READWRITE', iostat=ios)
     if (ios /= 0) return
     nkeep = 0      ! lines kept
     nrow  = 0      ! lines kept before the row being read
     nval  = 0      ! values counted
-    later = .false.
+    ncut  = -1     ! lines before the first later row after the last row not later (-1: none)
     do
       read(unit, '(A)', iostat=ios) line
       if (ios /= 0) exit
@@ -317,16 +318,21 @@ contains
         nval = nval + 1
         if (mod(nval - 1, ncol) + 1 == col .and. ((scan(line(k1:k2), '.eEdD') > 0) .eqv. times)) then
           read(line(k1:k2), *, iostat=ios) v
-          if (ios == 0) later = v > last
-          if (later) exit
+          if (ios == 0) then
+            if (v <= last) then
+              ncut = -1
+            else if (ncut < 0) then
+              ncut = nrow
+            end if
+          end if
         end if
         if (k2 >= len(line)) exit
       end do
-      if (later) exit
       nkeep = nkeep + 1
     end do
-    ! The row later than the solution, or a last row cut short: dropped from its first line
-    if (later .or. mod(nval, ncol) /= 0) nkeep = nrow
+    ! A last row cut short goes from its first line, and the rows from the first later one
+    if (mod(nval, ncol) /= 0) nkeep = nrow
+    if (ncut >= 0) nkeep = min(nkeep, ncut)
     rewind(unit)
     do k1 = 1, nkeep
       read(unit, '(A)', iostat=ios) line

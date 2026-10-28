@@ -19,6 +19,16 @@ module ICE_IO_Solution
   !> (restart_time)
   logical :: restart_time_found = .true., restart_steady = .false.
 
+  !> The counters stored with every solution next to CYCLE, the global
+  !> iteration count (write_vtk_tec), and read back by a restart
+  !> (restart_counters), in this order: see restart_counters_t
+  character(len=20), parameter, public :: restart_counter_names(5) = [character(len=20) :: &
+    'ICE_ITERATION', 'ICE_OUTPUT_NUMBER', 'ICE_GRID_LEVEL', 'ICE_LAST_OUTPUT_TIME', 'ICE_RES_REFERENCE']
+
+  !> A counter of the restart solution that is not what the writer writes (not
+  !> finite, or a count out of range): check_ic stops the run with it
+  character(len=llen) :: restart_bad_counter = ''
+
   !> Concrete procedure pointing to one of the subroutine realizations
   procedure(r_solution_if), pointer, public :: read_ic
   procedure(w_solution_if), pointer, public :: write_solution
@@ -184,7 +194,7 @@ contains
     use Lib_VTK
     use Lib_Tecplot
     use ICE_Advanced_Types_m
-    use ICE_Config_Types_m, only: obj_io
+    use ICE_Config_Types_m, only: obj_io, obj_sim_param, obj_multigrid
     use ICE_Mod_MPI,           only: mpi_is_root, mpi_abort_all
     use ICE_Mod_GhostExchange, only: gather_prim_to_root, mpi_io_barrier
     implicit none
@@ -196,6 +206,7 @@ contains
     character(len=hlen) :: what
     character(len=len(obj_io%Ovarnames)) :: vtknames
     integer(kind=I4)    :: b, p, c, nstart, nend, E_IO
+    real(R8P)           :: counters(size(restart_counter_names))
 
     !> Collect the blocks owned by other ranks on root, which writes the file
     call gather_prim_to_root(grid)
@@ -220,6 +231,13 @@ contains
         end do
       end do
 
+      !> The counters that a restart reads back (read_vtk_tec) to go on as the
+      !  uninterrupted run would, the same in every format, next to CYCLE, the
+      !  global iteration count. grid is the finest level, whose iteration count
+      !  stays 0 while a coarse one is solved.
+      counters = [real(grid%iter, R8P), real(obj_io%output_number, R8P), real(obj_multigrid%MG_level, R8P), &
+                  obj_sim_param%time_from_call, obj_sim_param%res_reference]
+
       E_IO = 0
       select case (format(1))
       case ('vtk')
@@ -234,15 +252,19 @@ contains
         call execute_command_line('mkdir -p '//trim(localpath_vtk))
         written = trim(path)//trim(file)//'.vtm'
         !> TIME is the solution time of the Tecplot files (ICE_postprocess):
-        !  minus the global iteration count in a steady run
+        !  minus the global iteration count in a steady run. CYCLE and the
+        !  counters are field data of every block file.
         E_IO = vtk_write_structured_multiblock(orion=IOfield, &
                  vtspath=trim(localpath_vtk)//trim(file), &
-                 vtmpath=trim(path)//trim(file), varnames=vtknames, time=IOfield%solutiontime)
+                 vtmpath=trim(path)//trim(file), varnames=vtknames, time=IOfield%solutiontime, &
+                 cycle=int(obj_sim_param%iter_general, I4P), fldnames=restart_counter_names, fldvalues=counters)
       case ('tecplot')
         IOfield%tec%format = format(2)
         written = trim(path)//trim(file)//io_extension(format)
+        !> CYCLE and the counters as data set auxiliary data
         E_IO = tec_write_structured_multiblock(orion=IOfield, varnames=obj_io%Ovarnames, &
-                 filename=trim(written))
+                 filename=trim(written), cycle=int(obj_sim_param%iter_general, I4P), &
+                 fldnames=restart_counter_names, fldvalues=counters)
       end select
 
       !> A write that the library refuses or that fails returns a non-zero
@@ -268,6 +290,9 @@ contains
     type(orion_data), intent(inout)           :: IOfield_cond
     type(orion_data), intent(inout), optional :: IOfield_gas
     character(len=llen) :: vtspath
+    integer(I4P)        :: ncycle
+    real(R8P)           :: counters(size(restart_counter_names))
+    logical             :: found(size(restart_counter_names))
 
     !> A vtk field is a .vtm and the block files it lists, read from the
     !  prefix vtm_block_path finds, in the format they declare (the reader's
@@ -286,16 +311,32 @@ contains
       end select
     end if
 
+    !> A restart reads the counters stored with its solution too (write_vtk_tec)
+    ncycle   = 0
+    counters = 0._R8P
+    found    = .false.
     select case (trim(obj_io%ini_fmt(1)))
     case ('tecplot')
       IOfield_cond%tec%format = obj_io%ini_fmt(2)
-      error = tec_read_structured_multiblock(orion=IOfield_cond, filename=trim(condinit))
+      if (obj_sim_param%newrun) then
+        error = tec_read_structured_multiblock(orion=IOfield_cond, filename=trim(condinit))
+      else
+        error = tec_read_structured_multiblock(orion=IOfield_cond, filename=trim(condinit), &
+                  cycle=ncycle, fldnames=restart_counter_names, fldvalues=counters, fldfound=found)
+      end if
     case ('vtk')
       vtspath = vtm_block_path(condinit)
       IOfield_cond%vtk%format = vtk_block_format(condinit, vtspath, IOfield_cond%vtk%format)
-      error = vtk_read_structured_multiblock(orion=IOfield_cond, &
-                vtmpath=condinit(1:len(trim(condinit))-4), &
-                vtspath=trim(vtspath), time=IOtime)
+      if (obj_sim_param%newrun) then
+        error = vtk_read_structured_multiblock(orion=IOfield_cond, &
+                  vtmpath=condinit(1:len(trim(condinit))-4), &
+                  vtspath=trim(vtspath), time=IOtime)
+      else
+        error = vtk_read_structured_multiblock(orion=IOfield_cond, &
+                  vtmpath=condinit(1:len(trim(condinit))-4), &
+                  vtspath=trim(vtspath), time=IOtime, &
+                  cycle=ncycle, fldnames=restart_counter_names, fldvalues=counters, fldfound=found)
+      end if
       !> The time of the files (their TIME, 0 when they hold none) where the
       !  Tecplot reader puts the time of the zone headers
       IOfield_cond%solutiontime = IOtime
@@ -311,7 +352,10 @@ contains
       error stop 1
     end select
 
-    if (.not. obj_sim_param%newrun) call restart_time(IOfield_cond)
+    if (.not. obj_sim_param%newrun) then
+      call restart_time(IOfield_cond)
+      call restart_counters(ncycle, counters, found)
+    end if
 
   end subroutine read_vtk_tec
 
@@ -348,6 +392,49 @@ contains
     if (restart_steady) IOfield%solutiontime = abs(IOfield%solutiontime)
 
   end subroutine restart_time
+
+
+  !> The counters that a restart reads with its solution (read_vtk_tec), kept
+  !> in obj_io%restart when the solution holds them all and each is what the
+  !> writer writes: finite, and the first three counts. One that is not stops
+  !> the run (restart_bad_counter, check_ic). A solution without them (written
+  !> by another program, or by ICE before it wrote them) leaves found false,
+  !> and the run starts its counters as a new one (Wrap_Setup).
+  subroutine restart_counters(ncycle, counters, found)
+    use ICE_Config_Types_m, only: obj_io
+    implicit none
+    integer(I4P), intent(in) :: ncycle
+    real(R8P),    intent(in) :: counters(:)
+    logical,      intent(in) :: found(:)
+    character(len=32) :: value
+    integer :: k
+
+    obj_io%restart%found = .false.
+    restart_bad_counter  = ''
+    do k = 1, size(counters)
+      if (.not. found(k)) cycle
+      if (Not_Finite(counters(k))) then
+        restart_bad_counter = trim(restart_counter_names(k))//' is not finite (NaN or infinity)'
+        return
+      end if
+      ! ICE_ITERATION, ICE_OUTPUT_NUMBER and ICE_GRID_LEVEL count
+      if (k <= 3 .and. (counters(k) < 0._R8P .or. counters(k) >= real(huge(1), R8P))) then
+        write(value, '(ES24.16E3)') counters(k)
+        restart_bad_counter = trim(restart_counter_names(k))//' = '//trim(adjustl(value))//' is not a count'
+        return
+      end if
+    end do
+    if (.not. all(found)) return
+
+    obj_io%restart%found            = .true.
+    obj_io%restart%cycle            = ncycle
+    obj_io%restart%iteration        = nint(counters(1))
+    obj_io%restart%output_number    = nint(counters(2))
+    obj_io%restart%grid_level       = nint(counters(3))
+    obj_io%restart%last_output_time = counters(4)
+    obj_io%restart%res_reference    = counters(5)
+
+  end subroutine restart_counters
 
 
   !> The first block file that a .vtm lists (its file attribute without
@@ -502,6 +589,8 @@ contains
     elseif (.not. obj_sim_param%newrun .and. .not. restart_time_found) then
       what = trim(condinit)//': the solution holds no time (its zone header has no SOLUTIONTIME), and a restart '// &
              'goes on from the time of its solution; to start from it, use it as the initial condition (newrun = true)'
+    elseif (.not. obj_sim_param%newrun .and. len_trim(restart_bad_counter) > 0) then
+      what = trim(condinit)//': '//trim(restart_bad_counter)
     else
       blocks: do b = 1, size(IOfield_cond%block)
         associate (mesh => IOfield_cond%block(b)%mesh)
