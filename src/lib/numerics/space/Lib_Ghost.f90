@@ -195,8 +195,15 @@ contains
               veln = dot_product(grid%blk(bm)%gas_phase%prim(2:4,im,jm,km),inward)
               !> Velocity
               prim(2:4,ig,jg,kg) = injected_velocity(grid%bc(i)%velocity * veln, grid%bc(i), inward)
-              !> Density: the mixture rule, krho over 1 - the cell's krho sum
-              prim(1,ig,jg,kg) = grid%bc(i)%massflux/(1._R8-grid%bc(i)%krho_sum) * grid%blk(bm)%gas_phase%prim(1,im,jm,km) / grid%bc(i)%velocity
+              !> Density: field 1 is krho/(1 - krho_tot) over every dispersed phase of the cell (ATLAS's mixture rule):
+              !  that fraction of the gas density over the speed ratio, and of G, the fixed mass flux of the cell, over the
+              !  normal speed of the injection (as 403 divides its mass flux), with G > 0 only (G = 0: the former
+              !  density to the bit). At a zero normal speed (a gas at rest at the face) nothing enters and no density
+              !  carries G: its term is left out, not G/0
+              prim(1,ig,jg,kg) = grid%bc(i)%massflux * grid%blk(bm)%gas_phase%prim(1,im,jm,km) / grid%bc(i)%velocity
+              veln = abs(dot_product(prim(2:4,ig,jg,kg),normal))
+              if (grid%bc(i)%gfixed > 0._R8 .and. veln > 0._R8) prim(1,ig,jg,kg) = prim(1,ig,jg,kg) + &
+                grid%bc(i)%massflux * grid%bc(i)%gfixed / veln
               !> Temperature
               prim(nbase(pm)-1,ig,jg,kg) = grid%bc(i)%temperature * grid%blk(bm)%gas_phase%prim(5,im,jm,km)
 

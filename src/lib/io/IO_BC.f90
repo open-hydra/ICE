@@ -77,7 +77,7 @@ contains
     integer(I4), allocatable :: key(:,:)   !< (i,j,k,f) of copy 1, to check the others against
     integer(I4) :: cs(9)
     real(R8)    :: massflux, velocity, temperature, radius, alpha, beta
-    real(R8)    :: ksum, kmin
+    real(R8)    :: gfix
     character(len=32) :: alpha_tok, beta_tok
     logical     :: normal_dir
     integer(I4) :: nchi(2), s, nzero_chim
@@ -244,30 +244,34 @@ contains
               next = next + 1
 
             case (401:403)           ! inlet
-              !> Payload, 9 fields; ICE consumes the first six. Column meanings per code, as in
-              !  ATLAS builder_400dp.f90 and IGLOO's obj_particles.f90:
+              !> Payload, 9 fields (401: 10, G last); ICE consumes the first six, and G. Column meanings
+              !  per code, as in ATLAS builder_400dp.f90 and IGLOO's obj_particles.f90:
               !
-              !    401  krho, kV, alpha, beta, kT, radius     loading, velocity and temperature
-              !                                               are RATIOS to the local gas; krho is
-              !                                               the family's share of the mixture flow
+              !    401  k, kV, alpha, beta, kT, radius        loading, velocity and temperature
+              !                                               are RATIOS to the local gas; k is
+              !                                               krho/(1 - krho_tot), the family's share
+              !                                               of the mixture flow (ATLAS's rule)
               !    402  gp,   |v|, alpha, beta, Tp, radius    mass flux [kg/(s m^2)], speed and
               !                                               temperature all absolute
               !    403  gp,   kV,  alpha, beta, Tp, radius    as 402, but speed is a ratio of |v_gas|
               !
-              !  [ sigmap, distribution law, per-cell ds ] follow and are IGLOO-only.
+              !  [ sigmap, distribution law, per-cell ds ] follow and are IGLOO-only; then, on 401, G.
               nio = nio + 1
-              massflux = EMPTY ; velocity = EMPTY ; temperature = EMPTY ; radius = EMPTY
+              massflux = EMPTY ; velocity = EMPTY ; temperature = EMPTY ; radius = EMPTY ; gfix = 0._R8
               alpha_tok = ' ' ; beta_tok = ' ' ; normal_dir = .false.
               call next_line(unitfile, line, ios, nline)
               if (ios == 0) read(line,*,iostat=ios) massflux, velocity, alpha_tok, beta_tok, temperature, radius
               if (ios == 0) call check_inlet(level, nline, nrec, code, massflux, velocity, alpha_tok, beta_tok, &
                                              temperature, radius, alpha, beta, normal_dir)
               !> 401 and 403 take the speed of what they inject from the gas (401 also its density and
-              !  temperature): a run without a gas phase has none to read
+              !  temperature): a run without a gas phase has none to read (first: no G makes such a 401 usable)
               if (ios == 0 .and. code /= 402 .and. massflux /= 0._R8 .and. &
                   .not. (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled)) &
                 call field_error(level, nline, nrec, code, 'the inlet takes its speed from the gas, and this run '// &
                   'has no gas phase: use 402, which takes the speed in m/s')
+              !> 401: field 1 is krho/(1 - krho_tot) and the 10th field G, krho_tot and G of the cell over every
+              !  dispersed phase (ATLAS's mixture rule; read_inlet_g)
+              if (ios == 0 .and. code == 401) call read_inlet_g(level, nline, nrec, code, line, massflux, gfix)
 
             case (0)
               continue
@@ -303,6 +307,7 @@ contains
             bc(idx)%normal_dir  = normal_dir
             bc(idx)%temperature = temperature
             bc(idx)%radius      = radius
+            bc(idx)%gfixed      = gfix
             if (code == 101 .or. code == 201) then
               bc(idx)%bs = cs(1); bc(idx)%is = cs(2); bc(idx)%js = cs(3)
               bc(idx)%ks = cs(4); bc(idx)%fs = cs(5)
@@ -321,27 +326,6 @@ contains
     enddo
 
     close(unitfile)
-
-    !> 401: family p injects krho_p/(1 - sum krho) of the gas flow, the sum over the families of the cell.
-    do n = 1, ncell
-      ksum = 0._R8 ; kmin = huge(1._R8) ; idx = 0
-      do p = 1, ngroups
-        if (bc((n-1)*ngroups + p)%type /= 401) cycle
-        if (idx == 0) idx = (n-1)*ngroups + p
-        ksum = ksum + bc((n-1)*ngroups + p)%massflux
-        kmin = min(kmin, bc((n-1)*ngroups + p)%massflux)
-      enddo
-      if (idx == 0) cycle
-      if (ksum >= 1._R8 .or. kmin < 0._R8) then
-        write(*,'(A,I0,A,I0,A,I0,A,I0,A,I0,A,ES13.6,A,ES13.6)') '  [ICE::Setup_BC] 401 inlet, block ', bc(idx)%b, &
-          ' cell (', bc(idx)%i, ',', bc(idx)%j, ',', bc(idx)%k, ') face ', bc(idx)%f, ': krho sum ', ksum, &
-          ', smallest krho ', kmin
-        error stop 'Setup_BC: 401 inlet: krho must be >= 0 and the families of one cell must sum below 1'
-      endif
-      do p = 1, ngroups
-        if (bc((n-1)*ngroups + p)%type == 401) bc((n-1)*ngroups + p)%krho_sum = ksum
-      enddo
-    enddo
 
     if (nzero_chim > 0) then
       write(*,'(A,I0,A)') '  [ICE::Setup_BC] ', nzero_chim, &
@@ -678,6 +662,48 @@ contains
     endif
 
   end subroutine check_inlet
+
+
+  !> G, the 10th blank-separated field of a 401 line: the sum of gp over the 402/403 records of the cell in the files of
+  !  every dispersed phase, ATLAS's mixture rule, by which field 1 is krho/(1 - krho_tot) (the 8th field, a law name or
+  !  the path of a size table, may hold slashes, which end a list-directed read: the fields are taken by blanks). A 401
+  !  line without it was written by an ATLAS before the rule, its field 1 krho: refused, as a negative field 1 or G.
+  subroutine read_inlet_g(level, nline, nrec, code, line, k1, g)
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    implicit none
+    integer(I4),      intent(in)  :: level, nline, nrec, code
+    character(len=*), intent(in)  :: line
+    real(R8),         intent(in)  :: k1
+    real(R8),         intent(out) :: g
+    integer(I4) :: i, n, i0, i1, ios
+
+    n = 0 ; i0 = 0 ; i1 = 0
+    do i = 1, len_trim(line)
+      if (line(i:i) == ' ' .or. line(i:i) == char(9)) cycle
+      if (i > 1) then
+        if (line(i-1:i-1) /= ' ' .and. line(i-1:i-1) /= char(9)) cycle
+      endif
+      n = n + 1
+      if (n == 10) then
+        i0 = i
+        i1 = i
+        do while (i1 < len_trim(line))
+          if (line(i1+1:i1+1) == ' ' .or. line(i1+1:i1+1) == char(9)) exit
+          i1 = i1 + 1
+        enddo
+        exit
+      endif
+    enddo
+    if (i0 == 0) call field_error(level, nline, nrec, code, 'a 401 line without its 10th field G, the fixed mass '// &
+      'flux of the cell: written by an ATLAS before the mixture rule over the dispersed phases (its field 1 is '// &
+      'krho); regenerate the file with ATLAS BCB')
+    read(line(i0:i1),*,iostat=ios) g
+    if (ios /= 0) call field_error(level, nline, nrec, code, 'the 10th field G is not a number')
+    if (.not. ieee_is_finite(g)) call field_error(level, nline, nrec, code, 'the 10th field G is not finite')
+    if (g < 0._R8) call field_error(level, nline, nrec, code, 'the 10th field G is negative')
+    if (k1 < 0._R8) call field_error(level, nline, nrec, code, 'field 1, krho/(1 - krho_tot), is negative')
+
+  end subroutine read_inlet_g
 
 
   !> The reals v of a payload line, in the order of names: each one finite, then given (not
