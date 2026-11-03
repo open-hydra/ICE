@@ -36,6 +36,17 @@ numbered solutions and on a residual row (res-diter divides N: every run writes 
 ICE_RESTART_RANKS=<n> runs every run on n MPI ranks (an MPI build; the ring's blocks, and its probe, then go to
 different ranks).
 
+ICE_RESTART_FORMATS=binary runs, instead, the legs below with sol-format = tecplot binary (.szplt, a TecIO build): the
+restart then reads the solution and its counters (data set auxiliary data) through TecIO's reader.
+
+  floor-szplt        two identical runs A and A2 of the steady stream must write the same bytes, or a byte comparison
+                     of A and B would say nothing about the restart; the legs below run only when it passes
+  steady-szplt, transient-szplt, multigrid-szplt, wedge-szplt, past-steady-szplt, killed-szplt
+                     steady-tecplot, transient-tecplot, multigrid, wedge, past-steady-tec and killed in tecplot binary:
+                     the restart reads part-field.szplt, or, when killed took it, the last numbered .szplt
+  coupled-szplt      coupled-vtk in tecplot binary: the restart reads its own field from part-field.szplt and the gas
+                     field from INPUT/gas.tec, in ic-format, not from INPUT/gas.szplt
+
 Without the counters every leg fails: the restart ramps the CFL again, numbers its solutions from 1, writes its
 time-based solutions on its own clock, counts the residual rows of a time-accurate run from 1, runs the coarse level
 again, measures res-threshold against its own first residual, and from a vtk solution drops no row.
@@ -54,8 +65,9 @@ from common import Case, ICE_BIN, GREEN, RED, RESET                    # noqa: E
 HERE = Path(__file__).resolve().parent
 TEST = HERE.parents[1]
 RANKS = int(os.environ.get('ICE_RESTART_RANKS', '1'))
-# The serial and the MPI registration run this same directory: separate scratch trees for ctest -j
-WORK = HERE / ('work' if RANKS == 1 else 'work-r%d' % RANKS)
+FORMATS = os.environ.get('ICE_RESTART_FORMATS', '')       # unset: the default legs; binary: the tecplot binary ones
+# The serial, the MPI and the TecIO registrations run this same directory: separate scratch trees for ctest -j
+WORK = HERE / ('work' + ('-' + FORMATS if FORMATS else '') + ('' if RANKS == 1 else '-r%d' % RANKS))
 N = 12                                   # iterations of each part of B; res-diter, diter divide it
 VINJ, TINJ, RINJ, RHO_AL = 10.0, 300.0, 1.0e-5, 1000.0
 MASS = RHO_AL * 4.0 / 3.0 * math.pi * RINJ**3
@@ -163,6 +175,22 @@ def wedge(work):
     return d
 
 
+def in_format(make, fmt):
+    """make, with the solutions of its case written, and read back by the restart, in fmt."""
+    def made(work):
+        d = make(work)
+        ini_set(d, 'ICE-IO', sol_format=fmt)
+        return d
+    return made
+
+
+def extension(fmt):
+    """The extension of a solution in fmt, as ICE names it (io_extension, IO_Solution.f90)."""
+    if fmt.startswith('vtk'):
+        return '.vtm'
+    return '.szplt' if fmt == 'tecplot binary' else '.tec'
+
+
 def run(case_dir):
     """Run the solver in case_dir, on RANKS ranks. Raises if it fails, pointing at the log."""
     env = dict(os.environ, OMP_NUM_THREADS='1', KMP_STACKSIZE='100M', OMP_STACKSIZE='100M')
@@ -208,10 +236,23 @@ def leg(name, make, stop=None):
     return compare(name, a, b, stop)
 
 
+def floor_leg(name, fmt):
+    """Two identical runs A and A2 of the steady stream in fmt: the same bytes, and at least one solution in fmt."""
+    a, a2 = stream(WORK / name / 'A', True, fmt), stream(WORK / name / 'A2', True, fmt)
+    try:
+        run(a)
+        run(a2)
+    except RuntimeError as e:
+        return report(name, False, str(e))
+    if not list((a / 'OUTPUT').glob('*' + extension(fmt))):
+        return report(name, False, 'no %s solution written -- see the log in %s' % (extension(fmt), a))
+    return compare(name, a, a2)
+
+
 def went_past_leg(name, steady, fmt):
     """B runs N + N/2 iterations, its numbered solution of iteration N (number 2: solutions every N/2) is copied
     over the final one, and the restart runs N more."""
-    ext = '.tec' if fmt.startswith('tecplot') else '.vtm'     # a .vtm names its own block files
+    ext = extension(fmt)                                      # a .vtm names its own block files
 
     def make(w):
         d = stream(w, steady, fmt)
@@ -225,16 +266,16 @@ def went_past_leg(name, steady, fmt):
         shutil.copy(str(b / 'OUTPUT' / ('part-field2' + ext)), str(b / 'OUTPUT' / ('part-field' + ext)))
         ini_set(b, 'ICE-Parameters', iter_threshold=N, newrun='false')
         run(b)
-    except RuntimeError as e:
+    except (RuntimeError, OSError) as e:
         return report(name, False, str(e))
     return compare(name, a, b)
 
 
-def killed_leg(name):
+def killed_leg(name, fmt='tecplot ascii'):
     """B runs N + N/2 iterations (solutions every N/2, the last one number 3), its part-field and part-residuals are
     removed, and the restart runs N/2 more."""
     def make(w):
-        d = stream(w, True, 'tecplot ascii')
+        d = stream(w, True, fmt)
         ini_set(d, 'ICE-IO', sol_diter=N // 2)
         return d
     a, b = make(WORK / name / 'A'), make(WORK / name / 'B')
@@ -242,11 +283,11 @@ def killed_leg(name):
     try:
         run(a)
         run(b)
-        for f in ('part-field.tec', 'part-residuals.tec'):
-            (b / 'OUTPUT' / f).unlink()
+        for f in ('part-field', 'part-residuals'):
+            (b / 'OUTPUT' / (f + extension(fmt))).unlink()
         ini_set(b, 'ICE-Parameters', iter_threshold=N // 2, newrun='false')
         run(b)
-    except RuntimeError as e:
+    except (RuntimeError, OSError) as e:
         return report(name, False, str(e))
     return compare(name, a, b)
 
@@ -295,7 +336,30 @@ def res_threshold_leg(name):
     return leg(name, make, stop=k)
 
 
+def binary_main():
+    """The floor, then the legs in tecplot binary; the exit status."""
+    fmt = 'tecplot binary'
+    if floor_leg('floor-szplt', fmt):
+        print('[fast] FAIL: the floor failed, so a byte comparison of .szplt files would mean nothing: no leg run')
+        return 1
+    fails = 0
+    fails += leg('steady-szplt', lambda w: stream(w, True, fmt))
+    fails += leg('transient-szplt', lambda w: stream(w, False, fmt))
+    fails += leg('multigrid-szplt', in_format(ring, fmt))
+    fails += leg('wedge-szplt', in_format(wedge, fmt))
+    fails += went_past_leg('past-steady-szplt', True, fmt)
+    fails += killed_leg('killed-szplt', fmt)
+    fails += leg('coupled-szplt', lambda w: stream(w, True, fmt, gas=True))
+    print('[fast] %s: a run of 2N iterations and one of N restarted for N more write the same files, tecplot binary '
+          '(%d rank%s)' % ('PASS' if fails == 0 else 'FAIL', RANKS, '' if RANKS == 1 else 's'))
+    return 1 if fails else 0
+
+
 def main():
+    if FORMATS == 'binary':
+        sys.exit(binary_main())
+    if FORMATS:
+        sys.exit('[fast] FAIL: unknown ICE_RESTART_FORMATS=%s (binary, or unset for the default legs)' % FORMATS)
     fails = 0
     fails += leg('steady-tecplot', lambda w: stream(w, True, 'tecplot ascii'))
     fails += leg('steady-vtk', lambda w: stream(w, True, 'vtk raw'))
