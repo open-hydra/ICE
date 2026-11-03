@@ -29,6 +29,9 @@ numbered solutions and on a residual row (res-diter divides N: every run writes 
   killed             B runs N + N/2 iterations and loses its last solution, as a run stopped before its last write
                      (the numbered series of sol-overwrite = false kept): the restart, with no part-field to read,
                      takes the last numbered solution and runs N/2 more
+  coupled-vtk        the steady stream in a uniform gas at half its speed that drags it (one-way coupling, Stokes),
+                     its solutions in vtk raw: the restart reads its own field in sol-format and the gas field,
+                     an input, in ic-format (INPUT/gas.tec), as the first run did
 
 ICE_RESTART_RANKS=<n> runs every run on n MPI ranks (an MPI build; the ring's blocks, and its probe, then go to
 different ranks).
@@ -88,14 +91,17 @@ def ini_set(case_dir, section, **keys):
     path.write_text('\n'.join(lines) + '\n')
 
 
-def stream(work, steady, fmt, ramp=True):
-    """The stream of the restart test: 32 cells, a density wave entering at 10 m/s."""
+def stream(work, steady, fmt, ramp=True, gas=False):
+    """The stream of the restart test: 32 cells, a density wave entering at 10 m/s. With gas, a uniform gas at half
+    that speed drags it (one-way coupling): INPUT/gas.tec, which a restart reads too."""
     case = Case(work, nx=32, Lx=0.32)
     rho = lambda x: 1.0 + 0.5 * math.sin(2.0 * math.pi * x / 0.32)                  # noqa: E731
     case.particles(rho, VINJ, 0.0, 0.0, TINJ, lambda x: rho(x) / MASS)
     case.boundaries(inlets=[{'gp': VINJ, 'v': VINJ, 'T': TINJ, 'r': RINJ}])
-    case.ini(iters=2 * N, cfl=0.8, rk='RK2', drag='NoDrag', heat='NoHeat', rho_al=RHO_AL, dt_max=1.0,
-             numerics={'time-accurate': not steady, 'cfl-rise-threshold': 3 * N // 2 if ramp else 0})
+    if gas:
+        case.gas(1.2, 0.5 * VINJ, 0.0, 0.0, TINJ, 287.0, 1.4, 0.026, 1.8e-5)
+    case.ini(iters=2 * N, cfl=0.8, rk='RK2', drag='Stokes' if gas else 'NoDrag', heat='NoHeat', rho_al=RHO_AL,
+             dt_max=1.0, numerics={'time-accurate': not steady, 'cfl-rise-threshold': 3 * N // 2 if ramp else 0})
     io = {'sol-format': fmt, 'sol-overwrite': 'false', 'res-diter': 3}
     # the cell in the middle of the stream
     probe = {'variables': 'rho_p1 u_p1', 'index_position': '1 16 1 1', 'diter': 4}
@@ -301,6 +307,7 @@ def main():
     fails += went_past_leg('past-steady-tec', True, 'tecplot ascii')
     fails += went_past_leg('past-transient-vtk', False, 'vtk raw')
     fails += killed_leg('killed')
+    fails += leg('coupled-vtk', lambda w: stream(w, True, 'vtk raw', gas=True))
     print('[fast] %s: a run of 2N iterations and one of N restarted for N more write the same files (%d rank%s)'
           % ('PASS' if fails == 0 else 'FAIL', RANKS, '' if RANKS == 1 else 's'))
     sys.exit(1 if fails else 0)

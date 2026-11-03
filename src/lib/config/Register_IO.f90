@@ -44,8 +44,8 @@ contains
                  'warn',       'input.ini read again with an error: warn and keep every value held before '// &
                  'the reading, or stop (at set-up every error stops)', 'warn, stop', .false.)
     call reg%add(section, 'gas-path',      obj_io%gaspath,       &
-                 'INPUT/',     'Directory holding the coupling gas field, named gas.tec or '// \
-                 'gas.szplt according to ic-format', '', .false.)
+                 'INPUT/',     'Directory holding the coupling gas field, named gas.tec, gas.szplt or '// &
+                 'gas.vtm according to ic-format, on a restart too', '', .false.)
 
     call reg%add(section, 'timers',        obj_io%timers,        &
                  'false',      'Report wall-clock and core-cycle cost per iteration, '// &
