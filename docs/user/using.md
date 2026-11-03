@@ -146,7 +146,13 @@ of every block file of a vtk one.
 series instead of one file that is repeatedly replaced.
 
 `shell-diter` sets how often the progress line is printed and `res-diter` how often a
-row is appended to `OUTPUT/part-residual-history.dat`.
+row is appended to `OUTPUT/part-residual-history.dat`. A row holds the global iteration, the
+time and the five residual norms of the domain: the L2 norms, over every cell, of the change in
+one iteration of the density, the three velocity components and the temperature. With several
+families, the same five norms of each family alone follow, family after family, so a row has
+$2 + 5\,(1 + n_f)$ values; each norm of the domain is the root of the sum of the squares of the
+families' ones. A run of one family writes the seven values only. `res-threshold` reads the
+density norm of the domain, the third value of the row ([Stopping conditions](input.md#stopping-conditions)).
 
 ## Restarting
 

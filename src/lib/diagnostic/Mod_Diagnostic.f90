@@ -4,7 +4,7 @@ module ICE_Mod_Diagnostic
 
   implicit none
   private
-  public :: residual_norm, Write_Diagnostic
+  public :: residual_norm, residual_columns, write_residual_row, Write_Diagnostic
 
 contains
 
@@ -16,15 +16,18 @@ contains
   !> partial sums are exchanged (one contributor per entry, so the exchange is
   !> exact), and every rank adds them up in the same order. The thread count
   !> and the rank count therefore do not change a bit of it, which a reduction
-  !> over threads and a sum over ranks did.
-  subroutine residual_norm(grid, total)
+  !> over threads and a sum over ranks did. With family, the same norms of each
+  !> family alone, from the same partial sums added over the blocks in the same
+  !> order (total is not derived from them, so it keeps its bits).
+  subroutine residual_norm(grid, total, family)
     use ICE_Global_m,           only: ngroups, ncond, nbase, nres
     use ICE_Advanced_Types_m,   only: ICE_domain_type
     use ICE_Mod_MPI,            only: is_local_block, mpi_allreduce_sum_r8_array
     use ICE_Mod_Timers,         only: timer_sync_begin, timer_sync_end
     implicit none
-    type(ICE_domain_type), intent(in)  :: grid
-    real(R8),              intent(out) :: total(nres)
+    type(ICE_domain_type), intent(in)            :: grid
+    real(R8),              intent(out)           :: total(nres)
+    real(R8),              intent(out), optional :: family(nres, ngroups)
     ! Local
     real(R8), allocatable :: part(:,:)
     integer :: b, p, m
@@ -51,9 +54,52 @@ contains
       end do
     end do
     total = sqrt(total)
+
+    if (present(family)) then
+      family = 0._R8
+      do b = 1, grid%nb
+        do p = 1, ngroups
+          family(:, p) = family(:, p) + part(:, (b-1)*ngroups + p)
+        end do
+      end do
+      family = sqrt(family)
+    end if
     deallocate(part)
 
   end subroutine residual_norm
+
+
+  !> The values of a residual-history.dat row after the iteration and the time:
+  !> the norms of the domain, then, with several families, the same norms of
+  !> each family in turn.
+  integer function residual_columns()
+    use ICE_Global_m, only: ngroups, nres
+    implicit none
+
+    residual_columns = nres
+    if (ngroups > 1) residual_columns = nres * (1 + ngroups)
+
+  end function residual_columns
+
+
+  !> One row of residual-history.dat, flushed: the global iteration, the time and
+  !> the norms (residual_columns). The root writes it.
+  subroutine write_residual_row(unit, fmt, iter, time)
+    use ICE_Global_m,       only: ngroups
+    use ICE_Config_Types_m, only: obj_sim_param
+    implicit none
+    integer,          intent(in) :: unit, iter
+    character(len=*), intent(in) :: fmt
+    real(R8),         intent(in) :: time
+
+    if (ngroups > 1) then
+      write(unit, fmt) iter, time, obj_sim_param%residuotot, obj_sim_param%residuofam
+    else
+      write(unit, fmt) iter, time, obj_sim_param%residuotot
+    end if
+    flush(unit)
+
+  end subroutine write_residual_row
 
 
   !> Sum of the squared changes of one family on one block, cells in k, j, i order.

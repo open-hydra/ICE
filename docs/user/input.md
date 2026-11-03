@@ -201,8 +201,9 @@ effectively infinite for the first two and $10^{-10}$ for the third, so a steady
 that sets none of them stops on the residual. Set `res-threshold = 0` to disable it.
 
 `res-threshold` is relative: a steady run ends when its density residual (the L2 norm
-over the cells of the change of density in one iteration, the third column of
-`residual-history.dat`, after the iteration and the time) has fallen by that factor from the first non-zero one, on the
+over the cells, and over the families when there are several, of the change of density in one
+iteration, the third column of `residual-history.dat`, after the iteration and the time; the
+families' own norms follow the domain's, see [Input and output formats](using.md#input-and-output-formats)) has fallen by that factor from the first non-zero one, on the
 finest level. The residual scales with the loading and with the square root of the
 number of cells, so a relative test stops the same flow at the same iteration whatever
 its density, and a dilute cloud does not stop at its first iteration. The reference is

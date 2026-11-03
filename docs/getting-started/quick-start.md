@@ -75,7 +75,8 @@ variables of every family, cell-centred. Open it in Tecplot, or switch `sol-form
 `vtk binary` in `input.ini` for ParaView and VisIt.
 
 `OUTPUT/part-residual-history.dat` has one row per `res-diter` iterations, with the
-iteration number, the time and the five residual norms.
+iteration number, the time and the five residual norms (with several families, five more
+per family follow: see [Using ICE](../user/using.md#input-and-output-formats)).
 
 ## Next steps
 

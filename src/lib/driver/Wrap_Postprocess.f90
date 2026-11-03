@@ -67,9 +67,8 @@ contains
       call report_400_inflow(simulation%domain(1)%nb)
 
       if (mpi_is_root) then
-        write(obj_io%unitRES, trim(obj_io%unitRES_format)) obj_sim_param%iter_general, &
-              simulation%domain(1)%time, obj_sim_param%residuotot
-        flush(obj_io%unitRES)
+        call write_residual_row(obj_io%unitRES, trim(obj_io%unitRES_format), obj_sim_param%iter_general, &
+                                simulation%domain(1)%time)
 
         if (obj_time_scheme%time_accurate) then
           if (obj_multigrid%MGL > 1) then
@@ -153,11 +152,9 @@ contains
         call timer_report(simulation%domain(level)%iter)
 
       if (mpi_is_root) then
-        if (mod(simulation%domain(level)%iter, obj_io%res_diter) == 0d0) then
-          write(obj_io%unitRES, trim(obj_io%unitRES_format)) obj_sim_param%iter_general, &
-                simulation%domain(level)%time, obj_sim_param%residuotot
-          flush(obj_io%unitRES)
-        end if
+        if (mod(simulation%domain(level)%iter, obj_io%res_diter) == 0d0) &
+          call write_residual_row(obj_io%unitRES, trim(obj_io%unitRES_format), obj_sim_param%iter_general, &
+                                  simulation%domain(level)%time)
 
         if (mod(simulation%domain(level)%iter, obj_io%shell_diter) == 0d0) then
           if (obj_time_scheme%time_accurate) then
@@ -216,11 +213,9 @@ contains
         call timer_report(simulation%domain(level)%iter)
 
       if (mpi_is_root) then
-        if (mod(simulation%domain(level)%iter, obj_io%res_diter) == 0d0) then
-          write(obj_io%unitRES, obj_io%unitRES_format) obj_sim_param%iter_general, &
-                simulation%domain(level)%time, obj_sim_param%residuotot
-          flush(obj_io%unitRES)
-        end if
+        if (mod(simulation%domain(level)%iter, obj_io%res_diter) == 0d0) &
+          call write_residual_row(obj_io%unitRES, trim(obj_io%unitRES_format), obj_sim_param%iter_general, &
+                                  simulation%domain(level)%time)
 
         if (mod(simulation%domain(level)%iter, obj_io%shell_diter) == 0d0) then
           if (obj_time_scheme%time_accurate) then

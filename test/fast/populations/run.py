@@ -16,6 +16,12 @@ other than the wrong size class being injected, so it is pinned three ways:
                 relies on. The three families must stay identical.
   mismatch      two copies and three families: neither shared nor one-per-family,
                 so the setup must stop instead of guessing.
+  residuals     the residual history of the first two runs: after the five norms
+                of the domain, the same five of each family, in turn. Family p of
+                the proportional run has 2^(p-1) times family 1's density residual
+                and family 1's velocity and temperature ones; the shared run's
+                three families have the same; and in every row each norm of the
+                domain is the root of the sum of the families' squares.
 """
 import subprocess
 import sys
@@ -108,7 +114,48 @@ def mismatch():
         out.returncode, 'reported' if 'copies of the boundary table' in text else 'no message'))
 
 
+NRES = 5               # the norms of a residual row: rho, u, v, w, T
+TOL_ROW = 1.0e-9       # the history prints 10 significant digits (E20.10)
+
+
+def history(run, families):
+    """The rows of a run's residual history, each split as (domain, [family 1, ...]) after the
+    iteration and the time; None, and the offending row, if a row has not 2 + 5 (1 + families) values."""
+    rows = []
+    for line in (WORK / run / 'OUTPUT' / 'part-residual-history.dat').read_text().split('\n'):
+        if not line.strip():
+            continue
+        v = [float(x) for x in line.split()]
+        if len(v) != 2 + NRES * (1 + families):
+            return None, line
+        rows.append((v[2:2 + NRES], [v[2 + NRES * p:2 + NRES * (p + 1)] for p in range(1, families + 1)]))
+    return rows, None
+
+
+def residuals():
+    """The family columns of the residual history: their scaling, and the domain's from them."""
+    worst_scale, worst_sum, nrow = 0.0, 0.0, 0
+    for run, scaled in (('proportional', True), ('shared', False)):
+        rows, bad = history(run, 3)
+        if rows is None:
+            return report('residuals', False, '%s: a row without 2 + 5 x 4 values: %r' % (run, bad[:80]))
+        for dom, fam in rows:
+            nrow += 1
+            for c in range(NRES):
+                s = [2.0**p if (scaled and c == 0) else 1.0 for p in range(3)]
+                for p in (1, 2):
+                    ref = s[p] * fam[0][c]
+                    worst_scale = max(worst_scale, abs(fam[p][c] - ref) / (abs(ref) or 1.0))
+                root = sum(f[c]**2 for f in fam)**0.5
+                worst_sum = max(worst_sum, abs(dom[c] - root) / (abs(dom[c]) or 1.0))
+    if nrow == 0:
+        return report('residuals', False, 'no residual row written')
+    return report('residuals', worst_scale <= TOL_ROW and worst_sum <= TOL_ROW,
+                  '%d rows: families off their scaling by %.1e, domain off the root of the sum by %.1e '
+                  '(tolerance %.0e)' % (nrow, worst_scale, worst_sum, TOL_ROW))
+
+
 if __name__ == '__main__':
     print('Population binding')
-    rc = proportional() + shared() + mismatch()
+    rc = proportional() + shared() + mismatch() + residuals()
     sys.exit(1 if rc else 0)
