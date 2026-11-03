@@ -89,6 +89,7 @@ module ICE_Advanced_Types_m
     real(R8) :: massflux, velocity, temperature
     real(R8) :: alpha, beta, radius
     logical  :: normal_dir = .false.                    ! Inlet direction `normal`: the inward face normal
+    real(R8) :: krho_sum = 0._R8                        ! 401: the krho of every family at the cell, summed
     type(time_series_type) :: BCtime
   end type ICE_bc_type
 

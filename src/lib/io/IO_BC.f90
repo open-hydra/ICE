@@ -77,6 +77,7 @@ contains
     integer(I4), allocatable :: key(:,:)   !< (i,j,k,f) of copy 1, to check the others against
     integer(I4) :: cs(9)
     real(R8)    :: massflux, velocity, temperature, radius, alpha, beta
+    real(R8)    :: ksum, kmin
     character(len=32) :: alpha_tok, beta_tok
     logical     :: normal_dir
     integer(I4) :: nchi(2), s, nzero_chim
@@ -247,7 +248,8 @@ contains
               !  ATLAS builder_400dp.f90 and IGLOO's obj_particles.f90:
               !
               !    401  krho, kV, alpha, beta, kT, radius     loading, velocity and temperature
-              !                                               are RATIOS to the local gas
+              !                                               are RATIOS to the local gas; krho is
+              !                                               the family's share of the mixture flow
               !    402  gp,   |v|, alpha, beta, Tp, radius    mass flux [kg/(s m^2)], speed and
               !                                               temperature all absolute
               !    403  gp,   kV,  alpha, beta, Tp, radius    as 402, but speed is a ratio of |v_gas|
@@ -319,6 +321,27 @@ contains
     enddo
 
     close(unitfile)
+
+    !> 401: family p injects krho_p/(1 - sum krho) of the gas flow, the sum over the families of the cell.
+    do n = 1, ncell
+      ksum = 0._R8 ; kmin = huge(1._R8) ; idx = 0
+      do p = 1, ngroups
+        if (bc((n-1)*ngroups + p)%type /= 401) cycle
+        if (idx == 0) idx = (n-1)*ngroups + p
+        ksum = ksum + bc((n-1)*ngroups + p)%massflux
+        kmin = min(kmin, bc((n-1)*ngroups + p)%massflux)
+      enddo
+      if (idx == 0) cycle
+      if (ksum >= 1._R8 .or. kmin < 0._R8) then
+        write(*,'(A,I0,A,I0,A,I0,A,I0,A,I0,A,ES13.6,A,ES13.6)') '  [ICE::Setup_BC] 401 inlet, block ', bc(idx)%b, &
+          ' cell (', bc(idx)%i, ',', bc(idx)%j, ',', bc(idx)%k, ') face ', bc(idx)%f, ': krho sum ', ksum, &
+          ', smallest krho ', kmin
+        error stop 'Setup_BC: 401 inlet: krho must be >= 0 and the families of one cell must sum below 1'
+      endif
+      do p = 1, ngroups
+        if (bc((n-1)*ngroups + p)%type == 401) bc((n-1)*ngroups + p)%krho_sum = ksum
+      enddo
+    enddo
 
     if (nzero_chim > 0) then
       write(*,'(A,I0,A)') '  [ICE::Setup_BC] ', nzero_chim, &
