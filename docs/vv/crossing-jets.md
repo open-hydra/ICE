@@ -80,13 +80,12 @@ both jets have reached the line, from $x = 0.305$ on, the merged jet carries 0.0
 
 The three closures run without the [shock detector](../theory/numerics.md#shock-detector).
 For MK and AG this is a trade. Without it MK stays nearer its exact solution (an RMS distance
-of $5.5 \times 10^{-3}$ kg/m³ against $1.4 \times 10^{-2}$ with the detector; at $x = 0.145$,
+of $5.6 \times 10^{-3}$ kg/m³ against $1.4 \times 10^{-2}$ with the detector; at $x = 0.145$,
 upstream of where the jets meet, row 51 holds $8.4 \times 10^{-4}$ kg/m³ against 0.069), and
 AG nearer free streaming ($2.6 \times 10^{-2}$ against $2.8 \times 10^{-2}$; the crossing,
 0.2 kg/m³ in the exact solution, holds 0.06 on average against 0.04). But neither converges: MK's residual
-stalls at $1.6 \times 10^{-5}$ and its jets are $1.2 \times 10^{-2}$ from their mirror image at
-the outer edges of the inlets (rows 21 and 81), and AG's residual cycles between
-$4 \times 10^{-5}$ and $9 \times 10^{-5}$. AG also gathers mass in two bands just above and
+stalls at $1.5 \times 10^{-5}$, and AG's residual cycles between $4 \times 10^{-5}$ and
+$9 \times 10^{-5}$. AG also gathers mass in two bands just above and
 below the crossing, at $0.035 \le |y| \le 0.075$ from $x = 0.175$ to $0.275$: up to
 0.234 kg/m³ inside a single jet, where the exact solution is 0.1, and up to 0.16 just beyond
 the top and bottom corners of the crossing, outside both jets, where it is empty. With the
@@ -96,9 +95,11 @@ $3 \times 10^{-3}$ kg/m³, where the exact solution is empty): 16 between the je
 inlet face, 6 outside the jets above and below the crossing, at $|y| \approx 0.12$. Both tests
 therefore run their 5000 iterations; with the detector, MK reaches the default residual
 threshold at iteration 2493 and AG at iteration 6907. IG's residual falls without it, to
-$1.7 \times 10^{-6}$ at 5000 iterations apart from brief spikes to $3 \times 10^{-5}$ every 80
-iterations or so, and its chimera and multi-block versions match it to round-off
-([Chimera Overset](chimera.md), [Multi-block and MPI](multiblock-mpi.md)).
+$4.5 \times 10^{-7}$ at 5000 iterations (between $2 \times 10^{-7}$ and $2 \times 10^{-6}$ over the
+last 1000), and its chimera and multi-block versions match it to round-off
+([Chimera Overset](chimera.md), [Multi-block and MPI](multiblock-mpi.md)). All three runs are
+their own mirror image to round-off, as the problem is (about $y = 0$ for IG and AG, $y = 0.005$ for MK):
+$2 \times 10^{-16}$ for MK, $3 \times 10^{-14}$ for IG and $10^{-13}$ for AG, relative to the peak density.
 
 The cases are also part of the regression suite (`Doisneau/MK`, `Doisneau/IG`,
 `Doisneau/AG`), which checks the density and number-density fields against a stored reference.

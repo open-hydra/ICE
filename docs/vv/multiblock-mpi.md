@@ -39,10 +39,10 @@ and energy. With the shock detector on, that face takes the smaller detector wei
 cells, as a face inside a block does, so the four-block run weights every face as the single
 block does. It still differs by round-off, from the ghost lengths each block extrapolates
 and from the order in which a cell next to a cut sums its fluxes, and where the two jets
-collide, on the cut at $y = 0$, the detector amplifies any round-off difference for about 120
-iterations: the four-block run differs from the single block by $3 \times 10^{-10}$ of the peak
+collide, on the cut at $y = 0$, the detector amplifies any round-off difference: the four-block
+run differs from the single block by $2 \times 10^{-9}$ of the peak
 density at 5000 iterations, while a change of one inlet value in its last digit moves the single
-block itself by $1 \times 10^{-9}$. With the weight of one of the two cells it was
+block itself by $3 \times 10^{-8}$. With the weight of one of the two cells it was
 $7 \times 10^{-7}$, and when each block computed the face itself, with its own cell's weight,
 $3.4 \times 10^{-6}$. The MPI runs exchange exactly the values a serial run reads — the cells
 the ghost layers copy, the partner cells' weights and the connection faces' fluxes — so the

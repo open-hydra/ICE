@@ -30,51 +30,56 @@ contains
 
     integer(I4) :: i
     real(R8)    :: slope0, slope1, slope2, slopel, sloper, limval
-    logical     :: prim_status_l, prim_status_r
+    logical     :: prim_status_l, prim_status_r, first_l, first_r
 
     if (solid) then
       call solid_reconstruction(prev, local, next, next2, dl0, dl1, dl2, dll, dlr, priml, primr, beta, mat, loc)
       return
     endif
 
-    prim_status_l = .false.
-    prim_status_r = .false.
     limval = beta
 
-    ! Piecewise Linear Reconstruction
-    if (prev(1)<=rho_empty .or. local(1)<=rho_empty .or. next(1)<=rho_empty) then
-      priml = local
-      primr = next
-    else
-      do while (.not. prim_status_l .or. .not. prim_status_r)
-        do i = 1, size(prev)
+    ! Piecewise Linear Reconstruction. Each side reads its own three cells, the left state prev, local and next, the
+    ! right state local, next and next2, and is first order when one of them is empty: the two sides of a face then
+    ! fall back as their mirror images do.
+    first_l = prev(1)<=rho_empty .or. local(1)<=rho_empty .or. next(1)<=rho_empty
+    first_r = local(1)<=rho_empty .or. next(1)<=rho_empty .or. next2(1)<=rho_empty
+    if (first_l) priml = local
+    if (first_r) primr = next
+    prim_status_l = first_l
+    prim_status_r = first_r
+    do while (.not. prim_status_l .or. .not. prim_status_r)
+      do i = 1, size(prev)
+        slope1   = (next(i)-local(i)) / dl1
+        if (.not. first_l) then
           slope0   = (local(i)-prev(i)) / dl0
-          slope1   = (next(i)-local(i)) / dl1
-          slope2   = (next2(i)-next(i)) / dl2
           slopel   = limiter(slope1, slope0) * limval
-          sloper   = limiter(slope2, slope1) * limval
           priml(i) = local(i) + slopel*dll
-          primr(i) =  next(i) - sloper*dlr
-        enddo
-        prim_status_l = check_prim(priml)
-        prim_status_r = check_prim(primr)
-        limval = 0.5_R8*limval
-        if (limval < 1.e-18_R8 .and. .not. (prim_status_l .and. prim_status_r)) then
-          priml = local
-          primr = next
-          if (.not. (check_prim(priml) .and. check_prim(primr))) call report_stencil(prev, local, next, next2, loc)
-          exit
         endif
-      end do
-    endif
+        if (.not. first_r) then
+          slope2   = (next2(i)-next(i)) / dl2
+          sloper   = limiter(slope2, slope1) * limval
+          primr(i) =  next(i) - sloper*dlr
+        endif
+      enddo
+      if (.not. first_l) prim_status_l = check_prim(priml)
+      if (.not. first_r) prim_status_r = check_prim(primr)
+      limval = 0.5_R8*limval
+      if (limval < 1.e-18_R8 .and. .not. (prim_status_l .and. prim_status_r)) then
+        priml = local
+        primr = next
+        if (.not. (check_prim(priml) .and. check_prim(primr))) call report_stencil(prev, local, next, next2, loc)
+        exit
+      endif
+    end do
 
   end subroutine state_reconstruction
 
 
   !> A solidifying family: the limiter sees T_liq = e/c_l, continuous through the recalescence, so T_liq has no jump at
   !  a nucleation front (chi, which still jumps, decides a face in the band); each face's (T, f) is re-derived from its
-  !  (T_liq, chi) before the check, and a non-finite T_liq stays so, for check_prim tests T and f for NaN and infinity. An empty
-  !  stencil and the first-order fallback take the physical cells.
+  !  (T_liq, chi) before the check, and a non-finite T_liq stays so, for check_prim tests T and f for NaN and infinity. A side
+  !  whose three cells hold an empty one (as in state_reconstruction) and the first-order fallback take the physical cells.
   subroutine solid_reconstruction(prev, local, next, next2, dl0, dl1, dl2, dll, dlr, priml, primr, beta, mat, loc)
     use ICE_Lib_Limiters
     use ICE_Lib_Model
@@ -92,35 +97,43 @@ contains
     integer(I4) :: i
     real(R8)    :: slope0, slope1, slope2, slopel, sloper, limval
     real(R8)    :: q0(size(prev)), q1(size(prev)), q2(size(prev)), q3(size(prev))
-    logical     :: prim_status_l, prim_status_r
+    logical     :: prim_status_l, prim_status_r, first_l, first_r
 
-    if (prev(1)<=rho_empty .or. local(1)<=rho_empty .or. next(1)<=rho_empty) then
-      priml = local
-      primr = next
-      return
-    endif
+    first_l = prev(1)<=rho_empty .or. local(1)<=rho_empty .or. next(1)<=rho_empty
+    first_r = local(1)<=rho_empty .or. next(1)<=rho_empty .or. next2(1)<=rho_empty
+    if (first_l) priml = local
+    if (first_r) primr = next
+    if (first_l .and. first_r) return
 
     q0 = prev ; q1 = local ; q2 = next ; q3 = next2
     call to_liquid_temperature(q0, mat) ; call to_liquid_temperature(q1, mat)
     call to_liquid_temperature(q2, mat) ; call to_liquid_temperature(q3, mat)
 
-    prim_status_l = .false.
-    prim_status_r = .false.
+    prim_status_l = first_l
+    prim_status_r = first_r
     limval = beta
     do while (.not. prim_status_l .or. .not. prim_status_r)
       do i = 1, size(prev)
-        slope0   = (q1(i)-q0(i)) / dl0
         slope1   = (q2(i)-q1(i)) / dl1
-        slope2   = (q3(i)-q2(i)) / dl2
-        slopel   = limiter(slope1, slope0) * limval
-        sloper   = limiter(slope2, slope1) * limval
-        priml(i) = q1(i) + slopel*dll
-        primr(i) = q2(i) - sloper*dlr
+        if (.not. first_l) then
+          slope0   = (q1(i)-q0(i)) / dl0
+          slopel   = limiter(slope1, slope0) * limval
+          priml(i) = q1(i) + slopel*dll
+        endif
+        if (.not. first_r) then
+          slope2   = (q3(i)-q2(i)) / dl2
+          sloper   = limiter(slope2, slope1) * limval
+          primr(i) = q2(i) - sloper*dlr
+        endif
       enddo
-      call from_liquid_temperature(priml, mat)
-      call from_liquid_temperature(primr, mat)
-      prim_status_l = check_prim(priml)
-      prim_status_r = check_prim(primr)
+      if (.not. first_l) then
+        call from_liquid_temperature(priml, mat)
+        prim_status_l = check_prim(priml)
+      endif
+      if (.not. first_r) then
+        call from_liquid_temperature(primr, mat)
+        prim_status_r = check_prim(primr)
+      endif
       limval = 0.5_R8*limval
       if (limval < 1.e-18_R8 .and. .not. (prim_status_l .and. prim_status_r)) then
         priml = local
