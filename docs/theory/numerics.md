@@ -55,6 +55,15 @@ $$
 
 where $s$ are the one-sided slopes on the non-uniform mesh, $\phi$ the limiter and $\beta$ the shock-detector weight described below.
 
+A side whose three cells include an empty one, a density at or below $10^{-6}$ kg/m³, is first order: $\mathbf{P}_L$ is
+then $\mathbf{P}_i$, and $\mathbf{P}_R$ is $\mathbf{P}_{i+1}$. Each side looks at its own three cells, $i-1$, $i$ and
+$i+1$ for $\mathbf{P}_L$ and $i$, $i+1$ and $i+2$ for $\mathbf{P}_R$, so the two sides of a face fall back as their
+mirror images do. A test of $i-1$, $i$ and $i+1$ for both sides made a face next to a vacuum first order on one side of
+a symmetric flow and second order, with the empty cell in its slope, on the other: the crossing jets without the
+detector were $6\times10^{-3}$ (MK), $2\times10^{-4}$ (IG) and $8\times10^{-5}$ (AG) of the peak density away from
+their mirror image, and are now symmetric to round-off; IG's residual, which jumped to $3\times10^{-5}$ every 30 to 80
+iterations, now stays below $2\times10^{-6}$ over the last 1000 of its 5000.
+
 A family of a solidifying material reconstructs, in place of $T_p$, its liquid-branch temperature $T_\ell = e/c_l$,
 which is continuous where the content nucleates, and takes each face's $T_p$ and $f$ from the face's $T_\ell$ and
 $\chi$ by the rule of a cell ([Solidification](physics.md#solidification)); a liquid face is unchanged, and a cold solid,
@@ -103,9 +112,9 @@ keeps the threshold and spreads the fall of $\beta$ over $0 \le s < 1/\Delta$, f
 of the 27 cells around it); the face weight $\min(\beta_L, \beta_R)$ gives each face the weight of the more shocked of the
 two cells it separates, and treats a face the same from both sides. With the switch and the weight of the cell on the
 face's low-index side, the crossing jets of MK and AG, mirror images of each other, were $1.0\times10^{-2}$ and
-$1.7\times10^{-2}$ away from their own mirror image at iteration 5000; MK is now symmetric to round-off. AG keeps an
-asymmetry of $3\times10^{-5}$: its steady state with the detector is one of a pair of steady states that are each other's
-mirror image, and round-off decides which one a run reaches.
+$1.7\times10^{-2}$ away from their own mirror image at iteration 5000; both are now symmetric to round-off. AG's
+steady state with the detector kept an asymmetry of $3\times10^{-5}$ until each side of a face took the empty-cell test
+of its own three cells ([Reconstruction](#reconstruction)).
 
 A switch also kept steady computations from converging: the cells near the threshold switched from one iteration to the
 next, so the density residual levelled off (at about $2\times10^{-3}$ for MK and $4\times10^{-3}$ for AG on the crossing
@@ -116,16 +125,16 @@ $2.7\times10^{-2}$ to $2.8\times10^{-2}$ kg/m³, and the field's maximum, which 
 solution), falls from 0.16, where the jets meet, to 0.12, just upstream of the crossing. A domain split into connected
 blocks gets the weights of the same domain in
 one block, so the two differ by round-off only — which the detector amplifies where the crossing jets collide: the
-four-block crossing jets, cut at $y = 0$ through the collision, differ from the single block by $3\times10^{-10}$ of the
+four-block crossing jets, cut at $y = 0$ through the collision, differ from the single block by $2\times10^{-9}$ of the
 peak density at iteration 5000, less than a change of one inlet value in its last digit moves the single block
-($1\times10^{-9}$; [Multi-block and MPI](../vv/multiblock-mpi.md)). Blocks joined by chimera faces still differ where
+($3\times10^{-8}$; [Multi-block and MPI](../vv/multiblock-mpi.md)). Blocks joined by chimera faces still differ where
 the detector acts at the interface.
 
 On the [crossing jets](../vv/crossing-jets.md) the detector lets the MK and AG runs converge, keeps the AG pressure
 tensor off its floor in the nearly empty cells around the jets, and keeps AG from gathering mass on either side of the
 crossing. It costs accuracy where the flow is smooth: without it MK and AG are nearer their exact solutions, but neither
-converges (MK's residual stalls and its jets are not each other's mirror image at the edges of the inlets; AG's
-residual cycles). The crossing-jets tests run without it, for all three closures.
+converges (MK's residual stalls; AG's residual cycles). The crossing-jets tests run without it, for all three
+closures.
 
 ## Riemann solvers
 
