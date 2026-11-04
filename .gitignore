@@ -20,6 +20,7 @@ error*
 OUTPUT
 test/fast/*/work
 test/fast/*/work-r*
+test/fast/*/work-binary*
 test/verification/*/work
 test/verification/figure-work
 

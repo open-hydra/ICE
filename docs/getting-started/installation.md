@@ -127,13 +127,11 @@ targets it links against. This is how the Hydra suite embeds it.
 
 ## Troubleshooting
 
-**`undefined reference` to C++ symbols when linking with TecIO.** TecIO is C++ and the
-executable is linked by the Fortran driver, which does not pull in the C++ runtime.
-Add it explicitly:
-
-```bash
-cmake -B build ... -DCMAKE_EXE_LINKER_FLAGS=-lstdc++
-```
+**`undefined reference` to C++ symbols when linking with TecIO.** TecIO is a static C++
+library and the executables are linked by the Fortran driver, which does not pull in the
+C++ runtime by itself. With `USE_TECIO=ON` ICE enables C++ in its own project and CMake
+adds the runtime to the link, so a standalone build needs no flag. A project that embeds
+ICE (see above) must enable C++ itself.
 
 **`cannot find -ltecio::tecio`.** The ORION submodule is older than the ICE revision
 that expects it. `./install.sh update --remote` and rebuild.

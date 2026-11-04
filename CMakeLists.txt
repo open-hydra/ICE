@@ -38,6 +38,16 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   OPTION(USE_MPI    "Use the MPI library for parallelization" OFF)
   OPTION(USE_OPENMP "Use OpenMP for parallelization"          OFF)
 
+  # Binary Tecplot (.szplt) through TecIO, which ORION builds as a static C++
+  # library. Off unless asked for: declared here, it takes precedence over ORION's
+  # own option, which defaults to ON. The archive brings no C++ runtime, and CMake
+  # adds that runtime to a Fortran link only where CXX is enabled; ORION enables it
+  # in its own directory alone, so without this the executables do not link.
+  OPTION(USE_TECIO  "Binary Tecplot I/O through TecIO (needs a C++ compiler)" OFF)
+  if (USE_TECIO)
+    enable_language(CXX)
+  endif()
+
   # Interprocedural optimisation across the modules. The flux path reaches the
   # reconstruction, the limiter and the Riemann solver through procedures of
   # other files, which -O3 alone never inlines. Off by default, because it moves

@@ -16,6 +16,9 @@
 #    CMAKE_Fortran_STANDARD_LIBRARIES, which CMake appends last, not in
 #    CMAKE_EXE_LINKER_FLAGS, which it puts first and which therefore silently
 #    does nothing here.
+#  * USE_TECIO=ON by name: the bench reads and writes .szplt, and ICE's own
+#    option is OFF by default (before it, ORION's ON applied). A tree that has
+#    it enables C++ itself and needs no -lstdc++; the flag stays for older ones.
 #  * The C compiler is needed only for src/lib/diagnostic/ice_cycles.c (the
 #    per-thread cycle counter); it is plain POSIX C and links through the C ABI.
 #  * CXX must be named too. ORION installs TecIO into a directory suffixed with
@@ -55,6 +58,7 @@ cmake -S "$SRC" -B "$SRC/build-$CFG" \
   -DCMAKE_C_COMPILER="$CC" \
   -DCMAKE_CXX_COMPILER="$CXX" \
   -DMPI_Fortran_COMPILER="$MPIFC" \
+  -DUSE_TECIO=ON \
   -DCMAKE_Fortran_STANDARD_LIBRARIES=-lstdc++ \
   -DICE_BIN_DIR="$SRC/bin-$CFG" \
   ${FLAGS:+-DCMAKE_Fortran_FLAGS="$FLAGS"} \

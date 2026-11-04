@@ -110,6 +110,7 @@ running `./ICE.sh solve` by hand does.
 | `verification` | Compared against a solution that does not come from ICE (closed form or independent integration) |
 | `unit` | A program linked against the library that asserts what its routines return |
 | `needs-mpi` | Needs an MPI build; registered only when `USE_MPI=ON` |
+| `tecio` | Needs a TecIO build; registered only when `USE_TECIO=ON` |
 | `sources`, `transport`, `implementation` | What part of the solver a case covers |
 | `MK`, `IG`, `AG`, `chimera`, `connection`, `1D`, `2D` | What configuration it covers |
 

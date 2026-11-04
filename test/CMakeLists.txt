@@ -6,6 +6,7 @@
 #                   (ctest -L fast)
 #    validation  -> full case compared against its stored reference solution
 #    needs-mpi   -> requires an MPI build (USE_MPI=ON); registered only then
+#    tecio       -> requires a TecIO build (USE_TECIO=ON); registered only then
 #
 #  The cases run in their own source directory and leave their output in it,
 #  exactly as when they are run by hand with ./ICE.sh.
@@ -224,6 +225,15 @@ ice_add_fast_script(RestartTime fast/restart "fast;implementation")
 # counters of a solution (CFL ramp, numbering and clock of the outputs, grid level, unit of
 # res-threshold) and the probe rows; steady and time-accurate, Tecplot ASCII and vtk raw, a multigrid ring
 ice_add_fast_script(RestartExact fast/restart-exact "fast;implementation")
+
+# The same legs in binary Tecplot (sol-format = tecplot binary, .szplt through TecIO), after a floor: two identical
+# runs must write the same bytes. Only on a TecIO build, and on its own binary rather than the source tree's bin/ICE,
+# which another configuration may have written.
+if(USE_TECIO)
+    ice_add_fast_script(RestartExactTecIO fast/restart-exact "fast;implementation;tecio")
+    set_tests_properties(RestartExactTecIO PROPERTIES
+        ENVIRONMENT "${_ICE_TEST_ENV};ICE_RESTART_FORMATS=binary;ICE_BIN=$<TARGET_FILE:${solver}>")
+endif()
 
 # A probe given by position takes the cell whose centre is nearest, in the block that holds it: against a probe by
 # index in that cell and against the solution, on the 1-D stream and on a two-block ring

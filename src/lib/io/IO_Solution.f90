@@ -4,7 +4,7 @@ module ICE_IO_Solution
   use Lib_ORION_data
   use ICE_Global_m,      only: ICE_phase_prefix, ngroups, ncond, solid_of
   use ICE_Config_Types_m, only: obj_time_scheme
-  use ICE_Parameters_m,  only: llen, hlen
+  use ICE_Parameters_m,  only: llen, hlen, clen
   use ICE_Finite_m,      only: Not_Finite
 
   implicit none
@@ -13,6 +13,8 @@ module ICE_IO_Solution
   real(kind=R8)    :: IOtime
 
   character(llen)  :: condinit, gasinit
+  !> The (reader, mode) of the gas field: ic-format's, on a restart too, whose own field is read in sol-format
+  character(clen)  :: gas_fmt(2)
 
   !> A restart: whether the solution read holds its time, and whether it is a
   !> steady one, whose solution time is then its global iteration count
@@ -92,13 +94,15 @@ contains
     read_ic => read_vtk_tec
 
     !> A new run reads INPUT/part-ic.* in ic-format; a restart reads back a solution
-    !  ICE wrote itself, so it is sol-format that names it.
+    !  ICE wrote itself, so it is sol-format that names it. The gas field is an input
+    !  either way and keeps ic-format, as Assign_Setup assumes when it finds it.
+    gas_fmt = obj_io%ini_fmt
     if (.not. obj_sim_param%newrun) obj_io%ini_fmt = obj_io%sol_fmt
     obj_io%extension = io_extension(obj_io%ini_fmt)
 
-    !> The gas field follows `ic-format` like every other input.
+    !> The gas field follows `ic-format` like every other input, on a restart too.
     if (obj_sim_param%owcoupled) &
-      gasinit = trim(obj_io%gaspath)//'gas'//trim(obj_io%extension)
+      gasinit = trim(obj_io%gaspath)//'gas'//io_extension(gas_fmt)
 
     if (obj_sim_param%newrun) then
       condinit = 'INPUT/'//trim(ICE_phase_prefix)//'ic'//trim(obj_io%extension)
@@ -299,9 +303,9 @@ contains
     !  prefix vtm_block_path finds, in the format they declare (the reader's
     !  own default is base64).
     if (present(IOfield_gas)) then
-      select case (trim(obj_io%ini_fmt(1)))
+      select case (trim(gas_fmt(1)))
       case ('tecplot')
-        IOfield_gas%tec%format = obj_io%ini_fmt(2)
+        IOfield_gas%tec%format = gas_fmt(2)
         error_gas = tec_read_structured_multiblock(orion=IOfield_gas, filename=trim(gasinit))
       case ('vtk')
         vtspath = vtm_block_path(gasinit)
