@@ -165,7 +165,7 @@ def past_families_leg(name):
         shutil.copy(str(b / 'OUTPUT' / 'part-field2.tec'), str(b / 'OUTPUT' / 'part-field.tec'))
         ini_set(b, 'ICE-Parameters', iter_threshold=N, newrun='false')
         run(b)
-    except RuntimeError as e:
+    except (RuntimeError, OSError) as e:
         return report(name, False, str(e))
     return compare(name, a, b)
 
