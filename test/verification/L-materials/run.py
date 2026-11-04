@@ -55,8 +55,16 @@ case, so a family that reads another family's material, model or inlet is seen d
        rho_pi/rho_g = 0.2/0.7 and 0.1/0.7 (a family loaded as if alone, krho_i/(1 - krho_i), gives
        the ratio 2.25 in the cells the inlet fills, and 0.25 and 0.111 in cell 1).
   L6c  control: one family, "A 1", krho = 0.2: rho_p/rho_g = 0.25 in cell 1, where the two rules agree.
-  L6r  refusals: L6 with krho = 0.6 and 0.5 (a sum of 1.1), and with 0.2 and -0.1 (a negative
-       krho), stop the setup with the 401 inlet message.
+  L6r  refusals: L6 with krho = 0.6 and 0.5 (a sum of 1.1: field 1, krho/(1 - 1.1), is negative; ATLAS
+       stops on such a sum before) and with 0.2 and -0.1 (a negative krho) stop the setup on a negative
+       field 1; L6's records without their 10th field G (a file of an ATLAS before the mixture rule
+       over the dispersed phases, field 1 krho) stop it on the missing G.
+  L6g  G, the 10th field (the gp of the cell's 402/403 records, summed over the dispersed phases): "A 1",
+       krho = 0.2 (field 1 0.25), G = rho_g U = 12 kg/(s m^2): the family takes 0.25 (rho_g U + G) through
+       the face, so cell 1 holds rho_p/rho_g = 0.25 (1 + G/(rho_g U)) = 0.5 (0.25 without the G term).
+  L6z  L6g in a gas at rest: the injection has no normal speed and G is not divided by it, so the run
+       ends with every density finite and gives the part-field.tec of the same record with G = 0 byte for
+       byte (G/0 gives an infinite ghost density, and ICE stops on the NaN it makes).
 
 Tolerances.
   L1: RK2 on y' = -y/tau is exact to (dt/tau)^3/6 per step, so after t = tau with
@@ -76,7 +84,8 @@ Tolerances.
       in the ratio of the inlet (0.2 = 2 x 0.1 in binary), so through a flux and a limiter
       homogeneous of degree one the two families' fields stay proportional: 1e-12 in every cell.
       Cell 1 against the oracle at 1e-3 relative: the two rules differ there by 12.5 % and
-      22.2 %, 125 and 222 times that.
+      22.2 %, 125 and 222 times that. L6g: the same bound on cell 1 (the same mechanism, one family);
+      the G term left out misses by 50 %.
 """
 import importlib.util
 import math
@@ -120,7 +129,9 @@ RHO_G6 = 1.2                             # the uniform gas, at U_IN and T_IN
 RHO_C6 = 1.0e-4                          # family i starts with RHO_C6 krho_i, above rho_empty
 KRHO6 = (0.2, 0.1)                       # family 1, family 2
 TOL_C6 = 1.0e-3
-REFUSE6 = 'Setup_BC: 401 inlet: krho must be >= 0 and the families of one cell must sum below 1'
+G6 = RHO_G6 * U_IN                       # L6g: the cell's G, the gas mass flux rho_g U
+REFUSE6 = 'field 1, krho/(1 - krho_tot), is negative'
+REFUSE6G = 'a 401 line without its 10th field G'
 
 # --- L2: evaporation, case F's material and gas -------------------------------------
 TOL_K = 1.0e-6
@@ -404,13 +415,14 @@ def content_state(rho):
     return (rho, U_IN, 0.0, 0.0, T_IN, rho / (RHO_M3 * 4.0 / 3.0 * math.pi * R_SMALL ** 3))
 
 
-def mixture_case(name, phase, krhos, contents):
-    """One mesh block, uncoupled, in a uniform gas; face-1 code-401 records, one block of records per
-    family in ATLAS's order (one record per face for one family), kV = kT = 1, radius 10 um."""
+def mixture_case(name, phase, krhos, contents, mixture=True, g=0.0, u_gas=U_IN):
+    """One mesh block, uncoupled, in a uniform gas (speed u_gas); face-1 code-401 records, one block of records per
+    family in ATLAS's order (one record per face for one family), kV = kT = 1, radius 10 um, G = g."""
     case = Case(WORK / name, nx=int(round(1.0 / DX3)), Lx=1.0)
     case.families(*[content_state(c) for c in contents])
-    case.gas(rho=RHO_G6, u=U_IN, v=0.0, w=0.0, T=T_IN, R=287.05, gam=1.4, k=0.026, mu=1.8e-5)
-    case.boundaries('extrapolation', inlets=[inlet_payload(k, 1.0, 1.0, R_SMALL) for k in krhos], code=401)
+    case.gas(rho=RHO_G6, u=u_gas, v=0.0, w=0.0, T=T_IN, R=287.05, gam=1.4, k=0.026, mu=1.8e-5)
+    case.boundaries('extrapolation', inlets=[inlet_payload(k, 1.0, 1.0, R_SMALL) for k in krhos], code=401,
+                    mixture=mixture, g=g)
     case.phase(*phase)
     case.ini(t_end=T_END3, drag='NoDrag', heat='NoHeat', rho_al=RHO_M3, closures=('MK',) * len(krhos))
     return case
@@ -447,20 +459,51 @@ def mixture_leg(rep, label, phase, krhos):
               % (label, expect, ratio_err))
 
 
-def refusal_leg(rep, label, name, krhos, why):
-    """A loading the mixture rule cannot carry stops the setup with the 401 inlet message."""
-    case = mixture_case(name, ('A 2',), krhos, [RHO_E] * len(krhos))
+def g_leg(rep, label, krho, g):
+    """One family, field 1 krho/(1 - krho), the cell's G = g: cell 1 holds rho_p/rho_g = field 1 (1 + G/(rho_g U))."""
+    case = mixture_case(label.lower(), ('A 1',), (krho,), [RHO_C6 * krho], g=g)
+    print('   %-3s phase A 1, 401 record krho %g, G %g kg/(s m^2), kV = kT = 1' % (label, krho, g))
+    sol = try_run(rep, case.run)
+    if sol is None:
+        return
+    got = sol['var'][RHO][0] / RHO_G6
+    ref = krho / (1.0 - krho) * (1.0 + g / (RHO_G6 * U_IN))
+    err = abs(got / ref - 1.0)
+    print('       cell 1 rho_p/rho_g %.9f, oracle field 1 (1 + G/(rho_g U)) %.9f, rel. error %.2e' % (got, ref, err))
+    rep.check(err <= TOL_C6, '%s: the family enters at field 1 (1 + G/(rho_g U)) = %.6f of the gas density (%.1e)'
+              % (label, ref, err))
+
+
+def rest_leg(rep, label, krho, g):
+    """L6g's record in a gas at rest: no normal speed, G not divided by it: the run of G = 0 to the byte."""
+    out = {}
+    for name, gg in ((label.lower(), g), (label.lower() + '-g0', 0.0)):
+        case = mixture_case(name, ('A 1',), (krho,), [RHO_C6 * krho], g=gg, u_gas=0.0)
+        print('   %-3s phase A 1, 401 record krho %g, G %g kg/(s m^2), gas at rest' % (label, krho, gg))
+        sol = try_run(rep, case.run)
+        if sol is None:
+            return
+        rho = sol['var'][RHO]
+        out[gg] = ((case.dir / 'OUTPUT/part-field.tec').read_bytes(), all(math.isfinite(x) for x in rho))
+        print('       every density finite: %s; cell 1 %.3e kg/m^3' % (out[gg][1], rho[0]))
+    rep.check(out[g][1] and out[g][0] == out[0.0][0], '%s: a gas at rest: G left out, every density finite and the '
+              'part-field.tec of G = 0 byte for byte' % label)
+
+
+def refusal_leg(rep, label, name, krhos, why, expect=REFUSE6, mixture=True):
+    """A 401 record ICE cannot take stops the setup, naming the line and the field."""
+    case = mixture_case(name, ('A 2',), krhos, [RHO_E] * len(krhos), mixture=mixture)
     print('   %-3s phase A 2, 401 records krho %s: %s' % (label, ' / '.join('%g' % k for k in krhos), why))
     try:
         run_ice(case.dir)
     except RuntimeError:
         text = '\n'.join((case.dir / f).read_text(errors='replace') for f in ('log', 'err')
                          if (case.dir / f).exists())
-        where = [s.strip() for s in text.splitlines() if '[ICE::Setup_BC] 401 inlet' in s]
-        print('       %s' % (where[0] if where else 'ICE stopped without the 401 inlet line'))
-        rep.check(REFUSE6 in text, '%s: %s is refused: %s' % (label, why, REFUSE6))
+        where = [s.strip() for s in text.splitlines() if '[ICE::Setup_BC]' in s]
+        print('       %s' % (where[0] if where else 'ICE stopped without a Setup_BC line'))
+        rep.check(expect in text, '%s: %s is refused: %s' % (label, why, expect))
         return
-    rep.check(False, '%s: %s ran to the end (exit 0); expected: %s' % (label, why, REFUSE6))
+    rep.check(False, '%s: %s ran to the end (exit 0); expected: %s' % (label, why, expect))
 
 
 def main():
@@ -488,6 +531,10 @@ def main():
     mixture_leg(rep, 'L6c', ('A 1',), KRHO6[:1])
     refusal_leg(rep, 'L6r', 'l6r-sum', (0.6, 0.5), 'a krho sum of 1.1')
     refusal_leg(rep, 'L6r', 'l6r-negative', (0.2, -0.1), 'a negative krho')
+    refusal_leg(rep, 'L6r', 'l6r-old', KRHO6, 'a file without G (an ATLAS before the mixture rule)',
+                expect=REFUSE6G, mixture=False)
+    g_leg(rep, 'L6g', KRHO6[0], G6)
+    rest_leg(rep, 'L6z', KRHO6[0], G6)
 
     rep.close(WORK)
 

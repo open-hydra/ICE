@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'verification'))
-from common import Case, Physics, GREEN, RED, RESET, ICE_BIN, inlet_payload      # noqa: E402
+from common import Case, Physics, GREEN, RED, RESET, ICE_BIN, inlet_payload, mixture_401      # noqa: E402
 
 WORK = Path(__file__).resolve().parent / 'work'
 NX, LX = 16, 0.16
@@ -61,7 +61,7 @@ def normal():
 
 def angles():
     krho, kv, kt = 0.5, 1.0, 1.0
-    payload = '%.10e %.10e %.10e %.10e %.10e %.10e 0.0 Dirac 0.0' % (krho, kv, math.pi, 0.0, kt, RINJ)
+    payload = mixture_401(['%.10e %.10e %.10e %.10e %.10e %.10e 0.0 Dirac 0.0' % (krho, kv, math.pi, 0.0, kt, RINJ)])[0]
     sol = duct('angles', payload, 401, gas_u=-VINJ).run()
     u = sol['var'][U]
     ok = abs(u[-1] + kv * VINJ) <= 1e-9 * VINJ

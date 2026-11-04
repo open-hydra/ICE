@@ -115,6 +115,21 @@ def inlet_payload(massflux, speed, T, radius):
         massflux, speed, T, radius)
 
 
+def mixture_401(payloads, families=1, g=0.0):
+    """The 401 payloads as ATLAS writes them under the mixture rule over the dispersed phases of a cell: field 1
+    krho/(1 - krho_tot) and a 10th field G, the sum of gp over the 402/403 records of the cell (``g``; 0 without
+    them). krho_tot is the sum of the krho of every family of the cell: the payloads' first fields in the readers'
+    order, or, with one payload, its value counted once per family (a one-copy table speaks for every family). Field
+    1 is computed from the printed krho, the value ICE reads, so that ICE's injection at G = 0 is the one of the former
+    krho/(1 - sum krho) to the last bit."""
+    ks = [float(p.split()[0]) for p in payloads]
+    tot = 0.0
+    for k in ks:
+        for _ in range(families if len(ks) == 1 else 1):
+            tot += k
+    return ['%.16e %s %.16e' % (k / (1.0 - tot), ' '.join(p.split()[1:]), g) for k, p in zip(ks, payloads)]
+
+
 def bc_rows(nx, ny, nz, mode='extrapolation', block=1, inlet=None, code=402):
     """Return ATLAS-format BC rows for one mesh block.
 
@@ -158,12 +173,14 @@ def bc_rows(nx, ny, nz, mode='extrapolation', block=1, inlet=None, code=402):
     return rows
 
 
-def write_bc(path, nx, ny, nz, mode='extrapolation', inlets=None, code=402):
+def write_bc(path, nx, ny, nz, mode='extrapolation', inlets=None, code=402, families=1, mixture=True, g=0.0):
     """Write an ATLAS-format BC file for a single block.
 
     With ``inlets`` set, one complete BC table is written per family in
     ATLAS material/population order. Each inlet is a formatted payload
-    (inlet_payload) or a dict with the keys gp, v, T and r, written under ``code``.
+    (inlet_payload) or a dict with the keys gp, v, T and r, written under ``code``. Code 401 payloads
+    are written as ATLAS writes them (mixture_401, ``families`` for a single payload, ``g`` the G of the
+    cell), or as given with ``mixture`` False (a file of an ATLAS before the mixture rule, without G).
     """
     def payload(spec):
         if isinstance(spec, str):
@@ -173,10 +190,13 @@ def write_bc(path, nx, ny, nz, mode='extrapolation', inlets=None, code=402):
     if inlets is None:
         rows = bc_rows(nx, ny, nz, mode)
     else:
+        payloads = [payload(spec) for spec in inlets]
+        if code == 401 and mixture:
+            payloads = mixture_401(payloads, families, g)
         rows = [
             row
-            for spec in inlets
-            for row in bc_rows(nx, ny, nz, mode, inlet=payload(spec), code=code)
+            for pl in payloads
+            for row in bc_rows(nx, ny, nz, mode, inlet=pl, code=code)
         ]
 
     Path(path).write_text('\n'.join(rows) + '\n')
@@ -430,6 +450,7 @@ class Case(object):
             raise ValueError('at least one family state is required')
         if any(len(state) != 6 for state in states):
             raise ValueError('each family state must contain rho,u,v,w,T,n')
+        self.nfamilies = len(states)
 
         names = [
             '%s%d' % (name, p)
@@ -462,10 +483,11 @@ class Case(object):
 
                   [self.cells(f) for f in (rho, u, v, w, T, R, gam, k, mu, 0.0)], zone='B1-GAS')
 
-    def boundaries(self, mode='extrapolation', inlets=None, code=402):
-        """Write part-bc.txt, optionally with one inlet payload per family, under the inlet code ``code``."""
+    def boundaries(self, mode='extrapolation', inlets=None, code=402, mixture=True, g=0.0):
+        """Write part-bc.txt, optionally with one inlet payload per family, under the inlet code ``code``
+        (401: ``g`` the G of the cell)."""
         write_bc(self.dir / 'INPUT/part-bc.txt', self.nx, self.ny, self.nz,
-                 mode, inlets, code)
+                 mode, inlets, code, families=getattr(self, 'nfamilies', 1), mixture=mixture, g=g)
 
     def properties(self, Tmin, Tmax, cp, rho, **kw):
         """Write part-properties.dat and mark the case as table-backed."""

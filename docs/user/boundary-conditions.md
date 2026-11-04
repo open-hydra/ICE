@@ -63,7 +63,7 @@ So a phase with two materials, one of them in two populations, needs three
 | `200` | Axisymmetry | none | The side faces of an axisymmetric wedge: see below |
 | `300` | Symmetry | none | See below |
 | `400` | Extrapolation | none | Ghost copies the interior cell: zero gradient. Particles that move into the domain through it enter with the state of the boundary cell, and the run says so: a line the first time a cell that carries the phase (density above the empty-cell density, $10^{-6}$ kg/m³) moves into the domain faster than round-off (above $10^{-12}$ of the signal speed $\sqrt{P/\rho}$ for IG and AG, of its own speed for MK, which has no signal speed) through the `400` faces of a face of a block (per family and grid level), with the iteration, the faces and the largest $\lvert w\rvert$ ($w$ the velocity along the normal out of the domain; $\lvert w\rvert/\sqrt{P/\rho}$ for IG, $\lvert w\rvert/\sqrt{P_{nn}/\rho}$ for AG), another each time that largest value is more than 10 times that of the last line, and at the end of a standalone run the stages each such face let particles in (under MPI the rank that owns the block prints its lines, at once, and rank 0 the end lines; inside hydra only the first-inflow and 10-times lines print, not the end lines, since hydra never runs ICE's end of run) |
-| `401` | Inlet, ratios to the gas | `krho kV alpha beta kT rp` | See below |
+| `401` | Inlet, ratios to the gas | `k kV alpha beta kT rp`, field 10 `G` | See below |
 | `402` | Inlet, absolute | `gp v alpha beta Tp rp` | |
 | `403` | Inlet, speed as a ratio | `gp kV alpha beta Tp rp` | |
 
@@ -131,12 +131,21 @@ differ in whether those are absolute or ratios to the local gas.
 
 | | Mass term | Velocity | Temperature |
 |---|---|---|---|
-| `401` | `krho`, the family's share of the mixture flow: $\rho_{p,i} = \frac{krho_i}{1-\sum_j krho_j}\,\rho_g / kV$ | `kV` times the gas velocity into the domain across the face | `kT` times the gas temperature |
+| `401` | `k` $= krho/(1-krho_{tot})$ and `G` (below): $\rho_{p,i} = k_i\,\rho_g / kV + k_i\,G/\lvert v_{p,n}\rvert$ | `kV` times the gas velocity into the domain across the face | `kT` times the gas temperature |
 | `402` | `gp`, a mass flux in kg s⁻¹ m⁻²: $\rho_p = gp/|v_n|$ | `v`, an absolute speed | `Tp`, absolute |
 | `403` | `gp`, as `402` | `kV` times the gas speed | `Tp`, absolute |
 
-In the `401` formula the sum runs over the families of the cell, as in IGLOO; with one copy of the table, its
-record counts once for every family. A cell whose `krho` sum reaches 1, or a negative `krho`, stops the setup.
+The `401` record carries the mixture rule over every dispersed phase of the cell as ATLAS BCB applies it: with
+$krho_{tot}$ the sum of `krho` over every `401` (material, population) of every phase of the cell and $G$ the sum of
+`gp` over its `402`/`403` ones, field 1 is $k = krho/(1-krho_{tot})$ and field 10 is $G$. ICE takes both as written:
+along the normal, family $i$ injects the mass flux $k_i\,(\rho_g u_{g,n} + G)$, i.e. $k_i\,(\dot m_{gas} + G A)$ through
+the face, the gas flow not in $G$, as IGLOO does ($v_{p,n}$ is the normal speed of the injection, $kV\,u_{g,n}$). With
+the direction given as angles the gas part is $\rho_p v_{p,n}$ and carries the cosine between the direction and the
+normal, the $G$ part not (it is divided by $v_{p,n}$, as `403` divides `gp`). $G$ enters only where it is positive
+and the injection has a normal speed: at a gas at rest at the face, nothing is divided by zero. A `401` line without
+its 10th field (a file of an ATLAS before the rule, whose field 1 is `krho`) stops the setup: regenerate the file with
+ATLAS BCB; so does a negative field 1 or a $G$ that is negative or not finite (a `krho` sum of 1 or more is ATLAS's
+to refuse).
 
 `alpha` and `beta` give the injection direction: written as the literal `normal` (both of
 them, the usual choice), the particles enter along the face normal into the domain, on any

@@ -502,9 +502,11 @@ another family's material, model or inlet record is seen directly in its own fie
 | L4 | `A 1` / `B 1`, zones $\rho$ = 2000 and 1000, one record per face | Each family's inlet $n$ uses its own table density: $n_1/n_2 = 1/2$ | $4.6\times10^{-15}$ |
 | L4c | `A 2`, one zone | Control: ratio 1 | exact |
 | L5 | `A 1 evaporation=d2-law` / `B 1 evaporation=d2-law`, zone A with `Lv` = $2.0\times10^6$, `Mv`, `Cpv` columns, zone B with the three at zero, `latent-heat = 0 2.26e6` | A evaporates with the latent heat of its columns, B with its INI value: each follows case F's $d^2$ slope with its own $L_v$ ($K_A/K_B = 1.116$) | slope $9.5\times10^{-10}$, $7.5\times10^{-10}$ |
-| L6 | `A 2`, face-1 `401` records in ATLAS's order (family 1 `krho` = 0.2, family 2 0.1, $kV = kT = 1$) in a uniform gas, each family starting with $10^{-4}\,krho_i$ kg m⁻³ | Family $i$ enters at $krho_i/(1-\sum_j krho_j)$ of the gas density, IGLOO's mixture rule: 0.2/0.7 and 0.1/0.7 in cell 1, $\rho_{p1}/\rho_{p2} = 2$ in every cell | cell 1 $7.3\times10^{-13}$; ratio exact |
+| L6 | `A 2`, face-1 `401` records in ATLAS's order (family 1 `krho` = 0.2, family 2 0.1, $kV = kT = 1$) in a uniform gas, each family starting with $10^{-4}\,krho_i$ kg m⁻³; field 1 written as ATLAS writes it, $krho_i/(1-\sum_j krho_j)$, and $G = 0$ | Family $i$ enters at $krho_i/(1-\sum_j krho_j)$ of the gas density, the mixture rule: 0.2/0.7 and 0.1/0.7 in cell 1, $\rho_{p1}/\rho_{p2} = 2$ in every cell | cell 1 $7.3\times10^{-13}$; ratio exact |
 | L6c | `A 1`, `krho` = 0.2 | Control: one family, 0.25 in cell 1, where the two rules agree | $7.3\times10^{-13}$ |
-| L6r | L6 with `krho` = 0.6 and 0.5, and with 0.2 and −0.1 | A cell whose `krho` sum reaches 1, or a negative `krho`, stops the setup with the `401` inlet message | refused |
+| L6r | L6 with `krho` = 0.6 and 0.5, and with 0.2 and −0.1; L6's records without their 10th field $G$ | A negative field 1 (a sum of 1.1 makes it negative), or a `401` line without $G$ (a file of an ATLAS before the mixture rule over the dispersed phases), stops the setup with the `401` inlet message | refused |
+| L6g | `A 1`, `krho` = 0.2 (field 1 0.25), $G = \rho_g U$ = 12 kg s⁻¹ m⁻² | The family takes field 1 times $(\rho_g U + G)$ through the face: 0.5 of the gas density in cell 1 (0.25 without the $G$ term) | $7.3\times10^{-13}$ |
+| L6z | L6g in a gas at rest | No normal speed: $G$ left out, not divided by zero; every density finite and `part-field.tec` bit for bit that of $G = 0$ | identical |
 
 L1's tolerance is $10^{-6}$ of the initial gap: RK2 at $\Delta t = \tau_A/1000$ leaves at most
 $(t/\tau)(\Delta t/\tau)^2/6 = 6\times10^{-8}$ of it, and a family that heats with the other
@@ -514,7 +516,8 @@ are homogeneous of degree one in $n$, so $10^{-12}$ bounds their round-off; a ce
 filled at half the inlet density. L6's ratio is exact for the same reason: its content keeps every cell above the
 empty-cell density, $10^{-6}$ kg m⁻³, below which the reconstruction is first order (a switch that is not
 scale-free), and starts in the inlet's ratio, so $10^{-12}$ bounds it too. L6's cell 1 is judged at $10^{-3}$
-relative: a family loaded as if alone, $krho_i/(1-krho_i)$, misses there by 12.5 % and 22.2 %.
+relative: a family loaded as if alone, $krho_i/(1-krho_i)$, misses there by 12.5 % and 22.2 %; L6g's on the same
+bound, which the $G$ term left out misses by 50 %.
 
 ## Clouds carried by the gas
 
