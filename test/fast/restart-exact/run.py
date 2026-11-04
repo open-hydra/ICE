@@ -21,6 +21,9 @@ numbered solutions and on a residual row (res-diter divides N: every run writes 
   wedge              the one-degree wedge of Axis/AG (axis row, side faces 200), its AG cloud set moving along x:
                      the case whose w and P13, P23 a mirror freezes, steady, tecplot ascii; one side node plane
                      moved by a relative 1e-12, so that a restart which does not freeze them fails
+  families           the duct of fast/populations with three families, copy c driving family c at 2^(c-1) times
+                     copy 1: every residual row holds 22 values, the domain's five norms and then each family's
+  past-families      past-steady-tec on that duct: the rows the restart drops first hold 22 values each
   past-steady-tec  B goes on past its solution of iteration N to N + N/2 and stops (killed, or at the time
                      limit of a queue); its numbered solution of iteration N is put back as the one a restart reads
                      and the restart runs N more: the rows of N + 1 .. N + N/2 must go first (the residual rows and
@@ -122,6 +125,31 @@ def ring(work):
     ini_set(d, 'ICE-Probes', probe1='block2')
     ini_set(d, 'block2', variables='rho_p1 T_p1', index_position='2 1 1 1', diter=4)
     return Path(d)
+
+
+def families(work):
+    """The duct of fast/populations with three families: 2 + 5 x 4 = 22 values on every residual row, which the
+    restart's row dropper counts. Solutions every N/2, so that past_families_leg finds its solution of iteration N."""
+    d = load('pop_run', HERE.parent / 'populations' / 'run.py').build(work, copies=3, families=3, scaled=True).dir
+    ini_set(d, 'ICE-Parameters', iter_threshold=2 * N)
+    ini_set(d, 'ICE-IO', sol_overwrite='false', sol_diter=N // 2, res_diter=3)
+    return d
+
+
+def past_families_leg(name):
+    """went_past_leg on the duct of families: B runs N + N/2 iterations, its solution of iteration N is put back and
+    the restart drops the 22-value rows of N + 1 .. N + N/2 before it runs N more."""
+    a, b = families(WORK / name / 'A'), families(WORK / name / 'B')
+    ini_set(b, 'ICE-Parameters', iter_threshold=N + N // 2)
+    try:
+        run(a)
+        run(b)
+        shutil.copy(str(b / 'OUTPUT' / 'part-field2.tec'), str(b / 'OUTPUT' / 'part-field.tec'))
+        ini_set(b, 'ICE-Parameters', iter_threshold=N, newrun='false')
+        run(b)
+    except RuntimeError as e:
+        return report(name, False, str(e))
+    return compare(name, a, b)
 
 
 def wedge(work):
@@ -298,6 +326,8 @@ def main():
     fails += leg('multigrid', ring)
     fails += res_threshold_leg('res-threshold')
     fails += leg('wedge', wedge)
+    fails += leg('families', families)
+    fails += past_families_leg('past-families')
     fails += went_past_leg('past-steady-tec', True, 'tecplot ascii')
     fails += went_past_leg('past-transient-vtk', False, 'vtk raw')
     fails += killed_leg('killed')

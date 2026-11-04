@@ -28,6 +28,7 @@ contains
     use ICE_Mod_ThreadGroups, only: setup_thread_groups
     use ICE_Mod_GhostExchange, only: build_ghost_schedule, build_local_bc_index, report_bc_mix
     use ICE_Mod_Timers,     only: timer_run_begin
+    use ICE_Mod_Diagnostic, only: residual_columns
     use iso_fortran_env,    only: int64
     !$ use omp_lib,         only: omp_set_schedule, omp_sched_static, omp_sched_dynamic, omp_sched_guided
     implicit none
@@ -218,7 +219,10 @@ contains
       ' [WARNING] restart: the solution holds no ICE_RES_REFERENCE, so res-threshold is relative to the first '// &
       'non-zero density residual of this run, not of the run it continues'
 
-    write(obj_io%unitRES_format, '(A11,I0,A7)') '(I8,E20.10,', 5, 'E20.10)'
+    ! A residual row: the global iteration, the time and residual_columns() norms
+    if (.not. allocated(obj_sim_param%residuofam)) allocate(obj_sim_param%residuofam(5, ngroups))
+    obj_sim_param%residuofam = 0._R8
+    write(obj_io%unitRES_format, '(A11,I0,A7)') '(I8,E20.10,', residual_columns(), 'E20.10)'
 
     call Cpu_Time(obj_sim_param%cputime(1))
 
@@ -299,7 +303,7 @@ contains
 
       ! A residual row: the global iteration, the time and the residuals
       resfile = 'OUTPUT/'//trim(ICE_phase_prefix)//'residual-history.dat'
-      ncol = 2 + size(obj_sim_param%residuotot)
+      ncol = 2 + residual_columns()
       if (obj_io%restart%found) then
         last = real(obj_io%restart%cycle, R8)
         if (mpi_is_root) call Drop_Rows_After(trim(resfile), ncol, 1, last, times=.false.)

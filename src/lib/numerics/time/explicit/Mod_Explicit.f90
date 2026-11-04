@@ -175,7 +175,7 @@ contains
            .or. (grid%time >= obj_sim_param%time_threshold)
     if (need_norm) then
       call timer_region_begin(TR_DIAG)
-      call residual_norm(grid, obj_sim_param%residuotot)
+      call residual_norm(grid, obj_sim_param%residuotot, obj_sim_param%residuofam)
       call timer_region_end(TR_DIAG)
     end if
 
