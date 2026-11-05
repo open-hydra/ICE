@@ -3,14 +3,14 @@
 !> between the integer-kelvin nodes and takes the end value outside them. The energy
 !> e = h - hOff is extended linearly beyond both ends (through e(0) = 0 below), and T(e)
 !> inverts it by bisection over the nodes. The saturation pressure follows the density's rule,
-!> and so do the latent heat and the vapour cp.
+!> and so do the latent heat, the vapour cp and the emissivity.
 !> The tables must be allocated (use_table, use_psat; cs_varies for the energy).
 module ICE_Lib_Properties
   use, intrinsic :: iso_fortran_env, only: R8 => real64
   use ICE_Config_Types_m, only: condensed_phase_t
   implicit none
   private
-  public :: mat_rho, mat_cp, mat_cp_const, mat_e, mat_T_from_e, mat_T_from_rhoe, mat_psat, mat_lv, mat_cpv
+  public :: mat_rho, mat_cp, mat_cp_const, mat_e, mat_T_from_e, mat_T_from_rhoe, mat_psat, mat_lv, mat_cpv, mat_emiss
 
 contains
 
@@ -85,6 +85,19 @@ contains
       cpv = mat%cpv
     endif
   end function mat_cpv
+
+
+  !> Emissivity [-]: the table's Emissivity column, else the INI value.
+  pure function mat_emiss(mat, T) result(eps)
+    type(condensed_phase_t), intent(in) :: mat
+    real(R8),                intent(in) :: T
+    real(R8) :: eps
+    if (mat%use_emiss) then
+      eps = table_value(mat%emiss_tab, mat%T_min, mat%T_max, T)
+    else
+      eps = mat%emiss
+    endif
+  end function mat_emiss
 
 
   !> Energy e = h - hOff [J/kg]: the table between the nodes, the line from e(0) = 0 to

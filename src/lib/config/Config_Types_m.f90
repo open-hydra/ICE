@@ -253,6 +253,8 @@ module ICE_Config_Types_m
     real(R8), allocatable     :: cpv_tab(:)   ! vapour specific heat [J/(kg K)], indexed T_min:T_max
     logical                   :: use_lv = .false., use_cpv = .false.  ! the latent sink and the evaporation models take them
     logical                   :: use_mv = .false.  ! the vapour molar mass came from the Mv column
+    real(R8), allocatable     :: emiss_tab(:) ! emissivity [-], indexed T_min:T_max
+    logical                   :: use_emiss = .false.  ! the radiative exchange takes emiss_tab
     logical                   :: rho_varies = .false., cs_varies = .false.
     character(len=8)          :: h_datum = 'none'  ! 'relative' (Enthalpy) or 'absolute' (Enthalpy_abs)
     real(R8)                  :: h_off = 0._R8     ! h at 0 K along the first table segment [J/kg]

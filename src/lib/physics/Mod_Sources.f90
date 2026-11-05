@@ -110,7 +110,7 @@ contains
     use ICE_Lib_Drag
     use ICE_Lib_Heat
     use ICE_Lib_Evaporation, only: evaporation, blowingFactor, nep, iLv, icpv
-    use ICE_Lib_Properties, only: mat_rho, mat_psat, mat_lv, mat_cpv
+    use ICE_Lib_Properties, only: mat_rho, mat_psat, mat_lv, mat_cpv, mat_emiss
     implicit none
     real(kind=R8), dimension(:), intent(in)    :: cond_prim, gas_prim
     real(kind=R8),               intent(inout) :: cond_tau
@@ -197,7 +197,7 @@ contains
     force(5) = Qconv*cond_prim(n)                  
       
     !> Radiative heat exchange over the whole particle surface
-    force(5) = force(5) + mat%emiss*sigma_SB * 4._R8*pi*Rp*Rp*cond_prim(n)*(gas_prim(ng)**4._I4-cond_prim(n-1)**4._I4)
+    force(5) = force(5) + mat_emiss(mat, cond_prim(n-1))*sigma_SB * 4._R8*pi*Rp*Rp*cond_prim(n)*(gas_prim(ng)**4._I4-cond_prim(n-1)**4._I4)
 
     !> Particles relaxation time (infinite without drag, so every relaxation term vanishes exactly)
     if (Cd == 0._R8) then
