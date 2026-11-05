@@ -5,6 +5,7 @@
 !>      pi d^2 the whole sphere surface, to 1e-14 relative (the solver's radius is a cube root of the state)
 !>   R2 at emissivity 0 the energy slot is 0 and every other slot is R1's
 !>   R3 a material whose emissivity is never set radiates nothing
+!>   R4 a material whose Emissivity column is T/3000 radiates with its value at T_p, 0.8: R1's closed form to 1e-14
 !> Prints every assertion and exits non-zero if any failed.
 program test_radiation
   use, intrinsic :: iso_fortran_env, only: R8 => real64
@@ -62,8 +63,9 @@ contains
     real(R8), parameter :: SIGMA = 5.670374419e-8_R8, PI = acos(-1._R8)
     real(R8), parameter :: D = 30.e-6_R8, RHO_P = 1._R8, TP = 2400._R8, TG = 600._R8
     real(R8), parameter :: RG = 287.05_R8, GAM = 1.4_R8, KG = 0.05_R8, MU = 3.e-5_R8
-    type(condensed_phase_t) :: grey, off, fresh
-    real(R8) :: cond(6), gas(5), s8(6), s0(6), sf(6), t8, t0, tf, n, q, rel
+    type(condensed_phase_t) :: grey, off, fresh, tab
+    real(R8) :: cond(6), gas(5), s8(6), s0(6), sf(6), st(6), t8, t0, tf, tt, n, q, rel
+    integer  :: i
 
     n    = RHO_P/(RHO_L*PI/6._R8*D**3)
     cond = [RHO_P, 0._R8, 0._R8, 0._R8, TP, n]
@@ -71,10 +73,16 @@ contains
     call material(grey);  grey%emiss = 0.8_R8
     call material(off);   off%emiss  = 0._R8
     call material(fresh)
-    t8 = 0._R8; t0 = 0._R8; tf = 0._R8
+    call material(tab)
+    tab%T_min = 1; tab%T_max = 3000
+    allocate(tab%emiss_tab(tab%T_min:tab%T_max))
+    tab%emiss_tab = [(real(i, R8)/3000._R8, i = 1, 3000)]
+    tab%use_emiss = .true.
+    t8 = 0._R8; t0 = 0._R8; tf = 0._R8; tt = 0._R8
     call compute_source_(cond, t8, gas, RG, GAM, KG, MU, s8, grey,  6)
     call compute_source_(cond, t0, gas, RG, GAM, KG, MU, s0, off,   6)
     call compute_source_(cond, tf, gas, RG, GAM, KG, MU, sf, fresh, 6)
+    call compute_source_(cond, tt, gas, RG, GAM, KG, MU, st, tab,   6)
 
     q   = 0.8_R8*SIGMA*PI*D*D*n*(TG*TG*TG*TG - TP*TP*TP*TP)
     rel = abs(s8(5) - q)/abs(q)
@@ -85,6 +93,10 @@ contains
                'R2: emissivity 0 gives energy 0 and every other slot unchanged', ok)
     write(*,'(A,ES24.16)') '   R3: energy slot, emissivity never set ', sf(5)
     call check(sf(5) == 0._R8, 'R3: a material whose emissivity is never set radiates nothing', ok)
+    rel = abs(st(5) - q)/abs(q)
+    write(*,'(A,2ES24.16)') '   R4: energy slot (ICE, closed form) ', st(5), q
+    write(*,'(A,ES10.3)')   '   R4: relative difference ', rel
+    call check(rel <= 1.e-14_R8, 'R4: an Emissivity column T/3000 radiates with eps(T_p) = 0.8 to 1e-14', ok)
   end subroutine legs
 
 

@@ -2,8 +2,9 @@
 !> column checks, Load_Table on small tables written here (Tmin > 1, permuted columns, both
 !> datums), the lookup and energy inversion of ICE_Lib_Properties, the Psat column, the Lv, Mv
 !> and Cpv columns (their checks, and the ATLAS water table INPUT/aw-properties.dat), and the
-!> energy the MK, IG and AG closures store, recover and lose with the evaporated mass. Prints
-!> every assertion and exits non-zero if any failed.
+!> energy the MK, IG and AG closures store, recover and lose with the evaporated mass, and the
+!> Conductivity and Emissivity names with the positive-column check. Prints every assertion and
+!> exits non-zero if any failed.
 program test_properties
   use, intrinsic :: iso_fortran_env, only: R8 => real64
   use, intrinsic :: ieee_arithmetic, only: ieee_value, ieee_quiet_nan
@@ -16,6 +17,7 @@ program test_properties
   nmat = 1
   allocate(obj_condensed(1))
   call test_tokens()
+  call test_positive_column()
   call test_nodes()
   call test_columns()
   call test_load()
@@ -46,7 +48,7 @@ contains
 
   subroutine test_tokens()
     character(len=64), allocatable :: tk(:)
-    integer :: icp, irho, ih, ips, code, ilv, imv, icpv, isig, imu
+    integer :: icp, irho, ih, ips, code, ilv, imv, icpv, isig, imu, ikl, ieps
     logical :: rel
 
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy']
@@ -114,7 +116,35 @@ contains
     tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'enthalpy']
     call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
     call check(code == TAB_DUPLICATE, 'tokens: one enthalpy named twice is a duplicate, not two datums')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'Emissivity', 'Conductivity']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu, ikl, ieps)
+    call check(code == TAB_OK .and. ieps == 4 .and. ikl == 5 .and. isig == 0 .and. imu == 0, &
+               'tokens: Emissivity and Conductivity bind vars 4 and 5')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu, ikl, ieps)
+    call check(code == TAB_OK .and. ieps == 0 .and. ikl == 0, 'tokens: no Emissivity or Conductivity name: both 0')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'Emissivity', 'EMISSIVITY']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu, ikl, ieps)
+    call check(code == TAB_DUPLICATE, 'tokens: Emissivity named twice is refused')
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_DUPLICATE, 'tokens: Emissivity named twice is refused without the optional outputs')
+    tk = [character(len=64) :: 'Temperature', 'Cp', 'Density', 'Enthalpy', 'conductivity', 'Conductivity']
+    call classify_table_tokens(tk, icp, irho, ih, ips, rel, code, ilv, imv, icpv, isig, imu)
+    call check(code == TAB_DUPLICATE, 'tokens: Conductivity named twice is refused without the optional outputs')
   end subroutine test_tokens
+
+
+  !> validate_positive_column: each code once, and one reason.
+  subroutine test_positive_column()
+    real(R8) :: nan
+    nan = ieee_value(1._R8, ieee_quiet_nan)
+    call check(validate_positive_column([0.5_R8, 0.9_R8]) == COL_OK, 'column: positive rows pass')
+    call check(validate_positive_column([0._R8, 0._R8]) == COL_ABSENT, 'column: all zero is absent')
+    call check(validate_positive_column([nan, 0.5_R8]) == COL_NONFINITE, 'column: a NaN row is not finite')
+    call check(validate_positive_column([0._R8, 0.5_R8]) == COL_PARTIAL, 'column: a zero row in a non-zero column')
+    call check(validate_positive_column([-0.1_R8, 0.5_R8]) == COL_NONPOSITIVE, 'column: a negative row')
+    call check(column_reason(COL_PARTIAL) == 'zero on some rows and not on others', 'column: the partial reason')
+  end subroutine test_positive_column
 
 
   subroutine test_nodes()
