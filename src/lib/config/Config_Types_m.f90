@@ -229,7 +229,8 @@ module ICE_Config_Types_m
     real(R8) :: cpv    = 0._R8       ! Vapour specific heat        [J/(kg K)]; 0 = use the gas cp
     real(R8) :: Le     = 1._R8       ! Lewis number                [-]
     real(R8) :: Yinf   = 0._R8       ! Far-field vapour mass fraction [-]
-    real(R8) :: Tboil  = 2792._R8    ! Boiling temperature at 1 atm [K]
+    real(R8) :: Tboil  = 2792._R8    ! Boiling temperature at boiling-pressure [K]
+    real(R8) :: pBoil  = 101325._R8  ! Pressure at which Tboil is given [Pa]
     real(R8) :: alphaE = 1._R8       ! Evaporation (accommodation) coefficient [-]
     ! Solidification, from the phase-file tokens (IGLOO's defaults); T-nuc <= 0 means 0.8 T-melt
     integer  :: solidSelect = 0

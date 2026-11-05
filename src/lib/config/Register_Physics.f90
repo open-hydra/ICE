@@ -78,9 +78,10 @@ contains
                  'column: the table then owns it; required for an evaporating material unless its property table '// &
                  'carries the Mv column'//'; one value per material', '>= 0', .false., per_material=.true.)
     call reg%add(section, 'boiling-temperature', ini_condensed%Tboil, '2792.0', &
-                 'Boiling temperature at 1 atm [K], the anchor of the '// &
+                 'Boiling temperature at boiling-pressure [K], the anchor of the '// &
                  'Clausius-Clapeyron saturation pressure; with a Psat column in the property table '// &
-                 'it must lie in [Tmin, Tmax-1] of the table, where the column must give 0.5 to 2 atm'// &
+                 'it must lie in [Tmin, Tmax-1] of the table, where the column must give boiling-pressure within a '// &
+                 'factor 2'// &
                  '; required for an evaporating material (this key or its alias Tboil)'//'; one value per material', &
                  '> 0', .false., per_material=.true.)
     ! Same target as boiling-temperature; Setup_Materials refuses the two together
@@ -88,6 +89,10 @@ contains
                  'Alias of boiling-temperature, the name IGLOO also accepts; give one or the other, not both; '// &
                  'one of the two is required for an evaporating material'// &
                  '; one value per material', '> 0', .false., per_material=.true.)
+    call reg%add(section, 'boiling-pressure', ini_condensed%pBoil, '101325.0', &
+                 'Pressure [Pa] at which boiling-temperature is given: the Clausius-Clapeyron line passes through '// &
+                 '(boiling-temperature, boiling-pressure) and a Psat column must give boiling-pressure there within '// &
+                 'a factor 2'//'; one value per material', '> 0', .false., per_material=.true.)
     call reg%add(section, 'vapour-specific-heat', ini_condensed%cpv, '0.0', &
                  'Specific heat of the vapour [J/(kg K)]; 0 falls back to the gas cp, unless the material''s '// &
                  'property table carries the Cpv column: the table then owns it; required for an evaporating '// &

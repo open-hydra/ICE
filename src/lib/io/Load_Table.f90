@@ -168,7 +168,7 @@ contains
         if (mpi_is_root) write(*,'(A)') '   Psat column not used: this material does not evaporate'
         return
       endif
-      pcode = validate_psat_column(ps, Tmin, Tmin+Ni-1, obj_condensed(m)%Tboil, Patm)
+      pcode = validate_psat_column(ps, Tmin, Tmin+Ni-1, obj_condensed(m)%Tboil, obj_condensed(m)%pBoil)
       if (pcode == PSAT_ABSENT) then
         if (mpi_is_root) write(*,'(A)') '   Psat column all zero: Clausius-Clapeyron is used'
         return
@@ -176,8 +176,16 @@ contains
       if (pcode /= PSAT_OK) call refuse(tablefile, trim(zone_label(m))//'Psat column: '//psat_reason(pcode))
       allocate(obj_condensed(m)%psat_tab(Tmin:Tmin+Ni-1), source=ps)
       obj_condensed(m)%use_psat = .true.
-      if (mpi_is_root) write(*,'(A)') '   Psat from the table, psat(boiling-temperature) = '// &
-        trim(rtoa(mat_psat(obj_condensed(m), obj_condensed(m)%Tboil)/Patm))//' atm'
+      if (mpi_is_root) then
+        if (obj_condensed(m)%pBoil == Patm) then
+          write(*,'(A)') '   Psat from the table, psat(boiling-temperature) = '// &
+            trim(rtoa(mat_psat(obj_condensed(m), obj_condensed(m)%Tboil)/Patm))//' atm'
+        else
+          write(*,'(A)') '   Psat from the table, psat(boiling-temperature) = '// &
+            trim(rtoa(mat_psat(obj_condensed(m), obj_condensed(m)%Tboil)/Patm))//' atm = '// &
+            trim(rtoa(mat_psat(obj_condensed(m), obj_condensed(m)%Tboil)/obj_condensed(m)%pBoil))//' boiling-pressure'
+        endif
+      endif
     end subroutine load_psat
 
 
@@ -473,10 +481,10 @@ contains
 
 
   !> Finite; all zero means absent; non-negative; non-decreasing; not constant; the boiling
-  !  temperature inside [Tmin, Tmax-1] and psat there within a factor 2 of one atmosphere.
-  pure function validate_psat_column(tab, lo, hi, Tboil, Patm) result(code)
+  !  temperature inside [Tmin, Tmax-1] and psat there within a factor 2 of the boiling pressure pBoil.
+  pure function validate_psat_column(tab, lo, hi, Tboil, pBoil) result(code)
     integer,  intent(in) :: lo, hi
-    real(R8), intent(in) :: tab(lo:hi), Tboil, Patm
+    real(R8), intent(in) :: tab(lo:hi), Tboil, pBoil
     integer  :: code, i
     real(R8) :: ratio
     code = PSAT_NONFINITE
@@ -492,7 +500,7 @@ contains
     code = PSAT_TBOIL_RANGE
     if (.not. (Tboil >= real(lo, R8) .and. Tboil <= real(hi-1, R8))) return
     i = int(Tboil)
-    ratio = (tab(i) + (tab(i+1) - tab(i))*(Tboil - real(i, R8)))/Patm
+    ratio = (tab(i) + (tab(i+1) - tab(i))*(Tboil - real(i, R8)))/pBoil
     code = PSAT_TBOIL_MISMATCH
     if (ratio < 0.5_R8 .or. ratio > 2._R8) return
     code = PSAT_OK
@@ -508,7 +516,7 @@ contains
     case (PSAT_NONMONOTONE);    txt = 'a pressure that decreases with T'
     case (PSAT_CONSTANT);       txt = 'a constant pressure'
     case (PSAT_TBOIL_RANGE);    txt = 'boiling-temperature outside [Tmin, Tmax-1] of the table'
-    case (PSAT_TBOIL_MISMATCH); txt = 'psat(boiling-temperature) is not within a factor 2 of one atmosphere'
+    case (PSAT_TBOIL_MISMATCH); txt = 'psat(boiling-temperature) is not within a factor 2 of boiling-pressure'
     case default;               txt = 'unknown Psat error'
     end select
   end function psat_reason
