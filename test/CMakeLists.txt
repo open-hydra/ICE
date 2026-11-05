@@ -365,6 +365,12 @@ ice_add_unit_test(SolidificationUnit unit/test_solidification.f90 "fast;unit;imp
 # scalars poisoned, against the scalars set to the tables' values, for d2-law, CEM, ASM and TC
 ice_add_unit_test(VapourSourcesUnit unit/test_vapour_sources.f90 "fast;unit;implementation")
 
+# The OpenMP schedule ICE sets reads back as set, under an OMP_SCHEDULE it must override
+if(USE_OPENMP)
+    ice_add_unit_test(ScheduleUnit unit/test_omp_schedule.f90 "fast;unit;implementation;openmp")
+    set_tests_properties(ScheduleUnit PROPERTIES ENVIRONMENT "${_ICE_TEST_ENV};OMP_SCHEDULE=guided,3")
+endif()
+
 # The rows of a history file that a restart drops (Drop_Rows_After), on files written for it: a run gone past its
 # solution, a file whose count started again, a solution older than every row, a row cut short, time rows
 ice_add_unit_test(DropRowsUnit unit/test_drop_rows.f90 "fast;unit;implementation")
