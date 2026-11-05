@@ -34,6 +34,18 @@ contains
     call parse(obj_io%ini_format, ' ', obj_io%ini_fmt)
     call parse(obj_io%sol_format, ' ', obj_io%sol_fmt)
 
+#ifndef USE_TECIO
+    ! --- Binary Tecplot goes through TecIO, which this build lacks: ORION would stop at the first read or write of
+    !     such a file, for a solution only once the run reaches its first write. Refused here, before the run ---
+    if ((trim(obj_io%ini_fmt(1)) == 'tecplot' .and. trim(obj_io%ini_fmt(2)) == 'binary') .or. &
+        (trim(obj_io%sol_fmt(1)) == 'tecplot' .and. trim(obj_io%sol_fmt(2)) == 'binary')) then
+      write(*,'(A)') ' [ERROR] [ICE-IO] tecplot binary (ic-format = '//trim(obj_io%ini_format)//', sol-format = '// &
+                     trim(obj_io%sol_format)//') needs a build with TecIO (-DUSE_TECIO=ON); this build has none: '// &
+                     'use tecplot ascii or a vtk format'
+      error stop 1
+    end if
+#endif
+
     ! --- Detect one-way coupling from gas file presence ---
     ! The name follows `gas-path` and `ic-format`, as the reader does.
     inquire(file=trim(obj_io%gaspath)//'gas'//io_extension(obj_io%ini_fmt), &

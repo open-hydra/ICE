@@ -128,7 +128,7 @@ independent — a case may be given in Tecplot ASCII and written in VTK.
 | Value | File |
 |---|---|
 | `tecplot ascii` | `part-field.tec` |
-| `tecplot binary` | `part-field.szplt`; needs a TecIO-enabled build |
+| `tecplot binary` | `part-field.szplt`; needs a build with TecIO (`-DUSE_TECIO=ON`), refused at set-up otherwise |
 | `vtk ascii` / `vtk binary` / `vtk raw` | `part-field.vtm` plus one `.vts` per block under `vtk/` |
 
 The file holds the node coordinates followed by the primitive variables of every

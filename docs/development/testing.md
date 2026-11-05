@@ -146,6 +146,15 @@ ICE_BUILD_DIR=/path/to/build git push
 ICE_PREPUSH_JOBS=2 git push
 ```
 
+## Continuous integration
+
+`.github/workflows/ctest.yml` runs the fast tier on every pull request into `main` and every push to it, in two jobs:
+
+| Job | Build | Runs |
+|-----|-------|------|
+| `test` | gfortran, `TESTING`, `USE_TECIO=OFF` | `ctest -L fast`, with the rows of `Refusals` on binary Tecplot |
+| `test-tecio` | the same with `USE_TECIO=ON`: ORION builds TecIO from its bundled sources, with the runner's Boost or the one it bundles | `ctest -L fast`, with `RestartExactTecIO` |
+
 ## Adding a case
 
 Decide first which kind it is, because the kinds are registered differently and carry
