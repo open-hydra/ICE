@@ -5,6 +5,7 @@ module ICE_Lib_Evaporation
     public :: assign_evaporation, assign_interface, assign_blowing
     public :: blowingFactor
     public :: evaporation
+    public :: psat_CC, invTboil_at
 
     !> Vapour properties, packed contiguously by Assign_Setup and indexed by the
     !  parameters below.
@@ -470,6 +471,17 @@ contains
         endif
 
     end function F_correction
+
+
+    !> 1/T of the one-atmosphere boiling point on the Clausius-Clapeyron line through (Tboil, pBoil).
+    pure function invTboil_at(Tboil, pBoil, LvMvOverRu) result(invT)
+        implicit none
+        real(R8), intent(in) :: Tboil, pBoil, LvMvOverRu
+        real(R8) :: invT
+
+        invT = 1._R8/Tboil + log(pBoil/Patm)/LvMvOverRu
+
+    end function invTboil_at
 
 
     !===================================================================!

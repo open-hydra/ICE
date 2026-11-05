@@ -167,7 +167,7 @@ evap_on="sed -i '/^heat-transfer/a evaporation = CEM' input.ini"
 refuse Refuse/MK   "Psat: decreasing, with evaporation" "psat_table decreasing && $evap_on" \
        "Psat column: a pressure that decreases with T"
 refuse Refuse/MK   "Psat: far from 1 atm at the boiling temperature" "psat_table linear && $evap_on" \
-       "Psat column: psat(boiling-temperature) is not within a factor 2 of one atmosphere"
+       "Psat column: psat(boiling-temperature) is not within a factor 2 of boiling-pressure"
 # Tboil is the alias of boiling-temperature (IGLOO's name): one or the other, even with equal values.
 # Without the alias Tboil is an unknown key: the run stops, but not with this text.
 refuse Doisneau/MK "boiling temperature: key and alias both given" \
