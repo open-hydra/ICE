@@ -231,6 +231,16 @@ for key in latent-heat vapour-molar-mass vapour-specific-heat boiling-temperatur
   refuse NoExchange/MK "vapour: evaporation without $key" "$evap_on && vapour_keys $key" "evaporation requires $key"
 done
 accept NoExchange/MK "vapour: the six keys given" "$evap_on && vapour_keys" "Time of operation"
+# boiling-pressure: water's 373.15 K given at 2e5 Pa is folded into the one-atmosphere anchor (354.767 K on its
+# Clausius-Clapeyron line); a Psat column is checked against it ("1atm" gives 1.2 atm at 1200 K, 0.405 of 3e5 Pa)
+bp="sed -i '/^heat-transfer/a boiling-pressure = 2e5' input.ini"
+accept NoExchange/MK "boiling pressure: the anchor at one atmosphere" "$evap_on && vapour_keys && $bp" \
+       "at boiling-pressure  2.00000E+05 Pa: Clausius-Clapeyron through  3.54767E+02 K at one atmosphere"
+refuse NoExchange/MK "boiling pressure: the Psat column checked against it" \
+       "psat_table 1atm && $evap_on && $vapour_rest && $tb1200 && sed -i '/^heat-transfer/a boiling-pressure = 3e5' input.ini" \
+       "Psat column: psat(boiling-temperature) is not within a factor 2 of boiling-pressure"
+refuse NoExchange/MK "boiling pressure: not positive" "$evap_on && vapour_keys && sed -i '/^heat-transfer/a boiling-pressure = 0' input.ini" \
+       "boiling-pressure must be > 0"
 # Materials come from the phase file: "<name> <groups> [key=value ...]" per line. two_mat declares
 # a second material and a second family; the tokens are read for every material, coupled or not.
 two_mat="printf 'condensed-dispersed phase\nA 1\nB 1\n' > INPUT/part-phase.txt && printf '\n[ICE-Family2]\nclosure = MK\n' >> input.ini"
