@@ -138,11 +138,9 @@ contains
       end associate
     enddo
 
-    ! Solidification integrates the temperature with constant properties, as IGLOO does
+    ! A solidifying material keeps a constant density (its cp may vary: the liquid's energy is the table's)
     do m = 1, nmat
       if (.not. obj_condensed(m)%solid) cycle
-      if (obj_condensed(m)%cs_varies) &
-        call refuse(material_label(m)//': solidification=on requires a constant-cp material (temperature state)')
       if (obj_condensed(m)%rho_varies) &
         call refuse(material_label(m)//': solidification=on requires a constant-density material')
     enddo

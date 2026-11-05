@@ -270,9 +270,6 @@ refuse Doisneau/MK "solidification: nucleation above melting" "tokens '$valid T-
        "solidification=on requires T-nuc < T-melt"
 refuse Doisneau/MK "solidification: with evaporation" "tokens '$valid evaporation=CEM'" \
        "solidification=on is exclusive with evaporation"
-refuse Doisneau/MK "solidification: a varying cp" \
-       "tokens '$valid' && python3 -c \"L=open('INPUT/part-properties.dat').read().split(chr(10))[:4]; L+=['%.1f %.10g 2000.0 %.10g' % (T, 1500+0.1*T, 1500*T+0.05*T*T) for T in range(1, 5001)]; open('INPUT/part-properties.dat','w').write(chr(10).join(L)+chr(10))\"" \
-       "solidification=on requires a constant-cp material"
 refuse Doisneau/MK "solidification: a varying density" \
        "tokens '$valid' && python3 -c \"L=open('INPUT/part-properties.dat').read().split(chr(10))[:4]; L+=['%.1f 1500.0 %.10g %.10g' % (T, 2000+0.1*T, 1500*T) for T in range(1, 5001)]; open('INPUT/part-properties.dat','w').write(chr(10).join(L)+chr(10))\"" \
        "solidification=on requires a constant-density material"
