@@ -96,8 +96,8 @@ several, the groups must add up to the `[ICE-FamilyN]` count and the
 [property table](initial-conditions.md#property-table) must give one zone per material.
 
 `density`, `specific-heat`, `latent-heat`, `emissivity`, `vapour-molar-mass`,
-`boiling-temperature` (alias `Tboil`), `vapour-specific-heat`, `lewis-number`, `vapour-mass-fraction` and
-`evaporation-coefficient` take one value per material, in the phase file's order
+`boiling-temperature` (alias `Tboil`), `boiling-pressure`, `vapour-specific-heat`, `lewis-number`,
+`vapour-mass-fraction` and `evaporation-coefficient` take one value per material, in the phase file's order
 (`emissivity = 0 0` for two materials); any other count stops the run. `latent-heat`,
 `vapour-molar-mass` and `vapour-specific-heat` are 0 for a material whose property table
 carries the `Lv`, `Mv` or `Cpv` column of the same quantity, and `emissivity` is 0 for one
@@ -136,7 +136,8 @@ table carries a `Psat` column. A table with `Lv`,
 heat in place of `latent-heat`, `vapour-molar-mass` and `vapour-specific-heat`, the first
 and the last as functions of the particle temperature (see the
 [property table](initial-conditions.md#property-table)). `boiling-temperature`
-may be given as `Tboil`, the name IGLOO also accepts; giving both stops the run. `evaporation-interface` and `evaporation-blowing` are refinements of
+may be given as `Tboil`, the name IGLOO also accepts; giving both stops the run. It is the boiling point at
+`boiling-pressure` [Pa], one atmosphere unless given: the saturation curve passes through the two. `evaporation-interface` and `evaporation-blowing` are refinements of
 the selected model rather than models of their own:
 
 ```ini

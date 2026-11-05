@@ -118,8 +118,8 @@ an offset. A constant $c_p$ must give $h = c_p T + h_{off}$ on every row, and a 
 must match the trapezoidal integral of $c_p$ within 0.1 % per step, or within
 $10^{-6}\,|h|$ when that is larger, the rounding of an absolute enthalpy printed to seven
 digits. For a material that evaporates it also refuses a `Psat` column that is not finite,
-is negative, decreases with $T$ or is constant, or does not give 0.5 to 2 atm at its
-`boiling-temperature`, which must lie in $[T_{min}, T_{max}-1]$; a column of zeros counts
+is negative, decreases with $T$ or is constant, or does not give its `boiling-pressure` (one atmosphere by
+default) within a factor 2 at its `boiling-temperature`, which must lie in $[T_{min}, T_{max}-1]$; a column of zeros counts
 as absent, and a material that does not evaporate does not use the column.
 
 The `Lv`, `Mv` and `Cpv` columns follow the same rule: they serve a material that

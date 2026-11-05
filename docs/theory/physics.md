@@ -106,11 +106,13 @@ between the nodes and constant beyond its ends, and otherwise Clausius-Clapeyron
 the boiling point:
 
 $$
-p_{sat}(T_p) = p_{atm}\,\exp\left[-\frac{L_v M_v}{\mathcal{R}}
+p_{sat}(T_p) = p_{B}\,\exp\left[-\frac{L_v M_v}{\mathcal{R}}
   \left(\frac{1}{T_p} - \frac{1}{T_{boil}}\right)\right],
 $$
 
-with $M_v$ as the vapour molar mass, $T_{boil}$ the boiling-temperature, $L_v$ the latent-heat. The surface mole fraction is
+with $M_v$ as the vapour molar mass, $T_{boil}$ the boiling-temperature, $p_B$ the boiling-pressure at which it is
+given (one atmosphere by default), $L_v$ the latent-heat. ICE evaluates it anchored at one atmosphere, through the
+boiling point of the same line there, $1/T_{boil,1} = 1/T_{boil} + \ln(p_B/p_{atm})\,\mathcal{R}/(L_v M_v)$. The surface mole fraction is
 $X_s = p_{sat}/p$, clamped to $1 - 10^{-12}$ once $p_{sat}$ reaches the local gas pressure — the
 boiling regime. The cap keeps $B_M$ finite, about $10^{12}\,M_v/M_g$, so every model returns a finite
 rate while the droplet boils (IGLOO clamps at the same value). Converting to a mass fraction $Y_s$ against the gas
