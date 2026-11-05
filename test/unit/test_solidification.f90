@@ -2,8 +2,9 @@
 !> whose energy is negative): the energy against IGLOO's hSolid on its three branches, the recalescence conserving
 !> the energy, the nucleation threshold, melting at T-melt, the injection rule, the plateau rate, the ranges, the
 !> nucleated fraction's events and its majority threshold; then (U9) the closure wrappers of ICE_Lib_Solid, (U12-U15)
-!> the reconstruction of a solidifying family and (U16) a NaN staying a NaN. Prints every assertion and exits non-zero
-!> if any failed.
+!> the reconstruction of a solidifying family, (U16) a NaN staying a NaN, and (U17-U19) the table forms of a varying
+!> liquid cp: equal to the constant forms on a constant table, the closed forms on c_l = 50 + 0.5 T, and the MK
+!> wrappers' round trip on that table. Prints every assertion and exits non-zero if any failed.
 program test_solidification
   use, intrinsic :: iso_fortran_env, only: R8 => real64, I8 => int64
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_is_nan, ieee_value, ieee_quiet_nan
@@ -39,6 +40,7 @@ program test_solidification
   call test_wrappers()
   call test_reconstruction()
   call test_nan()
+  call test_table()
 
   if (nfail > 0) then
     write(*,'(A,I0,A)') 'test_solidification: ', nfail, ' FAILED'
@@ -535,5 +537,70 @@ contains
     real(R8), intent(in) :: a(:), b(:)
     same = all(transfer(a, 0_I8, size(a)) == transfer(b, 0_I8, size(b)))
   end function same
+
+
+  !> U17-U19: the table forms. U17 on a constant table (e_l = cl*T) they are the constant forms; U18 on c_l = 50 + 0.5 T
+  !> the nucleation from T_nuc freezes f0 = (e_l(T_m) - e_l(T_nuc))/h_fus = 0.477209, a whole freeze (h_fus = 4e5) lands
+  !> at T_m - (e_l(T_m) - e_l(T_nuc) - h_fus)/c_s; U19 the MK wrappers on that table return T and f of a liquid, a
+  !> plateau and a solid content, the plateau's energy being rho*(e_l(T_m) - f h_fus).
+  subroutine test_table()
+    type(condensed_phase_t) :: mat
+    real(R8) :: T1, f1, x1, T2, f2, x2, w, eTm, eTn, dE, pr(8), cn(8), bk(8), states(3,3)
+    integer  :: ph1, ph2, k, i
+    character(len=160) :: msg
+
+    w = 0._R8
+    do k = 0, 40
+      T1 = 1400._R8 + 25._R8*k
+      call nucleationJump(T1, cl, cs, Tm, hf, T2, f2, ph2)
+      call nucleationJumpTab(cl*(Tm - T1), cs, Tm, hf, T1, f1, ph1)
+      w = max(w, abs(T1 - T2)/Tm, abs(f1 - f2))
+      if (ph1 /= ph2) w = huge(1._R8)
+      T1 = 1400._R8 + 25._R8*k
+      w = max(w, abs(solid_de_tab(cl*(Tm - T1), T1, 0.6_R8, cs, hf, Tm) - solid_de(T1, 0.6_R8, cl, cs, hf, Tm))/hf)
+      do ph1 = phLiquid, phSolid
+        w = max(w, abs(hSolidTab(cl*T1, cl*Tm, T1, 0.6_R8, ph1, cs, hf, Tm, 5.e4_R8) - &
+                       hSolid(T1, 0.6_R8, ph1, cl, cs, hf, Tm, 5.e4_R8))/(cl*Tm))
+      enddo
+      call solid_state(T1, 0.7_R8, cl, cs, Tm, Tn, hf, T2, f2, x2)
+      call solid_state_tab(T1, 0.7_R8, cl*(Tm - T1), cs, Tm, Tn, hf, T1, f1, x1)
+      w = max(w, abs(T1 - T2)/Tm, abs(f1 - f2), abs(x1 - x2))
+    enddo
+    write(msg,'(A,ES9.2)') 'U17 the table forms on e_l = cl*T are the constant forms, worst relative ', w
+    call check(w <= 8._R8*epsilon(1._R8), trim(msg))
+
+    eTm = 50._R8*Tm + 0.25_R8*Tm*Tm
+    eTn = 50._R8*Tn + 0.25_R8*Tn*Tn
+    dE  = eTm - eTn
+    call nucleationJumpTab(dE, cs, Tm, hf, T1, f1, ph1)
+    call nucleationJumpTab(dE, cs, Tm, hf2, T2, f2, ph2)
+    write(msg,'(A,F9.6,A,F10.4,A)') 'U18 on c_l = 50 + 0.5 T: f0 ', f1, ', h_fus = 4e5 freezes whole at ', T2, ' K'
+    call check(T1 == Tm .and. abs(f1 - dE/hf) <= 4._R8*spacing(1._R8) .and. abs(f1 - 0.477209_R8) < 1.e-6_R8 .and. &
+               ph1 == phPlateau .and. abs(T2 - (Tm - (dE - hf2)/cs)) <= Ttol .and. f2 == 1._R8 .and. &
+               ph2 == phSolid, trim(msg))
+
+    mat%rho_al = 2950._R8; mat%Tmelt = Tm; mat%Tnuc = Tn; mat%hFus = hf; mat%cpSol = cs
+    mat%solidSelect = 1; mat%solid = .true.
+    mat%use_table = .true.; mat%cs_varies = .true.; mat%T_min = 1; mat%T_max = 3000
+    allocate(mat%rho_tab(1:3000), source=2950._R8)
+    allocate(mat%cs_tab(1:3000), source=[(50._R8 + 0.5_R8*i, i = 1, 3000)])
+    allocate(mat%e_tab(1:3000), source=[(50._R8*i + 0.25_R8*real(i, R8)**2, i = 1, 3000)])
+    states(:,1) = [2400._R8, 0._R8, 0._R8]
+    states(:,2) = [Tm, 0.7_R8, 1._R8]
+    states(:,3) = [1500._R8, 1._R8, 1._R8]
+    w = 0._R8
+    do k = 1, 3
+      pr = [2.9_R8, 3._R8, 0._R8, 0._R8, states(1,k), 1.e12_R8, states(2,k), states(3,k)]
+      cn = prim_2_cons_MK_S(pr, mat)
+      bk = cons_2_prim_MK_S(cn, mat)
+      w = max(w, abs(bk(5) - pr(5))/pr(5), abs(bk(7) - pr(7)), abs(bk(8) - pr(8)))
+    enddo
+    pr = [2.9_R8, 0._R8, 0._R8, 0._R8, Tm, 1.e12_R8, 0.7_R8, 1._R8]
+    cn = prim_2_cons_MK_S(pr, mat)
+    w = max(w, abs(cn(5)/2.9_R8 - (eTm - 0.7_R8*hf))/eTm)
+    write(msg,'(A,ES9.2)') 'U19 MK wrappers on the table: liquid, plateau, solid round trips and the plateau energy, '// &
+                           'worst relative ', w
+    call check(w <= 1.e-12_R8, trim(msg))
+  end subroutine test_table
 
 end program test_solidification

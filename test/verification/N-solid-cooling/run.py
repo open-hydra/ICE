@@ -23,6 +23,9 @@ The nucleated fraction chi is 1 on every nucleated state and 0 on every liquid o
   N6  N1 to the plateau midpoint, then a restart in place (newrun = false) to 0.015 s: the straight run's state.
   N7  two materials, "A 1 solidification=on ..." and "B 1" (cp 1000): each its own history; B's columns are
       those of a run with B alone, byte for byte.
+  N8  N1 on a liquid cp linear in T, c_l = a + b T (a = 50, b = 0.5: 1250 J/(kg K) at 2400 K), from the property
+      table: the liquid follows t(T) = (m/A) [b (T_0 - T) + (a + b T_g) ln((T_0 - T_g)/(T - T_g))], the nucleation
+      freezes f0 = (e_l(T_m) - e_l(T_nuc))/h_fus, e_l the integral of c_l; plateau and solid as N1.
 
 Tolerances (time-scheme RK2, dt-max = 1e-5 binding). The liquid and melting legs have no event: 1e-5 of the gap,
 |f - f_cf| <= 1e-5. After a nucleation the switch happens at the end of a stage: the plateau is shifted by at most
@@ -74,6 +77,42 @@ def cooling(t, T0, Tg, h=HF):
         Ta = TM - (CL * (TM - TN) - h) / CS
         return Tg + (Ta - Tg) * math.exp(-(t - tn) / TAU_S), 1.0
     rate = A * (TM - Tg) / (M * h)
+    ts = tn + (1.0 - f0) / rate
+    if t < ts:
+        return TM, f0 + (t - tn) * rate
+    return Tg + (TM - Tg) * math.exp(-(t - ts) / TAU_S), 1.0
+
+
+CPA, CPB = 50.0, 0.5
+
+
+def cp_lin(T):
+    return CPA + CPB * T
+
+
+def e_lin(T):
+    return CPA * T + 0.5 * CPB * T * T
+
+
+def t_liquid_lin(T, T0, Tg):
+    """The time a liquid of c_l = a + b T takes from T0 to T in a gas at Tg."""
+    return M / A * (CPB * (T0 - T) + (CPA + CPB * Tg) * math.log((T0 - Tg) / (T - Tg)))
+
+
+def cooling_lin(t, T0, Tg):
+    """cooling() on the linear liquid cp: the liquid by inverting t_liquid_lin, f0 from the energy."""
+    tn = t_liquid_lin(TN, T0, Tg)
+    if t < tn:
+        lo, hi = TN, T0
+        for _ in range(200):
+            mid = 0.5 * (lo + hi)
+            if t_liquid_lin(mid, T0, Tg) > t:
+                lo = mid
+            else:
+                hi = mid
+        return 0.5 * (lo + hi), 0.0
+    f0 = (e_lin(TM) - e_lin(TN)) / HF
+    rate = A * (TM - Tg) / (M * HF)
     ts = tn + (1.0 - f0) / rate
     if t < ts:
         return TM, f0 + (t - tn) * rate
@@ -311,6 +350,24 @@ def n7(rep):
     rep.check(same, 'N7: family B\'s columns equal those of a run with B alone, value for value')
 
 
+def n8(rep):
+    tn = t_liquid_lin(TN, 2400.0, 600.0)
+    f0 = (e_lin(TM) - e_lin(TN)) / HF
+    rate = A * (TM - 600.0) / (M * HF)
+    ts = tn + (1.0 - f0) / rate
+    print('   N8  N1 on c_l = %g + %g T: t_n %.6e s, f0 %.6f, plateau rate %.4f /s, t_s %.6e s'
+          % (CPA, CPB, tn, f0, rate, ts))
+    zones = [dict(cp=cp_lin, rho=RHO_M, zone='A')]
+    for t_end, regime in ((0.5 * tn, 'liquid'), (tn + 0.25 * (ts - tn), 'plateau'), (tn + 0.5 * (ts - tn), 'plateau'),
+                          (tn + 0.75 * (ts - tn), 'plateau'), (0.010, 'solid-after-jump'), (0.015, 'solid-after-jump')):
+        case = closed_cell('N8-%s' % ('%.6e' % t_end), 2400.0, 600.0, t_end, zones=zones)
+        sol = attempt(rep, 'N8 t = %.6e' % t_end, case)
+        if sol is None:
+            continue
+        T_ref, f_ref = cooling_lin(sol['time'], 2400.0, 600.0)
+        check_state(rep, 'N8 %s' % regime, sol, 'MK', T_ref, f_ref, regime, (1800.0, 600.0))
+
+
 def selected(leg):
     """ICE_SOLID_LEGS=N1,N3 runs those legs only (the mutation probes use it); every leg by default."""
     legs = os.environ.get('ICE_SOLID_LEGS')
@@ -320,7 +377,7 @@ def selected(leg):
 def main():
     rep = Report('N. Solidification, closed cell')
     straight = n1(rep) if selected('N1') or selected('N6') else {}
-    for leg, fn in (('N2', n2), ('N3', n3), ('N4', n4), ('N5', n5), ('N7', n7)):
+    for leg, fn in (('N2', n2), ('N3', n3), ('N4', n4), ('N5', n5), ('N7', n7), ('N8', n8)):
         if selected(leg):
             fn(rep)
     if selected('N6'):
