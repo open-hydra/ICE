@@ -87,7 +87,7 @@ $$
 \dot q_{\text{rad}} = \varepsilon\,\sigma\,4\pi R_p^2\,n\,\big(T_g^4 - T_p^4\big),
 $$
 
-with $\sigma = 5.670374419\times10^{-8}$ W m⁻² K⁻⁴ (CODATA). The area factor is $4\pi R_p^2 = \pi d_p^2$, the whole sphere surface. Radiation is exchanged with the local gas temperature, not with a wall or a far-field temperature. The emissivity $\varepsilon$ is `emissivity` in `[ICE-Physics]`, one value per material: 0, the default, switches radiation off; a grey body cannot exceed 1, so a value above 1 is cut to 1 with a warning, and a negative value stops the run.
+with $\sigma = 5.670374419\times10^{-8}$ W m⁻² K⁻⁴ (CODATA). The area factor is $4\pi R_p^2 = \pi d_p^2$, the whole sphere surface. Radiation is exchanged with the local gas temperature, not with a wall or a far-field temperature. The emissivity $\varepsilon$ is `emissivity` in `[ICE-Physics]`, one value per material: 0, the default, switches radiation off; a grey body cannot exceed 1, so a value above 1 is cut to 1 with a warning, and a negative value stops the run. A material whose property table carries an `Emissivity` column takes $\varepsilon(T_p)$ from it instead, at the particle temperature, linear between the nodes and the end value outside.
 
 ## Evaporation
 
