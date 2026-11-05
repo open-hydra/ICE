@@ -87,7 +87,7 @@ cmake --build build --parallel
 |---|---|---|
 | `USE_OPENMP` | `OFF` | OpenMP |
 | `USE_MPI` | `OFF` | MPI; also defines `USE_MPI` for the preprocessor |
-| `USE_TECIO` | `OFF` | Passed to ORION for binary Tecplot |
+| `USE_TECIO` | `OFF` | Binary Tecplot (`.szplt`) through ORION's TecIO; without it the set-up refuses `tecplot binary` |
 | `ORION_PATH` | `lib/ORION/` | ORION source tree |
 | `FINER_PATH` | `lib/third_party/FiNeR/` | FiNeR source tree |
 

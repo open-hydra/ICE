@@ -192,8 +192,15 @@ ice_add_fast_script(PopulationBinding fast/populations "fast;implementation;bc")
 ice_add_fast_script(Multigrid fast/multigrid "fast;implementation;multigrid")
 
 # A run that cannot proceed must stop with a non-zero status (broken inputs, a
-# required model left unset in a coupled run, a NaN after the update).
+# required model left unset in a coupled run, a NaN after the update). The build's
+# USE_TECIO decides the rows on binary Tecplot, which a build without TecIO refuses.
 ice_add_fast_script(Refusals fast/refusals "fast;implementation;refusal")
+if(USE_TECIO)
+    set(_ICE_TECIO ON)
+else()
+    set(_ICE_TECIO OFF)
+endif()
+set_tests_properties(Refusals PROPERTIES ENVIRONMENT "${_ICE_TEST_ENV};ICE_USE_TECIO=${_ICE_TECIO}")
 
 # res-threshold relative to the first non-zero density residual: the same stop at loadings
 # 1 and 2^-16, a cloud at rest whose first residual is zero, a run in which nothing moves

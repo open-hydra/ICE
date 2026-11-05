@@ -32,6 +32,12 @@ IF(ICE_RACE_PROBE)
     target_compile_definitions(ICEL PRIVATE ICE_RACE_PROBE)
 ENDIF()
 
+# Binary Tecplot goes through TecIO, which ORION builds only with USE_TECIO (ICE's option in a standalone build, the
+# master project's inside one): without it the set-up refuses tecplot binary (Assign_Setup.f90).
+IF(USE_TECIO)
+    target_compile_definitions(ICEL PRIVATE USE_TECIO)
+ENDIF()
+
 IF(USE_MPI)
     target_compile_definitions(ICEL PUBLIC USE_MPI)
     target_link_libraries(ICEL PUBLIC MPI::MPI_Fortran)

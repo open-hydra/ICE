@@ -5,7 +5,8 @@
 #  Every case below is a copy of a shipped case with one thing broken, and each
 #  must terminate with exit status != 0 and print the texts listed for it. The
 #  first rows are refused while the input is read (a value outside its allowed
-#  list, a required model left unset in a coupled run, the heat name Chang, whose
+#  list, binary Tecplot in a build without TecIO, a required model left unset in
+#  a coupled run, the heat name Chang, whose
 #  formula is JAXA3, a property table that is malformed or contradicts the INI,
 #  a Psat column an evaporation model cannot use, Lv, Mv and Cpv columns that do
 #  not fit the Psat column or meet a vapour key set non-zero, a latent heat or
@@ -95,6 +96,19 @@ refuse Doisneau/MK "inlet 401 without a gas"     "sed -i 's/ 402\$/ 401/' INPUT/
        "takes its speed from the gas"
 refuse Doisneau/MK "inlet 403 without a gas"     "sed -i 's/ 402\$/ 403/' INPUT/part-bc.txt" \
        "takes its speed from the gas"
+# Binary Tecplot in a build without TecIO (CTest passes the build's USE_TECIO as ICE_USE_TECIO): refused at set-up, not
+# at the first write of a solution (here after 20 iterations) or at the read of a part-ic.szplt. A TecIO build reads and
+# writes it (RestartExactTecIO), so these rows run only without one.
+if [[ ${ICE_USE_TECIO:-} == OFF ]]; then
+  refuse Doisneau/MK "tecplot binary without TecIO: sol-format" \
+         "sed -i 's/^sol-format .*/sol-format = tecplot binary/; s/^iter-threshold .*/iter-threshold = 20/' input.ini" \
+         "sol-format = tecplot binary;needs a build with TecIO"
+  refuse Doisneau/MK "tecplot binary without TecIO: ic-format" \
+         "sed -i 's/^ic-format .*/ic-format = tecplot binary/; s/^iter-threshold .*/iter-threshold = 20/' input.ini" \
+         "ic-format = tecplot binary;needs a build with TecIO"
+else
+  echo "[fast] SKIP: tecplot binary without TecIO (ICE_USE_TECIO=${ICE_USE_TECIO:-unset}: a TecIO build, or a run outside CTest)"
+fi
 # A mesh with flat cells: the nodes of row j = 1 laid onto row j = 0 from i = 5 on, so that the cells of row 1 from
 # i = 6 on have no thickness (check_folded_cells leaves out the corners of their collapsed edges)
 refuse Doisneau/MK "mesh: flat cells" \
