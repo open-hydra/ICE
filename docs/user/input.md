@@ -100,7 +100,8 @@ several, the groups must add up to the `[ICE-FamilyN]` count and the
 `evaporation-coefficient` take one value per material, in the phase file's order
 (`emissivity = 0 0` for two materials); any other count stops the run. `latent-heat`,
 `vapour-molar-mass` and `vapour-specific-heat` are 0 for a material whose property table
-carries the `Lv`, `Mv` or `Cpv` column of the same quantity: the table then owns it.
+carries the `Lv`, `Mv` or `Cpv` column of the same quantity, and `emissivity` is 0 for one
+whose table carries the `Emissivity` column: the table then owns it.
 
 The tokens are the ones IGLOO reads. `evaporation`, `interface` and `alpha-e` set that
 material's evaporation model, interface and accommodation coefficient; `[ICE-Physics]

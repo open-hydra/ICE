@@ -67,7 +67,8 @@ contains
                  '>= 0', .false., per_material=.true.)
     call reg%add(section, 'emissivity', ini_condensed%emiss, '0.0', &
                  'Particle surface emissivity of the grey-body exchange with the local gas temperature, '// &
-                 'over the whole particle surface; 0 switches it off; a value above 1 is cut to 1 with a warning'// &
+                 'over the whole particle surface; 0 switches it off; a value above 1 is cut to 1 with a warning; '// &
+                 '0 for a material whose property table carries the Emissivity column: the table then owns it'// &
                  '; one value per material', &
                  '>= 0', .false., per_material=.true.)
 
