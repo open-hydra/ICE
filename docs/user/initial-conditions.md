@@ -141,8 +141,10 @@ The vapour keys follow a stricter rule: `latent-heat`, `vapour-molar-mass` or
 `vapour-specific-heat` given non-zero for a material whose column of the same quantity is
 non-zero stops the run, even when the two agree, and 0 leaves the quantity to the table
 (one value per material, so `latent-heat = 0 2.26e6` serves a tabulated material A beside
-a material B without the columns). An evaporating material with `latent-heat` or
-`vapour-molar-mass` at 0 and no column to replace it stops the run. The setup prints the
+a material B without the columns). An evaporating material with `latent-heat`,
+`vapour-molar-mass` or `vapour-specific-heat` left out, or `latent-heat` or
+`vapour-molar-mass` at 0, and no column to replace it stops the run; IGLOO refuses such a
+material too. The setup prints the
 tabulated values of each such material: $L_v$ at 298.15 K, which becomes its scalar latent
 heat, and at the boiling temperature, $M_v$, and $c_{p,v}$ at the boiling temperature.
 

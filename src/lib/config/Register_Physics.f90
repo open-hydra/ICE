@@ -62,7 +62,8 @@ contains
                  'Latent heat of vaporisation [J/kg]; the evaporation models use it '// &
                  'both as the energy sink and as the anchor of the Clausius-Clapeyron saturation curve, '// &
                  'which a Psat column in the property table replaces; 0 for a material whose property table '// &
-                 'carries the Lv column: the table then owns it'//'; one value per material', &
+                 'carries the Lv column: the table then owns it; required for an evaporating material unless its '// &
+                 'property table carries the Lv column'//'; one value per material', &
                  '>= 0', .false., per_material=.true.)
     call reg%add(section, 'emissivity', ini_condensed%emiss, '0.0', &
                  'Particle surface emissivity of the grey-body exchange with the local gas temperature, '// &
@@ -73,25 +74,31 @@ contains
     ! Vapour properties (only read when an evaporation model is selected) --
     call reg%add(section, 'vapour-molar-mass', ini_condensed%Mv, '26.98', &
                  'Molar mass of the vapour [kg/kmol]; 0 for a material whose property table carries the Mv '// &
-                 'column: the table then owns it'//'; one value per material', '>= 0', .false., per_material=.true.)
+                 'column: the table then owns it; required for an evaporating material unless its property table '// &
+                 'carries the Mv column'//'; one value per material', '>= 0', .false., per_material=.true.)
     call reg%add(section, 'boiling-temperature', ini_condensed%Tboil, '2792.0', &
                  'Boiling temperature at 1 atm [K], the anchor of the '// &
                  'Clausius-Clapeyron saturation pressure; with a Psat column in the property table '// &
-                 'it must lie in [Tmin, Tmax-1] of the table, where the column must give 0.5 to 2 atm'//'; one value per material', &
+                 'it must lie in [Tmin, Tmax-1] of the table, where the column must give 0.5 to 2 atm'// &
+                 '; required for an evaporating material (this key or its alias Tboil)'//'; one value per material', &
                  '> 0', .false., per_material=.true.)
     ! Same target as boiling-temperature; Setup_Materials refuses the two together
     call reg%add(section, 'Tboil', ini_condensed%Tboil, '2792.0', &
-                 'Alias of boiling-temperature, the name IGLOO also accepts; give one or the other, not both'// &
+                 'Alias of boiling-temperature, the name IGLOO also accepts; give one or the other, not both; '// &
+                 'one of the two is required for an evaporating material'// &
                  '; one value per material', '> 0', .false., per_material=.true.)
     call reg%add(section, 'vapour-specific-heat', ini_condensed%cpv, '0.0', &
                  'Specific heat of the vapour [J/(kg K)]; 0 falls back to the gas cp, unless the material''s '// &
-                 'property table carries the Cpv column: the table then owns it'//'; one value per material', &
+                 'property table carries the Cpv column: the table then owns it; required for an evaporating '// &
+                 'material unless its property table carries the Cpv column'//'; one value per material', &
                  '>= 0', .false., per_material=.true.)
     call reg%add(section, 'lewis-number', ini_condensed%Le, '1.0', &
-                 'Lewis number of the vapour in the gas, Le = k/(rho cp D)'//'; one value per material', '> 0', .false., per_material=.true.)
+                 'Lewis number of the vapour in the gas, Le = k/(rho cp D); required for an evaporating material'// &
+                 '; one value per material', '> 0', .false., per_material=.true.)
     call reg%add(section, 'vapour-mass-fraction', ini_condensed%Yinf, '0.0', &
                  'Vapour mass fraction in the far-field gas; evaporation stops once '// &
-                 'the surface value falls to it'//'; one value per material', '>= 0', .false., per_material=.true.)
+                 'the surface value falls to it; required for an evaporating material'// &
+                 '; one value per material', '>= 0', .false., per_material=.true.)
     call reg%add(section, 'evaporation-coefficient', ini_condensed%alphaE, '1.0', &
                  'Evaporation (accommodation) coefficient of the Langmuir-Knudsen '// &
                  'interface; unused under VLE; the default of alpha-e'//'; one value per material', '> 0', .false., per_material=.true.)
