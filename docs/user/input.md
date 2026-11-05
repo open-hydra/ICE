@@ -109,7 +109,7 @@ evaporation`, `evaporation-interface` and `evaporation-coefficient` are the defa
 material without the token. `solidification = on` makes the material freeze and melt, with
 `T-melt`, `h-fus`, `T-nuc` and `cp-solid` (see [Solidification](../theory/physics.md#solidification)); it
 stops the run without a positive `h-fus` and `cp-solid`, with `T-nuc` at or above `T-melt`, together
-with evaporation, and with a `Cp` or `Density` column that varies. `liquid-conduction`, `boiling`
+with evaporation, and with a `Density` column that varies (a varying `Cp` is the liquid's). `liquid-conduction`, `boiling`
 and `combustion` accept only the value ICE implements (`ITC`, `clamp`, `none`), and IGLOO's other
 numeric keys (`k-liq`, `mu-liq`, `K-burn`, …) are read and ignored. An unknown key, a value that is
 not a number, or `interface = LK` with the d2-law stops the run. `evaporation-blowing` stays global.

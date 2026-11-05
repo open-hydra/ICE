@@ -189,7 +189,9 @@ $$
 
 with $c_l$ the material's constant specific heat (the liquid's), $c_s$ = `cp-solid`, $h_{fus}$ = `h-fus` and
 $T_m$ = `T-melt`: a fraction $f$ of solid and $1 - f$ of liquid at one temperature. On the liquid ($f = 0$), the
-plateau ($T = T_m$) and the solid ($f = 1$) it is IGLOO's enthalpy without its datum.
+plateau ($T = T_m$) and the solid ($f = 1$) it is IGLOO's enthalpy without its datum. With a `Cp` column that varies,
+$c_l T$ becomes the table's liquid energy $e_l(T)$ and $L(T) = h_{fus} - \big(e_l(T_m) - e_l(T)\big) + c_s(T_m - T)$;
+$T_\ell = e_l^{-1}(e)$, and below every $c_l(T_m - T_\ell)$ reads $e_l(T_m) - e_l(T_\ell)$.
 
 ### The phase of a cell
 
@@ -261,7 +263,8 @@ All on the material's line of the phase file, as IGLOO reads them:
 | `T-nuc` | nucleation temperature [K], below `T-melt` | 0.8 `T-melt` |
 | `cp-solid` | specific heat of the solid [J/(kg K)] | required, > 0 |
 
-The liquid's specific heat and the density are the material's, and must be constant: a `Cp` or `Density` column that
-varies stops the run, as does a material that also evaporates. The setup prints each solidifying material's values.
+The liquid's specific heat and the density are the material's; the specific heat may vary with the temperature (a
+`Cp` column, the liquid's energy then being the table's), the density must be constant: a `Density` column that varies
+stops the run, as does a material that also evaporates. The setup prints each solidifying material's values.
 For alumina the NIST-JANAF tables give $T_m$ = 2327 K, $h_{fus}$ = 1.09 MJ/kg, a liquid specific heat of
 1.89 kJ/(kg K) and a solid one of 1.36 kJ/(kg K) at the melting point; the default `T-nuc` is a nominal supercooling.
