@@ -16,13 +16,14 @@
 #  mesh with flat cells);
 #  the last one diverges at run time (a NaN source in one cell) and must be
 #  caught after the update. A solver that reports success on
-#  any of these would let a harness read a broken run as a pass. Eleven rows go the
+#  any of these would let a harness read a broken run as a pass. Thirteen rows go the
 #  other way: an INI value equal to the table's must be accepted, the boiling
 #  temperature must be read under either of its names, the vapour columns must be
 #  read with the vapour keys left out or set to 0, the six vapour keys must be
 #  accepted without a table, a solidifying material must be
 #  read, reported and written with its frozen and nucleated fractions, and an
-#  emissivity left out must act as 0 and one above 1 as 1, with a warning.
+#  emissivity left out must act as 0 and one above 1 as 1, with a warning; an
+#  Emissivity column must be read, a column of 1 radiating as the key 1.
 #===============================================================================
 set -uo pipefail
 
@@ -326,6 +327,30 @@ outputs differ "emissivity: 0"        "emissivity: 1"
 outputs same   "emissivity: 1.5"      "emissivity: 1"
 warned "emissivity: 1.5" 1
 warned "emissivity: 1"   0
+# emis_table <none|zerorow|value>: NoExchange/MK's material (cp 1000, density 2000, as its INI sets) as a table, with
+# an Emissivity column of that constant value, or of 0.5 with a zero row at 1 K, or without the column
+emis_table() {
+  awk -v mode="$1" 'BEGIN {
+    print "TITLE = \"Mass Thermodynamic Properties\""
+    if (mode == "none") print "VARIABLES = \"Temperature\", \"Cp\", \"Density\", \"Enthalpy\""
+    else print "VARIABLES = \"Temperature\", \"Cp\", \"Density\", \"Enthalpy\", \"Emissivity\""
+    print "ZONE T=\"A\""; print "I=5000, F=POINT"
+    for (T = 1; T <= 5000; T++) {
+      if (mode == "none") printf "%.1f 1000.0 2000.0 %.1f\n", T, 1000*T
+      else printf "%.1f 1000.0 2000.0 %.1f %s\n", T, 1000*T, (mode == "zerorow" ? (T == 1 ? "0.0" : "0.5") : mode)
+    }
+  }' > INPUT/part-properties.dat
+}
+refuse NoExchange/MK "emissivity: the key beside the column" \
+       "emis_table 0.8 && sed -i 's/^emissivity .*/emissivity = 0.8/' input.ini" \
+       "emissivity = 8.00000E-01 is set and the table gives the Emissivity column"
+refuse NoExchange/MK "emissivity: a column zero on one row" "emis_table zerorow" \
+       "Emissivity column: zero on some rows and not on others"
+# The column is read: a column of 1 radiates as the key 1 beside the same table without it
+accept NoExchange/MK "emissivity: a column of 1" "emis_table 1.0" "emissivity from the table"
+accept NoExchange/MK "emissivity: 1 beside a table without the column" \
+       "emis_table none && sed -i 's/^emissivity .*/emissivity = 1.0/' input.ini" "Time of operation"
+outputs same "emissivity: a column of 1" "emissivity: 1 beside a table without the column"
 refuse NoExchange/MK "emissivity: negative" "sed -i 's/^emissivity .*/emissivity = -0.5/' input.ini" \
        "emissivity must be >= 0"
 refuse Refuse/MK   "divergence caught after the update" ":" \
