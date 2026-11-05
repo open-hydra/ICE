@@ -1,11 +1,13 @@
 !>@brief Solidification with supercooling, recalescence and melting. solidPhaseAtInjection, nucleationJump and hSolid
 !> are IGLOO's model-6 functions (same names, same algebra); solid_de and solid_state give the latent part of the energy
-!> and the state of a cell from its energy and its nucleated fraction.
+!> and the state of a cell from its energy and its nucleated fraction. The *Tab forms take the liquid's energy from the
+!> property table (a varying cp): the caller passes e_l(T-melt) - e_l(T) where the constant forms use cpl*(T-melt - T).
 module ICE_Lib_Solidification
   use, intrinsic :: iso_fortran_env, only: R8 => real64
   implicit none
   private
   public :: solidPhaseAtInjection, nucleationJump, hSolid, solid_de, solid_state
+  public :: nucleationJumpTab, hSolidTab, solid_de_tab, solid_state_tab
 
   !> Phases: liquid, undercooled liquid, freezing plateau at T-melt, solid.
   integer, parameter, public :: phLiquid=0, phUndercooled=1, phPlateau=2, phSolid=3
@@ -91,5 +93,66 @@ contains
     endif
 
   end subroutine solid_state
+
+
+  !> nucleationJump on the table: f0 = dE/hFus, dE = e_l(Tmelt) - e_l(Tev); a whole freeze conserves the energy.
+  pure subroutine nucleationJumpTab(dE, cpSol, Tmelt, hFus, Tafter, fAfter, phaseAfter)
+    real(R8), intent(in)  :: dE, cpSol, Tmelt, hFus
+    real(R8), intent(out) :: Tafter, fAfter
+    integer,  intent(out) :: phaseAfter
+    real(R8) :: f0
+
+    f0 = dE/hFus
+    if (f0 < 1._R8) then
+      Tafter = Tmelt;                         fAfter = f0;    phaseAfter = phPlateau
+    else
+      Tafter = Tmelt - (dE - hFus)/cpSol;     fAfter = 1._R8; phaseAfter = phSolid
+    endif
+
+  end subroutine nucleationJumpTab
+
+
+  !> hSolid on the table: eT = e_l(T), eTm = e_l(Tmelt); hOff is the table datum.
+  pure function hSolidTab(eT, eTm, T, f, phase, cpSol, hFus, Tmelt, hOff) result(h)
+    real(R8), intent(in) :: eT, eTm, T, f, cpSol, hFus, Tmelt, hOff
+    integer,  intent(in) :: phase
+    real(R8) :: h
+
+    select case (phase)
+    case (phPlateau); h = eTm + hOff - f*hFus
+    case (phSolid);   h = eTm + hOff - hFus - cpSol*(Tmelt - T)
+    case default;     h = eT + hOff
+    end select
+
+  end function hSolidTab
+
+
+  !> solid_de on the table: L(T) = hFus - dEm + cpSol*(Tmelt - T), dEm = e_l(Tmelt) - e_l(T).
+  pure function solid_de_tab(dEm, T, f, cpSol, hFus, Tmelt) result(de)
+    real(R8), intent(in) :: dEm, T, f, cpSol, hFus, Tmelt
+    real(R8) :: de
+
+    de = -f*(hFus - dEm + cpSol*(Tmelt - T))
+
+  end function solid_de_tab
+
+
+  !> solid_state on the table: Tliq = e_l^-1(e), dEm = e_l(Tmelt) - e_l(Tliq).
+  pure subroutine solid_state_tab(Tliq, chi, dEm, cpSol, Tmelt, Tnuc, hFus, T, f, chiOut)
+    real(R8), intent(in)  :: Tliq, chi, dEm, cpSol, Tmelt, Tnuc, hFus
+    real(R8), intent(out) :: T, f, chiOut
+    integer :: phase
+
+    if (Tliq >= Tmelt) then
+      T = Tliq; f = 0._R8; chiOut = 0._R8
+    elseif (Tliq <= Tnuc) then
+      call nucleationJumpTab(dEm, cpSol, Tmelt, hFus, T, f, phase); chiOut = 1._R8
+    elseif (chi >= 0.5_R8) then
+      call nucleationJumpTab(dEm, cpSol, Tmelt, hFus, T, f, phase); chiOut = chi
+    else
+      T = Tliq; f = 0._R8; chiOut = chi
+    endif
+
+  end subroutine solid_state_tab
 
 end module ICE_Lib_Solidification
