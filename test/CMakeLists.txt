@@ -247,7 +247,8 @@ if(USE_TECIO)
 endif()
 
 # A probe given by position takes the cell whose centre is nearest, in the block that holds it: against a probe by
-# index in that cell and against the solution, on the 1-D stream and on a two-block ring
+# index in that cell and against the solution, on the 1-D stream and on a two-block ring; a probe takes the names of
+# the solution files, the IG and AG pressures in both spellings, 24 names in one key
 ice_add_fast_script(ProbePosition fast/probe-position "fast;implementation")
 
 # The 3-D gates: a generated 24x16x12 box in 3x2x2 blocks with an MK, an IG and
