@@ -442,8 +442,8 @@ def main():
               'the interface treatment reaches the solver')
 
     # --- Part 2: the temperature released -----------------------------------------
-    # tau_thermal = rho_l cs d^2 / (12 k) is 1.3e-4 s here, so the run is short and
-    # the step small enough to resolve it. This is the part that tests the latent
+    # tau_thermal = rho_l cs d^2 / (12 k) is 0.134 s here, so the 0.05 s run stays in
+    # the transient and the step resolves it. This is the part that tests the latent
     # sink and the two heat paths that part 1 cannot reach.
     t_end, dt_max = 0.05, 5.0e-6
     tau_th = RHO_L * CS_L * D0 ** 2 / (12.0 * KG)
