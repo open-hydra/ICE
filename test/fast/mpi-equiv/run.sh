@@ -21,7 +21,7 @@ for n in 1 2; do
   ice_fast_run "$WORK/run$n" 2 "$n"
 done
 
-# Both builds write bin/ICE, so make sure the binary really is the MPI one:
+# ICE_BIN may name a build without MPI, so make sure the binary really is the MPI one:
 # without MPI, mpirun just starts two independent serial solvers.
 if ! grep -q "Number of ranks   -->    2" "$WORK/run2/log"; then
   echo "[fast] FAIL: $ICE_BIN did not run as 2 MPI ranks -- is it the MPI build?"
