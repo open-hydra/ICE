@@ -27,6 +27,7 @@ contains
     use ICE_Mod_MPI,           only: mpi_is_root
     use ICE_Mod_Timers,        only: timer_report, timer_summary
     use ICE_Mod_Inflow400,     only: report_400_inflow
+    use ICE_Lib_Newstate,      only: report_floored
     implicit none
     type(ICE_simulation_type), intent(inout) :: simulation
     character(llen) :: solfile, bckfile, dgsfile
@@ -65,6 +66,9 @@ contains
       ! The 400 faces through which particles entered, over the run. Collective, so every
       ! rank calls it.
       call report_400_inflow(simulation%domain(1)%nb)
+
+      ! The negative densities floored after an update, over the run. Collective.
+      call report_floored(.true.)
 
       if (mpi_is_root) then
         call write_residual_row(obj_io%unitRES, trim(obj_io%unitRES_format), obj_sim_param%iter_general, &
@@ -148,8 +152,10 @@ contains
         call Write_Probes_Data(obj_sim_param%iter_general, simulation%domain(1)%time, simulation%domain(1))
 
       ! Collective, so every rank calls it -- not inside the root guard below.
-      if (mod(simulation%domain(level)%iter, obj_io%shell_diter) == 0d0) &
+      if (mod(simulation%domain(level)%iter, obj_io%shell_diter) == 0d0) then
         call timer_report(simulation%domain(level)%iter)
+        call report_floored(.false.)
+      end if
 
       if (mpi_is_root) then
         if (mod(simulation%domain(level)%iter, obj_io%res_diter) == 0d0) &
@@ -209,8 +215,10 @@ contains
         call Write_Probes_Data(obj_sim_param%iter_general, simulation%domain(1)%time, simulation%domain(1))
 
       ! Collective, so every rank calls it -- not inside the root guard below.
-      if (mod(simulation%domain(level)%iter, obj_io%shell_diter) == 0d0) &
+      if (mod(simulation%domain(level)%iter, obj_io%shell_diter) == 0d0) then
         call timer_report(simulation%domain(level)%iter)
+        call report_floored(.false.)
+      end if
 
       if (mpi_is_root) then
         if (mod(simulation%domain(level)%iter, obj_io%res_diter) == 0d0) &

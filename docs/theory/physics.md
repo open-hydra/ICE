@@ -263,8 +263,9 @@ the interface and blowing models do not act in the regime.
 Just below $T_B$ the clamp's rate is far larger than the boiling branch's just above it: on a 20 µm water drop in a
 gas at $T_B$, $d\bar T/dt = -7.7\times10^6$ K/s at $10^{-6}$ K below against $-24$ K/s at 0.1 K above. The explicit
 step that carries a drop across $T_B$ overshoots the continuous transient, the more the longer the step, and a step
-close to $m/|\dot m|$ at the clamp's rate ($7\times10^{-5}$ s for that drop) can leave a negative density and stop
-the run. ICE adds no limiter of its own for this: with `boiling = ZGR` it watches, at every stage, the fraction
+close to $m/|\dot m|$ at the clamp's rate ($7\times10^{-5}$ s for that drop) can leave a negative density, which
+the update floors, counts and warns about ([time integration](time-integration.md)). ICE adds no limiter of its
+own for this: with `boiling = ZGR` it watches, at every stage, the fraction
 $\Delta t\,|S_1|/\rho_p$ of a cell's drop mass that the step removes, and the first time a family's exceeds 0.5 it
 writes once
 

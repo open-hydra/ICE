@@ -1,12 +1,18 @@
 module ICE_Lib_Newstate
-  use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
+  use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64, int64, output_unit
   use ICE_Mod_MPI, only: is_local_block
   use ICE_Global_m
   use ICE_Advanced_Types_m
 
   implicit none
   private
-  public :: state_copy, state_update
+  public :: state_copy, state_update, report_floored
+
+  !> Update events whose density came out negative (cons_2_prim floors it; a cell counts once per stage of each
+  !> iteration): this rank's count, root's last total written,
+  !> and whether this rank wrote its first one
+  integer(int64) :: n_floored = 0, floored_written = 0
+  logical        :: floor_written = .false.
 
 contains
 
@@ -64,12 +70,12 @@ contains
     integer(kind=I4), intent(in)  :: srk
     integer(kind=I4) :: b, i, j, k
     integer(kind=I4) :: n, tid, g, m, s, i1, j1, k1, i2, j2, k2
-    logical :: prim_status, bad_state
+    logical :: prim_status, floored, bad_state
 
     bad_state = .false.
     !> Thread groups: each thread updates its slice of its group's blocks
     if (n_tgroups > 1) then
-    !$OMP PARALLEL DEFAULT(NONE) PRIVATE(b,i,j,k,prim_status,n, tid, g, m, s, i1, j1, k1, i2, j2, k2) &
+    !$OMP PARALLEL DEFAULT(NONE) PRIVATE(b,i,j,k,prim_status,floored,n, tid, g, m, s, i1, j1, k1, i2, j2, k2) &
     !$OMP SHARED(grid,p,srk,bad_state,obj_condensed,mat_of,tg_first,tg_blocks)
       tid = 0
       !$ tid = omp_get_thread_num()
@@ -83,7 +89,8 @@ contains
             call state_update_(grid%blk(b)%cond_phase(p)%prim(:,i,j,k),     &
                                grid%blk(b)%cond_phase(p)%prim_old(:,i,j,k), &
                                grid%blk(b)%cond_phase(p)%residual(:,i,j,k), &
-                               srk, prim_status, obj_condensed(mat_of(p)))
+                               srk, prim_status, floored, obj_condensed(mat_of(p)))
+            if (floored) call note_floored(b, i, j, k, p, srk)
             if (.not. prim_status) then
               !$OMP CRITICAL (ICE_state_report)
               if (.not. bad_state) then                     !> dump the first failing cell only
@@ -100,7 +107,7 @@ contains
       enddo
     !$OMP END PARALLEL
     else
-    !$OMP PARALLEL DEFAULT(NONE) PRIVATE(b,i,j,k,prim_status) SHARED(grid,p,srk,bad_state,obj_condensed,mat_of)
+    !$OMP PARALLEL DEFAULT(NONE) PRIVATE(b,i,j,k,prim_status,floored) SHARED(grid,p,srk,bad_state,obj_condensed,mat_of)
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
 
@@ -112,7 +119,8 @@ contains
         call state_update_(grid%blk(b)%cond_phase(p)%prim(:,i,j,k),     &
                            grid%blk(b)%cond_phase(p)%prim_old(:,i,j,k), &
                            grid%blk(b)%cond_phase(p)%residual(:,i,j,k), &
-                           srk, prim_status, obj_condensed(mat_of(p)))
+                           srk, prim_status, floored, obj_condensed(mat_of(p)))
+        if (floored) call note_floored(b, i, j, k, p, srk)
 
         if (.not. prim_status) then
           !$OMP CRITICAL (ICE_state_report)
@@ -133,14 +141,15 @@ contains
     !$OMP END PARALLEL
     end if
     if (bad_state) then
-      write(*,'(A)') ' [ERROR] [ICE::state_update] invalid state after the update (negative density, NaN or infinity)'
+      write(*,'(A)') ' [ERROR] [ICE::state_update] invalid state after the update (NaN or infinity; a negative '// &
+                     'density is floored before this check, counted and warned)'
       error stop 1
     endif
 
   end subroutine state_update
 
 
-  subroutine state_update_(prim, prim_old, residual, srk, prim_status, mat)
+  subroutine state_update_(prim, prim_old, residual, srk, prim_status, floored, mat)
     use ICE_Lib_RK,    only: RK_stage
     use ICE_Lib_Model
     use ICE_Config_Types_m, only: condensed_phase_t
@@ -149,6 +158,7 @@ contains
     real(kind=R8), dimension(:), intent(in)    :: prim_old, residual
     integer(kind=I4),            intent(in)    :: srk
     logical,                     intent(out)   :: prim_status
+    logical,                     intent(out)   :: floored
     type(condensed_phase_t),     intent(in)    :: mat
 
     real(kind=R8), dimension(size(prim)) :: cons, cons_old
@@ -156,10 +166,54 @@ contains
     cons_old    = prim_2_cons(prim_old, mat)
     cons        = prim_2_cons(prim, mat)
     cons        = RK_stage(srk, nrk, cons, cons_old, residual)
+    floored     = cons(1) < 0._R8      ! floored by cons_2_prim: counted, not stopped
     prim        = cons_2_prim(cons, mat)
     prim_status = check_prim(prim)
 
   end subroutine state_update_
+
+
+  !> A cell whose density came out of its update negative: counted; this rank's first one written and flushed at once,
+  !> so that a run that then stops has it. Called from both update paths, inside their parallel regions.
+  subroutine note_floored(b, i, j, k, p, srk)
+    use ICE_Config_Types_m, only: obj_sim_param, obj_multigrid
+    implicit none
+    integer(kind=I4), intent(in) :: b, i, j, k, p, srk
+    !$OMP ATOMIC UPDATE
+    n_floored = n_floored + 1_int64
+    !$OMP CRITICAL (ICE_floor_report)
+    if (.not. floor_written) then
+      write(*,'(A,I0,A,I0,A,3(1X,I0),A,I0,A,I0,A,I0)') ' [WARNING] [ICE::state_update] negative density after the '// &
+        'update, floored: family ', p, ', block ', b, ', cell', i, j, k, ', stage ', srk, ', level ', &
+        obj_multigrid%MG_level, ', iteration ', obj_sim_param%iter_general
+      flush(output_unit)
+      floor_written = .true.
+    end if
+    !$OMP END CRITICAL (ICE_floor_report)
+  end subroutine note_floored
+
+
+  !> The negative densities floored after an update, summed over the ranks (collective: every rank calls it):
+  !> update events, a cell counting once per stage of each iteration. At the shell cadence a line when the total
+  !> grew since the last one (it shows in hydra, which never runs ICE's end of run); at the end, when not zero.
+  !> A restarted run counts from the restart (as report_400_inflow).
+  subroutine report_floored(final)
+    use ICE_Mod_MPI, only: mpi_is_root, mpi_reduce_sum_r8_array
+    implicit none
+    logical, intent(in) :: final
+    real(R8) :: total(1)
+    total(1) = real(n_floored, R8)
+    call mpi_reduce_sum_r8_array(total, 1)
+    if (.not. mpi_is_root) return
+    if (final .and. total(1) > 0._R8) then
+      write(*,'(A,I0)') ' [WARNING] [ICE::state_update] negative densities floored after an update over the run: ', &
+        nint(total(1), int64)
+    else if (.not. final .and. nint(total(1), int64) > floored_written) then
+      floored_written = nint(total(1), int64)
+      write(*,'(A,I0)') ' [WARNING] [ICE::state_update] negative densities floored after an update so far: ', &
+        floored_written
+    end if
+  end subroutine report_floored
 
 
 end module ICE_Lib_Newstate
