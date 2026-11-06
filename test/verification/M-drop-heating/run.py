@@ -16,6 +16,8 @@ k 0.026, mu 1.8e-5) and vapour (Lv 2.26e6, Mv 18, cp_v 1900, Le 1), rho_p0 = 1 k
   M5  IGLOO's boiling-zgr-switch drop (d 20 um, T0 640.002 K, the flash gas), 75 ms: the mean temperature falls below
       T_B near 61 ms and reaches the wet bulb; Ts = T_B above T_B and Ts = T below, m decreasing and T not increasing
       below, no invalid state.
+  M5c M5 at dt-max 1e-4 s, which does not resolve the switch at T_B (the step lands in the clamp below T_B, whose
+      evaporation removes the drop mass in less than a step): ICE warns, once; M2, M3 and M5 carry no warning.
 
 The oracle is ICE's own time scheme on the same ODEs, typed here (a discrete twin): RK2 (Heun) in (rho_p, rho_p e)
 with n fixed, the sources at Re 0 from IGLOO's equations (the P2T surface balance, CEM, ZGR with the 1/3-rule film,
@@ -271,6 +273,14 @@ def compare(rep, leg, rows, sol, gap, tol_T=1e-9, tol_m=1e-10, switch=None, tol_
     return tw
 
 
+WARNING = '[WARNING] boiling = ZGR'
+
+
+def warnings(leg):
+    """The lines of ICE's log that warn of an unresolved step under ZGR."""
+    return [l for l in (WORK / leg.name / 'log').read_text().split('\n') if WARNING in l]
+
+
 def igloo_steps(leg):
     return [int(round(r[2] / r[1] / leg.h)) for r in IGLOO_ROWS[leg.name]]
 
@@ -390,6 +400,18 @@ def main():
                 rep.check(ok_ts, 'M5: Ts = T_B (1e-12) above T_B, Ts = T below')
                 dec = all(rows[b][1] <= rows[a][1] and rows[b][2] < rows[a][2] for a, b in zip(below, below[1:]))
                 rep.check(dec, 'M5: m decreasing and T not increasing below T_B')
+
+    # M5c: the switch unresolved at dt-max 1e-4 s, and the warning
+    for name in ('M2', 'M3', 'M5'):
+        if (WORK / name / 'log').exists():
+            rep.check(not warnings(Leg(name, d0=20e-6, T0=640.002, tboil=551.7783324, **flash)),
+                      '%s: no warning of an unresolved step' % name)
+    leg = Leg('M5c', d0=20e-6, T0=640.002, tboil=551.7783324, h=1e-4, steps=750, every=50, **flash)
+    rows, sol = leg.run(rep, leg.steps)
+    if (WORK / leg.name / 'log').exists():
+        w = warnings(leg)
+        print('   M5c: ' + (w[0].strip() if w else 'no warning'))
+        rep.check(len(w) == 1, 'M5c: one warning of an unresolved step (%d)' % len(w))
     rep.close(WORK)
 
 
