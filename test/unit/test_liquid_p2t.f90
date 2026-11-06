@@ -20,7 +20,12 @@
 !>   L11 cp, Lv and Psat tabulated: S1 = n mdot(Ts), S5 = n (Q_g(Ts) + mdot(Ts) (e(Ts) + Lv(Ts)))
 !>   L13 an empty cell (rho_p <= rho_empty), P2T and ZGR: Ts = T and the ITC sources, bit for bit
 !>   L14 a mean temperature at the 1e-25 K floor, no bracket: p2t_surface's stat 0, Ts and the energy slot not finite
+!>   L12 L5 with a Conductivity column constant at 0.6 and k-liq 0.3 beside it: L5's sources bit for bit
+!>   L15 L8 with a Conductivity column constant at 0.6 and k-liq 0: L8's sources bit for bit (the flash's k_l)
 !>   L16 mu-liq = 0 at Re 20 (the inputs refuse it): p2t_surface's stat 0 and Ts NaN, the source's Ts NaN
+!>   L17 a Viscosity column mu_l(T) = 1e-3 exp((320 - T)/20) at L5's state: Ts the root of the surface balance with
+!>       mu_l at the surface temperature [AS89] (U_s eqs. 30, 32 and chi eq. 39 typed here, the column interpolated
+!>       here, B_M, k_l and c_l at T), by bisection; the root with mu_l frozen at T must differ
 !> Every leg checks that cell_surface's Ts equals compute_source_'s bit for bit (the probe reads the former).
 !> Prints every assertion and exits non-zero if any failed.
 program test_liquid_p2t
@@ -47,6 +52,8 @@ program test_liquid_p2t
   call leg_no_viscosity(ok)
   call leg_flash(ok)
   call leg_grid(ok)
+  call leg_columns(ok)
+  call leg_viscosity(ok)
   if (.not. ok) then
     write(*,'(A)') 'test_liquid_p2t: FAILED'
     error stop 1
@@ -588,6 +595,122 @@ contains
       ok = .false.
     endif
   end subroutine sources_quiet
+
+
+  !> L12, L15: a constant Conductivity column gives the token's sources; the flash takes the column's k_l.
+  subroutine leg_columns(ok)
+    use ICE_Config_Types_m,  only: condensed_phase_t
+    use ICE_Lib_Evaporation, only: iinvTboil
+    logical, intent(inout) :: ok
+    type(condensed_phase_t) :: tok, col
+    real(R8) :: cond(6), gas(5), s(6), sc(6), ts, tsc
+    integer  :: i
+    ! L12: L5's state
+    call material(tok, 1000._R8, 4180._R8, 0.6_R8, 1.e-3_R8, 'CEM', 0._R8)
+    call material(col, 1000._R8, 4180._R8, 0.3_R8, 1.e-3_R8, 'CEM', 0._R8)
+    call constant_table(col, 280, 400, 1000._R8, 4180._R8)
+    allocate(col%kl_tab(280:400), source=[(0.6_R8, i = 280, 400)]); col%use_kl = .true.
+    cond = [1._R8, 0._R8, 0._R8, 0._R8, 320._R8, 1._R8/(1000._R8*PI*(50.e-6_R8)**3/6._R8)]
+    gas  = [RHOG, 6._R8, 0._R8, 0._R8, 800._R8]
+    call sources(tok, cond, gas, s, ts, 'L12 (k-liq 0.6)', ok)
+    call sources(col, cond, gas, sc, tsc, 'L12 (the column)', ok)
+    write(*,'(A,ES22.14,A,ES22.14)') '   L12: S5 token ', s(5), ' column ', sc(5)
+    call check(all(s == sc) .and. ts == tsc, 'L12 a constant Conductivity column gives the k-liq sources bit for bit', ok)
+    ! L15: L8's state at T_B + 30 K
+    call material(tok, 958._R8, 4186._R8, 0.6_R8, 1.e-3_R8, 'CEM', 0._R8)
+    tok%boilSelect = 1; tok%ep(iinvTboil) = anchor_for(600._R8, 600._R8)
+    call material(col, 958._R8, 4186._R8, 0._R8, 1.e-3_R8, 'CEM', 0._R8)
+    col%boilSelect = 1; col%ep(iinvTboil) = tok%ep(iinvTboil)
+    call constant_table(col, 280, 1000, 958._R8, 4186._R8)
+    allocate(col%kl_tab(280:1000), source=[(0.6_R8, i = 280, 1000)]); col%use_kl = .true.
+    cond = [1._R8, 0._R8, 0._R8, 0._R8, 630._R8, 1._R8/(958._R8*PI*(50.e-6_R8)**3/6._R8)]
+    gas  = [RHOG, 0._R8, 0._R8, 0._R8, 600._R8]
+    call sources(tok, cond, gas, s, ts, 'L15 (k-liq 0.6)', ok)
+    call sources(col, cond, gas, sc, tsc, 'L15 (the column)', ok)
+    write(*,'(A,ES22.14,A,ES22.14)') '   L15: S1 token ', s(1), ' column ', sc(1)
+    call check(all(s == sc) .and. ts == tsc, 'L15 the flash takes the Conductivity column: the k-liq sources bit for bit', &
+               ok)
+  end subroutine leg_columns
+
+
+  !> A table of constant density and cp on lo..hi, as Load_Table holds it.
+  subroutine constant_table(mat, lo, hi, rho, c)
+    use ICE_Config_Types_m, only: condensed_phase_t
+    type(condensed_phase_t), intent(inout) :: mat
+    integer,                 intent(in)    :: lo, hi
+    real(R8),                intent(in)    :: rho, c
+    integer :: i
+    mat%T_min = lo; mat%T_max = hi; mat%use_table = .true.
+    allocate(mat%rho_tab(lo:hi), source=[(rho, i = lo, hi)])
+    allocate(mat%cs_tab(lo:hi), source=[(c, i = lo, hi)])
+  end subroutine constant_table
+
+
+  !> L17: L5's state with a Viscosity column mu_l(T) = 1e-3 exp((320 - T)/20) on 280..400 K and mu-liq 0.
+  subroutine leg_viscosity(ok)
+    use ICE_Config_Types_m, only: condensed_phase_t
+    logical, intent(inout) :: ok
+    real(R8), parameter :: T0 = 320._R8, TG = 800._R8, UG = 6._R8, RHO = 1000._R8, C = 4180._R8, KL = 0.6_R8
+    type(condensed_phase_t) :: mat
+    real(R8) :: mut(280:400), cond(6), gas(5), s(6), ts, d, re, nu, xs, ys, bm, tor, tfr, md
+    integer  :: i
+    do i = 280, 400
+      mut(i) = 1.e-3_R8*exp((320._R8 - real(i, R8))/20._R8)
+    enddo
+    call material(mat, RHO, C, KL, 0._R8, 'CEM', 0._R8)
+    call constant_table(mat, 280, 400, RHO, C)
+    allocate(mat%mul_tab(280:400), source=mut); mat%use_mul = .true.
+    cond = [1._R8, 0._R8, 0._R8, 0._R8, T0, 1._R8/(RHO*PI*(50.e-6_R8)**3/6._R8)]
+    gas  = [RHOG, UG, 0._R8, 0._R8, TG]
+    call sources(mat, cond, gas, s, ts, 'L17', ok, Re=re, Nu=nu)
+    d  = diameter(cond, RHO)
+    xs = PATM*exp(-LV*MV/RU*(1._R8/T0 - 1._R8/TBOIL))/(RHOG*RG*TG)
+    ys = xs*MV/(xs*MV + (1._R8 - xs)*RU/RG)
+    bm = ys/(1._R8 - ys)
+    tor = root_mu(.true., mut, re, nu, d, bm)
+    tfr = root_mu(.false., mut, re, nu, d, bm)
+    md  = cem_rate(ts, TG, d, re, MV)
+    write(*,'(A,F20.12,A,F20.12,A,F20.12)') '   L17: Ts ', ts, ' oracle ', tor, ' mu_l frozen at T ', tfr
+    write(*,'(A,ES10.3,A,ES10.3)') '   L17: relative Ts ', abs(ts/tor - 1._R8), ', S1 ', abs(s(1)/(cond(6)*md) - 1._R8)
+    call check(abs(ts/tor - 1._R8) <= 1.e-13_R8, 'L17 Ts the root of the balance with mu_l(Ts) to 1e-13', ok)
+    call check(abs(tor - tfr) > 1.e-9_R8, 'L17 guard: the root with mu_l at T differs by more than 1e-9 K', ok)
+    call check(abs(s(1)/(cond(6)*md) - 1._R8) <= 1.e-13_R8, 'L17 S1 = n mdot(Ts) to 1e-13', ok)
+  end subroutine leg_viscosity
+
+
+  !> L17's oracle: the root of T - T0 - (Q_g(T) + mdot(T) Lv)/K(mu_l), mu_l at T (atTs) or at T0, by bisection
+  !> on [T0, T_g]; L5's drop and gas, the column mut interpolated here.
+  function root_mu(atTs, mut, re, nu, d, bm) result(T)
+    logical,  intent(in) :: atTs
+    real(R8), intent(in) :: mut(280:400), re, nu, d, bm
+    real(R8), parameter :: T0 = 320._R8, TG = 800._R8
+    real(R8) :: T, lo, hi, glo, gm
+    integer  :: it
+    lo = T0; hi = TG
+    glo = g_mu(lo, atTs, mut, re, nu, d, bm)
+    do it = 1, 300
+      T = 0.5_R8*(lo + hi)
+      if (T <= lo .or. T >= hi) exit
+      gm = g_mu(T, atTs, mut, re, nu, d, bm)
+      if (gm == 0._R8) exit
+      if ((gm > 0._R8) .eqv. (glo > 0._R8)) then; lo = T; glo = gm; else; hi = T; endif
+    enddo
+  end function root_mu
+
+
+  !> L17's residual at Tx [K]: U_s, Pe_L and chi (A-S eqs. 30, 32, 39) with mu_l at Tx (atTs) or at T0, the column
+  !> linear between its nodes and its end value outside.
+  function g_mu(Tx, atTs, mut, re, nu, d, bm) result(g)
+    real(R8), intent(in) :: Tx, mut(280:400), re, nu, d, bm
+    logical,  intent(in) :: atTs
+    real(R8), parameter :: T0 = 320._R8, TG = 800._R8, UG = 6._R8, RHO = 1000._R8, C = 4180._R8, KL = 0.6_R8
+    real(R8) :: g, tm, mu, us, chi
+    tm = T0; if (atTs) tm = Tx
+    mu = value_at(mut, tm)
+    us = (12.69_R8/32._R8)*UG*(MUG/mu)*re**(1._R8/3._R8)/(1._R8 + bm)
+    chi = 1.86_R8 + 0.86_R8*tanh(2.245_R8*log10(us*d*RHO*C/KL/30._R8))
+    g = Tx - T0 - (PI*d*KG*nu*(TG - Tx) + cem_rate(Tx, TG, d, re, MV)*LV)/(10._R8*PI*chi*KL*d)
+  end function g_mu
 
 
   !> A column at T: linear between the nodes, the end value outside (the lookup's rule, written here).

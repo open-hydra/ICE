@@ -357,6 +357,7 @@ contains
 
     subroutine print_simulation_info()
       integer :: m
+      character(len=48) :: kl_text, mu_text
       character(len=16) :: angle
 
       write(*,*)
@@ -426,8 +427,17 @@ contains
           if (obj_condensed(m)%evapSelect /= 0) then
             write(*,'(A)') " - Interf  --> "//trim(obj_condensed(m)%intfWord)
             if (obj_condensed(m)%liqSelect == 1) then
-              write(*,'(A,ES12.5,A,ES12.5,A)') ' - Liquid  --> P2T (k-liq', obj_condensed(m)%kLiq, ' W/(m K), mu-liq', &
-                obj_condensed(m)%muLiq, ' Pa s)'
+              if (obj_condensed(m)%use_kl) then
+                kl_text = ' from the Conductivity column'
+              else
+                write(kl_text, '(ES12.5,A)') obj_condensed(m)%kLiq, ' W/(m K)'
+              endif
+              if (obj_condensed(m)%use_mul) then
+                mu_text = ' from the Viscosity column'
+              else
+                write(mu_text, '(ES12.5,A)') obj_condensed(m)%muLiq, ' Pa s'
+              endif
+              write(*,'(A)') ' - Liquid  --> P2T (k-liq'//trim(kl_text)//', mu-liq'//trim(mu_text)//')'
             else
               write(*,'(A)') " - Liquid  --> "//trim(obj_condensed(m)%liqWord)
             endif

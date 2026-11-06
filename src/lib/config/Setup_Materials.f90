@@ -169,10 +169,10 @@ contains
         associate (mat => obj_condensed(m))
           if (mat%liqSelect > 0 .and. mat%evapSelect == 0) &
             call refuse(material_label(m)//': liquid-conduction=P2T requires an evaporating material')
-          if (mat%liqSelect > 0 .and. .not. mat%kLiq > 0._R8) &
-            call refuse(material_label(m)//': liquid-conduction=P2T requires k-liq > 0')
-          if (mat%liqSelect > 0 .and. .not. mat%muLiq > 0._R8) &
-            call refuse(material_label(m)//': liquid-conduction=P2T requires mu-liq > 0')
+          if (mat%liqSelect > 0 .and. .not. (mat%kLiq > 0._R8 .or. mat%use_kl)) call refuse(material_label(m)// &
+            ': liquid-conduction=P2T requires k-liq > 0 or a Conductivity column in the property table')
+          if (mat%liqSelect > 0 .and. .not. (mat%muLiq > 0._R8 .or. mat%use_mul)) call refuse(material_label(m)// &
+            ': liquid-conduction=P2T requires mu-liq > 0 or a Viscosity column in the property table')
           if (mat%boilSelect > 0 .and. mat%evapSelect == 0) &
             call refuse(material_label(m)//': boiling=ZGR requires an evaporating material')
         end associate

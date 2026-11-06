@@ -1,8 +1,8 @@
 !>@brief The condensed-material property table INPUT/<prefix>properties.dat.
 !> The header names the columns; the rows sit on consecutive integer kelvins from any
 !> Tmin, and the optional Psat, Lv, Mv and Cpv columns serve the evaporation models, the
-!> Emissivity column the radiative exchange (Sigma, Viscosity and Conductivity are recognised
-!> and not used). The header, node, column, Psat, vapour and positive-column checks return a
+!> Emissivity column the radiative exchange, the Conductivity and Viscosity columns the conduction
+!> inside the drop (liquid-conduction = P2T; Sigma is recognised and not used). The header, node, column, Psat, vapour and positive-column checks return a
 !> code, so the unit test can assert them; Load_Table turns a failed code, or what the row
 !> scan finds, into a refusal.
 module ICE_Load_Table
@@ -154,6 +154,7 @@ contains
       if (ips > 0) call load_psat(orion%block(m)%vars(ips,1:Ni,1,1), m)
       call load_vapour(m)
       call load_emissivity(m)
+      call load_liquid(m)
     enddo
 
   contains
@@ -251,10 +252,6 @@ contains
       integer, intent(in) :: m
       real(R8) :: ep(Ni)
       integer  :: ecode, ncut
-      if (ikl > 0) then
-        if (any(orion%block(m)%vars(ikl,1:Ni,1,1) /= 0._R8) .and. mpi_is_root) &
-          write(*,'(A)') '   Conductivity column not used: ICE has no liquid conduction model'
-      endif
       if (ieps == 0) return
       ep = orion%block(m)%vars(ieps,1:Ni,1,1)
       ecode = validate_positive_column(ep)
@@ -272,6 +269,44 @@ contains
       obj_condensed(m)%use_emiss = .true.
       if (mpi_is_root) write(*,'(A)') '   emissivity from the table'
     end subroutine load_emissivity
+
+
+    !> The Conductivity and Viscosity columns of a material that runs liquid-conduction=P2T: malformed is refused,
+    !  all zero is absent, beside a non-zero k-liq or mu-liq is refused; on any other material they are not used.
+    subroutine load_liquid(m)
+      integer, intent(in) :: m
+      call liquid_column(m, ikl, 'Conductivity', 'k-liq', obj_condensed(m)%kLiq, obj_condensed(m)%use_kl, &
+                         obj_condensed(m)%kl_tab)
+      call liquid_column(m, imu, 'Viscosity', 'mu-liq', obj_condensed(m)%muLiq, obj_condensed(m)%use_mul, &
+                         obj_condensed(m)%mul_tab)
+    end subroutine load_liquid
+
+
+    subroutine liquid_column(m, icol, name, key, token, used, tab)
+      integer,               intent(in)    :: m, icol
+      character(len=*),      intent(in)    :: name, key
+      real(R8),              intent(in)    :: token
+      logical,               intent(inout) :: used
+      real(R8), allocatable, intent(inout) :: tab(:)
+      real(R8) :: col(Ni)
+      integer  :: ccode
+      if (icol == 0) return
+      col = orion%block(m)%vars(icol,1:Ni,1,1)
+      if (obj_condensed(m)%liqSelect /= 1) then
+        if (any(col /= 0._R8) .and. mpi_is_root) &
+          write(*,'(A)') '   '//name//' column not used: this material does not run liquid-conduction=P2T'
+        return
+      endif
+      ccode = validate_positive_column(col)
+      if (ccode == COL_ABSENT) return
+      if (ccode /= COL_OK) call refuse(tablefile, trim(zone_label(m))//name//' column: '//column_reason(ccode))
+      if (token /= 0._R8) call refuse(tablefile, trim(zone_label(m))//'INPUT/'//trim(ICE_phase_prefix)// &
+        'phase.txt, material '//trim(itoa(m))//' ('//trim(obj_condensed(m)%name)//'): '//key// &
+        ' given both on the material line and as a '//name//' column of the property table')
+      allocate(tab(Tmin:Tmin+Ni-1), source=col)
+      used = .true.
+      if (mpi_is_root) write(*,'(A)') '   '//key//' from the table ('//name//' column)'
+    end subroutine liquid_column
 
 
     !> A vapour key set non-zero beside a non-zero column of the same quantity is refused; 0 leaves it to the table.

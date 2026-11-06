@@ -50,7 +50,8 @@ contains
                  'LK, none', .false.)
     call reg%add(section, 'liquid-conduction', obj_time_scheme%liquid_conduction, 'ITC', &
                  'Heat conduction inside the drop: ITC infinite conductivity, P2T the parabolic temperature '// &
-                 'profile (needs k-liq and mu-liq on the material line); the default of every material, a '// &
+                 'profile (needs k-liq and mu-liq on the material line, or the Conductivity and Viscosity '// &
+                 'columns of the property table); the default of every material, a '// &
                  'phase-file token overrides it; ignored when evaporation is none', &
                  'ITC, P2T', .false.)
     call reg%add(section, 'boiling', obj_time_scheme%boiling, 'clamp', &

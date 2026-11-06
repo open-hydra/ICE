@@ -210,8 +210,10 @@ Pe_L = \frac{U_s\,d\,\rho_l\,c_l}{k_l}, \qquad
 $$
 
 with $\chi = 1$ without slip, $B_M$ the gas-side model's Spalding number at $\bar T$, $\rho_l$ and $c_l$ at
-$\bar T$ ($c_l$ the chord $e(\bar T + 1/2) - e(\bar T - 1/2)$ when the specific heat varies), and $k_l$, $\mu_l$
-the material's `k-liq` and `mu-liq`. The drop's diameter is the family's one size in the cell. $T_s$ is found by
+$\bar T$ ($c_l$ the chord $e(\bar T + 1/2) - e(\bar T - 1/2)$ when the specific heat varies), $k_l$ the material's
+`k-liq` or its `Conductivity` column at $\bar T$, and $\mu_l$ its `mu-liq` or its `Viscosity` column at the
+surface temperature, as Abramzon & Sirignano evaluate it: with the column, $U_s$, $Pe_L$ and $k_{eff}$ follow each
+trial $T_s$ of the solve. The drop's diameter is the family's one size in the cell. $T_s$ is found by
 Brent's method on the bracket between $\bar T$ and $\bar T + \dot Q_{net}(\bar T)/(10\pi k_{eff} d)$ (clipped to
 $[\max(1, T_{min} - 1), \max(T_g, T_{max})]$ K, the table's range), widened to $T_g$ for a heated drop or to the
 low end for a cooled one, to $4\varepsilon$ in at most 100 evaluations. Every gas-side quantity then takes $T_s$:
@@ -244,7 +246,7 @@ G_f = \frac{\alpha_s\,\Delta T_f\,\pi d^2}{L_v}, \qquad
 13800\,\Delta T_f^{0.39}\ \mathrm{W\,m^{-2}\,K^{-1}},
 $$
 
-and for a `P2T` drop the parabolic conduction $G_f = 10\pi k_l d\,\Delta T_f/L_v$. The gas heat reaches the surface
+and for a `P2T` drop the parabolic conduction $G_f = 10\pi k_l d\,\Delta T_f/L_v$ ($k_l$ at $\bar T$). The gas heat reaches the surface
 through the film blown by the vapour: with $A = c_{p,g}(T_g - T_B)/L_v$, the film conductivity
 $k_f = k_g (T_f/T_g)^{0.7}$ at $T_f = T_B + (T_g - T_B)/3$ and $B = \pi k_f d\,Nu/c_{p,g}$, the heat-fed rate $G$
 solves $G(1 + G_f/G) = B\ln(1 + A(1 + G_f/G))$ ($G = 0$ for $A \le 0$), by Brent's method in $\ln(G_f/G)$ on

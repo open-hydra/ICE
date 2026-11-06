@@ -157,7 +157,7 @@ contains
     use ICE_Lib_Model
     use ICE_Lib_Drag
     use ICE_Lib_Evaporation, only: evaporation, blowingFactor, zgrBoiling, nep, iLv, icpv
-    use ICE_Lib_Properties, only: mat_psat, mat_lv, mat_cpv, mat_emiss, mat_e, mat_cp_const
+    use ICE_Lib_Properties, only: mat_psat, mat_lv, mat_cpv, mat_emiss, mat_e, mat_cp_const, mat_kl
     implicit none
     real(kind=R8), dimension(:), intent(in)    :: cond_prim, gas_prim
     real(kind=R8),               intent(inout) :: cond_tau
@@ -208,7 +208,7 @@ contains
       cpg = gas_gam*gas_R/(gas_gam - 1._R8)
       if (mat%liqSelect == 1) then
         call zgrBoiling(cond_prim(n-1), TB, 2._R8*Rp, gas_k, cpg, Nu, gas_prim(ng), ep(iLv), mdot, Qevap, &
-                        kCond=mat%kLiq)
+                        kCond=mat_kl(mat, cond_prim(n-1)))
       else
         call zgrBoiling(cond_prim(n-1), TB, 2._R8*Rp, gas_k, cpg, Nu, gas_prim(ng), ep(iLv), mdot, Qevap)
       endif

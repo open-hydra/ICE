@@ -261,6 +261,9 @@ module ICE_Config_Types_m
     logical                   :: use_mv = .false.  ! the vapour molar mass came from the Mv column
     real(R8), allocatable     :: emiss_tab(:) ! emissivity [-], indexed T_min:T_max
     logical                   :: use_emiss = .false.  ! the radiative exchange takes emiss_tab
+    real(R8), allocatable     :: kl_tab(:)    ! liquid conductivity [W/(m K)], indexed T_min:T_max
+    real(R8), allocatable     :: mul_tab(:)   ! liquid viscosity [Pa s], indexed T_min:T_max
+    logical                   :: use_kl = .false., use_mul = .false.  ! P2T takes kl_tab, mul_tab
     logical                   :: rho_varies = .false., cs_varies = .false.
     character(len=8)          :: h_datum = 'none'  ! 'relative' (Enthalpy) or 'absolute' (Enthalpy_abs)
     real(R8)                  :: h_off = 0._R8     ! h at 0 K along the first table segment [J/kg]

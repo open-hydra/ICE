@@ -43,8 +43,9 @@ contains
   end subroutine drop_surface
 
 
-  !> P2T surface temperature (parabolic profile inside the drop): the root of G(Ts) = Ts - tbar - Qnet(Ts)/K,
-  !  K = 10 pi keff d, keff = chi(Pe_L) kl (Abramzon-Sirignano 1989 eqs. 25, 30, 32, 39): kl, cl and B_M at tbar;
+  !> P2T surface temperature (parabolic profile inside the drop): the root of G(Ts) = Ts - tbar - Qnet(Ts)/K(Ts),
+  !  K = 10 pi keff d, keff = chi(Pe_L) kl (Abramzon-Sirignano 1989 eqs. 25, 30, 32, 39): mu_l at Ts (a Viscosity
+  !  column), kl, cl and B_M at tbar;
   !  Qnet [W] the gas-side, radiative and latent heats at Ts; Brent on an exact bracket. stat: 1 the root
   !  bracketed by tbar and the first estimate, 2 after widening, 0 no bracket, no convergence or mu_l not
   !  positive (ts NaN).
@@ -52,7 +53,7 @@ contains
     use ICE_Parameters_m,    only: pi, sigma_SB
     use ICE_Config_Types_m,  only: condensed_phase_t, obj_time_scheme
     use ICE_Lib_Evaporation, only: evaporation, blowingFactor, chiETC, nep, iLv, icpv
-    use ICE_Lib_Properties,  only: mat_psat, mat_lv, mat_cpv, mat_emiss, mat_e, mat_cp_const
+    use ICE_Lib_Properties,  only: mat_psat, mat_lv, mat_cpv, mat_emiss, mat_e, mat_cp_const, mat_kl, mat_mul
     use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_value, ieee_quiet_nan
     implicit none
     real(R8),                intent(in)  :: tbar, rho_mat, Rp, Re, Nu, slip
@@ -72,8 +73,8 @@ contains
     ng = size(gas_prim)
     Tg = gas_prim(ng)
     d  = 2._R8*Rp
-    kl  = mat%kLiq
-    mul = mat%muLiq
+    kl  = mat_kl(mat, tbar)
+    mul = mat_mul(mat, tbar)
     if (mat%cs_varies) then
       cl = mat_e(mat, tbar + 0.5_R8) - mat_e(mat, tbar - 0.5_R8)
     else
@@ -155,11 +156,15 @@ contains
 
   contains
 
-    !> The surface balance's residual [K].
+    !> The surface balance's residual [K]; with a Viscosity column, K at the trial surface temperature.
     function gfun(T) result(g)
       real(R8), intent(in) :: T
       real(R8) :: g
-      g = T - tbar - qnet(T)/K
+      if (mat%use_mul) then
+        g = T - tbar - qnet(T)/kAt(mat_mul(mat, T))
+      else
+        g = T - tbar - qnet(T)/K
+      endif
     end function gfun
 
     !> 10 pi keff d at the liquid viscosity mu: the internal circulation's surface velocity (A-S eqs. 30, 32),
