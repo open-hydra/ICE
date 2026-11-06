@@ -87,8 +87,10 @@ $1.7\times10^{7}$ m/s. With the cap the dispersion no longer carries the stream 
 reach, and such a cell keeps its initial content, as an MK cell always has: Doisneau's crossing jets start from
 $10^{-20}$ kg/m³ at $10^{-20}$ K everywhere, and after 5000 iterations AG holds 116 cells below 1 K at
 $6$ to $8\times10^{-22}$ kg/m³ (MK 4174 cells below 1 K, as before; IG none), where without the cap the dispersion had carried
-300 K mass into every cell. The temperature residual, which counts every cell, then stalls (AG: 0.35 at 5000
-iterations against $2\times10^{-11}$ without the cap); the stop criterion, on the density, is unaffected.
+300 K mass into every cell; no cell reaches the density floor. The temperature residual, which counts every cell,
+then stalls as MK's does (AG 0.35 at 5000 iterations against $2\times10^{-11}$ without the cap, MK 0.46); the stop
+criterion, on the density, is unaffected. An isothermal case whose empty cells start cold thus keeps them cold where
+nothing arrives: to get an isothermal field, start the empty cells at the gas temperature.
 
 ### AG — anisotropic Gaussian
 
