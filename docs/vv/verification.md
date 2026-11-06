@@ -377,11 +377,11 @@ writes the mean temperature, $\rho_p$, $n$ and the surface temperature `Ts_p1` o
 
 | Leg | Drop and gas | Models | $h$, steps | End (ICE) |
 |---|---|---|---|---|
-| M1 | $\rho$ 2950, $c$ 1250, $d$ 11.89 µm, $T_0$ 300 K, $T_g$ 600 K, no mass transfer | `P2T`, $k_l$ = 0.026 ($\zeta = 1$) | 1e-5 s, 1001 | $\bar T$ 597.9632 K, $T_s$ 598.3027 K |
+| M1 | $\rho$ 2950, $c$ 1250, $d$ 11.89 µm, $T_0$ 300 K, $T_g$ 600 K, no mass transfer | `P2T`, $k_l$ = 0.026 ($\zeta = 1$) | 1e-5 s, 1501 | $\bar T$ 599.8318 K, $T_s$ 599.8598 K |
 | M2 | water, $d$ 50 µm, $T_0$ 640.002 K, $T_g = T_B$ = 600 K | `ZGR`, the adiabatic flash | 1e-6 s, 15001 | $\bar T$ 604.5757 K, $m/m_0$ 0.933822 |
 | M3 | water, $d$ 50 µm, $T_0$ 490.0002 K, $T_g$ 600 K, $T_B$ 450 K | `ZGR`, fed by the gas | 1e-6 s, 15001 | $\bar T$ 454.8413 K, $m/m_0$ 0.829101 |
 | M4 | water, $d$ 50 µm, $T_0$ 300 K, $T_g$ 800 K | `P2T`, $k_l$ = 0.6, CEM | 1e-5 s, 3001 | $\bar T$ 363.1647 K, $m/m_0$ 0.450683 |
-| M5 | water, $d$ 20 µm, $T_0$ 640.002 K, $T_g = T_B$ = 600 K | `ZGR`, then CEM below $T_B$ | 1e-6 s, 66239 | $\bar T$ 464.0704 K at 66 000 |
+| M5 | water, $d$ 20 µm, $T_0$ 640.002 K, $T_g = T_B$ = 600 K | `ZGR`, then CEM below $T_B$ | 1e-6 s, 75000 | $\bar T$ 463.8254 K (the wet bulb), $m/m_0$ 0.226316 |
 
 The reference is ICE's own time scheme on the same equations, written in the driver: RK2 in
 $(\rho_p, \rho_p e)$ with $n$ fixed, the sources from the [models](../theory/physics.md#conduction-inside-the-drop)
@@ -393,9 +393,23 @@ $\bar T - T_g = (T_0 - T_g)(1 - z + z^2/2)^k$, $z = h/\tau$, $\tau = 1.2\,\tau_{
 M2 keeps $m\,(L_v - c(\bar T - T_B))$ to $10^{-10}$ (measured $3.7\times10^{-11}$, the heat-fed vapour of
 $A = 1.8\times10^{-11}$); M2 and M3 hold $T_s = T_B$ and $\bar T > T_B$; M5 writes $T_s = T_B$ above $T_B$ and
 $T_s = \bar T$ below, where $\bar T$ and $m$ decrease. Every row's time must be a multiple of $h$ (the premise of the
-reference) and the field uniform. The reference's end values meet IGLOO's printed outlet values: 604.58 K
-(`boiling-zgr-flash`), 454.84 K and $m/m_0$ 0.829109 (`boiling-zgr-hot`), and with the boiling clamp in place of
-`ZGR` 468.07 K and 381.46 K.
+reference) and the field uniform.
+
+The equations are checked against IGLOO's trajectory rows of the same drops, at $t = x/u_g$: `temp-relax-p2t` (M1,
+$\bar T$ and $T_s$ at 15 ms), `boiling-zgr-flash` (M2) and `boiling-zgr-hot` (M3, $\bar T$ and $m$ at the outlet,
+15 ms), `boiling-zgr-switch` (M5, $\bar T$ and $m$ at 60 ms, before the switch, and at 75 ms, the wet bulb); M4 has no
+IGLOO case. ICE's value at that time (the reference carries ICE's nearest row to it) must lie within IGLOO's own row
+tolerance against its oracle (the F12.6 and E13.6 prints and its integrator: $\bar T$ within
+$1.5\times10^{-6} + 5\times10^{-7}|d\bar T/dx|$ K, on M1 $10^{-6}(1.01 + |d\bar T/dx|)$ K and $T_s$ within $10^{-6}$
+K, $m$ within its half-ULP $+\,5\times10^{-7}|dm/dx| + 10^{-8}m$), plus ICE's time-step error, bounded
+by $2|\bar T_h - \bar T_{h/2}|$ of the reference and $h\,|d\bar T/dt|$ times the steps of $\alpha_s$ at 5 and 25 K
+(the Richardson ratio is 0.67 on M2, which crosses a step), plus ICE's difference from the reference at the row.
+Measured, as fractions of the tolerance: 0.31 and 0.58 on M1 ($\bar T$, $T_s$), 0.14 and 0.94 on M2 (the mass is
+limited by the print: ICE's $5.8551549\times10^{-11}$ kg against IGLOO's 0.585515E-10), 0.51 and 0.05 on M3 (IGLOO's
+own offset after the step of $\alpha_s$), 0.01, 0.61, 0.22 and 0.64 on M5. A material constant mistyped in the
+driver, shared by ICE's input and the reference, passes every other check and fails these: $c$ = 1251 for 1250 on
+M1, 57 and 112 times the tolerance; the water's $c$ = 4187 for 4186, 9 to 48 times on M2, M3 and M5. With the
+boiling clamp in place of `ZGR` the reference ends at 468.07 K on M2 and 381.46 K on M3.
 
 What fails it (measured, as fractions of the gap): `P2T` ignored, 6.7e-2 on M1 (20.1 K) and 3.1e-3 on M4; the probe
 writing $\bar T$ for $T_s$, 0.16 on M1 and 0.51 on M2; the boiling regime bypassed, 3.4 on M2 and 1.8 on M3 (the
