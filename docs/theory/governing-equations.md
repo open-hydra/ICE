@@ -79,6 +79,17 @@ $$
 a = \sqrt{3P/\rho_p}.
 $$
 
+A near-empty cell, at or below the empty-cell density ($10^{-6}$ kg/m³), keeps its dispersion $P/\rho_p$ at or below
+$\theta_{cap} = 1$ m²/s²: the conversion to the primitives caps $P$ at $\rho_p\theta_{cap}$, which removes
+$\tfrac32(P - \rho_p\theta_{cap})$ of energy and leaves the temperature, formed from the conservative variables,
+as it is; without it a cell that holds $10^{-20}$ kg/m³ at the inlet's $P = 10^{-6}$ Pa carries a signal speed of
+$1.7\times10^{7}$ m/s. With the cap the dispersion no longer carries the stream into the cells it does not
+reach, and such a cell keeps its initial content, as an MK cell always has: Doisneau's crossing jets start from
+$10^{-20}$ kg/m³ at $10^{-20}$ K everywhere, and after 5000 iterations AG holds 116 cells below 1 K at
+$6$ to $8\times10^{-22}$ kg/m³ (MK 4174 cells below 1 K, as before; IG none), where without the cap the dispersion had carried
+300 K mass into every cell. The temperature residual, which counts every cell, then stalls (AG: 0.35 at 5000
+iterations against $2\times10^{-11}$ without the cap); the stop criterion, on the density, is unaffected.
+
 ### AG — anisotropic Gaussian
 
 $f$ is a Maxwellian whose width differs by direction: the dispersion becomes a
@@ -101,6 +112,10 @@ a_n = \sqrt{3P_{nn}/\rho_p}, \qquad P_{nn} = \hat{\mathbf n}\cdot\mathsf{P}\,\ha
 $$
 
 so a dispersion that differs by direction gives a signal speed that does too.
+In a near-empty cell the tensor is scaled by one factor to the trace $3\rho_p\theta_{cap}$ when its trace is
+larger, which keeps it positive definite. With $\rho_p \le 0$ or a trace that is not positive the test can still
+fire with a factor that means nothing (zero, negative, infinite or NaN); such a cell has $\rho_p < 10^{-25}$, and the
+density floor then overwrites the whole tensor, so none of those values survives the conversion.
 
 ## Energy and temperature
 

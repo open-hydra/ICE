@@ -56,6 +56,8 @@ contains
     norm2V  = prim(2)*prim(2) + prim(3)*prim(3) + prim(4)*prim(4)
 
     prim(5) = 1._R8/3._R8 * (cons(5) - prim(1)*norm2V)
+    ! A near-empty cell keeps P <= rho theta_cap: as a test, not min(), so that a NaN goes on to check_prim
+    if (prim(1) <= rho_empty .and. prim(5) > prim(1)*theta_cap) prim(5) = prim(1)*theta_cap
     
     if (mat%cs_varies) then
       prim(6) = mat_T_from_rhoe(mat, cons(6) - 0.5_R8*cons(5), prim(1), eps)
