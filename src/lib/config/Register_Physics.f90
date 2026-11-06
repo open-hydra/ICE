@@ -48,6 +48,16 @@ contains
                  'Miller-Harstad-Bellan f2. Ignored under ASM and TC, which carry '// &
                  'their own gas-side heat', &
                  'LK, none', .false.)
+    call reg%add(section, 'liquid-conduction', obj_time_scheme%liquid_conduction, 'ITC', &
+                 'Heat conduction inside the drop: ITC infinite conductivity, P2T the parabolic temperature '// &
+                 'profile (needs k-liq and mu-liq on the material line); the default of every material, a '// &
+                 'phase-file token overrides it; ignored when evaporation is none', &
+                 'ITC, P2T', .false.)
+    call reg%add(section, 'boiling', obj_time_scheme%boiling, 'clamp', &
+                 'The surface above the boiling temperature at the gas pressure: clamp holds the vapour fraction '// &
+                 'below 1, ZGR the Zuo-Gomes-Rutland boiling branch; the default of every material, a phase-file '// &
+                 'token overrides it; ignored when evaporation is none', &
+                 'clamp, ZGR', .false.)
 
     ! Condensed-material properties ----------------------
     call reg%add(section, 'density', ini_condensed%rho_al, '2700.0', &

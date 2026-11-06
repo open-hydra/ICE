@@ -89,12 +89,20 @@ contains
       obj_condensed(m)%intfWord   = obj_time_scheme%interface_model
       obj_condensed(m)%evapSelect = obj_time_scheme%evapSelect
       obj_condensed(m)%intfSelect = obj_time_scheme%intfSelect
+      obj_condensed(m)%liqWord    = obj_time_scheme%liquid_conduction
+      obj_condensed(m)%boilWord   = obj_time_scheme%boiling
+      obj_condensed(m)%liqSelect  = obj_time_scheme%liqSelect
+      obj_condensed(m)%boilSelect = obj_time_scheme%boilSelect
       if (m <= size(rest)) call apply_tokens(m, rest(m))
       if (obj_condensed(m)%intfSelect == 1 .and. obj_condensed(m)%evapSelect == 1) &
         call refuse(material_label(m)//': interface = LK needs a gas-side evaporation model '// &
                     '(CEM, CEM-B, ASM or TC), not d2-law')
       call finalize_solidification(m)
-      if (.not. coupled) obj_condensed(m)%evapSelect = 0
+      if (.not. coupled) then
+        obj_condensed(m)%evapSelect = 0
+        obj_condensed(m)%liqSelect  = 0
+        obj_condensed(m)%boilSelect = 0
+      endif
     enddo
 
     ! A solidifying family carries the frozen and nucleated fractions after its closure's slots
@@ -155,6 +163,22 @@ contains
         call refuse(material_label(m)//': solidification=on requires a constant-density material')
     enddo
 
+    ! The drop's internal heating and the boiling branch act on an evaporating material (IGLOO's refusals)
+    if (coupled) then
+      do m = 1, nmat
+        associate (mat => obj_condensed(m))
+          if (mat%liqSelect > 0 .and. mat%evapSelect == 0) &
+            call refuse(material_label(m)//': liquid-conduction=P2T requires an evaporating material')
+          if (mat%liqSelect > 0 .and. .not. mat%kLiq > 0._R8) &
+            call refuse(material_label(m)//': liquid-conduction=P2T requires k-liq > 0')
+          if (mat%liqSelect > 0 .and. .not. mat%muLiq > 0._R8) &
+            call refuse(material_label(m)//': liquid-conduction=P2T requires mu-liq > 0')
+          if (mat%boilSelect > 0 .and. mat%evapSelect == 0) &
+            call refuse(material_label(m)//': boiling=ZGR requires an evaporating material')
+        end associate
+      enddo
+    endif
+
   contains
 
     !> The [ICE-Physics] section's name, as the INI spells it.
@@ -209,7 +233,7 @@ contains
 
     !> Applies the key=value tokens of material m.
     subroutine apply_tokens(m, tokens)
-      use ICE_Lib_Evaporation, only: assign_evaporation, assign_interface
+      use ICE_Lib_Evaporation, only: assign_evaporation, assign_interface, assign_liquid, assign_boiling
       integer,          intent(in) :: m
       character(len=*), intent(in) :: tokens
       character(len=256) :: tok, key, value
@@ -232,9 +256,11 @@ contains
           call assign_interface(trim(value), obj_condensed(m)%intfSelect)
           obj_condensed(m)%intfWord = value
         case ('liquid-conduction')
-          if (value /= 'ITC') call refuse_word(key, value, ['ITC'])
+          call assign_liquid(trim(value), obj_condensed(m)%liqSelect)
+          obj_condensed(m)%liqWord = value
         case ('boiling')
-          if (value /= 'clamp') call refuse_word(key, value, ['clamp'])
+          call assign_boiling(trim(value), obj_condensed(m)%boilSelect)
+          obj_condensed(m)%boilWord = value
         case ('combustion')
           if (value /= 'none') call refuse_word(key, value, ['none'])
         case ('solidification')
@@ -254,6 +280,8 @@ contains
           case ('alpha-e')
             if (.not. x > 0._R8) call refuse(material_label(m)//': alpha-e='//trim(value)//' must be > 0')
             obj_condensed(m)%alphaE = x
+          case ('k-liq');    obj_condensed(m)%kLiq  = x
+          case ('mu-liq');   obj_condensed(m)%muLiq = x
           case ('T-melt');   obj_condensed(m)%Tmelt = x
           case ('h-fus');    obj_condensed(m)%hFus  = x
           case ('T-nuc');    obj_condensed(m)%Tnuc  = x

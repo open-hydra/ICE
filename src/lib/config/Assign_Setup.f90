@@ -14,7 +14,8 @@ contains
     use ICE_Lib_Drag,      only: assign_drag
     use ICE_Lib_Heat,      only: assign_heat
     use ICE_IO_Solution,   only: io_extension
-    use ICE_Lib_Evaporation, only: assign_evaporation, assign_interface, assign_blowing
+    use ICE_Lib_Evaporation, only: assign_evaporation, assign_interface, assign_blowing, &
+                                   assign_liquid, assign_boiling
     use ICE_Mod_MPI,       only: mpi_is_root
     implicit none
     integer :: p
@@ -88,6 +89,8 @@ contains
       call assign_evaporation(obj_time_scheme%evaporation, obj_time_scheme%evapSelect)
       call assign_interface(obj_time_scheme%interface_model, obj_time_scheme%intfSelect)
       call assign_blowing(obj_time_scheme%blowing, obj_time_scheme%blowSelect)
+      call assign_liquid(obj_time_scheme%liquid_conduction, obj_time_scheme%liqSelect)
+      call assign_boiling(obj_time_scheme%boiling, obj_time_scheme%boilSelect)
     end if
 
     ! --- Validate models and compute ncond/npop ---

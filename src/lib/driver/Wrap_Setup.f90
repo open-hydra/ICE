@@ -423,8 +423,16 @@ contains
         do m = 1, nmat
           write(*,'(A,I0,A)') " - Evap    --> material ", m, " ("//trim(obj_condensed(m)%name)//"): "// &
             trim(obj_condensed(m)%evapWord)
-          if (obj_condensed(m)%evapSelect /= 0) &
+          if (obj_condensed(m)%evapSelect /= 0) then
             write(*,'(A)') " - Interf  --> "//trim(obj_condensed(m)%intfWord)
+            if (obj_condensed(m)%liqSelect == 1) then
+              write(*,'(A,ES12.5,A,ES12.5,A)') ' - Liquid  --> P2T (k-liq', obj_condensed(m)%kLiq, ' W/(m K), mu-liq', &
+                obj_condensed(m)%muLiq, ' Pa s)'
+            else
+              write(*,'(A)') " - Liquid  --> "//trim(obj_condensed(m)%liqWord)
+            endif
+            write(*,'(A)') " - Boiling --> "//trim(obj_condensed(m)%boilWord)
+          endif
         enddo
         if (any(obj_condensed(:)%evapSelect /= 0)) &
           write(*,'(A)') " - Blowing --> "//trim(obj_time_scheme%blowing)

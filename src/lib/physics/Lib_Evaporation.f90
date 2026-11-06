@@ -2,7 +2,7 @@ module ICE_Lib_Evaporation
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
     private
-    public :: assign_evaporation, assign_interface, assign_blowing
+    public :: assign_evaporation, assign_interface, assign_blowing, assign_liquid, assign_boiling
     public :: blowingFactor
     public :: evaporation
     public :: psat_CC, invTboil_at
@@ -74,6 +74,36 @@ contains
             error stop '[ERROR ICE] unknown interface model'
         end select
     end subroutine assign_interface
+
+    !> Liquid-side conduction: 0 ITC (infinite conductivity), 1 P2T (parabolic temperature profile).
+    subroutine assign_liquid(word, liqSelect)
+        implicit none
+        character(len=*), intent(in)  :: word
+        integer(kind=I4), intent(out) :: liqSelect
+        select case (word)
+        case('ITC'); liqSelect = 0
+        case('P2T'); liqSelect = 1
+        case default
+            write(*,*) "Wrong liquid-conduction model input ---> "//trim(word)
+            write(*,*) "Choose one of: ITC, P2T"
+            error stop '[ERROR ICE] unknown liquid-conduction model'
+        end select
+    end subroutine assign_liquid
+
+    !> Boiling: 0 Xs=1 clamp, 1 Zuo-Gomes-Rutland branch above the boiling temperature at the local pressure.
+    subroutine assign_boiling(word, boilSelect)
+        implicit none
+        character(len=*), intent(in)  :: word
+        integer(kind=I4), intent(out) :: boilSelect
+        select case (word)
+        case('clamp'); boilSelect = 0
+        case('ZGR');   boilSelect = 1
+        case default
+            write(*,*) "Wrong boiling model input ---> "//trim(word)
+            write(*,*) "Choose one of: clamp, ZGR"
+            error stop '[ERROR ICE] unknown boiling model'
+        end select
+    end subroutine assign_boiling
 
     !> Evaporative heat-transfer reduction f2: 0 none (f2=1), 1 MHB98 eq.19 f2 = b/(exp(b)-1).
     subroutine assign_blowing(word, blowSelect)
