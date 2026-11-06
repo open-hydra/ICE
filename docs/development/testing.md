@@ -53,6 +53,8 @@ test/
 │   ├── inflow-400/            # Particles entering through 400 faces are reported, empty cells are not
 │   └── mpi-equiv/             # 1 vs 2 ranks bit-identical (connection and chimera)
 └── unit/                      # Programs linked against the library, no solver run
+    ├── test_boiling_zgr.f90   # boiling = ZGR: the heat-fed rate, alpha_s, the flash, the boiling temperature
+    ├── test_liquid_p2t.f90    # liquid-conduction = P2T: the surface balance through the cell source
     ├── test_properties.f90    # Property table: grammar, checks, loading, lookup, energy, Psat
     ├── test_radiation.f90     # Radiative exchange in the cell source against its closed form
     └── test_solidification.f90 # Solidification functions and the closure wrappers

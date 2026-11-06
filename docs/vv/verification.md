@@ -23,6 +23,7 @@ is measured. L runs two or three families side by side in one case, each on its 
 | **D** | [Every drag correlation](#d-every-drag-correlation) | All twelve drag laws, to $Ma = 2.6$ | Independent RK4 |
 | **E** | [Every Nusselt correlation](#e-every-nusselt-correlation) | All seven heat laws, velocity and temperature relaxing together | Independent RK4 and closed form |
 | **F** | [Evaporation](#f-evaporation) | All five evaporation models, the latent sink, two exact identities, the boiling clamp, the table's `Psat`, `Lv`, `Mv` and `Cpv` | Closed form and RK4 |
+| **M** | [Drop heating and boiling](#m-drop-heating-and-boiling) | The parabolic temperature profile inside the drop (`P2T`) and the boiling branch (`ZGR`), the surface temperature written by the probe | ICE's time scheme on the same ODEs |
 | **K** | [The property table](#k-the-property-table) | Linear interpolation between the table's rows, a table that starts above 1 K, saturation past its ends, the energy of a varying specific heat | Closed form and RK4 |
 | **L** | [Several materials](#l-several-materials) | Each family on its own material: its table zone, its model tokens, its inlet records, its inlet density; the `401` inlet of several families | Closed form and case F's |
 | **C** | [Sinusoidal advection](#c-sinusoidal-advection-on-a-periodic-mesh) | Transport alone, and the order of the space scheme | Closed form |
@@ -367,6 +368,41 @@ of the INI gives the same solution file bit for bit.
     scaling, the `ASM`–`CEM` identity at $Re = 0$ and the isothermal identity above:
     those follow from the published forms and would break under any transcription
     error.
+
+### M. Drop heating and boiling
+
+A uniform cloud at rest in a gas at rest (`drag = Stokes`, `heat-transfer = Stokes`: $Re = 0$, $Nu = 2$), IGLOO's gas
+and vapour ($L_v$ = 2.26 MJ/kg, $M_v$ = 18), $\rho_p$ = 1 kg/m³ and $n = 1/m_0$, stepped at `dt-max` = $h$; the probe
+writes the mean temperature, $\rho_p$, $n$ and the surface temperature `Ts_p1` of a cell every few steps. Five legs:
+
+| Leg | Drop and gas | Models | $h$, steps | End (ICE) |
+|---|---|---|---|---|
+| M1 | $\rho$ 2950, $c$ 1250, $d$ 11.89 µm, $T_0$ 300 K, $T_g$ 600 K, no mass transfer | `P2T`, $k_l$ = 0.026 ($\zeta = 1$) | 1e-5 s, 1001 | $\bar T$ 597.9632 K, $T_s$ 598.3027 K |
+| M2 | water, $d$ 50 µm, $T_0$ 640.002 K, $T_g = T_B$ = 600 K | `ZGR`, the adiabatic flash | 1e-6 s, 15001 | $\bar T$ 604.5757 K, $m/m_0$ 0.933822 |
+| M3 | water, $d$ 50 µm, $T_0$ 490.0002 K, $T_g$ 600 K, $T_B$ 450 K | `ZGR`, fed by the gas | 1e-6 s, 15001 | $\bar T$ 454.8413 K, $m/m_0$ 0.829101 |
+| M4 | water, $d$ 50 µm, $T_0$ 300 K, $T_g$ 800 K | `P2T`, $k_l$ = 0.6, CEM | 1e-5 s, 3001 | $\bar T$ 363.1647 K, $m/m_0$ 0.450683 |
+| M5 | water, $d$ 20 µm, $T_0$ 640.002 K, $T_g = T_B$ = 600 K | `ZGR`, then CEM below $T_B$ | 1e-6 s, 66239 | $\bar T$ 464.0704 K at 66 000 |
+
+The reference is ICE's own time scheme on the same equations, written in the driver: RK2 in
+$(\rho_p, \rho_p e)$ with $n$ fixed, the sources from the [models](../theory/physics.md#conduction-inside-the-drop)
+at $Re = 0$, each root found by bisection, $T_s$ at each row's state. On every row $\bar T$ and $T_s$ are within
+$10^{-9}$ of the leg's gap $T_0 - T_g$ (or $T_0 - T_B$) of it, $m/m_0$ within $10^{-10}$; M5 within $10^{-5}$ after the
+step that crosses $T_B$, which multiplies a difference by about $10^4$. Measured: at most $2.3\times10^{-14}$ of the
+gap before the crossing, $7.9\times10^{-12}$ after. M1 also follows the Heun closed form
+$\bar T - T_g = (T_0 - T_g)(1 - z + z^2/2)^k$, $z = h/\tau$, $\tau = 1.2\,\tau_{ITC}$, and $T_s = (5\bar T + T_g)/6$;
+M2 keeps $m\,(L_v - c(\bar T - T_B))$ to $10^{-10}$ (measured $3.7\times10^{-11}$, the heat-fed vapour of
+$A = 1.8\times10^{-11}$); M2 and M3 hold $T_s = T_B$ and $\bar T > T_B$; M5 writes $T_s = T_B$ above $T_B$ and
+$T_s = \bar T$ below, where $\bar T$ and $m$ decrease. Every row's time must be a multiple of $h$ (the premise of the
+reference) and the field uniform. The reference's end values meet IGLOO's printed outlet values: 604.58 K
+(`boiling-zgr-flash`), 454.84 K and $m/m_0$ 0.829109 (`boiling-zgr-hot`), and with the boiling clamp in place of
+`ZGR` 468.07 K and 381.46 K.
+
+What fails it (measured, as fractions of the gap): `P2T` ignored, 6.7e-2 on M1 (20.1 K) and 3.1e-3 on M4; the probe
+writing $\bar T$ for $T_s$, 0.16 on M1 and 0.51 on M2; the boiling regime bypassed, 3.4 on M2 and 1.8 on M3 (the
+clamp's 468.07 K and 381.46 K), and no row above $T_B$ on M5; the vapour leaving at the mean temperature, 1.2e-2
+on M2 and M3 and 1.1e-4 on M4; $\alpha_s$'s 2.33 written 2.3, 9.9e-3 on M2; the film at $k_g$, 9.2e-4 on M3 and
+1.4e-2 on its mass; the 0.5 K floor of $\Delta T_f$ dropped, no row below $T_B$ on M5; `dt-max` = 1e-4 s on M5, a
+mean temperature that rises again below $T_B$ after the step's overshoot.
 
 ## Solidification
 
@@ -759,7 +795,7 @@ converges faster, at 1.84 – 2.28.
 ctest --test-dir build -L verification --output-on-failure
 ```
 
-A, B, C and K also carry the `fast` label, so the pre-push hook runs them. The rest are in
+A, B, C, J, K, L, M, N and O also carry the `fast` label, so the pre-push hook runs them. The rest are in
 the default tier only: D, E and F because each correlation is a separate run of the
 solver, and G, H and I because each refinement level is. I is the longest, being two
 dimensional. `ICE_KEEP_WORK=1` keeps the generated case directories instead of deleting

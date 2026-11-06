@@ -109,11 +109,17 @@ evaporation`, `evaporation-interface` and `evaporation-coefficient` are the defa
 material without the token. `solidification = on` makes the material freeze and melt, with
 `T-melt`, `h-fus`, `T-nuc` and `cp-solid` (see [Solidification](../theory/physics.md#solidification)); it
 stops the run without a positive `h-fus` and `cp-solid`, with `T-nuc` at or above `T-melt`, together
-with evaporation, and with a `Density` column that varies (a varying `Cp` is the liquid's). `liquid-conduction`, `boiling`
-and `combustion` accept only the value ICE implements (`ITC`, `clamp`, `none`), and IGLOO's other
-numeric keys (`k-liq`, `mu-liq`, `K-burn`, …) are read and ignored. An unknown key, a value that is
+with evaporation, and with a `Density` column that varies (a varying `Cp` is the liquid's).
+`liquid-conduction` (`ITC`, `P2T`) sets the conduction inside the drop, with `k-liq` [W/(m K)] and `mu-liq` [Pa s]
+for `P2T`, and `boiling` (`clamp`, `ZGR`) the branch above the boiling temperature (see
+[Conduction inside the drop](../theory/physics.md#conduction-inside-the-drop) and
+[Boiling](../theory/physics.md#boiling-above-the-boiling-temperature)); `[ICE-Physics] liquid-conduction` and
+`boiling` are their defaults. In a coupled run `P2T` stops the run on a material that does not evaporate or
+without a positive `k-liq` or `mu-liq`, and `ZGR` on a material that does not evaporate. `combustion` accepts only
+`none`, and IGLOO's other numeric keys (`K-burn`, …) are read and ignored. An unknown key, a value that is
 not a number, or `interface = LK` with the d2-law stops the run. `evaporation-blowing` stays global.
-The setup prints each material's evaporation model and each solidifying material's values.
+The setup prints each material's evaporation model, with its liquid conduction and boiling branch, and each
+solidifying material's values.
 
 ### Choosing the exchange models
 
