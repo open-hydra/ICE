@@ -370,6 +370,10 @@ ice_add_unit_test(VapourSourcesUnit unit/test_vapour_sources.f90 "fast;unit;impl
 # cell, no bracket
 ice_add_unit_test(LiquidP2TUnit unit/test_liquid_p2t.f90 "fast;unit;implementation")
 
+# boiling = ZGR: the heat-fed rate and its limits, alpha_s, the adiabatic flash through the cell source, the boiling
+# temperature from Clausius-Clapeyron and from a Psat column, the regime switch at the boiling temperature
+ice_add_unit_test(BoilingZGRUnit unit/test_boiling_zgr.f90 "fast;unit;implementation")
+
 # The rows of a history file that a restart drops (Drop_Rows_After), on files written for it: a run gone past its
 # solution, a file whose count started again, a solution older than every row, a row cut short, time rows
 ice_add_unit_test(DropRowsUnit unit/test_drop_rows.f90 "fast;unit;implementation")

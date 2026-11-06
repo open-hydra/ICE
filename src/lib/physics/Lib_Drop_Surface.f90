@@ -1,16 +1,19 @@
-!>@brief The surface temperature of a family's drops, which the gas-side models take: the root of the surface
-!> balance of the parabolic temperature profile inside the drop (liquid-conduction = P2T), else the mean
-!> temperature (ITC), also for a material that does not evaporate and in an empty cell. IGLOO's model, per drop.
+!>@brief The surface temperature of a family's drops, which the gas-side models take: the boiling temperature at
+!> the gas pressure when the mean temperature reaches it (boiling = ZGR), else the root of the surface balance of
+!> the parabolic temperature profile inside the drop (liquid-conduction = P2T), else the mean temperature (ITC),
+!> also for a material that does not evaporate and in an empty cell. IGLOO's models, per drop.
 module ICE_Lib_Drop_Surface
   use, intrinsic :: iso_fortran_env, only: I4 => int32, R8 => real64
   implicit none
   private
-  public :: drop_surface, p2t_surface
+  public :: drop_surface, p2t_surface, boiling_temperature
 
 contains
 
-  !> Ts of the cell's drops; NaN when the P2T surface balance has no root.
-  subroutine drop_surface(cond_prim, gas_prim, gas_R, gas_gam, gas_k, gas_mu, mat, nb, rho_mat, Rp, Re, Nu, Ts)
+  !> Ts of the cell's drops; NaN when the P2T surface balance has no root. boiling: the mean temperature at or above
+  !  the boiling temperature TB at the gas pressure (ZGR; TB huge when not evaluated).
+  subroutine drop_surface(cond_prim, gas_prim, gas_R, gas_gam, gas_k, gas_mu, mat, nb, rho_mat, Rp, Re, Nu, Ts, &
+                          TB, boiling)
     use ICE_Global_m,       only: rho_empty
     use ICE_Config_Types_m, only: condensed_phase_t
     implicit none
@@ -18,11 +21,22 @@ contains
     real(R8),                intent(in)  :: gas_R, gas_gam, gas_k, gas_mu, rho_mat, Rp, Re, Nu
     type(condensed_phase_t), intent(in)  :: mat
     integer(I4),             intent(in)  :: nb
-    real(R8),                intent(out) :: Ts
+    real(R8),                intent(out) :: Ts, TB
+    logical,                 intent(out) :: boiling
     integer :: stat
 
     Ts = cond_prim(nb-1)
+    TB = huge(1._R8)
+    boiling = .false.
     if (mat%evapSelect == 0 .or. cond_prim(1) <= rho_empty) return
+    if (mat%boilSelect == 1) then
+      TB = boiling_temperature(mat, gas_prim(1)*gas_R*gas_prim(size(gas_prim)))
+      boiling = cond_prim(nb-1) >= TB
+      if (boiling) then
+        Ts = TB
+        return
+      endif
+    endif
     if (mat%liqSelect == 1) &
       call p2t_surface(cond_prim(nb-1), rho_mat, Rp, Re, Nu, norm2(gas_prim(2:4)-cond_prim(2:4)), &
                        gas_prim, gas_R, gas_gam, gas_k, gas_mu, mat, Ts, stat)
@@ -186,5 +200,22 @@ contains
     end function qnet
 
   end subroutine p2t_surface
+
+
+  !> The boiling temperature at the pressure p: the inverse of the material's Psat column, else of Clausius-Clapeyron.
+  pure function boiling_temperature(mat, p) result(TB)
+    use ICE_Config_Types_m,  only: condensed_phase_t
+    use ICE_Lib_Evaporation, only: boilingTemperatureCC, iLvMvOverRu, iinvTboil
+    use ICE_Lib_Properties,  only: mat_T_from_psat
+    implicit none
+    type(condensed_phase_t), intent(in) :: mat
+    real(R8),                intent(in) :: p
+    real(R8) :: TB
+    if (mat%use_psat) then
+      TB = mat_T_from_psat(mat, p)
+    else
+      TB = boilingTemperatureCC(p, mat%ep(iLvMvOverRu), mat%ep(iinvTboil))
+    endif
+  end function boiling_temperature
 
 end module ICE_Lib_Drop_Surface

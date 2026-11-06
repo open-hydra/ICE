@@ -104,8 +104,10 @@ contains
 
 
   !> The kinematics and the surface of a cell's drops, the only place they are formed: the source takes them, and
-  !> so does the probe of the surface temperature. Ts is the mean temperature without P2T.
-  subroutine cell_surface(cond_prim, gas_prim, gas_R, gas_gam, gas_k, gas_mu, mat, nb, rho_mat, Rp, Re, Ma, Pr, Nu, Ts)
+  !> so does the probe of the surface temperature. Ts is the mean temperature without P2T and below the boiling
+  !> regime (boiling, at the boiling temperature TB).
+  subroutine cell_surface(cond_prim, gas_prim, gas_R, gas_gam, gas_k, gas_mu, mat, nb, rho_mat, Rp, Re, Ma, Pr, Nu, Ts, &
+                          TB, boiling)
     use ICE_Parameters_m, only: pi, I4
     use ICE_Config_Types_m, only: condensed_phase_t, obj_time_scheme
     use ICE_Lib_Heat
@@ -116,7 +118,8 @@ contains
     real(kind=R8),               intent(in)  :: gas_R, gas_gam, gas_k, gas_mu
     type(condensed_phase_t),     intent(in)  :: mat
     integer(kind=I4),            intent(in)  :: nb
-    real(kind=R8),               intent(out) :: rho_mat, Rp, Re, Ma, Pr, Nu, Ts
+    real(kind=R8),               intent(out) :: rho_mat, Rp, Re, Ma, Pr, Nu, Ts, TB
+    logical,                     intent(out) :: boiling
 
     integer(kind=I4) :: n
 
@@ -143,7 +146,7 @@ contains
     Nu = heat(Re,Pr,Ma,obj_time_scheme%heatSelect)
 
     !> Surface temperature
-    call drop_surface(cond_prim, gas_prim, gas_R, gas_gam, gas_k, gas_mu, mat, n, rho_mat, Rp, Re, Nu, Ts)
+    call drop_surface(cond_prim, gas_prim, gas_R, gas_gam, gas_k, gas_mu, mat, n, rho_mat, Rp, Re, Nu, Ts, TB, boiling)
 
   end subroutine cell_surface
 
@@ -153,7 +156,7 @@ contains
     use ICE_Config_Types_m, only: condensed_phase_t, obj_time_scheme
     use ICE_Lib_Model
     use ICE_Lib_Drag
-    use ICE_Lib_Evaporation, only: evaporation, blowingFactor, nep, iLv, icpv
+    use ICE_Lib_Evaporation, only: evaporation, blowingFactor, zgrBoiling, nep, iLv, icpv
     use ICE_Lib_Properties, only: mat_psat, mat_lv, mat_cpv, mat_emiss, mat_e, mat_cp_const
     implicit none
     real(kind=R8), dimension(:), intent(in)    :: cond_prim, gas_prim
@@ -165,10 +168,10 @@ contains
     real(kind=R8), optional,     intent(out)   :: Ts_out
 
     integer(kind=I4) :: n, ng
-    real(kind=R8)    :: Rp, Re, Ma, Pr, Tr, Ts
+    real(kind=R8)    :: Rp, Re, Ma, Pr, Tr, Ts, TB
     real(kind=R8)    :: Cd, Nu
-    real(kind=R8)    :: rho_mat, mdot, Qconv, Qevap, carry
-    logical          :: override_Qdot
+    real(kind=R8)    :: rho_mat, mdot, Qconv, Qevap, carry, cpg
+    logical          :: override_Qdot, boiling
     real(kind=R8)    :: force(6)
     real(kind=R8)    :: ep(nep)
 
@@ -176,8 +179,9 @@ contains
     n = nb
     ng = size(gas_prim)
 
-    !> Density, radius, Re, Ma, Pr, Nu and the surface temperature Ts
-    call cell_surface(cond_prim, gas_prim, gas_R, gas_gam, gas_k, gas_mu, mat, n, rho_mat, Rp, Re, Ma, Pr, Nu, Ts)
+    !> Density, radius, Re, Ma, Pr, Nu, the surface temperature Ts and the boiling regime
+    call cell_surface(cond_prim, gas_prim, gas_R, gas_gam, gas_k, gas_mu, mat, n, rho_mat, Rp, Re, Ma, Pr, Nu, Ts, &
+                      TB, boiling)
 
     !> Temperature ratio
     Tr = Ts/gas_prim(5)
@@ -199,7 +203,17 @@ contains
     ep = mat%ep
     if (mat%use_lv)  ep(iLv)  = mat_lv(mat, Ts)
     if (mat%use_cpv) ep(icpv) = mat_cpv(mat, Ts)
-    if (mat%use_psat) then
+    if (boiling) then
+      !> ZGR: the flash fed by the superheat (by the parabolic conduction of a P2T drop) and the heat-fed rate
+      cpg = gas_gam*gas_R/(gas_gam - 1._R8)
+      if (mat%liqSelect == 1) then
+        call zgrBoiling(cond_prim(n-1), TB, 2._R8*Rp, gas_k, cpg, Nu, gas_prim(ng), ep(iLv), mdot, Qevap, &
+                        kCond=mat%kLiq)
+      else
+        call zgrBoiling(cond_prim(n-1), TB, 2._R8*Rp, gas_k, cpg, Nu, gas_prim(ng), ep(iLv), mdot, Qevap)
+      endif
+      override_Qdot = .true.
+    elseif (mat%use_psat) then
       call evaporation(gas_prim(1), gas_prim(ng), gas_gam, gas_R, gas_mu, gas_k,  &
                        Ts, 2._R8*Rp, Re,                                          &
                        mat%evapSelect, mat%intfSelect,                            &
@@ -230,9 +244,9 @@ contains
     !> Radiative heat exchange over the whole particle surface
     force(5) = force(5) + mat_emiss(mat, Ts)*sigma_SB * 4._R8*pi*Rp*Rp*cond_prim(n)*(gas_prim(ng)**4._I4-Ts**4._I4)
 
-    !> P2T: the vapour leaves at the surface temperature; the closure's latent sink at the mean temperature is
-    !  corrected to Lv(Ts) + e(Ts) - e(T)
-    if (mat%liqSelect == 1) then
+    !> P2T or boiling: the vapour leaves at the surface temperature; the closure's latent sink at the mean temperature
+    !  is corrected to Lv(Ts) + e(Ts) - e(T)
+    if (mat%liqSelect == 1 .or. boiling) then
       if (mat%cs_varies) then
         carry = mat_e(mat, Ts) - mat_e(mat, cond_prim(n-1))
       else

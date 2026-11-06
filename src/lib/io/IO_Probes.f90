@@ -447,7 +447,8 @@ contains
     implicit none
     type(obj_probe),       intent(inout) :: probe
     type(ICE_domain_type), intent(in)    :: domain
-    real(R8) :: rho_mat, Rp, Re, Ma, Pr, Nu
+    real(R8) :: rho_mat, Rp, Re, Ma, Pr, Nu, TB
+    logical  :: boiling
     integer  :: v, p, b, i, j, k
 
     b = probe%ilocation(1); i = probe%ilocation(2); j = probe%ilocation(3); k = probe%ilocation(4)
@@ -458,7 +459,8 @@ contains
         call cell_surface(domain%blk(b)%cond_phase(p)%prim(:,i,j,k), domain%blk(b)%gas_phase%prim(:,i,j,k), &
                           domain%blk(b)%gas_phase%R(i,j,k), domain%blk(b)%gas_phase%gam(i,j,k),             &
                           domain%blk(b)%gas_phase%k(i,j,k), domain%blk(b)%gas_phase%mu(i,j,k),              &
-                          obj_condensed(mat_of(p)), nbase(p), rho_mat, Rp, Re, Ma, Pr, Nu, probe%ts(v))
+                          obj_condensed(mat_of(p)), nbase(p), rho_mat, Rp, Re, Ma, Pr, Nu, probe%ts(v), &
+                          TB, boiling)
       else
         probe%ts(v) = domain%blk(b)%cond_phase(p)%prim(nbase(p)-1,i,j,k)
       end if

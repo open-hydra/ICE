@@ -10,18 +10,22 @@
 !>   L4  chi(Pe_L) = 1.86 + 0.86 tanh(2.245 log10(Pe_L/30)) [AS89] eq. 39, 1 without circulation
 !>   L5  CEM at Re 20: the surface balance, S1 = n mdot(Ts), F7 = (Q_g + mdot (Lv + c (Ts - T)))/(m c), with Q_g and
 !>       mdot typed here at Ts (the vapour leaves at the surface temperature)
+!>   L6  a grid of states and gas-side models, with the boiling clamp and with boiling = ZGR: every slot and Ts
+!>       finite, every surface balance solved
 !>   L7  informational: chi at T and at Ts, Ts - T at L5's state
+!>   L8  boiling = ZGR with P2T at A = 0 (T_g = T_B = 600 K), water: Ts = T_B, the flash fed by the parabolic
+!>       conduction F8 = -10 pi k_l d dT_f/Lv, and (F8/F7)/m = c/(Lv - c dT) (the vapour leaves at T_B)
 !>   L9  L1 with emissivity 0.8: the radiation inside the surface balance and in the source
 !>   L10 drag Henderson at Re 1, Ma 0.26: the drag's temperature ratio taken at Ts
 !>   L11 cp, Lv and Psat tabulated: S1 = n mdot(Ts), S5 = n (Q_g(Ts) + mdot(Ts) (e(Ts) + Lv(Ts)))
-!>   L13 an empty cell (rho_p <= rho_empty): Ts = T and the ITC sources, bit for bit
+!>   L13 an empty cell (rho_p <= rho_empty), P2T and ZGR: Ts = T and the ITC sources, bit for bit
 !>   L14 a mean temperature at the 1e-25 K floor, no bracket: p2t_surface's stat 0, Ts and the energy slot not finite
 !>   L16 mu-liq = 0 at Re 20 (the inputs refuse it): p2t_surface's stat 0 and Ts NaN, the source's Ts NaN
 !> Every leg checks that cell_surface's Ts equals compute_source_'s bit for bit (the probe reads the former).
 !> Prints every assertion and exits non-zero if any failed.
 program test_liquid_p2t
   use, intrinsic :: iso_fortran_env, only: R8 => real64
-  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_is_nan
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite, ieee_is_nan, ieee_next_after
   implicit none
   real(R8), parameter :: PI = 3.14159265358979323846_R8, RU = 8314.46_R8, PATM = 101325._R8
   real(R8), parameter :: SIGMA_SB = 5.670374419e-8_R8
@@ -41,6 +45,8 @@ program test_liquid_p2t
   call leg_empty(ok)
   call leg_floor(ok)
   call leg_no_viscosity(ok)
+  call leg_flash(ok)
+  call leg_grid(ok)
   if (.not. ok) then
     write(*,'(A)') 'test_liquid_p2t: FAILED'
     error stop 1
@@ -125,10 +131,11 @@ contains
     character(len=*),        intent(in)    :: name
     logical,                 intent(inout) :: ok
     real(R8), optional,      intent(out)   :: Rp, Re, Nu
-    real(R8) :: tau, rho_mat, rp_, re_, ma_, pr_, nu_, tsc
+    real(R8) :: tau, rho_mat, rp_, re_, ma_, pr_, nu_, tsc, tb_
+    logical  :: boil_
     tau = 0._R8
     call compute_source_(cond, tau, gas, RG, GAM, KG, MUG, s, mat, 6, ts)
-    call cell_surface(cond, gas, RG, GAM, KG, MUG, mat, 6, rho_mat, rp_, re_, ma_, pr_, nu_, tsc)
+    call cell_surface(cond, gas, RG, GAM, KG, MUG, mat, 6, rho_mat, rp_, re_, ma_, pr_, nu_, tsc, tb_, boil_)
     call check(tsc == ts .or. (ieee_is_nan(tsc) .and. ieee_is_nan(ts)), &
                name//": cell_surface's Ts is the source's, bit for bit", ok)
     if (present(Rp)) Rp = rp_
@@ -367,6 +374,7 @@ contains
     cond = [1.e-7_R8, 0._R8, 0._R8, 0._R8, 320._R8, 1.e-7_R8/(RHO*PI*D0**3/6._R8)]
     gas  = [RHOG, 6._R8, 0._R8, 0._R8, 800._R8]
     call material(mat, RHO, 4180._R8, 0.6_R8, 1.e-3_R8, 'CEM', 0._R8)
+    mat%boilSelect = 1
     call material(itc, RHO, 4180._R8, 0.6_R8, 1.e-3_R8, 'CEM', 0._R8)
     itc%liqSelect = 0
     call sources(mat, cond, gas, s, ts, 'L13', ok)
@@ -385,7 +393,8 @@ contains
     logical, intent(inout) :: ok
     real(R8), parameter :: RHO = 1000._R8, D0 = 50.e-6_R8
     type(condensed_phase_t) :: mat
-    real(R8) :: cond(6), gas(5), s(6), ts, rho_mat, rp, re, ma, pr, nu, tsd
+    real(R8) :: cond(6), gas(5), s(6), ts, rho_mat, rp, re, ma, pr, nu, tsd, tb
+    logical  :: boil
     integer  :: i, stat
     call setup_model('Stokes', 'NoHeat')
     call material(mat, RHO, 4180._R8, 0.6_R8, 1.e-3_R8, 'CEM', 0._R8)
@@ -395,7 +404,7 @@ contains
     allocate(mat%psat_tab(1:5000), source=[(101.325_R8*real(i, R8), i = 1, 5000)]); mat%use_psat = .true.
     cond = [1._R8, 0._R8, 0._R8, 0._R8, 1.e-25_R8, 1._R8/(RHO*PI*D0**3/6._R8)]
     gas  = [RHOG, 0._R8, 0._R8, 0._R8, 800._R8]
-    call cell_surface(cond, gas, RG, GAM, KG, MUG, mat, 6, rho_mat, rp, re, ma, pr, nu, tsd)
+    call cell_surface(cond, gas, RG, GAM, KG, MUG, mat, 6, rho_mat, rp, re, ma, pr, nu, tsd, tb, boil)
     call p2t_surface(cond(5), rho_mat, rp, re, nu, 0._R8, gas, RG, GAM, KG, MUG, mat, tsd, stat)
     call sources(mat, cond, gas, s, ts, 'L14', ok)
     write(*,'(A,I0,A,ES12.4,A,ES12.4)') '   L14: stat ', stat, ' Ts ', ts, ' S5 ', s(5)
@@ -414,18 +423,171 @@ contains
     logical, intent(inout) :: ok
     real(R8), parameter :: RHO = 1000._R8, D0 = 50.e-6_R8
     type(condensed_phase_t) :: mat
-    real(R8) :: cond(6), gas(5), s(6), ts, rho_mat, rp, re, ma, pr, nu, tsd
+    real(R8) :: cond(6), gas(5), s(6), ts, rho_mat, rp, re, ma, pr, nu, tsd, tb
+    logical  :: boil
     integer  :: stat
     call material(mat, RHO, 4180._R8, 0.6_R8, 0._R8, 'CEM', 0._R8)
     cond = [1._R8, 0._R8, 0._R8, 0._R8, 320._R8, 1._R8/(RHO*PI*D0**3/6._R8)]
     gas  = [RHOG, 6._R8, 0._R8, 0._R8, 800._R8]
-    call cell_surface(cond, gas, RG, GAM, KG, MUG, mat, 6, rho_mat, rp, re, ma, pr, nu, tsd)
+    call cell_surface(cond, gas, RG, GAM, KG, MUG, mat, 6, rho_mat, rp, re, ma, pr, nu, tsd, tb, boil)
     call p2t_surface(cond(5), rho_mat, rp, re, nu, 6._R8, gas, RG, GAM, KG, MUG, mat, tsd, stat)
     call sources(mat, cond, gas, s, ts, 'L16', ok)
     write(*,'(A,I0,A,ES12.4)') '   L16: stat ', stat, ' Ts ', ts
     call check(stat == 0 .and. ieee_is_nan(tsd), "L16 mu-liq 0: p2t_surface's stat 0 and Ts NaN", ok)
     call check(ieee_is_nan(ts), "L16 mu-liq 0: the source's Ts NaN", ok)
   end subroutine leg_no_viscosity
+
+
+  !> The one-atmosphere anchor stepped one ulp at a time until boilingTemperatureCC gives TB exactly at the gas
+  !> pressure of Tg.
+  function anchor_for(TB, Tg) result(invTb)
+    use ICE_Lib_Evaporation, only: boilingTemperatureCC
+    real(R8), intent(in) :: TB, Tg
+    real(R8) :: invTb, p, t
+    integer  :: k
+    p = RHOG*RG*Tg
+    invTb = 1._R8/TB + log(p/PATM)/(LV*MV/RU)
+    do k = 1, 100000
+      t = boilingTemperatureCC(p, LV*MV/RU, invTb)
+      if (t == TB) return
+      if (t < TB) then
+        invTb = ieee_next_after(invTb, -1._R8)
+      else
+        invTb = ieee_next_after(invTb, 1._R8)
+      endif
+    enddo
+    write(*,'(A)') '   FAIL no one-atmosphere anchor gives T_B exactly'
+    error stop 1
+  end function anchor_for
+
+
+  !> L8: water (rho 958, c 4186, d 50 um, k-liq 0.6) at rest, T_g = T_B = 600 K, T = T_B + 30, + 10, + 1, + 0.2 K.
+  subroutine leg_flash(ok)
+    use ICE_Config_Types_m,  only: condensed_phase_t
+    use ICE_Lib_Evaporation, only: iinvTboil
+    logical, intent(inout) :: ok
+    real(R8), parameter :: RHO = 958._R8, C = 4186._R8, KL = 0.6_R8, D0 = 50.e-6_R8
+    type(condensed_phase_t) :: mat
+    real(R8) :: dts(4), cond(6), gas(5), s(6), ts, m, d, f7, f8, rq, rf, w8, wf
+    logical  :: atb
+    integer  :: k
+    call material(mat, RHO, C, KL, 1.e-3_R8, 'CEM', 0._R8)
+    mat%boilSelect = 1
+    mat%ep(iinvTboil) = anchor_for(600._R8, 600._R8)
+    dts = [30._R8, 10._R8, 1._R8, 0.2_R8]
+    m   = RHO*PI*D0**3/6._R8
+    gas = [RHOG, 0._R8, 0._R8, 0._R8, 600._R8]
+    w8 = 0._R8; wf = 0._R8; atb = .true.
+    do k = 1, 4
+      cond = [1._R8, 0._R8, 0._R8, 0._R8, 600._R8 + dts(k), 1._R8/m]
+      call sources(mat, cond, gas, s, ts, 'L8', ok)
+      d  = diameter(cond, RHO)
+      atb = atb .and. ts == 600._R8
+      f8 = s(1)/cond(6)
+      f7 = (s(5) - C*cond(5)*s(1))/(cond(1)*C)
+      rq = -10._R8*PI*KL*d*max(dts(k), 0.5_R8)/LV
+      rf = C/(LV - C*dts(k))
+      w8 = max(w8, abs(f8/rq - 1._R8)); wf = max(wf, abs((f8/f7)/m/rf - 1._R8))
+      write(*,'(A,F5.1,A,ES22.14,A,ES20.12,A,ES18.10)') '   L8: dT ', dts(k), ' K: S1 ', s(1), ' F8 ', f8, &
+        ' (F8/F7)/m ', (f8/f7)/m
+    enddo
+    write(*,'(A,ES10.3,A,ES10.3)') '   L8: worst relative: F8 ', w8, ', (F8/F7)/m ', wf
+    call check(atb, 'L8 Ts = T_B bit for bit', ok)
+    call check(w8 <= 1.e-13_R8, 'L8 F8 = -10 pi k_l d dT_f/Lv (the 0.5 K floor) to 1e-13', ok)
+    call check(wf <= 1.e-13_R8, 'L8 (F8/F7)/m = c/(Lv - c dT) to 1e-13', ok)
+  end subroutine leg_flash
+
+
+  !> L6: T_g 300, 600, 1500 K x T 280, 350, T_boil - 0.1, T_boil + 5 K x d 1, 100 um x k-liq 0.01, 0.6, u_g 6 m/s, for
+  !> d2-law, CEM, CEM-B, ASM, TC, CEM + LK, CEM with the blowing correction; the clamp, then ZGR; then one ZGR state
+  !> with heat-transfer NoHeat in the regime.
+  subroutine leg_grid(ok)
+    use ICE_Config_Types_m, only: condensed_phase_t, obj_time_scheme
+    logical, intent(inout) :: ok
+    character(len=8), parameter :: models(7) = [character(len=8) :: 'd2-law', 'CEM', 'CEM-B', 'ASM', 'TC', 'CEM', 'CEM']
+    integer,          parameter :: intf(7) = [0, 0, 0, 0, 0, 1, 0], blow(7) = [0, 0, 0, 0, 0, 0, 1]
+    real(R8), parameter :: RHO = 1000._R8
+    type(condensed_phase_t) :: mat
+    real(R8) :: tgs(3), tbs(4), ds(2), kls(2), cond(6), gas(5)
+    integer  :: ib, im, ig, it, id, ik, cnt(4)
+    tgs = [300._R8, 600._R8, 1500._R8]
+    tbs = [280._R8, 350._R8, TBOIL - 0.1_R8, TBOIL + 5._R8]
+    ds  = [1.e-6_R8, 100.e-6_R8]
+    kls = [0.01_R8, 0.6_R8]
+    cnt = 0
+    do ib = 0, 1
+      do im = 1, 7
+        obj_time_scheme%blowSelect = blow(im)
+        do ig = 1, 3; do it = 1, 4; do id = 1, 2; do ik = 1, 2
+          call material(mat, RHO, 4180._R8, kls(ik), 1.e-3_R8, trim(models(im)), 0._R8)
+          mat%intfSelect = intf(im); mat%boilSelect = ib
+          cond = [1._R8, 0._R8, 0._R8, 0._R8, tbs(it), 1._R8/(RHO*PI*ds(id)**3/6._R8)]
+          gas  = [RHOG, 6._R8, 0._R8, 0._R8, tgs(ig)]
+          call grid_point(mat, cond, gas, cnt, ok)
+        enddo; enddo; enddo; enddo
+      enddo
+    enddo
+    obj_time_scheme%blowSelect = 0
+    ! one ZGR state in the regime without convective heat (B = 0)
+    call setup_model('Stokes', 'NoHeat')
+    call material(mat, RHO, 4180._R8, 0.6_R8, 1.e-3_R8, 'CEM', 0._R8)
+    mat%boilSelect = 1
+    cond = [1._R8, 0._R8, 0._R8, 0._R8, 600._R8, 1._R8/(RHO*PI*(50.e-6_R8)**3/6._R8)]
+    gas  = [RHOG, 6._R8, 0._R8, 0._R8, 600._R8]
+    call grid_point(mat, cond, gas, cnt, ok)
+    call setup_model('Stokes', 'Ranz-Marshall')
+    write(*,'(A,I0,A,I0,A,I0,A,I0,A)') '   L6: ', cnt(1), ' states, ', cnt(2), ' not finite, ', cnt(3), &
+      ' surface balances unsolved, ', cnt(4), ' in the boiling regime'
+    call check(cnt(2) == 0, 'L6 every slot and Ts finite', ok)
+    call check(cnt(3) == 0, 'L6 every surface balance solved', ok)
+  end subroutine leg_grid
+
+
+  !> One L6 state: cnt = states, not finite, unsolved, in the regime.
+  subroutine grid_point(mat, cond, gas, cnt, ok)
+    use ICE_Config_Types_m,   only: condensed_phase_t
+    use ICE_Mod_Sources,      only: cell_surface
+    use ICE_Lib_Drop_Surface, only: p2t_surface
+    type(condensed_phase_t), intent(in)    :: mat
+    real(R8),                intent(in)    :: cond(6), gas(5)
+    integer,                 intent(inout) :: cnt(4)
+    logical,                 intent(inout) :: ok
+    real(R8) :: s(6), ts, rho_mat, rp, re, ma, pr, nu, tsd, tb
+    logical  :: boil, ok1
+    integer  :: stat
+    ok1 = .true.
+    call cell_surface(cond, gas, RG, GAM, KG, MUG, mat, 6, rho_mat, rp, re, ma, pr, nu, tsd, tb, boil)
+    call sources_quiet(mat, cond, gas, s, ts, ok1)
+    if (.not. ok1) ok = .false.
+    cnt(1) = cnt(1) + 1
+    if (.not. (all(ieee_is_finite(s)) .and. ieee_is_finite(ts))) cnt(2) = cnt(2) + 1
+    if (boil) then
+      cnt(4) = cnt(4) + 1
+    else
+      call p2t_surface(cond(5), rho_mat, rp, re, nu, norm2(gas(2:4) - cond(2:4)), gas, RG, GAM, KG, MUG, mat, tsd, stat)
+      if (stat == 0) cnt(3) = cnt(3) + 1
+    endif
+  end subroutine grid_point
+
+
+  !> sources without a line per call: false when cell_surface's Ts is not the source's.
+  subroutine sources_quiet(mat, cond, gas, s, ts, ok)
+    use ICE_Config_Types_m, only: condensed_phase_t
+    use ICE_Mod_Sources,    only: compute_source_, cell_surface
+    type(condensed_phase_t), intent(in)    :: mat
+    real(R8),                intent(in)    :: cond(6), gas(5)
+    real(R8),                intent(out)   :: s(6), ts
+    logical,                 intent(inout) :: ok
+    real(R8) :: tau, rho_mat, rp_, re_, ma_, pr_, nu_, tsc, tb_
+    logical  :: boil_
+    tau = 0._R8
+    call compute_source_(cond, tau, gas, RG, GAM, KG, MUG, s, mat, 6, ts)
+    call cell_surface(cond, gas, RG, GAM, KG, MUG, mat, 6, rho_mat, rp_, re_, ma_, pr_, nu_, tsc, tb_, boil_)
+    if (.not. (tsc == ts .or. (ieee_is_nan(tsc) .and. ieee_is_nan(ts)))) then
+      write(*,'(A)') "   FAIL L6: cell_surface's Ts is not the source's"
+      ok = .false.
+    endif
+  end subroutine sources_quiet
 
 
   !> A column at T: linear between the nodes, the end value outside (the lookup's rule, written here).

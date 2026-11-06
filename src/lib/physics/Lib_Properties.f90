@@ -11,6 +11,7 @@ module ICE_Lib_Properties
   implicit none
   private
   public :: mat_rho, mat_cp, mat_cp_const, mat_e, mat_T_from_e, mat_T_from_rhoe, mat_psat, mat_lv, mat_cpv, mat_emiss
+  public :: mat_T_from_psat
 
 contains
 
@@ -59,6 +60,37 @@ contains
     real(R8) :: psat
     psat = table_value(mat%psat_tab, mat%T_min, mat%T_max, T)
   end function mat_psat
+
+
+  !> Inverse of mat_psat on the non-decreasing Psat column: the T at which the interpolant reaches p, by bisection on
+  !  the nodes; T_min when p <= psat(T_min), huge when p exceeds psat(T_max), NaN for NaN.
+  pure function mat_T_from_psat(mat, p) result(T)
+    type(condensed_phase_t), intent(in) :: mat
+    real(R8),                intent(in) :: p
+    real(R8) :: T
+    integer  :: i, j, k
+    associate (tab => mat%psat_tab, lo => mat%T_min, hi => mat%T_max)
+      if (p /= p) then
+        T = p
+      elseif (p <= tab(lo)) then
+        T = real(lo, R8)
+      elseif (p > tab(hi)) then
+        T = huge(1._R8)
+      else
+        i = lo
+        j = hi
+        do while (j - i > 1)
+          k = (i + j)/2
+          if (tab(k) < p) then
+            i = k
+          else
+            j = k
+          endif
+        enddo
+        T = real(i, R8) + (p - tab(i))/(tab(j) - tab(i))
+      endif
+    end associate
+  end function mat_T_from_psat
 
 
   !> Latent heat [J/kg]: the table's Lv column, else the INI value.
