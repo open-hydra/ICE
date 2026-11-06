@@ -51,8 +51,8 @@ NU = 2.0
 XSCAP = 1.0e-12
 EPS4 = 4.0 * sys.float_info.epsilon
 
-# IGLOO's trajectory rows (25 identical parcels): leg -> [(case, u_g, x, T, m, Ts, (T, m) of the row 0.0025 m upstream,
-# (a, b) of its T tolerance a + b |dT/dx|)]
+# IGLOO develop's trajectory rows at OMP 1 (25 identical parcels): leg -> [(case, u_g, x, T, m, Ts,
+# (T, m) of the row 0.0025 m upstream, (a, b) of its T tolerance a + b |dT/dx|)]
 IGLOO_DX = 0.0025
 IGLOO_ROWS = {
     'M1': [('temp-relax-p2t', 10.0, 0.15, 599.830919, None, 599.859099, (599.808466, None), (1.01e-6, 1e-6))],
