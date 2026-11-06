@@ -16,7 +16,9 @@
 #  mesh with flat cells);
 #  the last one diverges at run time (a NaN source in one cell) and must be
 #  caught after the update. A solver that reports success on
-#  any of these would let a harness read a broken run as a pass. Twenty-two rows go the
+#  any of these would let a harness read a broken run as a pass. There are
+#  sixty-five refuse rows as written (the loop over the six vapour keys counted
+#  once). Twenty-two accept rows go the
 #  other way: an INI value equal to the table's must be accepted, the boiling
 #  temperature must be read under either of its names, the vapour columns must be
 #  read with the vapour keys left out or set to 0, the six vapour keys must be
@@ -26,7 +28,8 @@
 #  Emissivity column must be read, a column of 1 radiating as the key 1; the drop's
 #  internal heating and the boiling branch must be read and reported, from the
 #  tokens, the [ICE-Physics] defaults or the table's Conductivity and Viscosity
-#  columns, and accepted in an uncoupled run.
+#  columns, and accepted in an uncoupled run; and a density that comes out of the
+#  update negative must be floored, counted and warned about while the run goes on.
 #===============================================================================
 set -uo pipefail
 
@@ -413,6 +416,11 @@ accept NoExchange/MK "emissivity: 1 beside a table without the column" \
 outputs same "emissivity: a column of 1" "emissivity: 1 beside a table without the column"
 refuse NoExchange/MK "emissivity: negative" "sed -i 's/^emissivity .*/emissivity = -0.5/' input.ini" \
        "emissivity must be >= 0"
+# A step far above the stable one (cfl 1.5, dt-max 1e-3; the default dt-max 1e-4 would bind) leaves negative densities:
+# floored by the conversion, the first one written, the count at the shell cadence and at the end; the run goes on
+accept Doisneau/MK "negative density after the update: warned, run goes on" \
+       "sed -i 's/^cfl .*/cfl = 1.5/; s/^iter-threshold .*/iter-threshold = 20/' input.ini && sed -i '/^\[ICE-Numerics\]/a dt-max = 1e-3' input.ini" \
+       "negative density after the update, floored;negative densities floored after an update so far;negative densities floored after an update over the run"
 refuse Refuse/MK   "divergence caught after the update" ":" \
        "invalid state after the update"
 
