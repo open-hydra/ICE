@@ -61,7 +61,7 @@ contains
   subroutine Read_Inifile_Runtime(iter)
     use Finer,              only: file_ini
     use ICE_Backend_INI,    only: Open_Ini, Load_Ini
-    use ICE_Assign_Setup,   only: Check_Riemann_Solver
+    use ICE_Assign_Setup,   only: Check_Riemann_Solver, Check_Euler_Bound
     use ICE_Config_Types_m, only: obj_multigrid, obj_time_scheme, obj_irs, obj_io
     use ICE_Mod_MPI,        only: mpi_is_root
     use ICE_Parameters_m,   only: codename, llen
@@ -122,6 +122,9 @@ contains
       irs_warned      = .true.
       obj_irs%enabled = .false.
     end if
+
+    ! time-scheme, cfl and irs as read now (irs after its force-off above); a reading not taken returned earlier
+    call Check_Euler_Bound()
 
   end subroutine Read_Inifile_Runtime
 
