@@ -9,6 +9,9 @@ module ICE_Mod_Sources
   !> compute_source_ for the unit test; cell_surface for the unit test and the probes
   public :: compute_source_, cell_surface
 
+  !> Families already warned of an unresolved evaporation step under boiling = ZGR
+  logical, allocatable :: stiff_warned(:)
+
 contains
 
   !> The sources of family p. The slots frozen at set-up (setup_freeze) exchange nothing with the gas:
@@ -23,6 +26,8 @@ contains
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
     integer(kind=I4) :: b, i, j, k, nf
+    logical          :: zgr
+    real(kind=R8)    :: stiff
 
     if (n_tgroups > 1) then
       call compute_source_grouped(grid, p)
@@ -31,8 +36,10 @@ contains
 
     nf = 0
     if (allocated(nfrozen)) nf = nfrozen(p)
+    zgr   = obj_condensed(mat_of(p))%boilSelect > 0
+    stiff = 0._R8
 
-    !$OMP PARALLEL
+    !$OMP PARALLEL REDUCTION(max:stiff)
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
   
@@ -51,11 +58,14 @@ contains
                               grid%blk(b)%cond_phase(p)%source(:,i,j,k), &
                               obj_condensed(mat_of(p)), nbase(p)         )
         if (nf > 0) grid%blk(b)%cond_phase(p)%source(frozen(1:nf,p),i,j,k) = 0._R8
+        if (zgr) stiff = max(stiff, step_mass_fraction(grid%blk(b)%cond_phase(p), i, j, k))
   
       enddo ; enddo ; enddo
       !$OMP END DO nowait
     enddo
     !$OMP END PARALLEL
+
+    if (zgr) call stiff_warning(grid, p, stiff)
 
   end subroutine compute_source
           
@@ -72,11 +82,15 @@ contains
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
     integer(kind=I4) :: b, i, j, k, n, tid, g, m, s, i1, j1, k1, i2, j2, k2, nf
+    logical          :: zgr
+    real(kind=R8)    :: stiff
 
     nf = 0
     if (allocated(nfrozen)) nf = nfrozen(p)
+    zgr   = obj_condensed(mat_of(p))%boilSelect > 0
+    stiff = 0._R8
 
-    !$OMP PARALLEL PRIVATE(b, i, j, k, n, tid, g, m, s, i1, j1, k1, i2, j2, k2)
+    !$OMP PARALLEL PRIVATE(b, i, j, k, n, tid, g, m, s, i1, j1, k1, i2, j2, k2) REDUCTION(max:stiff)
     tid = 0
     !$ tid = omp_get_thread_num()
     call thread_group(tid, g, m, s)
@@ -96,11 +110,54 @@ contains
                                 grid%blk(b)%cond_phase(p)%source(:,i,j,k), &
                                 obj_condensed(mat_of(p)), nbase(p)         )
           if (nf > 0) grid%blk(b)%cond_phase(p)%source(frozen(1:nf,p),i,j,k) = 0._R8
+          if (zgr) stiff = max(stiff, step_mass_fraction(grid%blk(b)%cond_phase(p), i, j, k))
       enddo ; enddo ; enddo
     enddo
     !$OMP END PARALLEL
 
+    if (zgr) call stiff_warning(grid, p, stiff)
+
   end subroutine compute_source_grouped
+
+
+  !> The fraction of a cell's bulk density its mass source removes in one step, dt |S_1|/rho_p (0 in an empty cell)
+  pure function step_mass_fraction(phase, i, j, k) result(f)
+    use ICE_Global_m,          only: rho_empty
+    use ICE_Advanced_Types_m
+    implicit none
+    type(ICE_cond_phase_type), intent(in) :: phase
+    integer(kind=I4),          intent(in) :: i, j, k
+    real(kind=R8) :: f
+
+    f = 0._R8
+    if (phase%prim(1,i,j,k) > rho_empty) f = phase%dt(i,j,k)*abs(phase%source(1,i,j,k))/phase%prim(1,i,j,k)
+
+  end function step_mass_fraction
+
+
+  !> Once per family: a step that removes more than half of a cell's drop mass leaves the switch at the boiling
+  !> temperature unresolved, and the result of the run is not to be trusted
+  subroutine stiff_warning(grid, p, stiff)
+    use ICE_Global_m,         only: ngroups, mat_of
+    use ICE_Advanced_Types_m
+    use ICE_Mod_MPI,          only: mpi_rank_
+    implicit none
+    type(ICE_domain_type), intent(in) :: grid
+    integer(kind=I4),      intent(in) :: p
+    real(kind=R8),         intent(in) :: stiff
+
+    if (.not. allocated(stiff_warned)) then
+      allocate(stiff_warned(ngroups))
+      stiff_warned = .false.
+    end if
+    if (stiff <= 0.5_R8 .or. stiff_warned(p)) return
+    stiff_warned(p) = .true.
+    write(*,'(A,I0,A,I0,A,I0,A,I0,A,ES10.3,A,ES10.3,A)') ' [WARNING] boiling = ZGR, family ', p, ' (material ', &
+      mat_of(p), ', rank ', mpi_rank_, '): at iteration ', grid%iter, ', time ', grid%time, &
+      ', a step removes ', stiff, ' of a cell''s drop mass (more than 0.5): the step does not resolve the '// &
+      'evaporation at the boiling temperature and the result is not trusted; lower dt-max'
+
+  end subroutine stiff_warning
 
 
   !> The kinematics and the surface of a cell's drops, the only place they are formed: the source takes them, and
