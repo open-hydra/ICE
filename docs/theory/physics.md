@@ -264,7 +264,19 @@ Just below $T_B$ the clamp's rate is far larger than the boiling branch's just a
 gas at $T_B$, $d\bar T/dt = -7.7\times10^6$ K/s at $10^{-6}$ K below against $-24$ K/s at 0.1 K above. The explicit
 step that carries a drop across $T_B$ overshoots the continuous transient, the more the longer the step, and a step
 close to $m/|\dot m|$ at the clamp's rate ($7\times10^{-5}$ s for that drop) can leave a negative density and stop
-the run. With `boiling = ZGR`, `dt-max` should be a small fraction of that time.
+the run. ICE adds no limiter of its own for this: with `boiling = ZGR` it watches, at every stage, the fraction
+$\Delta t\,|S_1|/\rho_p$ of a cell's drop mass that the step removes, and the first time a family's exceeds 0.5 it
+writes once
+
+    [WARNING] boiling = ZGR, family <p> (material <m>, rank <r>): at iteration <n>, time <t>, a step removes <f> of a
+    cell's drop mass (more than 0.5): the step does not resolve the evaporation at the boiling temperature and the
+    result is not trusted; lower dt-max
+
+and the run goes on unchanged. A run that writes it has either crossed $T_B$ with a step the clamp does not resolve,
+or emptied a cell of the family within a step (a drop evaporating to its end); in the first case its solution is not
+to be trusted: take a smaller `dt-max`. On that drop, integrated by ICE's scheme, the fraction is 0.012 at `dt-max` =
+1e-6 s and 0.37 at 4e-5 s, where the mean temperature still ends on the wet bulb from above (463.8254 K, $m/m_0$
+within 0.7 %); at 5e-5 s it is 0.57 and the mean temperature undershoots to 382 K, at 1e-4 s 0.98 and 84 K.
 
 ## Solidification
 

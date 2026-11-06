@@ -411,12 +411,17 @@ driver, shared by ICE's input and the reference, passes every other check and fa
 M1, 57 and 112 times the tolerance; the water's $c$ = 4187 for 4186, 9 to 48 times on M2, M3 and M5. With the
 boiling clamp in place of `ZGR` the reference ends at 468.07 K on M2 and 381.46 K on M3.
 
+M5c runs M5 at `dt-max` = 1e-4 s, which does not resolve the switch at $T_B$: the step that crosses it removes 0.977
+of the drop mass (at 61.3 ms, the reference's value to four digits), and ICE must write the
+[warning](../theory/physics.md#boiling-above-the-boiling-temperature) of an unresolved step exactly once; M2, M3 and M5, at their fractions 1.3e-4,
+1.3e-4 and 0.012, must write none. Without the warning, M5c fails.
+
 What fails it (measured, as fractions of the gap): `P2T` ignored, 6.7e-2 on M1 (20.1 K) and 3.1e-3 on M4; the probe
 writing $\bar T$ for $T_s$, 0.16 on M1 and 0.51 on M2; the boiling regime bypassed, 3.4 on M2 and 1.8 on M3 (the
 clamp's 468.07 K and 381.46 K), and no row above $T_B$ on M5; the vapour leaving at the mean temperature, 1.2e-2
 on M2 and M3 and 1.1e-4 on M4; $\alpha_s$'s 2.33 written 2.3, 9.9e-3 on M2; the film at $k_g$, 9.2e-4 on M3 and
 1.4e-2 on its mass; the 0.5 K floor of $\Delta T_f$ dropped, no row below $T_B$ on M5; `dt-max` = 1e-4 s on M5, a
-mean temperature that rises again below $T_B$ after the step's overshoot.
+mean temperature that rises again below $T_B$ after the step's overshoot (M5c's run, which the warning flags).
 
 ## Solidification
 
