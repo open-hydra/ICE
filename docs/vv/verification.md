@@ -778,6 +778,9 @@ against $z$ matches $\dot C/C$ to $10^{-4}$ relative at every Stokes number — 
 total mass stays within $4\times10^{-7}$ of the exact solution, which conserves it
 identically because the $1/|C|^2$ factor cancels the area growth.
 
+hydra's `test/vortex-cloud` solves this case with ICE and with IGLOO's Lagrangian parcels and
+sets both beside the closed form at the quarter turn.
+
 !!! note "Why the low-$St$ lag is the loosest number in the table"
     At $St = 0.01$ the cloud barely dilates, so it stays as compact as it started and is
     the least resolved case on a fixed mesh; the measured lag of $2.5\times10^{-3}$ rad

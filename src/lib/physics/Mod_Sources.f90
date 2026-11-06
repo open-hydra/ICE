@@ -170,6 +170,8 @@ contains
     use ICE_Lib_Heat
     use ICE_Lib_Properties, only: mat_rho
     use ICE_Lib_Drop_Surface, only: drop_surface
+    use ICE_Lib_Evaporation, only: evaporation, blowingFactor, nep, iLv, icpv
+    use ICE_Lib_Properties, only: mat_rho, mat_psat, mat_lv, mat_cpv, mat_emiss
     implicit none
     real(kind=R8), dimension(:), intent(in)  :: cond_prim, gas_prim
     real(kind=R8),               intent(in)  :: gas_R, gas_gam, gas_k, gas_mu

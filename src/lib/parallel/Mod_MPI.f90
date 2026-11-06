@@ -270,7 +270,7 @@ contains
   !> MPI_ALLREDUCE with MPI_SUM for an array of real(R8): arr is overwritten
   !> with the global result, sent from a copy. No MPI_IN_PLACE (nor any other
   !> sentinel the mpi module keeps in a COMMON block: MPI_BOTTOM,
-  !> MPI_STATUS(ES)_IGNORE): with -fno-underscoring (cmake/SetFortranFlags.cmake)
+  !> MPI_STATUS(ES)_IGNORE): with -fno-underscoring (a parent's flags may carry it)
   !> gfortran names those blocks without the underscore of the library's, and
   !> the library takes the sentinel for an ordinary buffer.
   subroutine mpi_allreduce_sum_r8_array(arr, n)

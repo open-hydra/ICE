@@ -377,6 +377,11 @@ ice_add_unit_test(LiquidP2TUnit unit/test_liquid_p2t.f90 "fast;unit;implementati
 # boiling = ZGR: the heat-fed rate and its limits, alpha_s, the adiabatic flash through the cell source, the boiling
 # temperature from Clausius-Clapeyron and from a Psat column, the regime switch at the boiling temperature
 ice_add_unit_test(BoilingZGRUnit unit/test_boiling_zgr.f90 "fast;unit;implementation")
+# The OpenMP schedule ICE sets reads back as set, under an OMP_SCHEDULE it must override
+if(USE_OPENMP)
+    ice_add_unit_test(ScheduleUnit unit/test_omp_schedule.f90 "fast;unit;implementation;openmp")
+    set_tests_properties(ScheduleUnit PROPERTIES ENVIRONMENT "${_ICE_TEST_ENV};OMP_SCHEDULE=guided,3")
+endif()
 
 # The rows of a history file that a restart drops (Drop_Rows_After), on files written for it: a run gone past its
 # solution, a file whose count started again, a solution older than every row, a row cut short, time rows
