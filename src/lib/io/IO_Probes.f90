@@ -21,6 +21,8 @@ module ICE_IO_Probes
     integer                           :: nvar
     character(len=clen), allocatable  :: names(:)
     integer, allocatable              :: family(:), column(:)   !< where each variable is in prim
+    logical, allocatable              :: is_ts(:)               !< the surface temperature of its family
+    real(R8), allocatable             :: ts(:)                  !< its value at the row's state
     type(real_ptr), allocatable       :: variables(:)
     real(R8)                          :: dtime
     integer                           :: ntime = 1   !< next multiple of dtime with a time-based row
@@ -133,8 +135,9 @@ contains
   !> Each variable name to its family and its column of prim. A family p
   !> answers to the names of the solution files, rho_p<p>, u_p<p>, v_p<p>,
   !> w_p<p>, T_p<p>, n_p<p> (and f_p<p>, chi_p<p> for a solidifying family),
-  !> and to the same names without the p (rho_<p>, ...). Any other name stops
-  !> the run.
+  !> to Ts_p<p>, the surface temperature of its drops (no column: computed when
+  !> a row is written), and to the same names without the p (rho_<p>, ...). Any
+  !> other name stops the run.
   subroutine Resolve_Variables(probe)
     use IR_Precision, only: str
     use ICE_Global_m, only: ngroups, ncond, nbase, solid_of
@@ -143,9 +146,11 @@ contains
     character(len=3), parameter :: base(8) = ['rho', 'u  ', 'v  ', 'w  ', 'T  ', 'n  ', 'f  ', 'chi']
     integer :: v, p, q, col(8)
 
-    allocate(probe%family(probe%nvar), probe%column(probe%nvar))
+    allocate(probe%family(probe%nvar), probe%column(probe%nvar), probe%is_ts(probe%nvar), probe%ts(probe%nvar))
     probe%family = 0
     probe%column = 0
+    probe%is_ts  = .false.
+    probe%ts     = 0._R8
 
     do v = 1, probe%nvar
       do p = 1, ngroups
@@ -157,11 +162,15 @@ contains
             probe%column(v) = col(q)
           end if
         end do
+        if (probe%names(v) == 'Ts_p'//trim(str(.true.,p)) .or. probe%names(v) == 'Ts_'//trim(str(.true.,p))) then
+          probe%family(v) = p
+          probe%is_ts(v)  = .true.
+        end if
       end do
       if (probe%family(v) == 0) then
         write(*,'(A)') ' [ERROR] [ICE::Setup_Probes] probe '//trim(probe%name)//': unknown variable "'// &
           trim(probe%names(v))//'"'
-        write(*,'(A,I0)') '   accepted: rho_p<n> u_p<n> v_p<n> w_p<n> T_p<n> n_p<n> (f_p<n> chi_p<n> for a '// &
+        write(*,'(A,I0)') '   accepted: rho_p<n> u_p<n> v_p<n> w_p<n> T_p<n> n_p<n> Ts_p<n> (f_p<n> chi_p<n> for a '// &
           'solidifying family), or the same without the p, for a family n = 1..', ngroups
         error stop 1
       end if
@@ -215,7 +224,11 @@ contains
     allocate(probe%variables(1:probe%nvar))
 
     do v = 1, probe%nvar
-      probe%variables(v)%p => domain%blk(b)%cond_phase(probe%family(v))%prim(probe%column(v),i,j,k)
+      if (probe%is_ts(v)) then
+        probe%variables(v)%p => probe%ts(v)
+      else
+        probe%variables(v)%p => domain%blk(b)%cond_phase(probe%family(v))%prim(probe%column(v),i,j,k)
+      end if
     end do
 
   end subroutine Assign_Variables
@@ -393,19 +406,22 @@ contains
   !> The probe rows due at this iteration, each passed to the file system when
   !> it is written: a run stopped before its end (killed, at the time limit of
   !> a queue) keeps every row it wrote, which the buffer of the unit would lose.
-  subroutine Write_Probes_Data(iter, time)
+  subroutine Write_Probes_Data(iter, time, domain)
 #ifdef USE_MPI
     use ICE_Mod_MPI, only: is_local_block
 #endif
     implicit none
     integer, intent(in) :: iter
     real(R8), intent(in) :: time
+    type(ICE_domain_type), intent(in) :: domain
     integer :: i, v
 
     do i = 1, nprobes
 #ifdef USE_MPI
       if (.not. is_local_block(probe(i)%ilocation(1))) cycle
 #endif
+      if (mod(iter, probe(i)%diter) == 0 .or. time >= probe(i)%dtime * probe(i)%ntime) &
+        call Surface_Temperatures(probe(i), domain)
       if (mod(iter, probe(i)%diter) == 0) then
         write(probe(i)%unit,*) iter, (probe(i)%variables(v)%p, v=1,probe(i)%nvar)
         flush(probe(i)%unit)
@@ -420,6 +436,35 @@ contains
     end do
 
   end subroutine Write_Probes_Data
+
+
+  !> The surface temperature of each Ts variable at the probe's cell, as the source forms it (cell_surface): in a
+  !> run without the gas arrays (uncoupled), the mean temperature.
+  subroutine Surface_Temperatures(probe, domain)
+    use ICE_Global_m,       only: mat_of, nbase
+    use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Mod_Sources,    only: cell_surface
+    implicit none
+    type(obj_probe),       intent(inout) :: probe
+    type(ICE_domain_type), intent(in)    :: domain
+    real(R8) :: rho_mat, Rp, Re, Ma, Pr, Nu
+    integer  :: v, p, b, i, j, k
+
+    b = probe%ilocation(1); i = probe%ilocation(2); j = probe%ilocation(3); k = probe%ilocation(4)
+    do v = 1, probe%nvar
+      if (.not. probe%is_ts(v)) cycle
+      p = probe%family(v)
+      if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) then
+        call cell_surface(domain%blk(b)%cond_phase(p)%prim(:,i,j,k), domain%blk(b)%gas_phase%prim(:,i,j,k), &
+                          domain%blk(b)%gas_phase%R(i,j,k), domain%blk(b)%gas_phase%gam(i,j,k),             &
+                          domain%blk(b)%gas_phase%k(i,j,k), domain%blk(b)%gas_phase%mu(i,j,k),              &
+                          obj_condensed(mat_of(p)), nbase(p), rho_mat, Rp, Re, Ma, Pr, Nu, probe%ts(v))
+      else
+        probe%ts(v) = domain%blk(b)%cond_phase(p)%prim(nbase(p)-1,i,j,k)
+      end if
+    end do
+
+  end subroutine Surface_Temperatures
 
 
   !> Close the probe files at the end of the run, each on the rank that owns

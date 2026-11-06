@@ -6,6 +6,7 @@ module ICE_Lib_Evaporation
     public :: blowingFactor
     public :: evaporation
     public :: psat_CC, invTboil_at
+    public :: log1pS, expm1S, chiETC
 
     !> Vapour properties, packed contiguously by Assign_Setup and indexed by the
     !  parameters below.
@@ -141,7 +142,7 @@ contains
 
     pure subroutine evaporation(rhog, Tg, gamma, Rg, mug, kg, &
                                  Tp, dp, Re, evapSelect, intfSelect, ep, &
-                                 mdot, Qdot_evap, override_Qdot, psatExt)
+                                 mdot, Qdot_evap, override_Qdot, psatExt, BMout)
         implicit none
         real(R8), intent(in)  :: rhog, Tg, gamma, Rg, mug, kg
         real(R8), intent(in)  :: Tp, dp, Re
@@ -150,11 +151,13 @@ contains
         real(R8), intent(out) :: mdot, Qdot_evap
         logical,  intent(out) :: override_Qdot
         real(R8), intent(in), optional :: psatExt   ! saturation pressure from the property table [Pa]
+        real(R8), intent(out), optional :: BMout    ! the Spalding number of the surface state (before LK), 0 if none
         real(R8) :: cpg, p, Mg, Pr, Sc, Re05, psat, Xs, Ys, BM
 
         mdot = 0._R8
         Qdot_evap = 0._R8
         override_Qdot = .false.
+        if (present(BMout)) BMout = 0._R8
         if (evapSelect == 0) return
 
         !> Common gas properties (computed once)
@@ -182,6 +185,7 @@ contains
         if (Ys <= ep(iYinf)) return  ! no evaporation
         BM = (Ys - ep(iYinf)) / (1._R8 - Ys)
         if (BM <= 0._R8) return
+        if (present(BMout)) BMout = BM
 
         !> Re^0.5 (shared by Sh and Nu correlations)
         Re05 = sqrt(max(Re, 0._R8))
@@ -501,6 +505,54 @@ contains
         endif
 
     end function F_correction
+
+
+    !> ln(1+x): the series below |x| = 1e-2 (truncation <= x^8/9 relative).
+    pure function log1pS(x) result(y)
+        implicit none
+        real(R8), intent(in) :: x
+        real(R8) :: y
+
+        if (abs(x) >= 1.e-2_R8) then
+            y = log(1._R8 + x)
+        else
+            y = x*(1._R8 - x*(0.5_R8 - x*(1._R8/3._R8 - x*(0.25_R8 - x*(0.2_R8 - x*(1._R8/6._R8 &
+                  - x*(1._R8/7._R8 - x*0.125_R8)))))))
+        endif
+
+    end function log1pS
+
+
+    !> e^y - 1: the series below |y| = 1e-2 (truncation <= y^8/9! relative).
+    pure function expm1S(y) result(e)
+        implicit none
+        real(R8), intent(in) :: y
+        real(R8) :: e
+
+        if (abs(y) >= 1.e-2_R8) then
+            e = exp(y) - 1._R8
+        else
+            e = y*(1._R8 + y*(0.5_R8 + y*(1._R8/6._R8 + y*(1._R8/24._R8 + y*(1._R8/120._R8 &
+                  + y*(1._R8/720._R8 + y*(1._R8/5040._R8 + y/40320._R8)))))))
+        endif
+
+    end function expm1S
+
+
+    !> Effective-conductivity factor chi(Pe_L) = 1.86 + 0.86 tanh(2.245 log10(Pe_L/30)) (Abramzon-Sirignano 1989 eq. 39);
+    !  1 with no internal circulation (Pe_L <= 1e-300).
+    pure function chiETC(PeL) result(chi)
+        implicit none
+        real(R8), intent(in) :: PeL
+        real(R8) :: chi
+
+        if (PeL <= 1.e-300_R8) then
+            chi = 1._R8
+        else
+            chi = 1.86_R8 + 0.86_R8*tanh(2.245_R8*log10(PeL/30._R8))
+        endif
+
+    end function chiETC
 
 
     !> 1/T of the one-atmosphere boiling point on the Clausius-Clapeyron line through (Tboil, pBoil).
