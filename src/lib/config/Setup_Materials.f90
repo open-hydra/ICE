@@ -18,13 +18,14 @@ module ICE_Setup_Materials
                                   'T-nuc', 'cp-solid']
 
   !> The [ICE-Physics] keys that may carry one value per material, and their range
-  character(len=23), parameter :: vector_keys(10) = [character(len=23) :: 'density', 'specific-heat', &
+  character(len=23), parameter :: vector_keys(11) = [character(len=23) :: 'density', 'specific-heat', &
                                   'latent-heat', 'emissivity', 'vapour-molar-mass', 'boiling-temperature', &
-                                  'vapour-specific-heat', 'lewis-number', 'vapour-mass-fraction', 'evaporation-coefficient']
-  logical, parameter :: vector_positive(10) = [.true., .true., .false., .false., .false., .true., .false., .true., &
-                                               .false., .true.]
+                                  'vapour-specific-heat', 'lewis-number', 'vapour-mass-fraction', 'evaporation-coefficient', &
+                                  'boiling-pressure']
+  logical, parameter :: vector_positive(11) = [.true., .true., .false., .false., .false., .true., .false., .true., &
+                                               .false., .true., .true.]
   !> The alias of each such key ('' = none), the name IGLOO also reads
-  character(len=5),  parameter :: vector_alias(10) = [character(len=5) :: '', '', '', '', '', 'Tboil', '', '', '', '']
+  character(len=5),  parameter :: vector_alias(11) = [character(len=5) :: '', '', '', '', '', 'Tboil', '', '', '', '', '']
 
 contains
 
@@ -32,7 +33,7 @@ contains
     use ICE_Global_m,        only: ngroups, nmat, mat_of, ICE_phase_prefix, ncond, nbase, solid_of
     use ICE_Config_Types_m,  only: obj_condensed, ini_condensed, obj_sim_param, obj_time_scheme
     use ICE_Load_Table,      only: Load_Table
-    use ICE_Lib_Evaporation, only: Ru, iMv, iLv, icpv, iLe, iYinf, iLvMvOverRu, iinvTboil, ialphaE
+    use ICE_Lib_Evaporation, only: Ru, Patm, iMv, iLv, icpv, iLe, iYinf, iLvMvOverRu, iinvTboil, ialphaE, invTboil_at
     use ICE_Mod_MPI,         only: mpi_is_root
     use ICE_Input_Registry,  only: param_is_set
     use ICE_Parameters_m,    only: codename
@@ -135,14 +136,21 @@ contains
         mat%ep(iLvMvOverRu) = mat%lv_al*mat%Mv/Ru
         mat%ep(iinvTboil)   = 1._R8/mat%Tboil
         mat%ep(ialphaE)     = mat%alphaE
+        ! boiling-temperature given at boiling-pressure: the same Clausius-Clapeyron line anchored at one atmosphere
+        if (mat%evapSelect > 0 .and. mat%pBoil /= Patm) then
+          mat%ep(iinvTboil) = invTboil_at(mat%Tboil, mat%pBoil, mat%ep(iLvMvOverRu))
+          if (.not. mat%ep(iinvTboil) > 0._R8) call refuse(material_label(m)//': boiling-pressure and '// &
+            'boiling-temperature give no one-atmosphere boiling point on the Clausius-Clapeyron line')
+          if (mpi_is_root) write(*,'(A,ES12.5,A,ES12.5,A,ES12.5,A)') '   boiling-temperature ', mat%Tboil, &
+            ' K at boiling-pressure ', mat%pBoil, ' Pa: Clausius-Clapeyron through ', 1._R8/mat%ep(iinvTboil), &
+            ' K at one atmosphere'
+        endif
       end associate
     enddo
 
-    ! Solidification integrates the temperature with constant properties, as IGLOO does
+    ! A solidifying material keeps a constant density (its cp may vary: the liquid's energy is the table's)
     do m = 1, nmat
       if (.not. obj_condensed(m)%solid) cycle
-      if (obj_condensed(m)%cs_varies) &
-        call refuse(material_label(m)//': solidification=on requires a constant-cp material (temperature state)')
       if (obj_condensed(m)%rho_varies) &
         call refuse(material_label(m)//': solidification=on requires a constant-density material')
     enddo
@@ -332,6 +340,7 @@ contains
         case (8);  obj_condensed(m)%Le     = x
         case (9);  obj_condensed(m)%Yinf   = x
         case (10); obj_condensed(m)%alphaE = x
+        case (11); obj_condensed(m)%pBoil  = x
         end select
       enddo
     enddo

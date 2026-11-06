@@ -1,12 +1,13 @@
 !>@brief The closures of a solidifying family: the base closure (MK, IG, AG) on its own slots 1:nb, then the frozen
 !> fraction f (nb+1) and the nucleated fraction chi (nb+2), both carried with the mass. The energy holds the latent part
 !> -f*L(T); after every conversion the phase follows from the energy and chi (ICE_Lib_Solidification::solid_state).
+!> With a varying cp the liquid's energy is the table's e_l(T) and T_liq = e_l^-1(e) (the *Tab forms).
 module ICE_Lib_Solid
   use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
   use, intrinsic :: ieee_arithmetic, only : ieee_is_finite
   use ICE_Config_Types_m,     only: condensed_phase_t
-  use ICE_Lib_Properties,     only: mat_cp_const
-  use ICE_Lib_Solidification, only: solid_de, solid_state
+  use ICE_Lib_Properties,     only: mat_cp_const, mat_e, mat_T_from_e, mat_T_from_rhoe
+  use ICE_Lib_Solidification, only: solid_de, solid_state, solid_de_tab, solid_state_tab
   use ICE_Lib_MK, only: prim_2_cons_MK, cons_2_prim_MK, flux_make_MK, source_make_MK
   use ICE_Lib_IG, only: prim_2_cons_IG, cons_2_prim_IG, flux_make_IG, source_make_IG
   use ICE_Lib_AG, only: prim_2_cons_AG, cons_2_prim_AG, flux_make_AG, source_make_AG
@@ -37,7 +38,11 @@ contains
     real(kind=R8) :: norm2V, Tliq
     prim(1:6) = cons_2_prim_MK(cons(1:6), mat)
     norm2V = prim(2)*prim(2) + prim(3)*prim(3) + prim(4)*prim(4)
-    Tliq   = (cons(5) - 0.5_R8*prim(1)*norm2V) / (mat_cp_const(mat)*prim(1)+eps)
+    if (mat%cs_varies) then
+      Tliq = mat_T_from_rhoe(mat, cons(5) - 0.5_R8*prim(1)*norm2V, prim(1), eps)
+    else
+      Tliq   = (cons(5) - 0.5_R8*prim(1)*norm2V) / (mat_cp_const(mat)*prim(1)+eps)
+    endif
     call phase_prims(prim, cons, 6, Tliq, mat)
   end function cons_2_prim_MK_S
 
@@ -72,7 +77,11 @@ contains
     real(kind=R8)             :: prim(size(cons))
     real(kind=R8) :: Tliq
     prim(1:7) = cons_2_prim_IG(cons(1:7), mat)
-    Tliq = (cons(6) - 0.5_R8*cons(5)) / (mat_cp_const(mat)*prim(1)+eps)
+    if (mat%cs_varies) then
+      Tliq = mat_T_from_rhoe(mat, cons(6) - 0.5_R8*cons(5), prim(1), eps)
+    else
+      Tliq = (cons(6) - 0.5_R8*cons(5)) / (mat_cp_const(mat)*prim(1)+eps)
+    endif
     call phase_prims(prim, cons, 7, Tliq, mat)
   end function cons_2_prim_IG_S
 
@@ -107,7 +116,11 @@ contains
     real(kind=R8)             :: prim(size(cons))
     real(kind=R8) :: Tliq
     prim(1:12) = cons_2_prim_AG(cons(1:12), mat)
-    Tliq = (cons(11) - 0.5_R8*(cons(5)+cons(8)+cons(10))) / (mat_cp_const(mat)*prim(1)+eps)
+    if (mat%cs_varies) then
+      Tliq = mat_T_from_rhoe(mat, cons(11) - 0.5_R8*(cons(5)+cons(8)+cons(10)), prim(1), eps)
+    else
+      Tliq = (cons(11) - 0.5_R8*(cons(5)+cons(8)+cons(10))) / (mat_cp_const(mat)*prim(1)+eps)
+    endif
     call phase_prims(prim, cons, 12, Tliq, mat)
   end function cons_2_prim_AG_S
 
@@ -136,8 +149,13 @@ contains
     type(condensed_phase_t), intent(in) :: mat
     cons(nb+1) = prim(1)*prim(nb+1)
     cons(nb+2) = prim(1)*prim(nb+2)
-    if (prim(nb+1) /= 0._R8) cons(nb-1) = cons(nb-1) + prim(1)*solid_de(prim(nb-1), prim(nb+1), &
+    if (prim(nb+1) == 0._R8) return
+    if (mat%cs_varies) then
+      cons(nb-1) = cons(nb-1) + prim(1)*latent_tab(prim(nb-1), prim(nb+1), mat)
+    else
+      cons(nb-1) = cons(nb-1) + prim(1)*solid_de(prim(nb-1), prim(nb+1), &
                                           mat_cp_const(mat), mat%cpSol, mat%hFus, mat%Tmelt)
+    endif
   end subroutine latent_cons
 
   !> f and chi move with the mass flux; the energy flux gains the latent part (nothing when f = 0).
@@ -148,8 +166,13 @@ contains
     type(condensed_phase_t), intent(in) :: mat
     flux(nb+1) = flux(1)*prim(nb+1)
     flux(nb+2) = flux(1)*prim(nb+2)
-    if (prim(nb+1) /= 0._R8) flux(nb-1) = flux(nb-1) + flux(1)*solid_de(prim(nb-1), prim(nb+1), &
+    if (prim(nb+1) == 0._R8) return
+    if (mat%cs_varies) then
+      flux(nb-1) = flux(nb-1) + flux(1)*latent_tab(prim(nb-1), prim(nb+1), mat)
+    else
+      flux(nb-1) = flux(nb-1) + flux(1)*solid_de(prim(nb-1), prim(nb+1), &
                                           mat_cp_const(mat), mat%cpSol, mat%hFus, mat%Tmelt)
+    endif
   end subroutine latent_flux
 
   !> Evaporated mass leaves with its f, chi and latent energy (zero here: evaporation is refused with solidification).
@@ -160,17 +183,28 @@ contains
     type(condensed_phase_t), intent(in) :: mat
     source(nb+1) = - force(1)*prim(nb+1)
     source(nb+2) = - force(1)*prim(nb+2)
-    if (prim(nb+1) /= 0._R8) source(nb-1) = source(nb-1) - force(1)*solid_de(prim(nb-1), prim(nb+1), &
+    if (prim(nb+1) == 0._R8) return
+    if (mat%cs_varies) then
+      source(nb-1) = source(nb-1) - force(1)*latent_tab(prim(nb-1), prim(nb+1), mat)
+    else
+      source(nb-1) = source(nb-1) - force(1)*solid_de(prim(nb-1), prim(nb+1), &
                                             mat_cp_const(mat), mat%cpSol, mat%hFus, mat%Tmelt)
+    endif
   end subroutine latent_source
 
   !> The reconstruction's form of a solidifying family's primitives: T_liq = e/c_l = T + solid_de(T, f)/c_l in the
-  !  temperature slot, continuous through the recalescence; a liquid keeps its T bit for bit.
+  !  temperature slot (e_l^-1(e_l(T) - f L(T)) with a varying cp), continuous through the recalescence; a liquid keeps
+  !  its T bit for bit.
   pure subroutine to_liquid_temperature(prim, mat)
     real(kind=R8), intent(inout) :: prim(:)
     type(condensed_phase_t), intent(in) :: mat
     integer :: nb
     nb = size(prim) - 2
+    if (mat%cs_varies) then
+      if (prim(nb+1) /= 0._R8) prim(nb-1) = mat_T_from_e(mat, mat_e(mat, prim(nb-1)) + &
+                                                         latent_tab(prim(nb-1), prim(nb+1), mat))
+      return
+    endif
     prim(nb-1) = prim(nb-1) + solid_de(prim(nb-1), prim(nb+1), mat_cp_const(mat), mat%cpSol, mat%hFus, mat%Tmelt) &
                               / mat_cp_const(mat)
   end subroutine to_liquid_temperature
@@ -184,8 +218,13 @@ contains
     integer :: nb
     nb = size(prim) - 2
     if (.not. ieee_is_finite(prim(nb-1))) return
-    call solid_state(prim(nb-1), min(max(prim(nb+2), 0._R8), 1._R8), mat_cp_const(mat), mat%cpSol, mat%Tmelt, &
-                     mat%Tnuc, mat%hFus, T, f, chiOut)
+    if (mat%cs_varies) then
+      call solid_state_tab(prim(nb-1), min(max(prim(nb+2), 0._R8), 1._R8), mat_e(mat, mat%Tmelt) - &
+                           mat_e(mat, prim(nb-1)), mat%cpSol, mat%Tmelt, mat%Tnuc, mat%hFus, T, f, chiOut)
+    else
+      call solid_state(prim(nb-1), min(max(prim(nb+2), 0._R8), 1._R8), mat_cp_const(mat), mat%cpSol, mat%Tmelt, &
+                       mat%Tnuc, mat%hFus, T, f, chiOut)
+    endif
     prim(nb+1) = f
     if (f > 0._R8) then
       prim(nb-1) = max(T, eps)
@@ -206,12 +245,26 @@ contains
     prim(nb+1:nb+2) = 0._R8
     if (cons(1) < eps .or. .not. ieee_is_finite(Tliq)) return
     chi = min(max(cons(nb+2)/(prim(1)+eps), 0._R8), 1._R8)
-    call solid_state(Tliq, chi, mat_cp_const(mat), mat%cpSol, mat%Tmelt, mat%Tnuc, mat%hFus, T, f, chiOut)
+    if (mat%cs_varies) then
+      call solid_state_tab(Tliq, chi, mat_e(mat, mat%Tmelt) - mat_e(mat, Tliq), mat%cpSol, mat%Tmelt, mat%Tnuc, &
+                           mat%hFus, T, f, chiOut)
+    else
+      call solid_state(Tliq, chi, mat_cp_const(mat), mat%cpSol, mat%Tmelt, mat%Tnuc, mat%hFus, T, f, chiOut)
+    endif
     prim(nb+2) = chiOut
     if (f > 0._R8) then
       prim(nb-1) = max(T, eps)
       prim(nb+1) = f
     endif
   end subroutine phase_prims
+
+
+  !> The latent part -f*L(T) on the liquid's energy table.
+  pure function latent_tab(T, f, mat) result(de)
+    real(kind=R8), intent(in) :: T, f
+    type(condensed_phase_t), intent(in) :: mat
+    real(kind=R8) :: de
+    de = solid_de_tab(mat_e(mat, mat%Tmelt) - mat_e(mat, T), T, f, mat%cpSol, mat%hFus, mat%Tmelt)
+  end function latent_tab
 
 end module ICE_Lib_Solid

@@ -97,8 +97,12 @@ enthalpy is either `Enthalpy` (relative: $c_p T$ for a constant $c_p$) or `Entha
 replaces the Clausius-Clapeyron saturation curve of the evaporation models, and optional
 `Lv` (J/kg), `Mv` (kg/kmol) and `Cpv` (J/(kg K)) columns after it give the latent heat,
 the vapour molar mass and the vapour specific heat; ATLAS writes the four from the
-material's liquid/vapour pair. `Sigma` and `Viscosity` columns, the surface tension and the
-viscosity IGLOO's breakup models read, are recognised and not used. Other names are ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least
+material's liquid/vapour pair. An optional `Emissivity` column gives the material's
+emissivity as a function of its temperature, read for every material: a column of zeros is
+absent, one zero on some rows only or not positive is refused, rows above 1 are cut to 1
+with a warning, and a non-zero `emissivity` beside it stops the run. `Sigma`, `Viscosity`
+and `Conductivity` columns, the surface tension, the viscosity and the liquid conductivity
+IGLOO reads, are recognised and not used. Other names are ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least
 two of them. Between the nodes the density and $c_p$ are linear in $T$, and outside
 $[T_{min}, T_{max}]$ they keep the end values. When $c_p$ varies, the particle energy is
 the enthalpy column itself, less its value extrapolated to 0 K, so its datum does not
@@ -114,8 +118,8 @@ an offset. A constant $c_p$ must give $h = c_p T + h_{off}$ on every row, and a 
 must match the trapezoidal integral of $c_p$ within 0.1 % per step, or within
 $10^{-6}\,|h|$ when that is larger, the rounding of an absolute enthalpy printed to seven
 digits. For a material that evaporates it also refuses a `Psat` column that is not finite,
-is negative, decreases with $T$ or is constant, or does not give 0.5 to 2 atm at its
-`boiling-temperature`, which must lie in $[T_{min}, T_{max}-1]$; a column of zeros counts
+is negative, decreases with $T$ or is constant, or does not give its `boiling-pressure` (one atmosphere by
+default) within a factor 2 at its `boiling-temperature`, which must lie in $[T_{min}, T_{max}-1]$; a column of zeros counts
 as absent, and a material that does not evaporate does not use the column.
 
 The `Lv`, `Mv` and `Cpv` columns follow the same rule: they serve a material that

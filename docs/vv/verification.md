@@ -392,6 +392,7 @@ oracle is taken at the solution's own time.
 | N5 | N1 and N3 with IG and AG | the same numbers | the same |
 | N6 | N1 stopped on the plateau, restarted in place to 15 ms | the straight run's state | identical |
 | N7 | `A 1 solidification=on …` / `B 1` ($c_s$ = 1000) | each material its own history; B's columns those of a run with B alone | identical |
+| N8 | N1 on a `Cp` column $c_l = 50 + 0.5\,T$ | the liquid on $t(T) = \frac{m}{A}\big[b(T_0 - T) + (a + bT_g)\ln\frac{T_0 - T_g}{T - T_g}\big]$, $t_n$ = 3.349 ms; $f_0 = (e_\ell(T_m) - e_\ell(T_{nuc}))/h_{fus}$ = 0.477209; plateau and solid as N1 | liquid $1.2\times10^{-5}$ K; plateau $f$ $2.2\times10^{-4}$ (bound $5.1\times10^{-4}$); solid 0.18 and 0.068 K (bounds 0.53 and 0.21 K) |
 
 In every leg $\chi$ is exactly 0 on the liquid and 1 on the nucleated states, the eight cells agree to $10^{-10}$, and
 the velocity, density and number density do not move.
@@ -721,6 +722,9 @@ through where the cloud ended up — the mass-weighted complex slope of $u_p + i
 against $z$ matches $\dot C/C$ to $10^{-4}$ relative at every Stokes number — and the
 total mass stays within $4\times10^{-7}$ of the exact solution, which conserves it
 identically because the $1/|C|^2$ factor cancels the area growth.
+
+hydra's `test/vortex-cloud` solves this case with ICE and with IGLOO's Lagrangian parcels and
+sets both beside the closed form at the quarter turn.
 
 !!! note "Why the low-$St$ lag is the loosest number in the table"
     At $St = 0.01$ the cloud barely dilates, so it stays as compact as it started and is

@@ -1279,7 +1279,7 @@ contains
 #ifdef USE_MPI
   !> Initialize one persistent receive and one persistent send per neighbour rank,
   !> and the statuses their waits fill. MPI_STATUSES_IGNORE, like MPI_IN_PLACE,
-  !> lives in a COMMON block of the mpi module, which -fno-underscoring renames
+  !> lives in a COMMON block of the mpi module, which gfortran's -fno-underscoring renames
   !> (see mpi_allreduce_sum_r8_array): the library would write the statuses
   !> through an ordinary address.
   subroutine init_persistent_requests()

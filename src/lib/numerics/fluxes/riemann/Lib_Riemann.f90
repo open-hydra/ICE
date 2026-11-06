@@ -3,7 +3,7 @@ module ICE_Lib_Riemann
   use ICE_Lib_Model
   use ICE_Config_Types_m, only: condensed_phase_t
   use ICE_Lib_Properties, only: mat_cp_const, mat_e
-  use ICE_Lib_Solidification, only: solid_de
+  use ICE_Lib_Solidification, only: solid_de, solid_de_tab
   implicit none
   private
   public :: assign_riemann
@@ -138,7 +138,13 @@ end subroutine assign_riemann
     endif
     flux(7) = flux(1)*fup
     flux(8) = flux(1)*chiup
-    if (fup /= 0._R8) flux(5) = flux(5) + flux(1)*solid_de(Tup, fup, mat_cp_const(mat), mat%cpSol, mat%hFus, mat%Tmelt)
+    if (fup == 0._R8) return
+    if (mat%cs_varies) then
+      flux(5) = flux(5) + flux(1)*solid_de_tab(mat_e(mat, mat%Tmelt) - mat_e(mat, Tup), Tup, fup, mat%cpSol, &
+                                               mat%hFus, mat%Tmelt)
+    else
+      flux(5) = flux(5) + flux(1)*solid_de(Tup, fup, mat_cp_const(mat), mat%cpSol, mat%hFus, mat%Tmelt)
+    endif
 
   end function riemann_Saurel_S
 

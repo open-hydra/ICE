@@ -1,9 +1,10 @@
 !>@brief The condensed-material property table INPUT/<prefix>properties.dat.
 !> The header names the columns; the rows sit on consecutive integer kelvins from any
-!> Tmin, and the optional Psat, Lv, Mv and Cpv columns serve the evaporation models (Sigma
-!> and Viscosity are recognised and not used). The header, node, column, Psat and vapour
-!> checks return a code, so the unit test can assert them; Load_Table turns a failed code,
-!> or what the row scan finds, into a refusal.
+!> Tmin, and the optional Psat, Lv, Mv and Cpv columns serve the evaporation models, the
+!> Emissivity column the radiative exchange (Sigma, Viscosity and Conductivity are recognised
+!> and not used). The header, node, column, Psat, vapour and positive-column checks return a
+!> code, so the unit test can assert them; Load_Table turns a failed code, or what the row
+!> scan finds, into a refusal.
 module ICE_Load_Table
   use, intrinsic :: iso_fortran_env, only: R8 => real64
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
@@ -12,6 +13,7 @@ module ICE_Load_Table
   public :: Load_Table
   public :: classify_table_tokens, check_table_nodes, check_table_columns, table_h_offset, table_reason
   public :: validate_psat_column, psat_reason, validate_vapour_columns, vapour_reason
+  public :: validate_positive_column, column_reason
 
   integer, parameter :: ntok_max = 32, tok_len = 64, nzone_max = 64
 
@@ -31,9 +33,12 @@ module ICE_Load_Table
   integer, parameter, public :: VAP_OK = 0, VAP_ABSENT = 1, VAP_NONFINITE = 2, VAP_PARTIAL = 3, VAP_NONPOSITIVE = 4, &
                                 VAP_MV_VARIES = 5, VAP_WITHOUT_PSAT = 6, VAP_CC_MISMATCH = 7
 
+  !> Codes of the optional positive columns (Emissivity); column_reason gives the text.
+  integer, parameter, public :: COL_OK = 0, COL_ABSENT = 1, COL_NONFINITE = 2, COL_PARTIAL = 3, COL_NONPOSITIVE = 4
+
   character(len=*), parameter :: grammar = &
     'expected: VARIABLES = "Temperature", "Cp", "Density", "Enthalpy" (or "Enthalpy_abs")'// &
-    '[, "Psat"[, "Lv"][, "Mv"][, "Cpv"]][, "Sigma"][, "Viscosity"], '// &
+    '[, "Psat"[, "Lv"][, "Mv"][, "Cpv"]][, "Sigma"][, "Viscosity"][, "Conductivity"][, "Emissivity"], '// &
     'Temperature first and the others in any order, one zone per material, rows on consecutive integer kelvins'
 
 contains
@@ -41,7 +46,7 @@ contains
   !> Reads the optional table, one zone per material, and fills the table fields of obj_condensed(:).
   !  Absent => the constant [ICE-Physics] density/specific-heat of a single material (several
   !  materials need the table), and the log says which of the two applies. The Psat, Lv, Mv and
-  !  Cpv columns are read for a material that evaporates.
+  !  Cpv columns are read for a material that evaporates, the Emissivity column for every material.
   subroutine Load_Table()
     use Lib_ORION_data,     only: orion_data
     use Lib_Tecplot,        only: tec_read_points_multivars
@@ -56,7 +61,7 @@ contains
     character(len=512)      :: tablefile
     character(len=tok_len)  :: tokens(ntok_max)
     integer                 :: ntok, icp, irho, ih, ips, code, err, Ni, Tmin, m
-    integer                 :: ilv, imv, icpv, isig, imu
+    integer                 :: ilv, imv, icpv, isig, imu, ikl, ieps
     integer                 :: nzone, nsize, ndata, ntrail, badline
     integer                 :: nannounced(nzone_max), nrows(nzone_max)
     logical                 :: exists, relative, found
@@ -76,7 +81,8 @@ contains
     ! Header: the quoted names of the first VARIABLES line
     call read_variables_line(tablefile, tokens, ntok, found)
     if (.not. found) call refuse(tablefile, 'no VARIABLES line')
-    call classify_table_tokens(tokens(1:ntok), icp, irho, ih, ips, relative, code, ilv, imv, icpv, isig, imu)
+    call classify_table_tokens(tokens(1:ntok), icp, irho, ih, ips, relative, code, ilv, imv, icpv, isig, imu, &
+                               ikl, ieps)
     if (code /= TAB_OK) call refuse(tablefile, table_reason(code))
 
     ! Rows: ORION reads them, after a scan that guards what ORION cannot see
@@ -147,6 +153,7 @@ contains
       endif
       if (ips > 0) call load_psat(orion%block(m)%vars(ips,1:Ni,1,1), m)
       call load_vapour(m)
+      call load_emissivity(m)
     enddo
 
   contains
@@ -161,7 +168,7 @@ contains
         if (mpi_is_root) write(*,'(A)') '   Psat column not used: this material does not evaporate'
         return
       endif
-      pcode = validate_psat_column(ps, Tmin, Tmin+Ni-1, obj_condensed(m)%Tboil, Patm)
+      pcode = validate_psat_column(ps, Tmin, Tmin+Ni-1, obj_condensed(m)%Tboil, obj_condensed(m)%pBoil)
       if (pcode == PSAT_ABSENT) then
         if (mpi_is_root) write(*,'(A)') '   Psat column all zero: Clausius-Clapeyron is used'
         return
@@ -169,8 +176,16 @@ contains
       if (pcode /= PSAT_OK) call refuse(tablefile, trim(zone_label(m))//'Psat column: '//psat_reason(pcode))
       allocate(obj_condensed(m)%psat_tab(Tmin:Tmin+Ni-1), source=ps)
       obj_condensed(m)%use_psat = .true.
-      if (mpi_is_root) write(*,'(A)') '   Psat from the table, psat(boiling-temperature) = '// &
-        trim(rtoa(mat_psat(obj_condensed(m), obj_condensed(m)%Tboil)/Patm))//' atm'
+      if (mpi_is_root) then
+        if (obj_condensed(m)%pBoil == Patm) then
+          write(*,'(A)') '   Psat from the table, psat(boiling-temperature) = '// &
+            trim(rtoa(mat_psat(obj_condensed(m), obj_condensed(m)%Tboil)/Patm))//' atm'
+        else
+          write(*,'(A)') '   Psat from the table, psat(boiling-temperature) = '// &
+            trim(rtoa(mat_psat(obj_condensed(m), obj_condensed(m)%Tboil)/Patm))//' atm = '// &
+            trim(rtoa(mat_psat(obj_condensed(m), obj_condensed(m)%Tboil)/obj_condensed(m)%pBoil))//' boiling-pressure'
+        endif
+      endif
     end subroutine load_psat
 
 
@@ -231,6 +246,34 @@ contains
     end subroutine load_vapour
 
 
+    !> The Emissivity column, for every material: malformed is refused, all zero is absent, above 1 is cut to 1.
+    subroutine load_emissivity(m)
+      integer, intent(in) :: m
+      real(R8) :: ep(Ni)
+      integer  :: ecode, ncut
+      if (ikl > 0) then
+        if (any(orion%block(m)%vars(ikl,1:Ni,1,1) /= 0._R8) .and. mpi_is_root) &
+          write(*,'(A)') '   Conductivity column not used: ICE has no liquid conduction model'
+      endif
+      if (ieps == 0) return
+      ep = orion%block(m)%vars(ieps,1:Ni,1,1)
+      ecode = validate_positive_column(ep)
+      if (ecode == COL_ABSENT) return
+      if (ecode /= COL_OK) call refuse(tablefile, trim(zone_label(m))//'Emissivity column: '//column_reason(ecode))
+      call check_vapour_key(m, 'emissivity', obj_condensed(m)%emiss, ep, 'Emissivity')
+      ncut = count(ep > 1._R8)
+      if (ncut > 0) then
+        if (mpi_is_root) write(*,'(A)') ' [WARNING] [ICE::Load_Table] '//trim(tablefile)//', material '// &
+          trim(itoa(m))//' ('//trim(obj_condensed(m)%name)//'): Emissivity column above 1 cut to 1.0 ('// &
+          trim(itoa(ncut))//' rows, largest '//trim(rtoa(maxval(ep)))//')'
+        ep = min(ep, 1._R8)
+      endif
+      allocate(obj_condensed(m)%emiss_tab(Tmin:Tmin+Ni-1), source=ep)
+      obj_condensed(m)%use_emiss = .true.
+      if (mpi_is_root) write(*,'(A)') '   emissivity from the table'
+    end subroutine load_emissivity
+
+
     !> A vapour key set non-zero beside a non-zero column of the same quantity is refused; 0 leaves it to the table.
     subroutine check_vapour_key(m, key, ini, col, name)
       use ICE_Input_Registry, only: param_is_set
@@ -273,15 +316,20 @@ contains
 
 
   !> Maps the header names to column indices of vars (column 1 is Temperature, read as the mesh).
-  pure subroutine classify_table_tokens(tokens, icp, irho, ih, ips, relative, code, ilv, imv, icpv, isig, imu)
+  pure subroutine classify_table_tokens(tokens, icp, irho, ih, ips, relative, code, ilv, imv, icpv, isig, imu, &
+                                        ikl, ieps)
     character(len=*), intent(in)  :: tokens(:)
     integer,          intent(out) :: icp, irho, ih, ips, code
     logical,          intent(out) :: relative
     integer,          intent(out) :: ilv, imv, icpv, isig, imu
-    integer :: t
+    integer, optional, intent(out) :: ikl, ieps
+    integer :: t, jkl, jeps
 
     icp = 0; irho = 0; ih = 0; ips = 0; relative = .true.
     ilv = 0; imv = 0; icpv = 0; isig = 0; imu = 0
+    jkl = 0; jeps = 0
+    if (present(ikl)) ikl = 0
+    if (present(ieps)) ieps = 0
     code = TAB_NO_TEMPERATURE
     if (size(tokens) < 1) return
     if (tokens(1) /= 'Temperature' .and. tokens(1) /= 'temperature') return
@@ -317,13 +365,50 @@ contains
       case ('Viscosity', 'viscosity', 'VISCOSITY')
         if (imu > 0) code = TAB_DUPLICATE
         imu = t - 1
+      case ('Conductivity', 'conductivity', 'CONDUCTIVITY')
+        if (jkl > 0) code = TAB_DUPLICATE
+        jkl = t - 1
+      case ('Emissivity', 'emissivity', 'EMISSIVITY')
+        if (jeps > 0) code = TAB_DUPLICATE
+        jeps = t - 1
       end select
-      if (code /= TAB_OK) return
+      if (code /= TAB_OK) exit
     enddo
+    if (present(ikl)) ikl = jkl
+    if (present(ieps)) ieps = jeps
+    if (code /= TAB_OK) return
     if (icp == 0) code = TAB_NO_CP
     if (irho == 0) code = TAB_NO_DENSITY
     if (ih == 0) code = TAB_NO_ENTHALPY
   end subroutine classify_table_tokens
+
+
+  !> An optional positive column: finite; all zero means absent; zero on every row or on none; positive.
+  pure function validate_positive_column(tab) result(code)
+    real(R8), intent(in) :: tab(:)
+    integer :: code
+    code = COL_NONFINITE
+    if (.not. all(ieee_is_finite(tab))) return
+    code = COL_ABSENT
+    if (all(tab == 0._R8)) return
+    code = COL_PARTIAL
+    if (any(tab == 0._R8)) return
+    code = COL_NONPOSITIVE
+    if (any(tab < 0._R8)) return
+    code = COL_OK
+  end function validate_positive_column
+
+
+  pure function column_reason(code) result(txt)
+    integer, intent(in) :: code
+    character(len=:), allocatable :: txt
+    select case (code)
+    case (COL_NONFINITE);   txt = 'a value that is not finite'
+    case (COL_PARTIAL);     txt = 'zero on some rows and not on others'
+    case (COL_NONPOSITIVE); txt = 'a value that is not positive'
+    case default;           txt = 'unknown column error'
+    end select
+  end function column_reason
 
 
   !> At least two rows, none below 0 K, each within 1e-6 K of the integer node Tmin+i-1.
@@ -396,10 +481,10 @@ contains
 
 
   !> Finite; all zero means absent; non-negative; non-decreasing; not constant; the boiling
-  !  temperature inside [Tmin, Tmax-1] and psat there within a factor 2 of one atmosphere.
-  pure function validate_psat_column(tab, lo, hi, Tboil, Patm) result(code)
+  !  temperature inside [Tmin, Tmax-1] and psat there within a factor 2 of the boiling pressure pBoil.
+  pure function validate_psat_column(tab, lo, hi, Tboil, pBoil) result(code)
     integer,  intent(in) :: lo, hi
-    real(R8), intent(in) :: tab(lo:hi), Tboil, Patm
+    real(R8), intent(in) :: tab(lo:hi), Tboil, pBoil
     integer  :: code, i
     real(R8) :: ratio
     code = PSAT_NONFINITE
@@ -415,7 +500,7 @@ contains
     code = PSAT_TBOIL_RANGE
     if (.not. (Tboil >= real(lo, R8) .and. Tboil <= real(hi-1, R8))) return
     i = int(Tboil)
-    ratio = (tab(i) + (tab(i+1) - tab(i))*(Tboil - real(i, R8)))/Patm
+    ratio = (tab(i) + (tab(i+1) - tab(i))*(Tboil - real(i, R8)))/pBoil
     code = PSAT_TBOIL_MISMATCH
     if (ratio < 0.5_R8 .or. ratio > 2._R8) return
     code = PSAT_OK
@@ -431,7 +516,7 @@ contains
     case (PSAT_NONMONOTONE);    txt = 'a pressure that decreases with T'
     case (PSAT_CONSTANT);       txt = 'a constant pressure'
     case (PSAT_TBOIL_RANGE);    txt = 'boiling-temperature outside [Tmin, Tmax-1] of the table'
-    case (PSAT_TBOIL_MISMATCH); txt = 'psat(boiling-temperature) is not within a factor 2 of one atmosphere'
+    case (PSAT_TBOIL_MISMATCH); txt = 'psat(boiling-temperature) is not within a factor 2 of boiling-pressure'
     case default;               txt = 'unknown Psat error'
     end select
   end function psat_reason

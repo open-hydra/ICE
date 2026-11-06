@@ -87,7 +87,7 @@ $$
 \dot q_{\text{rad}} = \varepsilon\,\sigma\,4\pi R_p^2\,n\,\big(T_g^4 - T_p^4\big),
 $$
 
-with $\sigma = 5.670374419\times10^{-8}$ W m⁻² K⁻⁴ (CODATA). The area factor is $4\pi R_p^2 = \pi d_p^2$, the whole sphere surface. Radiation is exchanged with the local gas temperature, not with a wall or a far-field temperature. The emissivity $\varepsilon$ is `emissivity` in `[ICE-Physics]`, one value per material: 0, the default, switches radiation off; a grey body cannot exceed 1, so a value above 1 is cut to 1 with a warning, and a negative value stops the run.
+with $\sigma = 5.670374419\times10^{-8}$ W m⁻² K⁻⁴ (CODATA). The area factor is $4\pi R_p^2 = \pi d_p^2$, the whole sphere surface. Radiation is exchanged with the local gas temperature, not with a wall or a far-field temperature. The emissivity $\varepsilon$ is `emissivity` in `[ICE-Physics]`, one value per material: 0, the default, switches radiation off; a grey body cannot exceed 1, so a value above 1 is cut to 1 with a warning, and a negative value stops the run. A material whose property table carries an `Emissivity` column takes $\varepsilon(T_p)$ from it instead, at the particle temperature, linear between the nodes and the end value outside.
 
 ## Evaporation
 
@@ -106,11 +106,13 @@ between the nodes and constant beyond its ends, and otherwise Clausius-Clapeyron
 the boiling point:
 
 $$
-p_{sat}(T_p) = p_{atm}\,\exp\left[-\frac{L_v M_v}{\mathcal{R}}
+p_{sat}(T_p) = p_{B}\,\exp\left[-\frac{L_v M_v}{\mathcal{R}}
   \left(\frac{1}{T_p} - \frac{1}{T_{boil}}\right)\right],
 $$
 
-with $M_v$ as the vapour molar mass, $T_{boil}$ the boiling-temperature, $L_v$ the latent-heat. The surface mole fraction is
+with $M_v$ as the vapour molar mass, $T_{boil}$ the boiling-temperature, $p_B$ the boiling-pressure at which it is
+given (one atmosphere by default), $L_v$ the latent-heat. ICE evaluates it anchored at one atmosphere, through the
+boiling point of the same line there, $1/T_{boil,1} = 1/T_{boil} + \ln(p_B/p_{atm})\,\mathcal{R}/(L_v M_v)$. The surface mole fraction is
 $X_s = p_{sat}/p$, clamped to $1 - 10^{-12}$ once $p_{sat}$ reaches the local gas pressure — the
 boiling regime. The cap keeps $B_M$ finite, about $10^{12}\,M_v/M_g$, so every model returns a finite
 rate while the droplet boils (IGLOO clamps at the same value). Converting to a mass fraction $Y_s$ against the gas
@@ -189,7 +191,9 @@ $$
 
 with $c_l$ the material's constant specific heat (the liquid's), $c_s$ = `cp-solid`, $h_{fus}$ = `h-fus` and
 $T_m$ = `T-melt`: a fraction $f$ of solid and $1 - f$ of liquid at one temperature. On the liquid ($f = 0$), the
-plateau ($T = T_m$) and the solid ($f = 1$) it is IGLOO's enthalpy without its datum.
+plateau ($T = T_m$) and the solid ($f = 1$) it is IGLOO's enthalpy without its datum. With a `Cp` column that varies,
+$c_l T$ becomes the table's liquid energy $e_l(T)$ and $L(T) = h_{fus} - \big(e_l(T_m) - e_l(T)\big) + c_s(T_m - T)$;
+$T_\ell = e_l^{-1}(e)$, and below every $c_l(T_m - T_\ell)$ reads $e_l(T_m) - e_l(T_\ell)$.
 
 ### The phase of a cell
 
@@ -261,7 +265,8 @@ All on the material's line of the phase file, as IGLOO reads them:
 | `T-nuc` | nucleation temperature [K], below `T-melt` | 0.8 `T-melt` |
 | `cp-solid` | specific heat of the solid [J/(kg K)] | required, > 0 |
 
-The liquid's specific heat and the density are the material's, and must be constant: a `Cp` or `Density` column that
-varies stops the run, as does a material that also evaporates. The setup prints each solidifying material's values.
+The liquid's specific heat and the density are the material's; the specific heat may vary with the temperature (a
+`Cp` column, the liquid's energy then being the table's), the density must be constant: a `Density` column that varies
+stops the run, as does a material that also evaporates. The setup prints each solidifying material's values.
 For alumina the NIST-JANAF tables give $T_m$ = 2327 K, $h_{fus}$ = 1.09 MJ/kg, a liquid specific heat of
 1.89 kJ/(kg K) and a solid one of 1.36 kJ/(kg K) at the melting point; the default `T-nuc` is a nominal supercooling.

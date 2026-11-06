@@ -96,11 +96,12 @@ several, the groups must add up to the `[ICE-FamilyN]` count and the
 [property table](initial-conditions.md#property-table) must give one zone per material.
 
 `density`, `specific-heat`, `latent-heat`, `emissivity`, `vapour-molar-mass`,
-`boiling-temperature` (alias `Tboil`), `vapour-specific-heat`, `lewis-number`, `vapour-mass-fraction` and
-`evaporation-coefficient` take one value per material, in the phase file's order
+`boiling-temperature` (alias `Tboil`), `boiling-pressure`, `vapour-specific-heat`, `lewis-number`,
+`vapour-mass-fraction` and `evaporation-coefficient` take one value per material, in the phase file's order
 (`emissivity = 0 0` for two materials); any other count stops the run. `latent-heat`,
 `vapour-molar-mass` and `vapour-specific-heat` are 0 for a material whose property table
-carries the `Lv`, `Mv` or `Cpv` column of the same quantity: the table then owns it.
+carries the `Lv`, `Mv` or `Cpv` column of the same quantity, and `emissivity` is 0 for one
+whose table carries the `Emissivity` column: the table then owns it.
 
 The tokens are the ones IGLOO reads. `evaporation`, `interface` and `alpha-e` set that
 material's evaporation model, interface and accommodation coefficient; `[ICE-Physics]
@@ -108,7 +109,7 @@ evaporation`, `evaporation-interface` and `evaporation-coefficient` are the defa
 material without the token. `solidification = on` makes the material freeze and melt, with
 `T-melt`, `h-fus`, `T-nuc` and `cp-solid` (see [Solidification](../theory/physics.md#solidification)); it
 stops the run without a positive `h-fus` and `cp-solid`, with `T-nuc` at or above `T-melt`, together
-with evaporation, and with a `Cp` or `Density` column that varies. `liquid-conduction`, `boiling`
+with evaporation, and with a `Density` column that varies (a varying `Cp` is the liquid's). `liquid-conduction`, `boiling`
 and `combustion` accept only the value ICE implements (`ITC`, `clamp`, `none`), and IGLOO's other
 numeric keys (`k-liq`, `mu-liq`, `K-burn`, …) are read and ignored. An unknown key, a value that is
 not a number, or `interface = LK` with the d2-law stops the run. `evaporation-blowing` stays global.
@@ -135,7 +136,8 @@ table carries a `Psat` column. A table with `Lv`,
 heat in place of `latent-heat`, `vapour-molar-mass` and `vapour-specific-heat`, the first
 and the last as functions of the particle temperature (see the
 [property table](initial-conditions.md#property-table)). `boiling-temperature`
-may be given as `Tboil`, the name IGLOO also accepts; giving both stops the run. `evaporation-interface` and `evaporation-blowing` are refinements of
+may be given as `Tboil`, the name IGLOO also accepts; giving both stops the run. It is the boiling point at
+`boiling-pressure` [Pa], one atmosphere unless given: the saturation curve passes through the two. `evaporation-interface` and `evaporation-blowing` are refinements of
 the selected model rather than models of their own:
 
 ```ini

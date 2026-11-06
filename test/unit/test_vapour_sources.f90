@@ -10,6 +10,8 @@
 !>   VS2 CEM: the latent sink
 !>   VS3 ASM: the gas-side heat ASM computes with Cpv, and the latent sink
 !>   VS4 TC: the rate (the vapour Lewis number reads Cpv), the gas-side heat and the latent sink
+!>   VS5 boiling-pressure: water's boiling point given at 2e5 Pa, folded into the one-atmosphere anchor, makes the
+!>       Clausius-Clapeyron curve pass through (373.15 K, 2e5 Pa), to 2e-14 relative
 !> Every internal procedure takes what it reads through its arguments. Prints every assertion and
 !> exits non-zero if any failed.
 program test_vapour_sources
@@ -23,6 +25,7 @@ program test_vapour_sources
   call leg('VS2 CEM',    'CEM',    ok)
   call leg('VS3 ASM',    'ASM',    ok)
   call leg('VS4 TC',     'TC',     ok)
+  call fold(ok)
   if (.not. ok) then
     write(*,'(A)') 'test_vapour_sources: FAILED'
     error stop 1
@@ -45,6 +48,20 @@ contains
 
 
   !> Family 1 is MK, drag and heat-transfer Stokes, no blowing correction.
+  !> VS5: psat_CC at T_b with the folded anchor gives p_B.
+  subroutine fold(ok)
+    use ICE_Lib_Evaporation, only: psat_CC, invTboil_at, Ru
+    logical, intent(inout) :: ok
+    real(R8), parameter :: TB = 373.15_R8, PB = 2.e5_R8
+    real(R8) :: a, p, rel
+    a   = 2.26e6_R8*18.015_R8/Ru
+    p   = psat_CC(TB, a, invTboil_at(TB, PB, a))
+    rel = (p - PB)/PB
+    write(*,'(A,ES24.16,A,ES10.3)') '   VS5: psat(T_b) ', p, ' Pa, relative to p_B ', rel
+    call check(abs(rel) <= 2.e-14_R8, 'VS5 boiling-pressure: the curve passes through (T_b, p_B) to 2e-14', ok)
+  end subroutine fold
+
+
   subroutine setup_model()
     use ICE_Config_Types_m, only: obj_time_scheme
     use ICE_Global_m,       only: solid_of
