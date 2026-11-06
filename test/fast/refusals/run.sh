@@ -10,15 +10,17 @@
 #  formula is JAXA3, a property table that is malformed or contradicts the INI,
 #  a Psat column an evaporation model cannot use, Lv, Mv and Cpv columns that do
 #  not fit the Psat column or meet a vapour key set non-zero, a latent heat or
-#  molar mass of 0 with no column to replace it, a key given together with its
+#  molar mass of 0 with no column to replace it, an evaporating material without
+#  one of its six vapour quantities, a key given together with its
 #  alias, a phase file whose materials or model tokens ICE cannot honour, a
 #  mesh with flat cells);
 #  the last one diverges at run time (a NaN source in one cell) and must be
 #  caught after the update. A solver that reports success on
-#  any of these would let a harness read a broken run as a pass. Ten rows go the
+#  any of these would let a harness read a broken run as a pass. Eleven rows go the
 #  other way: an INI value equal to the table's must be accepted, the boiling
 #  temperature must be read under either of its names, the vapour columns must be
-#  read with the vapour keys left out or set to 0, a solidifying material must be
+#  read with the vapour keys left out or set to 0, the six vapour keys must be
+#  accepted without a table, a solidifying material must be
 #  read, reported and written with its frozen and nucleated fractions, and an
 #  emissivity left out must act as 0 and one above 1 as 1, with a warning.
 #===============================================================================
@@ -171,12 +173,14 @@ refuse Doisneau/MK "boiling temperature: key and alias both given" \
        "sed -i '/^heat-transfer/a boiling-temperature = 373.15\nTboil = 373.15' input.ini" \
        "give boiling-temperature or its alias Tboil, not both"
 # The alias is read, not only accepted: the "1atm" column gives 1.2 atm at 1200 K under either name,
-# and at the default 2792 K (2.792 atm) the run would be refused.
+# and at the default 2792 K (2.792 atm) the run would be refused. vapour_rest gives the other vapour keys an
+# evaporating material needs: Lv = Ru 1200 / Mv, the Clausius-Clapeyron slope of the column at 1200 K.
+vapour_rest="sed -i '/^heat-transfer/a latent-heat = 5.538e5\nvapour-molar-mass = 18.015\nvapour-specific-heat = 0\nlewis-number = 1\nvapour-mass-fraction = 0' input.ini"
 accept NoExchange/MK "boiling temperature: key read" \
-       "psat_table 1atm && $evap_on && sed -i '/^heat-transfer/a boiling-temperature = 1200' input.ini" \
+       "psat_table 1atm && $evap_on && $vapour_rest && sed -i '/^heat-transfer/a boiling-temperature = 1200' input.ini" \
        "psat(boiling-temperature) = 1.20000E+00 atm"
 accept NoExchange/MK "boiling temperature: alias Tboil read" \
-       "psat_table 1atm && $evap_on && sed -i '/^heat-transfer/a Tboil = 1200' input.ini" \
+       "psat_table 1atm && $evap_on && $vapour_rest && sed -i '/^heat-transfer/a Tboil = 1200' input.ini" \
        "psat(boiling-temperature) = 1.20000E+00 atm"
 # vapour_table <mode>: psat_table's "1atm" rows with the Lv, Mv and Cpv columns of a vapour of 18.015 kg/kmol whose
 # Clausius-Clapeyron slope is the Psat column's at any temperature: Lv = Ru T / Mv ("consistent"), the same in kJ/kg
@@ -207,11 +211,25 @@ refuse Refuse/MK   "vapour: an Lv column without Mv, the key unset" "vapour_tabl
 refuse Refuse/MK   "vapour: an Lv column without Mv, the key 0" \
        "vapour_table nomv && $evap_on && $tb1200 && sed -i '/^heat-transfer/a vapour-molar-mass = 0' input.ini" \
        "an Lv column without an Mv column"
-accept NoExchange/MK "vapour: the columns read" "vapour_table consistent && $evap_on && $tb1200" \
+le_y="sed -i '/^heat-transfer/a lewis-number = 1\nvapour-mass-fraction = 0' input.ini"
+accept NoExchange/MK "vapour: the columns read" "vapour_table consistent && $evap_on && $tb1200 && $le_y" \
        "vapour data from the table;Lv(298.15 K) = 1.37605E+05;Mv = 1.80150E+01"
 accept NoExchange/MK "vapour: 0 beside the columns" \
-       "vapour_table consistent && $evap_on && $tb1200 && sed -i '/^heat-transfer/a latent-heat = 0\nvapour-molar-mass = 0' input.ini" \
+       "vapour_table consistent && $evap_on && $tb1200 && $le_y && sed -i '/^heat-transfer/a latent-heat = 0\nvapour-molar-mass = 0' input.ini" \
        "vapour data from the table;Lv(298.15 K) = 1.37605E+05"
+# An evaporating material gives every vapour quantity, by key or column, as IGLOO requires; no table here, so the
+# saturation curve comes from the keys. vapour_keys [<key>]: water's six vapour keys, or all but <key>.
+vapour_keys() {
+  local line
+  for line in "latent-heat = 2.26e6" "vapour-molar-mass = 18.015" "vapour-specific-heat = 0" \
+              "boiling-temperature = 373.15" "lewis-number = 1" "vapour-mass-fraction = 0"; do
+    [[ ${line%% =*} == "${1:-}" ]] || sed -i "/^heat-transfer/a $line" input.ini
+  done
+}
+for key in latent-heat vapour-molar-mass vapour-specific-heat boiling-temperature lewis-number vapour-mass-fraction; do
+  refuse NoExchange/MK "vapour: evaporation without $key" "$evap_on && vapour_keys $key" "evaporation requires $key"
+done
+accept NoExchange/MK "vapour: the six keys given" "$evap_on && vapour_keys" "Time of operation"
 # Materials come from the phase file: "<name> <groups> [key=value ...]" per line. two_mat declares
 # a second material and a second family; the tokens are read for every material, coupled or not.
 two_mat="printf 'condensed-dispersed phase\nA 1\nB 1\n' > INPUT/part-phase.txt && printf '\n[ICE-Family2]\nclosure = MK\n' >> input.ini"

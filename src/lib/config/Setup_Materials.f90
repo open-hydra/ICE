@@ -34,6 +34,8 @@ contains
     use ICE_Load_Table,      only: Load_Table
     use ICE_Lib_Evaporation, only: Ru, iMv, iLv, icpv, iLe, iYinf, iLvMvOverRu, iinvTboil, ialphaE
     use ICE_Mod_MPI,         only: mpi_is_root
+    use ICE_Input_Registry,  only: param_is_set
+    use ICE_Parameters_m,    only: codename
     implicit none
     character(len=64),   allocatable :: names(:)
     character(len=1024), allocatable :: rest(:)
@@ -106,10 +108,23 @@ contains
     do m = 1, nmat
       associate (mat => obj_condensed(m))
         if (mat%evapSelect > 0) then
+          if (.not. (physics_set('latent-heat') .or. mat%use_lv)) call refuse(material_label(m)// &
+            ': evaporation requires latent-heat: give it in '//physics()//' or as the Lv column of the property table')
           if (.not. mat%lv_al > 0._R8) &
             call refuse(material_label(m)//': latent-heat = 0 needs an Lv column in the property table')
+          if (.not. (physics_set('vapour-molar-mass') .or. mat%use_mv)) call refuse(material_label(m)// &
+            ': evaporation requires vapour-molar-mass: give it in '//physics()//' or as the Mv column of the property table')
           if (.not. mat%Mv > 0._R8) &
             call refuse(material_label(m)//': vapour-molar-mass = 0 needs an Mv column in the property table')
+          if (.not. (physics_set('vapour-specific-heat') .or. mat%use_cpv)) call refuse(material_label(m)// &
+            ': evaporation requires vapour-specific-heat (0 for the gas cp): give it in '//physics()// &
+            ' or as the Cpv column of the property table')
+          if (.not. (physics_set('boiling-temperature') .or. physics_set('Tboil'))) call refuse(material_label(m)// &
+            ': evaporation requires boiling-temperature (alias Tboil) in '//physics())
+          if (.not. physics_set('lewis-number')) &
+            call refuse(material_label(m)//': evaporation requires lewis-number in '//physics())
+          if (.not. physics_set('vapour-mass-fraction')) &
+            call refuse(material_label(m)//': evaporation requires vapour-mass-fraction in '//physics())
         endif
         mat%ep = 0._R8
         mat%ep(iMv)         = mat%Mv
@@ -133,6 +148,19 @@ contains
     enddo
 
   contains
+
+    !> The [ICE-Physics] section's name, as the INI spells it.
+    function physics() result(txt)
+      character(len=:), allocatable :: txt
+      txt = '['//trim(codename)//'-Physics]'
+    end function physics
+
+    !> True when the INI gave this [ICE-Physics] key.
+    logical function physics_set(key)
+      character(len=*), intent(in) :: key
+      physics_set = param_is_set(trim(codename)//'-Physics', key)
+    end function physics_set
+
 
     !> The material lines of the phase file: name, families, and the rest of the line (the tokens).
     subroutine read_phase_file(names, groups, rest)

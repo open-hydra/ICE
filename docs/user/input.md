@@ -125,9 +125,12 @@ that list. `drag = NoDrag` and `heat-transfer = NoHeat` switch the momentum and 
 convective heat exchange off explicitly; radiation stays under `emissivity`.
 
 `evaporation` defaults to `none`, and while it is `none` the vapour keys beside it are
-never read. Selecting a model makes `latent-heat`, `vapour-molar-mass` and
-`boiling-temperature` matter — those three set the saturation curve unless the property
-table carries a `Psat` column, and their defaults describe aluminium. A table with `Lv`,
+never read. An evaporating material gives `latent-heat`, `vapour-molar-mass`,
+`vapour-specific-heat` (0: the gas cp), `boiling-temperature`, `lewis-number` and
+`vapour-mass-fraction`, or the `Lv`, `Mv` and `Cpv` columns of the property table for the
+first three; without one of them the run stops, naming it. `latent-heat`,
+`vapour-molar-mass` and `boiling-temperature` set the saturation curve unless the property
+table carries a `Psat` column. A table with `Lv`,
 `Mv` and `Cpv` columns supplies the latent heat, the molar mass and the vapour specific
 heat in place of `latent-heat`, `vapour-molar-mass` and `vapour-specific-heat`, the first
 and the last as functions of the particle temperature (see the
@@ -142,7 +145,10 @@ evaporation-interface = LK
 evaporation-blowing   = LK
 latent-heat           = 2.26e6
 vapour-molar-mass     = 18.015
+vapour-specific-heat  = 0
 boiling-temperature   = 373.15
+lewis-number          = 1
+vapour-mass-fraction  = 0
 ```
 
 ### Grid levels

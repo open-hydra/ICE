@@ -216,7 +216,8 @@ contains
                  trim(rtoa(mat_lv(mat, mat%Tboil)))//' J/kg'
         endif
         if (any(mv /= 0._R8)) then
-          mat%Mv = mv(1)
+          mat%Mv     = mv(1)
+          mat%use_mv = .true.
           line = line//', Mv = '//trim(rtoa(mat%Mv))//' kg/kmol'
         endif
         if (any(cv /= 0._R8)) then
