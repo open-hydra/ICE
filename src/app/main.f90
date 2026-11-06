@@ -6,6 +6,7 @@ program ICE_program
   use ICE_Config_Types_m,    only: obj_sim_param
   use ICE_Procedures_m,      only: ICE_type
   use ICE_Mod_MPI
+  use iso_fortran_env,       only: compiler_options
 #ifdef USE_MPI
   use ICE_Mod_GhostExchange, only: cleanup_ghost_schedule
 #endif
@@ -36,6 +37,9 @@ program ICE_program
     write(*,'(A,I4)') ' -  Number of ranks   --> ', mpi_size_
   end if
 #endif
+
+  ! The options this binary was compiled with: a log tells a bounds-checked DEBUG build from the others
+  if (mpi_is_root) write(*,'(A)') ' -  Compiled with --> '//compiler_options()
 
   ! Solving with ICE. The timers (when [ICE-IO] timers is on) start at the end
   ! of ICE%setup, time every ICE%solve, and report from ICE%postprocess: the
