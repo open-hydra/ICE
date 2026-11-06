@@ -5,8 +5,10 @@ whatever the thread count, the rank count, or the company of its families.
     ICE_EQ_MODE=threads|groups|ranks|hybrid|family [ICE_EQ_ITERS=n] [ICE_EQ_MASK_CORNERS=1] [ICE_EQ_EXTRA='--scheme euler'] [ICE_EQ_RANKS='2'] python3 -B run.py
 
 The gates before this one (openmp-equiv, mpi-equiv) run 2-D single-family cases
-in which no populated cell crosses a block interface within their 200 iterations,
-and compare a Tecplot ASCII file written with 17 significant digits. This one
+and compare a Tecplot ASCII file written with 17 significant digits. In
+mpi-equiv's 200-iteration connection leg no populated cell crosses the cut
+between its two ranks; its chimera leg runs 500, past iteration 334, when the
+jets have reached the chimera donors of both its blocks. This one
 runs the `small` preset of test/bench/make_case.py -- 24x16x12 cells in 3x2x2
 blocks, three closures, periodic in x and y, symmetry/outlet in z, a density that
 is nowhere empty and moves across every interface from iteration 1 -- and
