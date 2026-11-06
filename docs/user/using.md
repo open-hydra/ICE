@@ -233,7 +233,9 @@ time rows the uninterrupted run would.
 
 The variables of family `n` are those of the solution files, `rho_p<n>`, `u_p<n>`,
 `v_p<n>`, `w_p<n>`, `T_p<n>`, `n_p<n>`, and `f_p<n>`, `chi_p<n>` for a solidifying family;
-the same names without the `p` (`rho_<n>`, …) are accepted too. Any other name stops the
+the same names without the `p` (`rho_<n>`, …) are accepted too. `Ts_p<n>` is the surface temperature of the
+family's drops at the row's state, as the source computes it: it equals `T_p<n>` without `liquid-conduction = P2T`
+or the boiling branch of `boiling = ZGR`, in an empty cell and in an uncoupled run. Any other name stops the
 run at set-up.
 
 A new run replaces the probe files; a restart appends to them, after the rows written past

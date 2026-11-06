@@ -109,6 +109,10 @@ ice_add_verification(SolidCooling      N-solid-cooling     "fast;verification;so
 ice_add_verification(SolidAdvection    O-solid-advection   "fast;verification;sources;transport;phase-change")
 set_tests_properties(SolidAdvection PROPERTIES RESOURCE_LOCK O-solid-advection-work)
 
+# The drop's internal heating and the boiling branch: a uniform cloud at rest whose drops conduct (P2T) or boil (ZGR),
+# against ICE's own time scheme on the same ODEs, typed in the driver; the surface temperature through the probe
+ice_add_verification(DropHeating       M-drop-heating      "fast;verification;sources;phase-change")
+
 # Eulerian transport against free advection, with a grid-refinement study
 ice_add_verification(SineAdvection     C-advection-sine    "fast;verification;transport")
 
@@ -365,6 +369,14 @@ ice_add_unit_test(SolidificationUnit unit/test_solidification.f90 "fast;unit;imp
 # scalars poisoned, against the scalars set to the tables' values, for d2-law, CEM, ASM and TC
 ice_add_unit_test(VapourSourcesUnit unit/test_vapour_sources.f90 "fast;unit;implementation")
 
+# liquid-conduction = P2T through the cell source: the surface balance against closed forms at Re 0 and typed gas-side
+# models at Re 20, the vapour leaving at the surface temperature, the drag's temperature ratio, the tables, an empty
+# cell, no bracket
+ice_add_unit_test(LiquidP2TUnit unit/test_liquid_p2t.f90 "fast;unit;implementation")
+
+# boiling = ZGR: the heat-fed rate and its limits, alpha_s, the adiabatic flash through the cell source, the boiling
+# temperature from Clausius-Clapeyron and from a Psat column, the regime switch at the boiling temperature
+ice_add_unit_test(BoilingZGRUnit unit/test_boiling_zgr.f90 "fast;unit;implementation")
 # The OpenMP schedule ICE sets reads back as set, under an OMP_SCHEDULE it must override
 if(USE_OPENMP)
     ice_add_unit_test(ScheduleUnit unit/test_omp_schedule.f90 "fast;unit;implementation;openmp")

@@ -16,14 +16,17 @@
 #  mesh with flat cells);
 #  the last one diverges at run time (a NaN source in one cell) and must be
 #  caught after the update. A solver that reports success on
-#  any of these would let a harness read a broken run as a pass. Thirteen rows go the
+#  any of these would let a harness read a broken run as a pass. Twenty-two rows go the
 #  other way: an INI value equal to the table's must be accepted, the boiling
 #  temperature must be read under either of its names, the vapour columns must be
 #  read with the vapour keys left out or set to 0, the six vapour keys must be
 #  accepted without a table, a solidifying material must be
 #  read, reported and written with its frozen and nucleated fractions, and an
 #  emissivity left out must act as 0 and one above 1 as 1, with a warning; an
-#  Emissivity column must be read, a column of 1 radiating as the key 1.
+#  Emissivity column must be read, a column of 1 radiating as the key 1; the drop's
+#  internal heating and the boiling branch must be read and reported, from the
+#  tokens, the [ICE-Physics] defaults or the table's Conductivity and Viscosity
+#  columns, and accepted in an uncoupled run.
 #===============================================================================
 set -uo pipefail
 
@@ -286,10 +289,60 @@ refuse Doisneau/MK "solidification: a varying density" \
 refuse Doisneau/MK "solidification: an IC of the wrong width" \
        "tokens '$valid' && python3 -c \"import re; L=open('INPUT/part-ic.tec').read().rstrip(chr(10)).split(chr(10)); I,J,K=[int(re.search(r'\\b%s\\s*=\\s*(\\d+)' % c, L[1]).group(1)) for c in 'IJK']; n=(I-1)*(J-1)*(K-1); L[0]=L[0].rstrip()+' '+chr(34)+'xp1'+chr(34); L[1]=L[1].replace('[4-9]','[4-10]'); open('INPUT/part-ic.tec','w').write(chr(10).join(L+L[-n:])+chr(10))\"" \
        "the initial condition holds 7 variables per cell"
-refuse Doisneau/MK "tokens: only the infinite-conductivity liquid" "tokens liquid-conduction=P2T" \
-       "Wrong liquid-conduction input ---> P2T;- ITC"
-refuse Doisneau/MK "tokens: only the boiling clamp" "tokens boiling=ZGR" \
-       "Wrong boiling input ---> ZGR;- clamp"
+# The drop's internal heating (liquid-conduction) and the boiling branch (boiling), as IGLOO reads them: the words, the
+# [ICE-Physics] defaults, and in a coupled run the inputs they need. Rows 'read and reported' and 'the defaults' set
+# vapour-mass-fraction = 1, so no mass transfers and they check the input and the report only.
+refuse Doisneau/MK "tokens: an unknown liquid-conduction model" "tokens liquid-conduction=P3T" \
+       "Wrong liquid-conduction model input ---> P3T;Choose one of: ITC, P2T"
+refuse Doisneau/MK "tokens: an unknown boiling model" "tokens boiling=film" \
+       "Wrong boiling model input ---> film;Choose one of: clamp, ZGR"
+refuse Doisneau/MK "liquid-conduction: an unknown default" "sed -i '/^heat-transfer/a liquid-conduction = P3T' input.ini" \
+       "liquid-conduction must be one of: ITC, P2T"
+refuse Doisneau/MK "boiling: an unknown default" "sed -i '/^heat-transfer/a boiling = film' input.ini" \
+       "boiling must be one of: clamp, ZGR"
+refuse NoExchange/MK "P2T: without evaporation" "tokens 'liquid-conduction=P2T k-liq=0.6 mu-liq=1e-3'" \
+       "liquid-conduction=P2T requires an evaporating material"
+refuse NoExchange/MK "P2T: without k-liq" "$evap_on && vapour_keys && tokens 'liquid-conduction=P2T mu-liq=1e-3'" \
+       "liquid-conduction=P2T requires k-liq > 0"
+refuse NoExchange/MK "P2T: without mu-liq" "$evap_on && vapour_keys && tokens 'liquid-conduction=P2T k-liq=0.6'" \
+       "liquid-conduction=P2T requires mu-liq > 0"
+refuse NoExchange/MK "ZGR: without evaporation" "tokens boiling=ZGR" \
+       "boiling=ZGR requires an evaporating material"
+y_one="sed -i 's/^vapour-mass-fraction.*/vapour-mass-fraction = 1/' input.ini"
+accept NoExchange/MK "P2T: read and reported" \
+       "$evap_on && vapour_keys && $y_one && tokens 'liquid-conduction=P2T k-liq=0.6 mu-liq=1e-3'" \
+       " - Liquid  --> P2T (k-liq 6.00000E-01 W/(m K), mu-liq 1.00000E-03 Pa s)"
+accept NoExchange/MK "ZGR: read and reported" "$evap_on && vapour_keys && tokens boiling=ZGR" " - Boiling --> ZGR"
+accept NoExchange/MK "P2T and ZGR: the [ICE-Physics] defaults" \
+       "$evap_on && vapour_keys && $y_one && sed -i '/^heat-transfer/a liquid-conduction = P2T\nboiling = ZGR' input.ini && tokens 'k-liq=0.6 mu-liq=1e-3'" \
+       " - Liquid  --> P2T (k-liq 6.00000E-01 W/(m K), mu-liq 1.00000E-03 Pa s); - Boiling --> ZGR"
+accept Doisneau/MK "tokens: P2T and ZGR in an uncoupled run" \
+       "tokens 'liquid-conduction=P2T boiling=ZGR' && sed -i 's/^iter-threshold .*/iter-threshold = 20/' input.ini" \
+       "Time of operation"
+# The liquid's conductivity and viscosity from the property table: liquid_table <column> writes the material (cp 1000,
+# density 2000) with that column constant (0.6 for Conductivity, 1e-3 for Viscosity) and no Psat column
+liquid_table() {
+  awk -v col="$1" 'BEGIN {
+    print "TITLE = \"Mass Thermodynamic Properties\""
+    print "VARIABLES = \"Temperature\", \"Cp\", \"Density\", \"Enthalpy\", \"" col "\""
+    print "ZONE T=\"A\""; print "I=5000, F=POINT"
+    for (T = 1; T <= 5000; T++) printf "%.1f 1000.0 2000.0 %.1f %s\n", T, 1000*T, (col == "Viscosity" ? "1.0e-3" : "0.6")
+  }' > INPUT/part-properties.dat
+}
+refuse NoExchange/MK "P2T: k-liq beside a Conductivity column" \
+       "liquid_table Conductivity && $evap_on && vapour_keys && tokens 'liquid-conduction=P2T k-liq=0.6 mu-liq=1e-3'" \
+       "k-liq given both on the material line and as a Conductivity column"
+accept NoExchange/MK "P2T: the conductivity from the column" \
+       "liquid_table Conductivity && $evap_on && vapour_keys && $y_one && tokens 'liquid-conduction=P2T mu-liq=1e-3'" \
+       " - Liquid  --> P2T (k-liq from the Conductivity column, mu-liq 1.00000E-03 Pa s)"
+refuse NoExchange/MK "P2T: mu-liq beside a Viscosity column" \
+       "liquid_table Viscosity && $evap_on && vapour_keys && tokens 'liquid-conduction=P2T k-liq=0.6 mu-liq=1e-3'" \
+       "mu-liq given both on the material line and as a Viscosity column"
+accept NoExchange/MK "P2T: the viscosity from the column" \
+       "liquid_table Viscosity && $evap_on && vapour_keys && $y_one && tokens 'liquid-conduction=P2T k-liq=0.6'" \
+       " - Liquid  --> P2T (k-liq 6.00000E-01 W/(m K), mu-liq from the Viscosity column)"
+accept NoExchange/MK "P2T: a Conductivity column on an ITC material" "liquid_table Conductivity && $evap_on && vapour_keys" \
+       "Conductivity column not used: this material does not run liquid-conduction=P2T"
 refuse Doisneau/MK "tokens: an unknown key" "tokens colour=blue" \
        'unknown key "colour"; the keys are'
 refuse Doisneau/MK "tokens: a real key that is not a number" "tokens alpha-e=abc" \

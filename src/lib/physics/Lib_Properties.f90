@@ -3,7 +3,7 @@
 !> between the integer-kelvin nodes and takes the end value outside them. The energy
 !> e = h - hOff is extended linearly beyond both ends (through e(0) = 0 below), and T(e)
 !> inverts it by bisection over the nodes. The saturation pressure follows the density's rule,
-!> and so do the latent heat, the vapour cp and the emissivity.
+!> and so do the latent heat, the vapour cp, the emissivity and the liquid conductivity and viscosity.
 !> The tables must be allocated (use_table, use_psat; cs_varies for the energy).
 module ICE_Lib_Properties
   use, intrinsic :: iso_fortran_env, only: R8 => real64
@@ -11,6 +11,7 @@ module ICE_Lib_Properties
   implicit none
   private
   public :: mat_rho, mat_cp, mat_cp_const, mat_e, mat_T_from_e, mat_T_from_rhoe, mat_psat, mat_lv, mat_cpv, mat_emiss
+  public :: mat_T_from_psat, mat_kl, mat_mul
 
 contains
 
@@ -61,6 +62,37 @@ contains
   end function mat_psat
 
 
+  !> Inverse of mat_psat on the non-decreasing Psat column: the T at which the interpolant reaches p, by bisection on
+  !  the nodes; T_min when p <= psat(T_min), huge when p exceeds psat(T_max), NaN for NaN.
+  pure function mat_T_from_psat(mat, p) result(T)
+    type(condensed_phase_t), intent(in) :: mat
+    real(R8),                intent(in) :: p
+    real(R8) :: T
+    integer  :: i, j, k
+    associate (tab => mat%psat_tab, lo => mat%T_min, hi => mat%T_max)
+      if (p /= p) then
+        T = p
+      elseif (p <= tab(lo)) then
+        T = real(lo, R8)
+      elseif (p > tab(hi)) then
+        T = huge(1._R8)
+      else
+        i = lo
+        j = hi
+        do while (j - i > 1)
+          k = (i + j)/2
+          if (tab(k) < p) then
+            i = k
+          else
+            j = k
+          endif
+        enddo
+        T = real(i, R8) + (p - tab(i))/(tab(j) - tab(i))
+      endif
+    end associate
+  end function mat_T_from_psat
+
+
   !> Latent heat [J/kg]: the table's Lv column, else the INI value.
   pure function mat_lv(mat, T) result(lv)
     type(condensed_phase_t), intent(in) :: mat
@@ -98,6 +130,32 @@ contains
       eps = mat%emiss
     endif
   end function mat_emiss
+
+
+  !> Liquid conductivity [W/(m K)]: the table's Conductivity column, else k-liq.
+  pure function mat_kl(mat, T) result(kl)
+    type(condensed_phase_t), intent(in) :: mat
+    real(R8),                intent(in) :: T
+    real(R8) :: kl
+    if (mat%use_kl) then
+      kl = table_value(mat%kl_tab, mat%T_min, mat%T_max, T)
+    else
+      kl = mat%kLiq
+    endif
+  end function mat_kl
+
+
+  !> Liquid viscosity [Pa s]: the table's Viscosity column, else mu-liq.
+  pure function mat_mul(mat, T) result(mul)
+    type(condensed_phase_t), intent(in) :: mat
+    real(R8),                intent(in) :: T
+    real(R8) :: mul
+    if (mat%use_mul) then
+      mul = table_value(mat%mul_tab, mat%T_min, mat%T_max, T)
+    else
+      mul = mat%muLiq
+    endif
+  end function mat_mul
 
 
   !> Energy e = h - hOff [J/kg]: the table between the nodes, the line from e(0) = 0 to

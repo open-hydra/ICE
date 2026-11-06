@@ -94,6 +94,18 @@ with $\sigma = 5.670374419\times10^{-8}$ W m⁻² K⁻⁴ (CODATA). The area fac
 Particles evaporation provides a mass source term. Every model returns a rate $\dot m$ **per particle**, negative while the droplet loses mass. The source routine multiplies it by the number density, so the bulk density loses $n\dot m$ per unit volume, the energy equation loses both the
 enthalpy that mass carries away and the latent heat $L_v$ needed to vaporise it, and the momentum equation loses the momentum it carries. The number density has no source term at all: droplets shrink, they never disappear, and the radius follows from $\rho_p$ and $n$ as it always does.
 
+The mass leaves at the surface temperature $T_s$, which every gas-side model takes. Without the two models below
+$T_s$ is the mean temperature $\bar T$ the energy equation carries. Under `liquid-conduction = P2T`, and in the
+boiling branch of `boiling = ZGR`, $T_s$ differs from it, and the energy equation of the cell reads
+
+$$
+\rho_p\frac{d\bar e}{dt} = n\left[\dot Q(T_s) + \dot Q_r(T_s) + \dot m(T_s)\,\big(L_v(T_s) + e(T_s) - e(\bar T)\big)\right],
+\qquad \frac{d\rho_p}{dt} = n\,\dot m(T_s),
+$$
+
+with $e(T)$ the material's energy ($c\,T$, or the table's): the vapour takes its enthalpy at $T_s$, and the mean
+temperature receives $e(\bar T) - e(T_s)$ per unit of evaporated mass.
+
 When the [property table](../user/initial-conditions.md#property-table) carries the `Lv`, `Mv` and `Cpv` columns, $L_v$ and the vapour heat capacity $c_{p,v}$ are functions of the particle temperature, $L_v(T_p)$ and $c_{p,v}(T_p)$, wherever a model reads them: the latent sink, $B_T$ of the d2-law, $\varphi$ and the gas-side heat of ASM, and the vapour Lewis number and the gas-side heat of TC. $M_v$ is then the column's constant. Without the columns the `[ICE-Physics]` values hold, and a vapour heat capacity of 0 stands for the gas one.
 
 The model, the interface and the accommodation coefficient belong to the material: each takes its phase-file tokens, or the `[ICE-Physics]` default without them (see [Materials](../user/input.md#materials)), together with its own vapour properties.
@@ -173,6 +185,98 @@ $f_2 \to 1$ as the rate vanishes.
     term — for any gas, any material and any droplet temperature. That combination
     holds $T_p$ fixed and reproduces the textbook $d^2$ law exactly, which is what
     [case F](../vv/verification.md#f-evaporation) uses as its sharpest check.
+
+### Conduction inside the drop
+
+`liquid-conduction = ITC` (the default) gives the drop a uniform temperature. Under `P2T` the liquid temperature
+is parabolic in the radius (Dombrovsky & Sazhin 2003), $T(r) = T_c + (T_s - T_c)(r/R)^2$, so that the mean
+temperature is $\bar T = (2T_c + 3T_s)/5$. The heat the liquid conducts inward at the surface is the heat the
+surface absorbs, which fixes $T_s$:
+
+$$
+T_s - \bar T = \frac{\dot Q_{net}(T_s)}{10\pi\,k_{eff}\,d}, \qquad
+\dot Q_{net}(T) = \dot Q_g(T) + \dot Q_r(T) + \dot m(T)\,L_v(T),
+$$
+
+$\dot Q_g = \pi d\,k_g\,Nu\,(T_g - T)$ the convective heat (times $f_2$ under `evaporation-blowing = LK`, or the
+model's own heat under ASM and TC), $\dot Q_r$ the radiative exchange and $\dot m$ the material's evaporation model
+with the surface state at $T$. The effective conductivity $k_{eff} = \chi\,k_l$ accounts for the circulation
+inside a drop in a slip flow (Abramzon & Sirignano 1989, eqs. 30, 32, 39):
+
+$$
+U_s = \frac{12.69}{32}\,|\Delta u|\,\frac{\mu_g}{\mu_l}\,\frac{Re^{1/3}}{1 + B_M}, \qquad
+Pe_L = \frac{U_s\,d\,\rho_l\,c_l}{k_l}, \qquad
+\chi = 1.86 + 0.86\tanh\left[2.245\log_{10}\frac{Pe_L}{30}\right],
+$$
+
+with $\chi = 1$ without slip, $B_M$ the gas-side model's Spalding number at $\bar T$, $\rho_l$ and $c_l$ at
+$\bar T$ ($c_l$ the chord $e(\bar T + 1/2) - e(\bar T - 1/2)$ when the specific heat varies), $k_l$ the material's
+`k-liq` or its `Conductivity` column at $\bar T$, and $\mu_l$ its `mu-liq` or its `Viscosity` column at the
+surface temperature, as Abramzon & Sirignano evaluate it: with the column, $U_s$, $Pe_L$ and $k_{eff}$ follow each
+trial $T_s$ of the solve. The drop's diameter is the family's one size in the cell. $T_s$ is found by
+Brent's method on the bracket between $\bar T$ and $\bar T + \dot Q_{net}(\bar T)/(10\pi k_{eff} d)$ (clipped to
+$[\max(1, T_{min} - 1), \max(T_g, T_{max})]$ K, the table's range), widened to $T_g$ for a heated drop or to the
+low end for a cooled one, to $4\varepsilon$ in at most 100 evaluations. Every gas-side quantity then takes $T_s$:
+$p_{sat}$, $Y_s$ and $B_M$, $L_v$ and $c_{p,v}$ of the table, the convective and radiative heats, and the
+temperature ratio of the drag laws; the density, the diameter and the energy stay at $\bar T$.
+
+At $Re = 0$ without mass transfer the solution is closed: $T_s = (5\bar T + \zeta T_g)/(5 + \zeta)$ with
+$\zeta = Nu\,k_g/(2k_l)$, and $\bar T$ relaxes with the time constant $\tau_{ITC}(1 + \zeta/5)$. A cell below the
+empty-cell density keeps $T_s = \bar T$. A surface balance without a root gives $T_s$ = NaN, and the run stops on
+the invalid state after the update, naming the cell: ICE has no step rejection to retry it with.
+
+### Boiling above the boiling temperature
+
+`boiling = clamp` (the default) keeps the surface vapour fraction below 1 at any temperature. Under `ZGR` a drop
+boils when its mean temperature reaches the boiling temperature at the gas pressure, $\bar T \ge T_B(p)$,
+$p = \rho_g R_g T_g$ (Zuo, Gomes & Rutland 2000), with $T_B$ the inverse of Clausius-Clapeyron,
+
+$$
+T_B = \left(\frac{1}{T_{boil,1}} - \frac{\mathcal{R}}{L_v M_v}\ln\frac{p}{p_{atm}}\right)^{-1},
+$$
+
+or of the `Psat` column (on its linear interpolant: a column below $p$ at its last node has no boiling regime, one
+at or above $p$ at its first node gives $T_{min}$). Below $T_B$ the material's model runs as under the clamp. In the
+regime the surface sits at $T_B$. With $\Delta T = \bar T - T_B$ and $\Delta T_f = \max(\Delta T, 0.5\ \mathrm{K})$,
+the flash fed by the superheat is
+
+$$
+G_f = \frac{\alpha_s\,\Delta T_f\,\pi d^2}{L_v}, \qquad
+\alpha_s = 760\,\Delta T_f^{0.26}\ (\Delta T_f < 5),\quad 27\,\Delta T_f^{2.33}\ (< 25),\quad
+13800\,\Delta T_f^{0.39}\ \mathrm{W\,m^{-2}\,K^{-1}},
+$$
+
+and for a `P2T` drop the parabolic conduction $G_f = 10\pi k_l d\,\Delta T_f/L_v$ ($k_l$ at $\bar T$). The gas heat reaches the surface
+through the film blown by the vapour: with $A = c_{p,g}(T_g - T_B)/L_v$, the film conductivity
+$k_f = k_g (T_f/T_g)^{0.7}$ at $T_f = T_B + (T_g - T_B)/3$ and $B = \pi k_f d\,Nu/c_{p,g}$, the heat-fed rate $G$
+solves $G(1 + G_f/G) = B\ln(1 + A(1 + G_f/G))$ ($G = 0$ for $A \le 0$), by Brent's method in $\ln(G_f/G)$ on
+$[-60, 60]$. With $S = G + G_f$,
+
+$$
+\dot Q_s = \frac{S\,c_{p,g}(T_g - T_B)}{e^{S/B} - 1}, \qquad \dot m = -S,
+$$
+
+$\dot Q_s$ replacing the convective heat; it is negative for a gas colder than $T_B$ and 0 at $T_g = T_B$, the
+adiabatic flash, where $m\,(L_v - c\,\Delta T)$ is conserved. $L_v$ and the radiative exchange are taken at $T_B$;
+the interface and blowing models do not act in the regime.
+
+Just below $T_B$ the clamp's rate is far larger than the boiling branch's just above it: on a 20 µm water drop in a
+gas at $T_B$, $d\bar T/dt = -7.7\times10^6$ K/s at $10^{-6}$ K below against $-24$ K/s at 0.1 K above. The explicit
+step that carries a drop across $T_B$ overshoots the continuous transient, the more the longer the step, and a step
+close to $m/|\dot m|$ at the clamp's rate ($7\times10^{-5}$ s for that drop) can leave a negative density and stop
+the run. ICE adds no limiter of its own for this: with `boiling = ZGR` it watches, at every stage, the fraction
+$\Delta t\,|S_1|/\rho_p$ of a cell's drop mass that the step removes, and the first time a family's exceeds 0.5 it
+writes once
+
+    [WARNING] boiling = ZGR, family <p> (material <m>, rank <r>): at iteration <n>, time <t>, a step removes <f> of a
+    cell's drop mass (more than 0.5): the step does not resolve the evaporation at the boiling temperature and the
+    result is not trusted; lower dt-max
+
+and the run goes on unchanged. A run that writes it has either crossed $T_B$ with a step the clamp does not resolve,
+or emptied a cell of the family within a step (a drop evaporating to its end); in the first case its solution is not
+to be trusted: take a smaller `dt-max`. On that drop, integrated by ICE's scheme, the fraction is 0.012 at `dt-max` =
+1e-6 s and 0.37 at 4e-5 s, where the mean temperature still ends on the wet bulb from above (463.8254 K, $m/m_0$
+within 0.7 %); at 5e-5 s it is 0.57 and the mean temperature undershoots to 382 K, at 1e-4 s 0.98 and 84 K.
 
 ## Solidification
 

@@ -100,7 +100,7 @@ contains
       ! is that output, written once. Every rank evaluates the same condition.
       ! A run ends on the finest level, whose files these are.
       if (level == 1) then
-        if (nprobes > 0) call Write_Probes_Data(obj_sim_param%iter_general, simulation%domain(1)%time)
+        if (nprobes > 0) call Write_Probes_Data(obj_sim_param%iter_general, simulation%domain(1)%time, simulation%domain(1))
         iter_based = mod(simulation%domain(1)%iter, obj_io%sol_diter) == 0
         if (iter_based .or. simulation%domain(1)%time >= obj_sim_param%time_from_call + obj_io%sol_dtime) then
           obj_io%output_number = obj_io%output_number + 1
@@ -145,7 +145,7 @@ contains
       ! Probes: on the finest level, whose cells they read, at the global
       ! iteration count of the residual history
       if (nprobes > 0 .and. level == 1) &
-        call Write_Probes_Data(obj_sim_param%iter_general, simulation%domain(1)%time)
+        call Write_Probes_Data(obj_sim_param%iter_general, simulation%domain(1)%time, simulation%domain(1))
 
       ! Collective, so every rank calls it -- not inside the root guard below.
       if (mod(simulation%domain(level)%iter, obj_io%shell_diter) == 0d0) &
@@ -206,7 +206,7 @@ contains
 
       ! Probes, as at an output iteration
       if (nprobes > 0 .and. level == 1) &
-        call Write_Probes_Data(obj_sim_param%iter_general, simulation%domain(1)%time)
+        call Write_Probes_Data(obj_sim_param%iter_general, simulation%domain(1)%time, simulation%domain(1))
 
       ! Collective, so every rank calls it -- not inside the root guard below.
       if (mod(simulation%domain(level)%iter, obj_io%shell_diter) == 0d0) &

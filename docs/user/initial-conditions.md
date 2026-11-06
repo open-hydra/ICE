@@ -100,9 +100,12 @@ the vapour molar mass and the vapour specific heat; ATLAS writes the four from t
 material's liquid/vapour pair. An optional `Emissivity` column gives the material's
 emissivity as a function of its temperature, read for every material: a column of zeros is
 absent, one zero on some rows only or not positive is refused, rows above 1 are cut to 1
-with a warning, and a non-zero `emissivity` beside it stops the run. `Sigma`, `Viscosity`
-and `Conductivity` columns, the surface tension, the viscosity and the liquid conductivity
-IGLOO reads, are recognised and not used. Other names are ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least
+with a warning, and a non-zero `emissivity` beside it stops the run. Optional `Conductivity`
+(W/(m K)) and `Viscosity` (Pa s) columns give the liquid conductivity and viscosity of a material that runs
+`liquid-conduction = P2T`, in place of its `k-liq` and `mu-liq` tokens: a column of zeros is absent, one zero on
+some rows only or not positive is refused, as is a non-zero token beside it; on any other material they are
+reported as not used. A `Sigma` column, the surface tension IGLOO reads, is recognised and not used. Other names are
+ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least
 two of them. Between the nodes the density and $c_p$ are linear in $T$, and outside
 $[T_{min}, T_{max}]$ they keep the end values. When $c_p$ varies, the particle energy is
 the enthalpy column itself, less its value extrapolated to 0 K, so its datum does not

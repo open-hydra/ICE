@@ -134,6 +134,10 @@ module ICE_Config_Types_m
     integer  :: intfSelect = 0 ! Interface treatment as the Lib_Evaporation selector
     character(len=llen) :: blowing       ! Stefan-blowing correction of the Nusselt heat
     integer  :: blowSelect = 0 ! Blowing correction as the Lib_Evaporation selector
+    character(len=llen) :: liquid_conduction ! Conduction inside the drop: 'ITC' or 'P2T'
+    integer  :: liqSelect = 0  ! Liquid conduction as the Lib_Evaporation selector
+    character(len=llen) :: boiling       ! Surface above the boiling temperature: 'clamp' or 'ZGR'
+    integer  :: boilSelect = 0 ! Boiling branch as the Lib_Evaporation selector
     ! Per-family (only model type differs across families)
     character(len=llen), allocatable :: model(:)
   end type time_scheme_t
@@ -217,8 +221,8 @@ module ICE_Config_Types_m
     character(len=llen) :: description
     character(len=64)   :: name = 'A'   ! Material name, from the phase file
     ! Evaporation model and interface of this material: the [ICE-Physics] default or its tokens
-    character(len=16)   :: evapWord = 'none', intfWord = 'VLE'
-    integer             :: evapSelect = 0, intfSelect = 0
+    character(len=16)   :: evapWord = 'none', intfWord = 'VLE', liqWord = 'ITC', boilWord = 'clamp'
+    integer             :: evapSelect = 0, intfSelect = 0, liqSelect = 0, boilSelect = 0
     ! USER-DEFINED INPUTS
     real(R8) :: rho_al = 2700._R8    ! Particle density            [kg/m^3]
     real(R8) :: cs_al  = 1598._R8    ! Particle specific heat      [J/(kg K)]
@@ -232,6 +236,7 @@ module ICE_Config_Types_m
     real(R8) :: Tboil  = 2792._R8    ! Boiling temperature at boiling-pressure [K]
     real(R8) :: pBoil  = 101325._R8  ! Pressure at which Tboil is given [Pa]
     real(R8) :: alphaE = 1._R8       ! Evaporation (accommodation) coefficient [-]
+    real(R8) :: kLiq = 0._R8, muLiq = 0._R8 ! P2T's liquid conductivity [W/(m K)] and viscosity [Pa s], from the material line
     ! Solidification, from the phase-file tokens (IGLOO's defaults); T-nuc <= 0 means 0.8 T-melt
     integer  :: solidSelect = 0
     logical  :: solid = .false.
@@ -256,6 +261,9 @@ module ICE_Config_Types_m
     logical                   :: use_mv = .false.  ! the vapour molar mass came from the Mv column
     real(R8), allocatable     :: emiss_tab(:) ! emissivity [-], indexed T_min:T_max
     logical                   :: use_emiss = .false.  ! the radiative exchange takes emiss_tab
+    real(R8), allocatable     :: kl_tab(:)    ! liquid conductivity [W/(m K)], indexed T_min:T_max
+    real(R8), allocatable     :: mul_tab(:)   ! liquid viscosity [Pa s], indexed T_min:T_max
+    logical                   :: use_kl = .false., use_mul = .false.  ! P2T takes kl_tab, mul_tab
     logical                   :: rho_varies = .false., cs_varies = .false.
     character(len=8)          :: h_datum = 'none'  ! 'relative' (Enthalpy) or 'absolute' (Enthalpy_abs)
     real(R8)                  :: h_off = 0._R8     ! h at 0 K along the first table segment [J/kg]
