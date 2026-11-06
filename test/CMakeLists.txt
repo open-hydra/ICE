@@ -109,6 +109,10 @@ ice_add_verification(SolidCooling      N-solid-cooling     "fast;verification;so
 ice_add_verification(SolidAdvection    O-solid-advection   "fast;verification;sources;transport;phase-change")
 set_tests_properties(SolidAdvection PROPERTIES RESOURCE_LOCK O-solid-advection-work)
 
+# The drop's internal heating and the boiling branch: a uniform cloud at rest whose drops conduct (P2T) or boil (ZGR),
+# against ICE's own time scheme on the same ODEs, typed in the driver; the surface temperature through the probe
+ice_add_verification(DropHeating       M-drop-heating      "fast;verification;sources;phase-change")
+
 # Eulerian transport against free advection, with a grid-refinement study
 ice_add_verification(SineAdvection     C-advection-sine    "fast;verification;transport")
 
