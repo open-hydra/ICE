@@ -6,22 +6,31 @@ temperature T, rho_p, n and the surface temperature Ts_p1 of the centre cell. IG
 k 0.026, mu 1.8e-5) and vapour (Lv 2.26e6, Mv 18, cp_v 1900, Le 1), rho_p0 = 1 kg/m^3, n = 1/m0.
 
   M1  P2T without mass transfer (IGLOO's temp-relax-p2t drop: rho 2950, c 1250, d 11.89 um, k-liq 0.026, zeta = 1),
-      T0 300 K in a 600 K gas: Ts = (5 T + T_g)/6 and T - T_g = (T0 - T_g)(1 - z + z^2/2)^k, z = h/tau, tau = 1.2 tau_ITC.
+      T0 300 K in a 600 K gas, 15 ms: Ts = (5 T + T_g)/6 and T - T_g = (T0 - T_g)(1 - z + z^2/2)^k, z = h/tau,
+      tau = 1.2 tau_ITC.
   M2  ZGR, the adiabatic flash (IGLOO's boiling-zgr-flash drop: water, d 50 um, T0 640.002 K, boiling-temperature
       551.7783324 K, T_B(206 640 Pa) = 600 K = T_g): Ts = T_B, T > T_B on every row, and the flash identity
       m (Lv - c (T - T_B)) = m0 (Lv - c (T0 - T_B)) (the heat-fed mass is 3.7e-11 of m0).
   M3  ZGR, heat-fed (IGLOO's boiling-zgr-hot drop: T0 490.0002 K, boiling-temperature 422.3191381, T_B 450 K).
   M4  P2T with mass transfer (water, d 50 um, k-liq 0.6, CEM, Y_inf 0) from 300 K in an 800 K gas: the wet bulb.
-  M5  IGLOO's boiling-zgr-switch drop (d 20 um, T0 640.002 K, the flash gas), run 5 ms past the step whose mean
-      temperature falls below T_B: Ts = T_B above it and Ts = T below, T and m decreasing below, no invalid state.
+  M5  IGLOO's boiling-zgr-switch drop (d 20 um, T0 640.002 K, the flash gas), 75 ms: the mean temperature falls below
+      T_B near 61 ms and reaches the wet bulb; Ts = T_B above T_B and Ts = T below, m decreasing and T not increasing
+      below, no invalid state.
 
 The oracle is ICE's own time scheme on the same ODEs, typed here (a discrete twin): RK2 (Heun) in (rho_p, rho_p e)
 with n fixed, the sources at Re 0 from IGLOO's equations (the P2T surface balance, CEM, ZGR with the 1/3-rule film,
 alpha_s and the heat-fed rate), each root found here by bisection to 4 eps; Ts at each row's state, as the probe writes it. Gates:
 on every row T and Ts within 1e-9 of the leg's gap (T0 - T_g) of the twin, m/m0 within 1e-10 (M5: 1e-5 of the gap
 after the switch, whose step multiplies the difference by about 1e4). The premise, dt = dt-max on every step (every
-row's time a multiple of h), is checked first. The twin's end values beside IGLOO's printed outlet values are shown,
-not asserted.
+row's time a multiple of h), is checked first.
+
+The ODEs themselves are checked against IGLOO's trajectory rows of the same drops (its cases temp-relax-p2t,
+boiling-zgr-flash, boiling-zgr-hot, boiling-zgr-switch at t = x/u_g; M4 has no IGLOO case): ICE's value at that time
+(the twin carries ICE's nearest row to it) within IGLOO's own row tolerance against its oracle (the F12.6/E13.6 prints
+and its integrator) plus ICE's time-step error, 2 |twin(h) - twin(h/2)| + h |dX/dt| times the steps of alpha_s at 5
+and 25 K (measured Richardson ratios 4.0 on M1, 0.67 on M2 where a step of alpha_s is crossed, 22 on M3, 2.3 on M5
+past the switch), plus |ICE - twin| at the row. A constant mistyped in this driver, which ICE's input and the twin
+share, passes the twin and fails here.
 """
 import math
 import sys
@@ -39,6 +48,18 @@ LV, MV, CPV, LE = 2.26e6, 18.0, 1900.0, 1.0
 NU = 2.0
 XSCAP = 1.0e-12
 EPS4 = 4.0 * sys.float_info.epsilon
+
+# IGLOO's trajectory rows (25 identical parcels): leg -> [(case, u_g, x, T, m, Ts, (T, m) of the row 0.0025 m upstream,
+# (a, b) of its T tolerance a + b |dT/dx|)]
+IGLOO_DX = 0.0025
+IGLOO_ROWS = {
+    'M1': [('temp-relax-p2t', 10.0, 0.15, 599.830919, None, 599.859099, (599.808466, None), (1.01e-6, 1e-6))],
+    'M2': [('boiling-zgr-flash', 10.0, 0.15, 604.575815, 0.585515e-10, None, (604.615216, 0.585559e-10), (1.5e-6, 5e-7))],
+    'M3': [('boiling-zgr-hot', 10.0, 0.15, 454.841467, 0.519859e-10, None, (454.875281, 0.520986e-10), (1.5e-6, 5e-7))],
+    'M5': [('boiling-zgr-switch', 1.0, 0.06, 600.030155, 0.371575e-11, None, (600.091038, 0.371617e-11), (1.5e-6, 5e-7)),
+           ('boiling-zgr-switch', 1.0, 0.075, 463.825379, 0.908282e-12, None, (463.825391, 0.122417e-11), (1.5e-6, 5e-7))],
+}
+IGLOO_TS_TOL = 1e-6
 
 
 # --- the sources at Re 0, typed from IGLOO's equations ---------------------------------------------------------------
@@ -213,7 +234,7 @@ def ini_set(case_dir, section, **keys):
     path.write_text('\n'.join(lines) + '\n')
 
 
-def compare(rep, leg, rows, sol, gap, tol_T=1e-9, tol_m=1e-10, switch=None, tol_after=1e-5):
+def compare(rep, leg, rows, sol, gap, tol_T=1e-9, tol_m=1e-10, switch=None, tol_after=1e-5, extra=()):
     """The premise, uniformity, n, and every row against the twin; returns the twin's rows or None."""
     print('   %s: %d probe rows' % (leg.name, len(rows)))
     off = max(abs(v[0] / leg.h - k) for k, v in rows.items())
@@ -225,8 +246,8 @@ def compare(rep, leg, rows, sol, gap, tol_T=1e-9, tol_m=1e-10, switch=None, tol_
         rep.check(max(col) - min(col) <= 1e-12 * abs(col[0]), '%s end: %s uniform' % (leg.name, label))
     rep.check(all(x == leg.n for x in sol['var'][5]) and all(abs(v[3] / leg.n - 1.0) <= 1e-14 for v in rows.values()),
               '%s: n unchanged (exactly in the solution, to the probe\'s digits in its rows)' % leg.name)
-    leg.want = set(rows)
-    tw = leg.twin(max(rows))
+    leg.want = set(rows) | set(extra)
+    tw = leg.twin(max(leg.want))
     wT = wTs = wm = 0.0
     wT2 = wTs2 = 0.0
     for k, v in rows.items():
@@ -250,16 +271,64 @@ def compare(rep, leg, rows, sol, gap, tol_T=1e-9, tol_m=1e-10, switch=None, tol_
     return tw
 
 
+def igloo_steps(leg):
+    return [int(round(r[2] / r[1] / leg.h)) for r in IGLOO_ROWS[leg.name]]
+
+
+def e13_half_ulp(v):
+    return 0.5e-6 * 10.0 ** (math.floor(math.log10(abs(v))) + 1)
+
+
+def vs_igloo(rep, leg, rows, tw):
+    """ICE at IGLOO's row times against IGLOO's printed T, m and Ts, within IGLOO's row tolerance plus ICE's step error."""
+    ks = igloo_steps(leg)
+    half = Leg.__new__(Leg)
+    half.__dict__.update(leg.__dict__)
+    half.h, half.want = 0.5 * leg.h, set(2 * k for k in ks)
+    th = half.twin(max(half.want))
+    jump = 0.0
+    if leg.zgr:
+        jump = sum(abs(alpha_s(t * (1.0 - 1e-12)) / alpha_s(t) - 1.0) for t in (5.0, 25.0))
+    for (case, ug, x, Ti, mi, tsi, prev, tolab), k in zip(IGLOO_ROWS[leg.name], ks):
+        kr = min(rows, key=lambda j: abs(j - k))
+        T0, ts0, r0 = tw[kr]
+        T1, ts1, r1 = tw[k]
+        T2, ts2, r2 = th[2 * k]
+        rT, rts, rm = rows[kr][1] - T0, rows[kr][4] - ts0, (rows[kr][2] - r0) / leg.n
+        dTdx = abs(Ti - prev[0]) / IGLOO_DX
+        tolT = tolab[0] + tolab[1] * dTdx + 2.0 * abs(T2 - T1) + leg.h * jump * dTdx * ug + abs(rT)
+        eT = abs(T1 + rT - Ti)
+        lab = '%s vs IGLOO %s at t = %g s' % (leg.name, case, x / ug)
+        print('   %s (step %d from row %d): T %.6f K, m %.7e kg, Ts %.6f K' % (lab, k, kr, T1 + rT, (r1 + rm * leg.n) / leg.n,
+                                                                          ts1 + rts))
+        rep.check(eT <= tolT, '%s: T within %.2e K of %.6f (off %.2e, %.2f of it)' % (lab, tolT, Ti, eT, eT / tolT))
+        if mi is not None:
+            m1 = r1 / leg.n + rm
+            dmdx = abs(mi - prev[1]) / IGLOO_DX
+            tolm = e13_half_ulp(mi) + 5e-7 * dmdx + 1e-8 * mi + 2.0 * abs(r2 - r1) / leg.n \
+                + leg.h * jump * dmdx * ug + abs(rm)
+            em = abs(m1 - mi)
+            rep.check(em <= tolm, '%s: m within %.2e kg of %.6e (off %.2e, %.2f of it; the E13.6 half-ULP %.0e)'
+                      % (lab, tolm, mi, em, em / tolm, e13_half_ulp(mi)))
+        if tsi is not None:
+            tolts = IGLOO_TS_TOL + 2.0 * abs(ts2 - ts1) + abs(rts)
+            ets = abs(ts1 + rts - tsi)
+            rep.check(ets <= tolts, '%s: Ts within %.2e K of %.6f (off %.2e, %.2f of it)'
+                      % (lab, tolts, tsi, ets, ets / tolts))
+
+
 def main():
     rep = Report('M. Drop heating and boiling')
     flash = dict(rho_l=958.0, c=4186.0, Tg=600.0, model='CEM', yinf=0.0, zgr=True, physics={'evaporation': 'CEM', 'boiling': 'ZGR'},
                  tokens='')
 
     # M1: P2T without mass transfer
-    leg = Leg('M1', 2950.0, 1250.0, 11.89e-6, 300.0, 600.0, 'none', 1.0, 373.15, p2t=0.026, steps=1000, every=10,
+    leg = Leg('M1', 2950.0, 1250.0, 11.89e-6, 300.0, 600.0, 'none', 1.0, 373.15, p2t=0.026, steps=1500, every=10,
               physics={'evaporation': 'd2-law'}, tokens='liquid-conduction=P2T k-liq=0.026 mu-liq=1e-3')
     rows, sol = leg.run(rep, leg.steps)
-    if rows is not None and compare(rep, leg, rows, sol, 300.0) is not None:
+    tw = None if rows is None else compare(rep, leg, rows, sol, 300.0, extra=igloo_steps(leg))
+    if tw is not None:
+        vs_igloo(rep, leg, rows, tw)
         d = 2.0 * (0.75 / (leg.n * math.pi * leg.rho_l)) ** (1.0 / 3.0)
         tau = leg.m0 * leg.c * 6.0 / (5.0 * math.pi * d * K_G * NU)
         z = leg.h / tau
@@ -272,11 +341,13 @@ def main():
     # M2: ZGR, the adiabatic flash
     leg = Leg('M2', d0=50e-6, T0=640.002, tboil=551.7783324, h=1e-6, steps=15000, every=500, **flash)
     rows, sol = leg.run(rep, leg.steps)
-    if rows is not None and compare(rep, leg, rows, sol, 40.002) is not None:
+    tw = None if rows is None else compare(rep, leg, rows, sol, 40.002, extra=igloo_steps(leg))
+    if tw is not None:
+        vs_igloo(rep, leg, rows, tw)
         inv0 = leg.m0 * (LV - leg.c * (leg.T0 - leg.TB))
         wid = max(abs(v[2] * leg.m0 * (LV - leg.c * (v[1] - leg.TB)) / inv0 - 1.0) for v in rows.values())
         wtb = max(abs(v[4] / leg.TB - 1.0) for v in rows.values())
-        print('   M2: T_B %.9f K, the twin with the clamp ends at %.6f K (IGLOO: 604.58 K, the clamp 468.07 K)'
+        print('   M2: T_B %.9f K, the twin with the clamp ends at %.6f K (IGLOO\'s clamp 468.07 K)'
               % (leg.TB, clamp_end(leg)))
         rep.check(wid <= 1e-10, 'M2: the flash identity to 1e-10 (worst %.2e)' % wid)
         rep.check(wtb <= 1e-12 and all(v[1] > leg.TB for v in rows.values()),
@@ -285,10 +356,12 @@ def main():
     # M3: ZGR, heat-fed
     leg = Leg('M3', d0=50e-6, T0=490.0002, tboil=422.3191381, h=1e-6, steps=15000, every=500, **flash)
     rows, sol = leg.run(rep, leg.steps)
-    if rows is not None and compare(rep, leg, rows, sol, 40.0002) is not None:
+    tw = None if rows is None else compare(rep, leg, rows, sol, 40.0002, extra=igloo_steps(leg))
+    if tw is not None:
+        vs_igloo(rep, leg, rows, tw)
         wtb = max(abs(v[4] / leg.TB - 1.0) for v in rows.values())
-        print('   M3: T_B %.9f K, m/m0 %.7f, the twin with the clamp ends at %.6f K (IGLOO: 454.84 K, m/m0 0.829109, '
-              'the clamp 381.46 K)' % (leg.TB, rows[max(rows)][2], clamp_end(leg)))
+        print('   M3: T_B %.9f K, m/m0 %.7f, the twin with the clamp ends at %.6f K (IGLOO\'s clamp 381.46 K)'
+              % (leg.TB, rows[max(rows)][2], clamp_end(leg)))
         rep.check(wtb <= 1e-12 and all(v[1] > leg.TB for v in rows.values()),
                   'M3: Ts = T_B and T > T_B on every row (worst %.2e)' % wtb)
 
@@ -300,7 +373,7 @@ def main():
         compare(rep, leg, rows, sol, 500.0)
 
     # M5: the switch below T_B
-    leg = Leg('M5', d0=20e-6, T0=640.002, tboil=551.7783324, h=1e-6, steps=66239, every=500, **flash)
+    leg = Leg('M5', d0=20e-6, T0=640.002, tboil=551.7783324, h=1e-6, steps=75000, every=500, **flash)
     rows, sol = leg.run(rep, leg.steps)
     if rows is not None:
         below = sorted(k for k, v in rows.items() if v[1] < leg.TB)
@@ -309,13 +382,14 @@ def main():
                   % (len(above), len(below)))
         if below and above:
             switch = max(above)
-            tw = compare(rep, leg, rows, sol, 40.002, switch=switch)
+            tw = compare(rep, leg, rows, sol, 40.002, switch=switch, extra=igloo_steps(leg))
             if tw is not None:
+                vs_igloo(rep, leg, rows, tw)
                 ok_ts = all(abs(rows[k][4] / leg.TB - 1.0) <= 1e-12 for k in above) and \
                     all(rows[k][4] == rows[k][1] for k in below)
                 rep.check(ok_ts, 'M5: Ts = T_B (1e-12) above T_B, Ts = T below')
-                dec = all(rows[b][1] < rows[a][1] and rows[b][2] < rows[a][2] for a, b in zip(below, below[1:]))
-                rep.check(dec, 'M5: T and m decreasing below T_B')
+                dec = all(rows[b][1] <= rows[a][1] and rows[b][2] < rows[a][2] for a, b in zip(below, below[1:]))
+                rep.check(dec, 'M5: m decreasing and T not increasing below T_B')
     rep.close(WORK)
 
 
