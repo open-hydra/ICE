@@ -7,6 +7,7 @@
 #    validation  -> full case compared against its stored reference solution
 #    needs-mpi   -> requires an MPI build (USE_MPI=ON); registered only then
 #    tecio       -> requires a TecIO build (USE_TECIO=ON); registered only then
+#    debug       -> requires a DEBUG build (array bounds checked); registered only then
 #
 #  The cases run in their own source directory and leave their output in it,
 #  exactly as when they are run by hand with ./ICE.sh.
@@ -205,6 +206,14 @@ else()
     set(_ICE_TECIO OFF)
 endif()
 set_tests_properties(Refusals PROPERTIES ENVIRONMENT "${_ICE_TEST_ENV};ICE_USE_TECIO=${_ICE_TECIO}")
+
+# A DEBUG build checks every array subscript: five iterations of shipped and generated cases on it, which must
+# exit 0 without a subscript error and show the bounds flag among the compiler options of their banner. Only in a
+# DEBUG configure, on its own binary rather than the source tree's bin/ICE; not in CI.
+if(CMAKE_BUILD_TYPE STREQUAL "DEBUG")
+    ice_add_fast_script(Bounds fast/bounds "debug;implementation")
+    set_tests_properties(Bounds PROPERTIES ENVIRONMENT "${_ICE_TEST_ENV};ICE_BIN=$<TARGET_FILE:${solver}>")
+endif()
 
 # res-threshold relative to the first non-zero density residual: the same stop at loadings
 # 1 and 2^-16, a cloud at rest whose first residual is zero, a run in which nothing moves
