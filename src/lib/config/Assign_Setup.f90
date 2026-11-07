@@ -2,7 +2,7 @@ module ICE_Assign_Setup
   use iso_fortran_env, only: I4 => int32, R8 => real64
   implicit none
   private
-  public :: Assign_Setup, Check_Riemann_Solver
+  public :: Assign_Setup, Check_Riemann_Solver, Check_Euler_Bound
 
 contains
 
@@ -82,6 +82,9 @@ contains
       error stop 1
     end if
 
+    ! --- Forward Euler with MUSCL above the limiter's step bound: a warning, after the refusals ---
+    call Check_Euler_Bound()
+
     ! --- Assign the global exchange models (only consulted when coupled) ---
     if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) then
       call assign_drag(obj_time_scheme%drag, obj_time_scheme%dragSelect)
@@ -149,5 +152,41 @@ contains
     end do
 
   end subroutine Check_Riemann_Solver
+
+
+  !> Forward Euler with a MUSCL reconstruction is TVD for 1-D scalar advection only up to the limiter's step bound
+  !> (ICE_Lib_Limiters, step_bound); cfl bounds the sum of the directional limits (Mod_dt), so the 1-D bound applies to
+  !> it. Above it the run goes on with a warning; with irs = true, which exists to exceed the explicit bound, with an
+  !> info line instead. At set-up and after each re-read of input.ini (time-scheme, cfl and irs take effect; the
+  !> limiter is the one of set-up, an edited space-reconstruction or flux-limiter is not): a line only when they differ
+  !> from the last check.
+  subroutine Check_Euler_Bound()
+    use, intrinsic :: iso_fortran_env, only: output_unit
+    use ICE_Config_Types_m, only: obj_time_scheme, obj_irs
+    use ICE_Lib_Limiters,   only: limiter_name, limiter_bound
+    use ICE_Mod_MPI,        only: mpi_is_root
+    use ICE_Parameters_m,   only: llen
+    implicit none
+    logical,             save :: checked = .false., last_irs = .false.
+    character(len=llen), save :: last_scheme = ''
+    real(R8),            save :: last_cfl = -1._R8
+    character(len=256) :: what
+
+    if (checked .and. trim(obj_time_scheme%solver_type) == trim(last_scheme) .and. &
+        obj_time_scheme%cfl == last_cfl .and. (obj_irs%enabled .eqv. last_irs)) return
+    checked = .true. ; last_scheme = obj_time_scheme%solver_type
+    last_cfl = obj_time_scheme%cfl ; last_irs = obj_irs%enabled
+    if (trim(obj_time_scheme%solver_type) /= 'euler' .or. trim(limiter_name) == 'IORD') return
+    if (.not. (obj_time_scheme%cfl > limiter_bound) .or. .not. mpi_is_root) return
+    write(what, '(A,ES10.3,A,ES10.3)') 'forward Euler with MUSCL (flux-limiter = '//trim(limiter_name)// &
+      ') above its step bound: cfl =', obj_time_scheme%cfl, ' >', limiter_bound
+    if (obj_irs%enabled) then
+      write(*,'(A)') ' [INFO] [ICE-Numerics] '//trim(what)//', the bound without smoothing; irs = true is relied on above it'
+    else
+      write(*,'(A)') ' [WARNING] [ICE-Numerics] '//trim(what)//'; the run goes on and may diverge: lower cfl or use RK2/RK3'
+    end if
+    flush(output_unit)
+
+  end subroutine Check_Euler_Bound
 
 end module ICE_Assign_Setup

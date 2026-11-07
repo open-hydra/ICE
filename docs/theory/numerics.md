@@ -71,13 +71,33 @@ whose $T_\ell$ is negative, gets its physical temperature back.
 
 ### Limiters
 
-Several options are available to compute $\phi$:
+`flux-limiter` selects $\phi$ (first order is `space-reconstruction = first-order`, not a limiter). With
+$r = y/x$, $\phi(x, y) = \psi(r)\,x$: for $\mathbf{P}_L$, $x = s_i$ is the forward and $y = s_{i-1}$ the backward
+slope of cell $i$; for $\mathbf{P}_R$ the same of cell $i+1$.
 
-- minmod
-- Van Albada
-- Van Leer
-- MC
-- Superbee
+| `flux-limiter` | $\psi(r)$ | $\nu_{\max}$ |
+|---|---|---|
+| `minmod` | $\max(0, \min(1, r))$ | 2/3 |
+| `vanalbada` | $(r^2 + r)/(r^2 + 1)$ | $2 - \sqrt{2} \approx 0.586$ |
+| `vanleer` | $(r + \lvert r\rvert)/(1 + \lvert r\rvert)$ | 1/2 |
+| `ospre` | $1.5\,(r^2 + r)/(r^2 + r + 1)$ | 1/2 |
+| `umist` | $\max(0, \min(2r, 0.25 + 0.75r, 0.75 + 0.25r, 2))$ | 1/2 |
+| `osher` | $\max(0, \min(r, 1.5))$ | 4/7 $\approx 0.571$ |
+| `sweby` | $\max(0, \min(1.5r, 1), \min(r, 1.5))$ | 4/7 |
+| `mc` | $\max(0, \min(2r, (1 + r)/2, 2))$ | 1/2 |
+| `koren` | $\max(0, \min(2r, (1 + 2r)/3, 2))$ | 1/2 |
+| `superbee` | $\max(0, \min(2r, 1), \min(r, 2))$ | 1/2 |
+
+$\nu_{\max}$ is the largest `cfl` at which explicit Euler (`time-scheme = euler`) keeps the reconstruction TVD for 1-D
+scalar advection on a uniform mesh: Harten's sufficient condition in incremental form, over every $r$ and both signs
+of the speed, $\nu_{\max} = 1/(1 + A/2 - \psi_{\min}/2)$ for $a > 0$ and $1/(1 + \psi_{\max}/2 - B/2)$ for $a < 0$, with
+$A$ and $B$ the largest and smallest $\psi(r)/r$. It bounds `cfl` because `cfl` bounds the sum of the direction limits
+([time step](time-integration.md#the-time-step)). Van Albada's $\psi$ is not clipped at $r < 0$ (it goes down to
+$(1 - \sqrt{2})/2$), so its bound is below the 0.624 of $r > 0$ alone; OSPRE's is not either (down to $-1/2$ at
+$r = -1/2$), which brings its bound from the 4/7 of $r > 0$ alone to 1/2; $\mathbf{P}_R$ reads Osher's $\psi$ at the ratio of
+cell $i+1$, so $a < 0$ gives 4/7 where $a > 0$ gives 2/3. Above $\nu_{\max}$ the run goes on with
+`[WARNING] [ICE-Numerics] forward Euler with MUSCL ...`, at set-up and at the re-read of `input.ini` that sets it; with
+`irs = true` an `[INFO]` line takes its place. RK2 and RK3 are not checked.
 
 ### Shock detector
 

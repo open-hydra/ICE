@@ -49,7 +49,10 @@ notes, CWI, 2000, sec. 9.3), and the width of the cell rather than its edge, whi
 skewed cell. For the linearised MUSCL scheme with upwind fluxes (the van Leer, van Albada and MC
 slopes, in smooth flow) the rule is stable for $\mathrm{CFL} \le 1$ with RK2 (Heun) and
 $\mathrm{CFL} \le 1.17$ with RK3, $1.256$ with first-order fluxes (von Neumann limits of the
-linearised scheme); explicit Euler is stable with first-order fluxes only, up to 1. Keep a margin
+linearised scheme); explicit Euler is stable with first-order fluxes only, up to 1. With MUSCL its
+limited scheme stays TVD (1-D scalar advection, Harten's sufficient condition) only up to the
+limiter's step bound, 0.5 for van Leer ([Limiters](numerics.md#limiters)): above it ICE writes a
+warning and the run goes on, with `irs = true` an info line instead. Keep a margin
 below these where limiters and shocks act. The rule used to take the smallest of
 $\ell_d/(|\mathbf u\cdot\hat{\mathbf e}_d| + a_d)$ over the three index directions, with $\ell_d$
 the length of the cell edge: the same CFL now gives a step down to one half of that on square 2-D

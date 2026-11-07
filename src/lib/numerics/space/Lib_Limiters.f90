@@ -4,6 +4,10 @@ module ICE_Lib_Limiters
   private
   public :: assign_limiter
 
+  !> The limiter assigned at set-up (its word; 'IORD' for first order) and its forward-Euler step bound (step_bound)
+  character(len=16), public, protected :: limiter_name  = 'IORD'
+  real(R8),          public, protected :: limiter_bound = 1._R8
+
   !> Concrete "limiter" procedure pointing to one of the function realizations
   procedure(limiter_if), pointer, public :: limiter
 
@@ -71,7 +75,36 @@ contains
      error stop 'ICE: unknown flux limiter'
     end select
 
+    limiter_name  = limiter_word
+    limiter_bound = step_bound(limiter_word)
+
   end subroutine assign_limiter
+
+  !> The largest CFL number at which forward Euler keeps the MUSCL reconstruction TVD for 1-D scalar advection:
+  !> Harten's sufficient condition in incremental form, over every slope ratio r (backward over forward slope, as
+  !> Lib_Reconstruction passes them) and both signs of the speed, nu = 1/(1 + A/2 - Pmin/2) for a > 0 and
+  !> 1/(1 + Pmax/2 - B/2) for a < 0, with A, B the largest and smallest phi(r)/r and Pmax, Pmin those of phi(r) of
+  !> the formulas below (plan-bucket/records/pre-existing-defects/d7_limiter_bounds.py). Literal constants, so that
+  !> cfl = 0.5 with van Leer is not above its bound by a rounding. First order: 1 (not checked).
+  pure function step_bound(limiter_word) result(nu)
+    implicit none
+    character(len=*), intent(in) :: limiter_word
+    real(R8) :: nu
+
+    select case (limiter_word)
+    case ('vanleer', 'mc', 'superbee', 'koren', 'umist', 'ospre')
+      nu = 0.5_R8
+    case ('vanalbada')
+      nu = 0.585786437626905_R8       ! 2 - sqrt(2), correctly rounded
+    case ('sweby', 'osher')
+      nu = 0.5714285714285714_R8      ! 4/7
+    case ('minmod')
+      nu = 0.6666666666666666_R8      ! 2/3
+    case default
+      nu = 1._R8                      ! IORD
+    end select
+
+  end function step_bound
 
   !> First order limiter
   pure function limiter_IORD(x,y) result(result)

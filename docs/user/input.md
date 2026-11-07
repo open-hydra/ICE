@@ -199,7 +199,7 @@ which the rule is stable:
 |---|---|
 | `RK2` (Heun) | 1 |
 | `RK3` | 1.17 (1.256 with `first-order` reconstruction) |
-| `euler` | 1 with `first-order` reconstruction (unstable with `MUSCL`) |
+| `euler` | 1 with `first-order` reconstruction (unstable with `MUSCL`; its limited scheme is TVD up to the limiter's step bound, 0.5 for `vanleer`, `mc`, `superbee`, `koren`, `umist`, `ospre`, 0.586 for `vanalbada`, 0.571 for `sweby`, `osher`, 0.667 for `minmod`: a warning above it) |
 
 Keep a margin below them where shocks and limiters act (for example `cfl = 0.8`). The rule
 used to take the smallest of the direction limits, on the length of the cell edge, which let
