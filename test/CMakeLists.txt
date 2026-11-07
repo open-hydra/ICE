@@ -397,6 +397,11 @@ endif()
 # solution, a file whose count started again, a solution older than every row, a row cut short, time rows
 ice_add_unit_test(DropRowsUnit unit/test_drop_rows.f90 "fast;unit;implementation")
 
+# The dispersion cap of near-empty IG/AG cells: P = rho theta_cap at or below rho_empty, a denser cell untouched,
+# the AG tensor scaled by one factor (off-diagonals too), T from the conservative variables, a NaN kept, rho < 0
+# left finite
+ice_add_unit_test(NearEmptyCapUnit unit/test_near_empty_cap.f90 "fast;unit;implementation")
+
 # Rank count must not change the answer either. Needs an MPI build, so it is
 # registered only when there is one.
 if(USE_MPI)

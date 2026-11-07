@@ -95,11 +95,15 @@ $3 \times 10^{-3}$ kg/m³, where the exact solution is empty): 16 between the je
 inlet face, 6 outside the jets above and below the crossing, at $|y| \approx 0.12$. Both tests
 therefore run their 5000 iterations; with the detector, MK reaches the default residual
 threshold at iteration 2493 and AG at iteration 6907. IG's residual falls without it, to
-$4.5 \times 10^{-7}$ at 5000 iterations (between $2 \times 10^{-7}$ and $2 \times 10^{-6}$ over the
+$2.6 \times 10^{-7}$ at 5000 iterations (between $2 \times 10^{-7}$ and $2 \times 10^{-6}$ over the
 last 1000), and its chimera and multi-block versions match it to round-off
 ([Chimera Overset](chimera.md), [Multi-block and MPI](multiblock-mpi.md)). All three runs are
 their own mirror image to round-off, as the problem is (about $y = 0$ for IG and AG, $y = 0.005$ for MK):
-$2 \times 10^{-16}$ for MK, $3 \times 10^{-14}$ for IG and $10^{-13}$ for AG, relative to the peak density.
+$2 \times 10^{-16}$ for MK, $6 \times 10^{-14}$ for IG and $2 \times 10^{-13}$ for AG, relative to the peak density.
+The domain starts empty ($10^{-20}$ kg/m³ at $10^{-20}$ K): the cells no jet reaches keep that content, 4174 MK
+cells and, since the cap of a near-empty cell's dispersion
+([governing equations](../theory/governing-equations.md)), 116 AG cells below 1 K at about $10^{-22}$ kg/m³. AG's
+temperature residual, which counts them, stalls at 0.35; the regression compares density and number density.
 
 The cases are also part of the regression suite (`Doisneau/MK`, `Doisneau/IG`,
 `Doisneau/AG`), which checks the density and number-density fields against a stored reference.

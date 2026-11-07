@@ -30,6 +30,13 @@ liquid); chi is the inflow's between T_nuc and T_m, 1 below, 0 above. It is ICE'
       P = 1e-6 gives c = sqrt(3P/rho_p) = 2.5u and 4u; first order against the driver's own Rusanov model.
   O4  a solid injected at 1500 K into a 3000 K gas, h-fus = 4e5: solid, melting at T_m, liquid - the melting law;
       first order, nx = 120 and 240, MK/Saurel and IG/Rusanov, from an empty domain.
+  O4u O4's injection, without solidification, into a domain at 1e-20 kg/m^3 whose pseudo-pressure is scaled with
+      its content (as every leg here) or is the inlet's 1e-6 - a dispersion P/rho of 1e14 m^2/s^2 and a signal speed
+      of 1.7e7 m/s, until the cap of a near-empty cell's dispersion at 1 m^2/s^2: IG at nx = 120 and 240, AG at 120,
+      first order, 40 nx + 1 iterations each. Both runs fill every cell and agree per cell in rho and T to 2e-12, ten
+      times the largest twin floor of the scaled runs (20 nx against 40 nx + 1: IG 5.2e-15 and 3.9e-16, AG 1.8e-13);
+      measured 2.1e-14, 6.9e-15 and 1.3e-13. Without the cap the unscaled IG run at nx = 120 ends at rho 6.4e247 and
+      the other two stop on an invalid state.
   O5  a steady run with the gas at 300 K, then a restart in place with the gas at 1000 K: the front moves back to
       the 1000 K run's cell (no lock), per cell equal to a fresh 1000 K run.
   O6  O2's stream at nx = 120 on two mesh blocks joined by a connection after cell 40 (on the freezing plateau, so
@@ -47,6 +54,7 @@ period 2 or 3 shows - in T, f and chi, cell by cell, to 1e-12 (else it is not a 
 import importlib.util
 import math
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -64,6 +72,7 @@ WORK = HERE / 'work'
 LX, U_IN, T_IN, GP = 0.15, 10.0, 2400.0, 29.5
 RHO_IN = GP / U_IN
 RHO_E = 1.0e-20                            # the content of an empty domain
+TOL_O4U = 2.0e-12                          # O4u: 10 x the scaled runs' largest twin floor (AG, 1.8e-13)
 
 
 # ---------------------------------------------------------------------------
@@ -166,13 +175,14 @@ def closed_form(x, Tg=600.0, T0=T_IN, h=N.HF):
 # ---------------------------------------------------------------------------
 
 def stream(label, nx, Tg, phase=N.PHASE, closure='MK', order='first-order', T0=T_IN, ic=None, lx=LX, u=U_IN,
-           gp=GP, iters=None, cfl=0.8, rk='RK2'):
-    """The steady stream; ic = (rho, T) of the initial content (the inlet state by default)."""
+           gp=GP, iters=None, cfl=0.8, rk='RK2', pic=None):
+    """The steady stream; ic = (rho, T) of the initial content (the inlet state by default), pic its pseudo-pressure
+    (IG, AG; scaled with the content by default)."""
     case = Case(WORK / label.lower(), nx=nx, Lx=lx)
     rho0, Tic = ic if ic is not None else (gp / u, T0)
     base = N.LAYOUT[closure]
     # the pseudo-pressure scales with the content, so an empty IC keeps the inflow's small signal speed
-    Pic = N.PSEUDO * rho0 / (gp / u)
+    Pic = pic if pic is not None else N.PSEUDO * rho0 / (gp / u)
     fields = [rho0, u, 0.0, 0.0] + dict(IG=[Pic], AG=[Pic, 0.0, 0.0, Pic, 0.0, Pic]).get(closure, []) \
         + [Tic, rho0 / (N.RHO_M * 4.0 / 3.0 * math.pi * N.RP ** 3)]
     case.write_ic(['%s1' % s for s in base], fields)
@@ -409,6 +419,46 @@ def o4(rep):
             rep.check(all(c[0] <= N.TM for c in cs if c[1] > 0.0), '%s: no cell with f > 0 above T_m' % label)
 
 
+def finite_run(rep, label, case):
+    """N.attempt, with an output the reader cannot hold recorded as a FAIL: a NaN or an infinity (the reader drops
+    the token and shifts the columns after it) or a value beyond 1e99 (written without its E)."""
+    try:
+        sol = N.attempt(rep, label, case)
+    except ValueError as exc:
+        rep.check(False, '%s: the output cannot be read (%s)' % (label, exc))
+        return None
+    if sol is None:
+        return None
+    body = (case.dir / 'OUTPUT/part-field.tec').read_text().split('ZONE', 1)[1].split('\n', 1)[1]
+    if re.search(r'nan|inf', body, re.IGNORECASE) or len(sol['var']) != len(sol['names']):
+        rep.check(False, '%s: the output holds a value that is not finite' % label)
+        return None
+    return sol
+
+
+def o4u(rep):
+    """The empty-domain fill from a scaled and from an unscaled pseudo-pressure: the same steady state."""
+    for closure, nx in (('IG', 120), ('IG', 240), ('AG', 120)):
+        label = 'O4u-%s-%d' % (closure, nx)
+        print('   %s a liquid at 1500 K into a 3000 K gas from an empty domain, the IC pseudo-pressure scaled with the '
+              'content and at the inlet\'s 1e-6' % label)
+        sols = {}
+        for tag, pic in (('scaled', None), ('unscaled', N.PSEUDO)):
+            case = stream('%s-%s' % (label, tag), nx, 3000.0, phase='A 1', closure=closure, T0=1500.0,
+                          ic=(RHO_E, 1500.0), iters=40 * nx + 1, pic=pic)
+            sols[tag] = finite_run(rep, '%s %s' % (label, tag), case)
+        if None in sols.values():
+            continue
+        s, u = sols['scaled'], sols['unscaled']
+        r, t = s['names'].index('rho_p1'), s['names'].index('T_p1')
+        low = min(min(sol['var'][r]) for sol in (s, u))
+        dr = max(abs(a - b) / b for a, b in zip(u['var'][r], s['var'][r]))
+        dT = max(abs(a - b) / b for a, b in zip(u['var'][t], s['var'][t]))
+        print('       lowest density %.3e, per-cell rho %.2e and T %.2e relative' % (low, dr, dT))
+        rep.check(low > 1.0e-6 and max(dr, dT) <= TOL_O4U,
+                  '%s: both runs fill every cell (rho > 1e-6) and agree in rho and T to %.0e' % (label, TOL_O4U))
+
+
 def o5(rep):
     print('   O5  gas at 300 K, then a restart in place at 1000 K (cfl 0.4)')
     for Tg in (300.0, 1000.0):
@@ -483,7 +533,7 @@ def main():
     fronts = o2(rep) if N.selected('O2') or N.selected('O3') else {}
     if N.selected('O3'):
         o3(rep, fronts.get(240))
-    for leg, fn in (('O3b', o3b), ('O4', o4), ('O5', o5), ('O6', o6)):
+    for leg, fn in (('O3b', o3b), ('O4', o4), ('O4u', o4u), ('O5', o5), ('O6', o6)):
         if N.selected(leg):
             fn(rep)
     rep.close(WORK)

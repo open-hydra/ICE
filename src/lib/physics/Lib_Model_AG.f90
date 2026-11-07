@@ -75,6 +75,12 @@ contains
 
     prim(12) = cons(12)
 
+    ! A near-empty cell: the tensor scaled by one factor to trace <= 3 rho theta_cap (positive definite kept for rho > 0).
+    ! With rho <= 0 or a trace <= 0 the test may still fire with a meaningless factor (0, negative, Inf, NaN); the cell
+    ! then has rho < eps, and the floor below overwrites all of prim(5:10), so no such value leaks
+    if (prim(1) <= rho_empty .and. prim(5) + prim(8) + prim(10) > 3._R8*prim(1)*theta_cap) &
+      prim(5:10) = prim(5:10) * (3._R8*prim(1)*theta_cap / (prim(5) + prim(8) + prim(10)))
+
     if (prim(1)<eps) then
       prim = eps
       prim(6) = 0._R8

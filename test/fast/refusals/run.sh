@@ -462,6 +462,11 @@ accept NoExchange/MK "emissivity: 1 beside a table without the column" \
 outputs same "emissivity: a column of 1" "emissivity: 1 beside a table without the column"
 refuse NoExchange/MK "emissivity: negative" "sed -i 's/^emissivity .*/emissivity = -0.5/' input.ini" \
        "emissivity must be >= 0"
+# A step far above the stable one (cfl 1.5, dt-max 1e-3; the default dt-max 1e-4 would bind) leaves negative densities:
+# floored by the conversion, the first one written, the count at the shell cadence and at the end; the run goes on
+accept Doisneau/MK "negative density after the update: warned, run goes on" \
+       "sed -i 's/^cfl .*/cfl = 1.5/; s/^iter-threshold .*/iter-threshold = 20/' input.ini && sed -i '/^\[ICE-Numerics\]/a dt-max = 1e-3' input.ini" \
+       "negative density after the update, floored;negative densities floored after an update so far;negative densities floored after an update over the run"
 refuse Refuse/MK   "divergence caught after the update" ":" \
        "invalid state after the update"
 

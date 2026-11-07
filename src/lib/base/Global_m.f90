@@ -8,6 +8,7 @@ module ICE_Global_m
   integer :: gc=2     ! Ghost cells per face
   integer :: nres=5   ! Number of tracked residuals (rho, u, v, w, T)
   real(R8), parameter :: rho_empty = 1e-6_R8   ! Bulk density below which a cell counts as empty
+  real(R8), parameter :: theta_cap = 1._R8     ! Largest dispersion P/rho [m2/s2] of a cell at or below rho_empty (IG, AG)
   integer :: tiles_per_thread = 4   ! Flux tiles per thread (ICE_TILES_PER_THREAD): the dynamic schedule of the tile loops balances unequal planes with them
 
   ! Condensed-phase topology (set by Assign_Setup after reading input.ini)
