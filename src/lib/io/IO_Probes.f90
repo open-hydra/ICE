@@ -50,7 +50,7 @@ contains
     implicit none
     type(ICE_domain_type), intent(in) :: domain
     integer             :: i, ii, error
-    character(len=clen) :: string(16)
+    character(len=clen), allocatable :: string(:)
 
     if (.not. allocated(obj_io_probes)) return
     nprobes = size(obj_io_probes)
@@ -64,6 +64,10 @@ contains
       probe(i)%name = obj_io_probes(i)%file
       probe(i)%file = 'OUTPUT/'//trim(probe(i)%name)//'.txt'
 
+      ! As many names as the key holds: parse (ORION) fills its array with no
+      ! check of its size.
+      if (allocated(string)) deallocate(string)
+      allocate(string(max(1, Count_Words(obj_io_probes(i)%varnames))))
       string = ''
       probe(i)%nvar = 0
       call parse(obj_io_probes(i)%varnames, ' ', string)
@@ -134,16 +138,19 @@ contains
 
   !> Each variable name to its family and its column of prim. A family p
   !> answers to the names of the solution files, rho_p<p>, u_p<p>, v_p<p>,
-  !> w_p<p>, T_p<p>, n_p<p> (and f_p<p>, chi_p<p> for a solidifying family),
-  !> to Ts_p<p>, the surface temperature of its drops (no column: computed when
-  !> a row is written), and to the same names without the p (rho_<p>, ...). Any
-  !> other name stops the run.
+  !> w_p<p>, T_p<p>, n_p<p>, P_p<p> (IG), P11_p<p> P12_p<p> P13_p<p> P22_p<p>
+  !> P23_p<p> P33_p<p> (AG), f_p<p>, chi_p<p> (solidifying), to Ts_p<p>, the
+  !> surface temperature of its drops (no column: computed when a row is
+  !> written), and to the same names without the p (rho_<p>, ...). Any other
+  !> name stops the run.
   subroutine Resolve_Variables(probe)
     use IR_Precision, only: str
     use ICE_Global_m, only: ngroups, ncond, nbase, solid_of
+    use ICE_Config_Types_m, only: obj_time_scheme
     implicit none
     type(obj_probe),  intent(inout) :: probe
     character(len=3), parameter :: base(8) = ['rho', 'u  ', 'v  ', 'w  ', 'T  ', 'n  ', 'f  ', 'chi']
+    character(len=3), parameter :: tensor(6) = ['P11', 'P12', 'P13', 'P22', 'P23', 'P33']   ! prim 5..10 (AG)
     integer :: v, p, q, col(8)
 
     allocate(probe%family(probe%nvar), probe%column(probe%nvar), probe%is_ts(probe%nvar), probe%ts(probe%nvar))
@@ -162,6 +169,21 @@ contains
             probe%column(v) = col(q)
           end if
         end do
+        select case (trim(obj_time_scheme%model(p)))      ! the pressures, as IO_Solution names them (prim 5..)
+        case ('IG')
+          if (probe%names(v) == 'P_p'//trim(str(.true.,p)) .or. probe%names(v) == 'P_'//trim(str(.true.,p))) then
+            probe%family(v) = p
+            probe%column(v) = 5
+          end if
+        case ('AG')
+          do q = 1, 6
+            if (probe%names(v) == tensor(q)//'_p'//trim(str(.true.,p)) .or. &
+                probe%names(v) == tensor(q)//'_'//trim(str(.true.,p))) then
+              probe%family(v) = p
+              probe%column(v) = 4 + q
+            end if
+          end do
+        end select
         if (probe%names(v) == 'Ts_p'//trim(str(.true.,p)) .or. probe%names(v) == 'Ts_'//trim(str(.true.,p))) then
           probe%family(v) = p
           probe%is_ts(v)  = .true.
@@ -170,13 +192,36 @@ contains
       if (probe%family(v) == 0) then
         write(*,'(A)') ' [ERROR] [ICE::Setup_Probes] probe '//trim(probe%name)//': unknown variable "'// &
           trim(probe%names(v))//'"'
-        write(*,'(A,I0)') '   accepted: rho_p<n> u_p<n> v_p<n> w_p<n> T_p<n> n_p<n> Ts_p<n> (f_p<n> chi_p<n> for a '// &
-          'solidifying family), or the same without the p, for a family n = 1..', ngroups
+        write(*,'(A,I0)') '   accepted: rho_p<n> u_p<n> v_p<n> w_p<n> T_p<n> n_p<n> Ts_p<n>, P_p<n> for an IG family, '// &
+          'P11_p<n> P12_p<n> P13_p<n> P22_p<n> P23_p<n> P33_p<n> for an AG family, f_p<n> chi_p<n> for a '// &
+          'solidifying family, or the same without the p, for a family n = 1..', ngroups
         error stop 1
       end if
     end do
 
   end subroutine Resolve_Variables
+
+
+  !> The words of a list separated by blanks or tabs, at least as many as
+  !> parse (ORION) makes of it: parse joins words (over a deleted control
+  !> character, a blank after a backslash), never splits one.
+  pure integer function Count_Words(text) result(n)
+    implicit none
+    character(len=*), intent(in) :: text
+    integer :: c
+    logical :: inword
+
+    n = 0
+    inword = .false.
+    do c = 1, len_trim(text)
+      if (text(c:c) == ' ' .or. text(c:c) == achar(9)) then
+        inword = .false.
+      else if (.not. inword) then
+        n = n + 1
+        inword = .true.
+      end if
+    end do
+  end function Count_Words
 
 
   !> The cell of a probe given by position: the one whose centre, the mean of

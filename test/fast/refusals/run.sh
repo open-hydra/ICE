@@ -13,10 +13,12 @@
 #  molar mass of 0 with no column to replace it, an evaporating material without
 #  one of its six vapour quantities, a key given together with its
 #  alias, a phase file whose materials or model tokens ICE cannot honour, a
-#  mesh with flat cells);
+#  mesh with flat cells, a probe variable no solution file names);
 #  the last one diverges at run time (a NaN source in one cell) and must be
 #  caught after the update. A solver that reports success on
-#  any of these would let a harness read a broken run as a pass. Twenty-two rows go the
+#  any of these would let a harness read a broken run as a pass. There are
+#  sixty-seven refuse rows as written (the loop over the six vapour keys counted
+#  once). Twenty-one accept rows go the
 #  other way: an INI value equal to the table's must be accepted, the boiling
 #  temperature must be read under either of its names, the vapour columns must be
 #  read with the vapour keys left out or set to 0, the six vapour keys must be
@@ -102,6 +104,14 @@ refuse Doisneau/MK "inlet 401 without a gas"     "sed -i 's/ 402\$/ 401/' INPUT/
        "takes its speed from the gas"
 refuse Doisneau/MK "inlet 403 without a gas"     "sed -i 's/ 402\$/ 403/' INPUT/part-bc.txt" \
        "takes its speed from the gas"
+# A probe variable no solution file names: stopped at set-up, the names accepted listed with the pressures per closure
+# (an MK family has no P)
+refuse Doisneau/MK "probes: an unknown variable" \
+       "sed -i 's/^iter-threshold .*/iter-threshold = 20/' input.ini && printf '\n[ICE-Probes]\nprobe1 = pr\n\n[pr]\nvariables = rho_p1 bogus\nindex-position = 1 1 1 1\nditer = 1\n' >> input.ini" \
+       'unknown variable "bogus";P_p<n> for an IG family;P11_p<n> P12_p<n> P13_p<n> P22_p<n> P23_p<n> P33_p<n> for an AG family'
+refuse Doisneau/MK "probes: P_p1 on an MK family" \
+       "sed -i 's/^iter-threshold .*/iter-threshold = 20/' input.ini && printf '\n[ICE-Probes]\nprobe1 = pr\n\n[pr]\nvariables = P_p1\nindex-position = 1 1 1 1\nditer = 1\n' >> input.ini" \
+       'unknown variable "P_p1"'
 # Binary Tecplot in a build without TecIO (CTest passes the build's USE_TECIO as ICE_USE_TECIO): refused at set-up, not
 # at the first write of a solution (here after 20 iterations) or at the read of a part-ic.szplt. A TecIO build reads and
 # writes it (RestartExactTecIO), so these rows run only without one.
