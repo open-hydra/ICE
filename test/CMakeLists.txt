@@ -7,6 +7,7 @@
 #    validation  -> full case compared against its stored reference solution
 #    needs-mpi   -> requires an MPI build (USE_MPI=ON); registered only then
 #    tecio       -> requires a TecIO build (USE_TECIO=ON); registered only then
+#    debug       -> requires a DEBUG build (array bounds checked); registered only then
 #
 #  The cases run in their own source directory and leave their output in it,
 #  exactly as when they are run by hand with ./ICE.sh.
@@ -206,6 +207,14 @@ else()
 endif()
 set_tests_properties(Refusals PROPERTIES ENVIRONMENT "${_ICE_TEST_ENV};ICE_USE_TECIO=${_ICE_TECIO}")
 
+# A DEBUG build checks every array subscript: five iterations of shipped and generated cases on it, which must
+# exit 0 without a subscript error and show the bounds flag among the compiler options of their banner. Only in a
+# DEBUG configure, on its own binary rather than the source tree's bin/ICE; not in CI.
+if(CMAKE_BUILD_TYPE STREQUAL "DEBUG")
+    ice_add_fast_script(Bounds fast/bounds "debug;implementation")
+    set_tests_properties(Bounds PROPERTIES ENVIRONMENT "${_ICE_TEST_ENV};ICE_BIN=$<TARGET_FILE:${solver}>")
+endif()
+
 # res-threshold relative to the first non-zero density residual: the same stop at loadings
 # 1 and 2^-16, a cloud at rest whose first residual is zero, a run in which nothing moves
 ice_add_fast_script(ResThreshold fast/res-threshold "fast;implementation")
@@ -247,7 +256,8 @@ if(USE_TECIO)
 endif()
 
 # A probe given by position takes the cell whose centre is nearest, in the block that holds it: against a probe by
-# index in that cell and against the solution, on the 1-D stream and on a two-block ring
+# index in that cell and against the solution, on the 1-D stream and on a two-block ring; a probe takes the names of
+# the solution files, the IG and AG pressures in both spellings, 24 names in one key
 ice_add_fast_script(ProbePosition fast/probe-position "fast;implementation")
 
 # The 3-D gates: a generated 24x16x12 box in 3x2x2 blocks with an MK, an IG and
@@ -412,9 +422,15 @@ if(USE_MPI)
         ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-split4;ICE_FAST_SD=Jameson;ICE_FAST_ITER=400"
         RESOURCE_LOCK fast-mpi-equiv-work)
 
+    # The chimera case puts its two blocks on two ranks. The jets first carry a density above the
+    # empty-cell one (1e-6) into block 1's donors of block 2's ghosts (the columns x = 0.375..0.395)
+    # at iteration 266, and into block 2's donors of block 1's ghosts (the column x = 0.5) at
+    # iteration 334, both first at y = 0 (measured 2026-11-06): at the default 200 every chimera
+    # halo the ranks exchange is empty. So this leg runs 500, when those donors hold 6e-2 and
+    # 2.9e-3 at y = 0.
     ice_add_fast_script(MPIEquivChimera fast/mpi-equiv "fast;implementation;chimera;needs-mpi")
     set_tests_properties(MPIEquivChimera PROPERTIES
-        ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-chimera"
+        ENVIRONMENT "${_ICE_TEST_ENV};ICE_FAST_CASE=Doisneau/IG-chimera;ICE_FAST_ITER=500"
         RESOURCE_LOCK fast-mpi-equiv-work)
 
     # The same multigrid case again, this time also across ranks: each level carries

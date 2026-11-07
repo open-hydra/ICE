@@ -1,4 +1,5 @@
-"""Fast test: input.ini edited during a run, with an error in it, under ini-error = warn and stop.
+"""Fast test: input.ini edited during a run, with an error in it, under ini-error = warn and stop; a valid edit to
+forward Euler above its step bound.
 
 The case is a 1-D MK stream carrying a density wave, time-accurate, its step set by the CFL number (dt-max out of
 the way); input.ini is read again every 50 iterations and the residual history is written at every one. Once the
@@ -15,6 +16,10 @@ names the other mode.
             reading.
   empty     ini-error left out, input.ini replaced by comment lines only: not taken either (the file holds no key),
             the run goes on to its end with the field and history of the run without the edit.
+  euler     two valid edits, time-scheme = euler and cfl = 0.6, then, two readings later, cfl = 0.7: forward Euler
+            with MUSCL (van Leer) above its step bound 0.5. Each edit's reading takes it and warns once; the readings
+            that change nothing write no line, so the run writes the warning exactly twice. The run may diverge, so
+            its exit code is reported, not required; at least two readings must follow each edit.
 """
 import math
 import os
@@ -31,6 +36,7 @@ ITERS, INI_DITER = 8000, 50
 VINJ, TINJ, RINJ, RHO_AL = 10.0, 300.0, 1.0e-5, 1000.0
 MASS = RHO_AL * 4.0 / 3.0 * math.pi * RINJ**3
 SOL_ERROR = '[ERROR] input.ini, [ICE-IO] sol-diter = seven: the value is not an integer'
+EULER_WARNING = '[WARNING] [ICE-Numerics] forward Euler with MUSCL (flux-limiter = vanleer)'
 
 
 def set_key(text, section, key, value):
@@ -145,6 +151,48 @@ def stop(case, text):
                   % (at, rc, last, 'error given' if SOL_ERROR in log else 'error NOT given'))
 
 
+def run_with_edits(case, texts):
+    """Run the case; input.ini becomes texts[0] once the history has its first row, and each next text once two
+    readings of input.ini have followed the previous edit (one rename each). (exit, [edit iterations])."""
+    env = dict(os.environ, OMP_NUM_THREADS='1', KMP_STACKSIZE='100M', OMP_STACKSIZE='100M')
+    ats = []
+    with open(str(case.dir / 'log'), 'w') as out, open(str(case.dir / 'err'), 'w') as err:
+        proc = subprocess.Popen([str(ICE_BIN)], cwd=str(case.dir), stdout=out, stderr=err, env=env)
+        start = time.time()
+        while proc.poll() is None and time.time() - start < 300 and len(ats) < len(texts):
+            rows = history(case)
+            # the first edit at the first row; a later one past the second reading after the previous edit
+            if rows and (not ats or rows[-1][0] > (ats[-1] // INI_DITER + 2) * INI_DITER):
+                tmp = case.dir / 'input.ini.edit'
+                tmp.write_text(texts[len(ats)])
+                os.replace(str(tmp), str(case.dir / 'input.ini'))
+                ats.append(rows[-1][0])
+            time.sleep(0.01)
+        try:
+            rc = proc.wait(timeout=300)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            rc = proc.wait()
+    return rc, ats
+
+
+def euler(case):
+    """The edits time-scheme = euler, cfl = 0.6, then cfl = 0.7: one warning per edit, however many readings follow."""
+    text = (case.dir / 'input.ini').read_text()
+    first = set_key(set_key(text, 'ICE-Numerics', 'time-scheme', 'euler'), 'ICE-Numerics', 'cfl', 0.6)
+    second = set_key(first, 'ICE-Numerics', 'cfl', 0.7)
+    rc, ats = run_with_edits(case, [first, second])
+    log = (case.dir / 'log').read_text(errors='replace')
+    if len(ats) < 2:
+        return report('euler', False, 'exit %d after %d of the 2 edits' % (rc, len(ats)))
+    last = history(case)[-1][0] if history(case) else 0
+    readings = [ats[1] // INI_DITER - ats[0] // INI_DITER, last // INI_DITER - ats[1] // INI_DITER]
+    warned = log.count(EULER_WARNING)
+    ok = warned == 2 and min(readings) >= 2
+    return report('euler', ok, 'edits at iterations %d and %d, exit %d at iteration %d, %d and %d readings after '
+                  'them, warning written %d time(s)' % (ats[0], ats[1], rc, last, readings[0], readings[1], warned))
+
+
 if __name__ == '__main__':
     print('input.ini edited during the run with an error, ini-error = warn | stop')
     ref = build(WORK / 'reference')
@@ -157,4 +205,5 @@ if __name__ == '__main__':
     case = build(WORK / 'empty')
     rc += not_taken(case, ref, 'empty', '; input.ini emptied during the run\n',
                     'is not taken: input.ini holds no key')
+    rc += euler(build(WORK / 'euler'))
     sys.exit(1 if rc else 0)

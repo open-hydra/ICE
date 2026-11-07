@@ -13,12 +13,12 @@
 #  molar mass of 0 with no column to replace it, an evaporating material without
 #  one of its six vapour quantities, a key given together with its
 #  alias, a phase file whose materials or model tokens ICE cannot honour, a
-#  mesh with flat cells);
+#  mesh with flat cells, a probe variable no solution file names);
 #  the last one diverges at run time (a NaN source in one cell) and must be
 #  caught after the update. A solver that reports success on
 #  any of these would let a harness read a broken run as a pass. There are
 #  sixty-five refuse rows as written (the loop over the six vapour keys counted
-#  once). Twenty-two accept rows go the
+#  once). Twenty-nine accept rows go the
 #  other way: an INI value equal to the table's must be accepted, the boiling
 #  temperature must be read under either of its names, the vapour columns must be
 #  read with the vapour keys left out or set to 0, the six vapour keys must be
@@ -28,8 +28,10 @@
 #  Emissivity column must be read, a column of 1 radiating as the key 1; the drop's
 #  internal heating and the boiling branch must be read and reported, from the
 #  tokens, the [ICE-Physics] defaults or the table's Conductivity and Viscosity
-#  columns, and accepted in an uncoupled run; and a density that comes out of the
-#  update negative must be floored, counted and warned about while the run goes on.
+#  columns, and accepted in an uncoupled run; forward Euler with MUSCL above its
+#  limiter's step bound must run on with a warning (an info line with irs = true)
+#  that gives cfl and the bound, at or below the bound and at first order (cfl
+#  above 1 included) without one.
 #===============================================================================
 set -uo pipefail
 
@@ -105,6 +107,14 @@ refuse Doisneau/MK "inlet 401 without a gas"     "sed -i 's/ 402\$/ 401/' INPUT/
        "takes its speed from the gas"
 refuse Doisneau/MK "inlet 403 without a gas"     "sed -i 's/ 402\$/ 403/' INPUT/part-bc.txt" \
        "takes its speed from the gas"
+# A probe variable no solution file names: stopped at set-up, the names accepted listed with the pressures per closure
+# (an MK family has no P)
+refuse Doisneau/MK "probes: an unknown variable" \
+       "sed -i 's/^iter-threshold .*/iter-threshold = 20/' input.ini && printf '\n[ICE-Probes]\nprobe1 = pr\n\n[pr]\nvariables = rho_p1 bogus\nindex-position = 1 1 1 1\nditer = 1\n' >> input.ini" \
+       'unknown variable "bogus";P_p<n> for an IG family;P11_p<n> P12_p<n> P13_p<n> P22_p<n> P23_p<n> P33_p<n> for an AG family'
+refuse Doisneau/MK "probes: P_p1 on an MK family" \
+       "sed -i 's/^iter-threshold .*/iter-threshold = 20/' input.ini && printf '\n[ICE-Probes]\nprobe1 = pr\n\n[pr]\nvariables = P_p1\nindex-position = 1 1 1 1\nditer = 1\n' >> input.ini" \
+       'unknown variable "P_p1"'
 # Binary Tecplot in a build without TecIO (CTest passes the build's USE_TECIO as ICE_USE_TECIO): refused at set-up, not
 # at the first write of a solution (here after 20 iterations) or at the read of a part-ic.szplt. A TecIO build reads and
 # writes it (RestartExactTecIO), so these rows run only without one.
@@ -375,21 +385,57 @@ outputs() {
     echo "[fast] FAIL: $2 / $3: the outputs $got, expected $1"; fail=1
   fi
 }
-# warned <label> <count>: the row's log holds the cut warning <count> times
-warned() {
+# logged <label> <text> <count>: the row's log holds <text> <count> times
+logged() {
   local n
-  n=$(grep -cF -- "$cut" "$(rundir "$1")/log")
-  if [[ $n -eq $2 ]]; then
-    echo "[fast] PASS: $1: the cut warning printed $n time(s)"
+  n=$(grep -cF -- "$2" "$(rundir "$1")/log")
+  if [[ $n -eq $3 ]]; then
+    echo "[fast] PASS: $1: \"$2\" printed $n time(s)"
   else
-    echo "[fast] FAIL: $1: the cut warning printed $n time(s), expected $2"; fail=1
+    echo "[fast] FAIL: $1: \"$2\" printed $n time(s), expected $3"; fail=1
   fi
 }
+# warned <label> <count>: the row's log holds the cut warning <count> times
+warned() { logged "$1" "$cut" "$2"; }
 outputs same   "emissivity: left out" "emissivity: 0"
 outputs differ "emissivity: 0"        "emissivity: 1"
 outputs same   "emissivity: 1.5"      "emissivity: 1"
 warned "emissivity: 1.5" 1
 warned "emissivity: 1"   0
+# Forward Euler with MUSCL above the limiter's step bound (0.5 van Leer, 2 - sqrt(2) van Albada, 4/7 Osher, 2/3 minmod;
+# strict >): a warning at set-up, the run goes on; with irs = true an info line instead; at or below the bound and at
+# first order no line. Doisneau/MK has no dt-max: the default 1e-4 binds (effective CFL ~0.14), so these rows test the
+# text, not a divergence.
+E="sed -i -e 's/^time-scheme .*/time-scheme = euler/' -e 's/^iter-threshold .*/iter-threshold = 20/' input.ini"
+W='[WARNING] [ICE-Numerics] forward Euler with MUSCL'
+EI='[INFO] [ICE-Numerics] forward Euler with MUSCL'
+accept Doisneau/MK "euler + MUSCL: vanleer at 0.8" "$E" "$W (flux-limiter = vanleer);cfl = 8.000E-01 > 5.000E-01"
+accept Doisneau/MK "euler + MUSCL: vanleer at 1/2" "$E && sed -i 's/^cfl .*/cfl = 0.5/' input.ini" "Time of operation"
+accept Doisneau/MK "euler + MUSCL: vanalbada at 0.6" \
+       "$E && sed -i -e 's/^flux-limiter .*/flux-limiter = vanalbada/' -e 's/^cfl .*/cfl = 0.6/' input.ini" \
+       "$W (flux-limiter = vanalbada);cfl = 6.000E-01 > 5.858E-01"
+accept Doisneau/MK "euler + MUSCL: osher at 0.6" \
+       "$E && sed -i -e 's/^flux-limiter .*/flux-limiter = osher/' -e 's/^cfl .*/cfl = 0.6/' input.ini" \
+       "$W (flux-limiter = osher);cfl = 6.000E-01 > 5.714E-01"
+accept Doisneau/MK "euler + MUSCL: minmod at 0.6" \
+       "$E && sed -i -e 's/^flux-limiter .*/flux-limiter = minmod/' -e 's/^cfl .*/cfl = 0.6/' input.ini" \
+       "Time of operation"
+accept Doisneau/MK "euler, first order, cfl 0.8" \
+       "$E && sed -i 's/^space-reconstruction .*/space-reconstruction = first-order/' input.ini" "Time of operation"
+accept Doisneau/MK "euler, first order, cfl 1.2" \
+       "$E && sed -i -e 's/^space-reconstruction .*/space-reconstruction = first-order/' -e 's/^cfl .*/cfl = 1.2/' input.ini" \
+       "Time of operation"
+accept Doisneau/MK "euler + MUSCL + irs" "$E && sed -i '/^\[ICE-Numerics\]/a irs = true' input.ini" \
+       "$EI (flux-limiter = vanleer);cfl = 8.000E-01 > 5.000E-01"
+logged "euler + MUSCL: vanleer at 0.8"   "$W"  1
+logged "euler + MUSCL: vanleer at 1/2"   "$W"  0
+logged "euler + MUSCL: vanalbada at 0.6" "$W"  1
+logged "euler + MUSCL: osher at 0.6"     "$W"  1
+logged "euler + MUSCL: minmod at 0.6"    "$W"  0
+logged "euler, first order, cfl 0.8"     "$W"  0
+logged "euler, first order, cfl 1.2"     "$W"  0
+logged "euler + MUSCL + irs"             "$EI" 1
+logged "euler + MUSCL + irs"             "$W"  0
 # emis_table <none|zerorow|value>: NoExchange/MK's material (cp 1000, density 2000, as its INI sets) as a table, with
 # an Emissivity column of that constant value, or of 0.5 with a zero row at 1 K, or without the column
 emis_table() {

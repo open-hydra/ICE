@@ -113,6 +113,7 @@ running `./ICE.sh solve` by hand does.
 | `unit` | A program linked against the library that asserts what its routines return |
 | `needs-mpi` | Needs an MPI build; registered only when `USE_MPI=ON` |
 | `tecio` | Needs a TecIO build; registered only when `USE_TECIO=ON` |
+| `debug` | Needs a `DEBUG` build (array bounds checked); registered only there, run with `ctest --test-dir build-debug -L debug`; not in CI |
 | `sources`, `transport`, `implementation` | What part of the solver a case covers |
 | `MK`, `IG`, `AG`, `chimera`, `connection`, `1D`, `2D` | What configuration it covers |
 
@@ -127,9 +128,37 @@ The cases run on one thread and one rank by default. To change that, configure w
 cmake -B build -DICE_TEST_THREADS=4 -DICE_TEST_RANKS=2
 ```
 
-`ICE_TEST_RANKS` above 1 needs an MPI build. Both builds write `bin/ICE`, so the binary
-is whichever one was built last; the MPI tests check that they really got the MPI build
-and fail with a clear message if not.
+`ICE_TEST_RANKS` above 1 needs an MPI build. Each build writes its binary to `ICE_BIN_DIR`
+(`bin/` by default; give a second build its own); the MPI tests check that they really got
+the MPI build and fail with a clear message if not.
+
+### Bounds-checked build
+
+A `DEBUG` configure compiles ICE, ORION and FiNeR with array bounds checking (`-check bound` with ifx,
+`-fcheck=bound` with gfortran) and registers one more test, `Bounds` (label `debug`, `test/fast/bounds`):
+five iterations of `NoExchange/MK`, `Doisneau/MK`, `Doisneau/IG-split4`, `Doisneau/IG-chimera` and `Axis/AG`
+on two threads, `Doisneau/IG-split4` on two thread groups, and two boxes `make_box.py` generates with the
+drivers of cases N and M (N4's solidifying mush; a P2T drop on both sides of its ZGR boiling temperature, whose
+probes must show the surface at the boiling temperature in one half and below the mean temperature in the
+other). A run passes when it exits 0, reaches its fifth iteration, prints no subscript or runtime error, and
+the line ` -  Compiled with --> <options>`, which every build prints in its banner, lists the bounds flag (the
+pattern `ICE_BOUNDS_FLAG`, by default `check[ =]bound`, which matches both spellings).
+
+```bash
+cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=DEBUG -DICE_BIN_DIR=$PWD/bin-debug -DUSE_TECIO=OFF
+cmake --build build-debug --parallel 4
+ctest --test-dir build-debug -L debug
+```
+
+In `build-debug/` run only `-L debug`. Most tests run the source tree's `bin/ICE` (through `ICE.sh` or their
+driver), not this build, but `Equiv3DStage`, `Equiv3DThreads`, `Equiv3DGroups`, `Equiv3DThreadsSD`,
+`Equiv3DGroupsSD` and `FamilyHalo3D` take the build's own binary: a plain `ctest` there, or the pre-push hook,
+which takes the first `build-*/` when there is no `build/`, runs them on the checked binary, and the
+thread-group ones meet ifx's false report below (`Equiv3DGroups` measured: exit 152 at the same call). The run
+on two thread groups goes with gfortran and is skipped with ifx (`ICE_BOUNDS_GROUPED=1` runs it, `0` skips it):
+ifx 2023.1 stops it at the first step with a `severe (408)` on `blk(b)` in the array-section arguments of the
+call in `compute_residual_grouped`, a false positive: a guard `if (b < 1) error stop` placed just before that
+call never fires and the report moves to the call's new line, and gfortran's checked build runs the case clean.
 
 ## The pre-push hook
 
