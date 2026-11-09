@@ -5,7 +5,9 @@
 1. Branch from the default branch.
 2. Make the change, and add or extend a test case for it under `test/`.
 3. Run the suite: `ctest --test-dir build -j 5 --output-on-failure`.
-4. Open a pull request describing what changed and why.
+4. Add an entry under `[Unreleased]` in `CHANGELOG.md`: one change per entry, at most two short lines; details
+   go in the docs or the commit message.
+5. Open a pull request describing what changed and why.
 
 Installing the pre-push hook runs the suite before every push:
 
