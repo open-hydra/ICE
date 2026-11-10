@@ -3,7 +3,7 @@
 
     make_case.py OUTDIR [--preset small|cache|bench3] [options]
 
-The campaign case of test/bench/monolith (192^3, one block per rank, one IG
+The campaign case of the performance study (192^3, one block per rank, one IG
 family) never exercised what a production mesh does to the parallel code: several
 blocks per rank, several families, and block corners whose cells carry three
 boundary records. This generator writes such a case from a handful of numbers:
