@@ -24,6 +24,14 @@ Learn more about the ICE project, its contributors, and licensing.
 
 </div>
 
+## Authors
+
+ICE was written by Gianluca Cocirla, Marco Grossi and Giacomo Passarani, who maintain it.
+Everyone who has contributed is listed in
+[AUTHORS.md](https://github.com/open-hydra/ICE/blob/main/AUTHORS.md); to cite ICE, use
+[CITATION.cff](https://github.com/open-hydra/ICE/blob/main/CITATION.cff) (GitHub's
+"Cite this repository" button reads it).
+
 ## License
 
 This project is licensed under the GNU General Public License v3.0. See [License](license.md) for details.

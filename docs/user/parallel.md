@@ -1,102 +1,91 @@
-# Parallel Execution and Scalability
+# Parallel Execution
 
-ICE supports **hybrid MPI + OpenMP parallel execution**. MPI distributes the
-mesh blocks across processes; OpenMP parallelises the work inside each process,
-over the cells of a block.
-
-The same core budget can therefore be spent in several ways. On 80 cores:
+ICE runs in parallel with MPI, OpenMP, or both: MPI shares the mesh blocks among
+processes (ranks), and OpenMP shares the cells of a block among the threads of each
+rank. The same cores can therefore be used in several ways. On 80 cores:
 
 ```text
- 1 MPI rank  × 80 OpenMP threads
- 4 MPI ranks × 20 OpenMP threads
- 8 MPI ranks × 10 OpenMP threads
-16 MPI ranks ×  5 OpenMP threads
+ 1 rank  × 80 threads
+ 4 ranks × 20 threads
+ 8 ranks × 10 threads
+16 ranks ×  5 threads
 ```
 
----
+This page explains how to choose among them, how to launch a run, and how well ICE
+scales.
 
-## 1. Work division
+## How ICE divides the work
 
-Three properties of ICE decide what a sensible configuration looks like.
-
-**MPI distributes whole blocks.** Blocks are assigned largest first to the
-least-loaded rank, and a block is never split. Ranks beyond the block count sit
-idle, so the mesh must be cut into at least as many blocks as there are ranks —
-and ideally into a multiple of the rank count, or the balance is poor. ICE
-prints what it decided at startup:
+**MPI shares whole blocks.** The blocks go to the ranks largest first, each to the
+rank with the least work so far, and a block is never split. Ranks beyond the number
+of blocks have nothing to do, so cut the mesh into at least as many blocks as ranks —
+ideally a multiple of them. ICE prints how even the split is:
 
 ```text
   MPI partition: 12 blocks over 12 ranks, balance 100.0% of ideal
-  MPI halo: <n> cells exchanged per ghost fill
-  MPI halo: <m> connection faces whose flux crosses ranks
 ```
 
-A balance well under 100 % means the blocks are unequal, and the fix is in the
-mesh rather than in the launch command.
+A balance well under 100 % means the blocks are unequal: the fix is in the mesh, not
+in the launch command. (ATLAS MDB cuts a mesh into balanced blocks.)
 
-**OpenMP threads over the cells of a block**, not over blocks. A single large
-block therefore threads as well as many small ones, and adding blocks purely to
-feed threads is never necessary. When a rank's threads span several sockets and
-the rank holds several blocks, ICE gives each block to the threads of one socket
-(**thread groups**, `ICE_THREAD_GROUPS`): that block's memory then stays on that
-socket, and one rank does what one rank per socket would. This is automatic when
-the threads are pinned (`OMP_PROC_BIND`); `ICE_THREAD_GROUPS=<n>` forces n groups,
-`1` turns it off. It is what an OpenMP-only host such as hydra-MI2 needs on a
-multi-block mesh. See [§6](#6-strong-scaling).
+**OpenMP shares the cells of a block.** One large block threads as well as many small
+ones, so there is no need to add blocks for the threads. When the threads of one rank
+span several sockets and the rank holds several blocks, ICE gives each block to the
+threads of one socket (*thread groups*), so a block's memory stays on its socket. This
+is automatic when the threads are pinned (`OMP_PROC_BIND`); `ICE_THREAD_GROUPS=<n>`
+forces `n` groups, and `1` turns them off.
 
-**Every rank allocates the whole domain** and updates only its own blocks. Per
-rank memory does not fall as ranks are added, so the node's memory — not its
-cores — is what caps the rank count. See [§10](#10-memory).
+**Every rank holds the whole domain**, and updates only its own blocks. Before each
+Runge-Kutta stage, the ranks exchange the cells their neighbours' ghost cells need;
+rank 0 gathers the solution and writes the files. The memory per rank therefore does
+not fall as ranks are added: the node's memory, not its cores, limits the number of
+ranks ([Memory](#memory)).
 
-The result does not depend on the parallel configuration: output is bit-for-bit
-identical across rank counts. See
+**The answer does not depend on the configuration**: a run on any number of ranks and
+threads is bit-for-bit identical to a serial one. See
 [Multi-block and MPI](../vv/multiblock-mpi.md).
 
----
+## Choosing a configuration
 
-## 2. Selecting a parallel configuration
-
-| Symbol | Description | How to obtain it |
+| Symbol | What it is | How to find it |
 | --- | --- | --- |
 | `S` | Sockets (NUMA domains) per node | `numactl --hardware` |
-| `C` | Physical cores per socket | `lscpu` |
-| `B` | Number of mesh blocks | ICE's `MPI partition` line, or the ATLAS MDB log |
-| `M` | Memory per rank for the case | ICE's resident set at one rank |
+| `C` | Cores per socket | `lscpu` |
+| `B` | Mesh blocks | ICE's `MPI partition` line, or the ATLAS MDB log |
+| `M` | Memory of one rank | the memory of a one-rank run |
 
-For a core budget `N`:
+For `R` ranks:
 
-1. **Cover all sockets.** Use at least one MPI rank per socket, or place the
-   threads of a single rank across the sockets explicitly.
-2. **Keep each OpenMP team within one socket** where the rank count allows it.
-3. **Check `B ≥ R`.** Ranks beyond the block count do nothing.
-4. **Check `R × M` against the node's memory.** This is usually the binding
-   constraint, not the core count.
+1. **Cover every socket**: use at least one rank per socket, or spread the threads of
+   one rank over all of them.
+2. **Keep each rank's threads on one socket** when the number of ranks allows it.
+3. **Check `B ≥ R`**: extra ranks do nothing.
+4. **Check `R × M` against the node's memory**: this is usually the real limit.
 
-On a node with **4 sockets × 20 cores**:
+On a node of 4 sockets × 20 cores:
 
-| CPU cores | Ranks × threads | Note |
+| Cores | Ranks × threads | Note |
 | ---: | ---: | --- |
 | 20 | `4 × 5` | one rank per socket |
 | 40 | `4 × 10` | one rank per socket |
-| 80 | `4 × 20` | one rank per socket, one node |
-| 80 | `1 × 80` | lowest memory, needs explicit placement (`OMP_PROC_BIND=close`); with several blocks the thread groups make it as fast as `4 × 20` — see [§6](#6-strong-scaling) |
-| 160 | `8 × 20` | two nodes, same per-node layout |
-| 240 | `12 × 20` | three nodes, same per-node layout |
+| 80 | `4 × 20` | one rank per socket: the default choice |
+| 80 | `1 × 80` | the least memory; pin the threads (`OMP_PROC_BIND=close`). With several blocks, thread groups make it almost as fast as `4 × 20` |
+| 160 | `8 × 20` | two nodes, the same layout on each |
+| 240 | `12 × 20` | three nodes, the same layout on each |
 
-### Configurations to avoid
+Avoid:
 
-* An OpenMP team packed onto **one socket** while other sockets sit idle.
-* More ranks than blocks.
-* A rank count whose memory exceeds the node.
-* Interleaving memory pages across sockets (e.g. `numactl --interleave=all`)
-  for a single large-thread-count rank — it makes a thread's private buffers
-  slower to reach, not faster. See [§6](#6-strong-scaling).
+- one rank's threads packed on **one socket** while the others sit idle;
+- more ranks than blocks;
+- more ranks than the node's memory holds;
+- interleaving the memory pages over the sockets (`numactl --interleave=all`): it
+  makes a run slower, not faster.
 
----
+## Launching
 
-## 3. Running ICE in parallel
+### One node
 
-### Single node
+With Intel MPI, four ranks of twenty threads, one rank per socket:
 
 ```bash
 export OMP_NUM_THREADS=20
@@ -106,18 +95,15 @@ export I_MPI_PIN_DOMAIN=omp
 mpirun -n 4 -ppn 4 /path/to/bin/ICE
 ```
 
-This launches 4 ranks × 20 threads = 80 cores, one rank per socket, each rank's
-threads contained in its own socket.
-
-With OpenMPI the equivalent is:
+With Open MPI:
 
 ```bash
 mpirun --map-by socket:PE=$OMP_NUM_THREADS --bind-to core \
        -np 4 /path/to/bin/ICE
 ```
 
-For a pure-OpenMP run spread over all four sockets, pin explicitly — the default
-placement fills one socket at a time:
+With OpenMP only, spread the threads over the sockets explicitly — by default they
+fill one socket at a time:
 
 ```bash
 export OMP_NUM_THREADS=80
@@ -126,43 +112,31 @@ export OMP_PROC_BIND=spread
 /path/to/bin/ICE
 ```
 
-### Multiple nodes
+### Several nodes
 
-Keep the per-node layout identical on every node:
-
-```text
- 80 cores:  1 node  × 4 ranks × 20 threads
-160 cores:  2 nodes × 4 ranks × 20 threads/node
-240 cores:  3 nodes × 4 ranks × 20 threads/node
-```
+Keep the same layout on every node:
 
 ```bash
 export OMP_NUM_THREADS=20
-mpirun -n 12 -ppn 4 /path/to/bin/ICE
+mpirun -n 12 -ppn 4 /path/to/bin/ICE     # 3 nodes × 4 ranks × 20 threads
 ```
 
----
+## Checking the placement
 
-## 4. Verifying CPU placement
-
-A run that is silently unpinned looks like a scaling result and is not one.
-Check before trusting any timing:
+A run whose threads are not where you meant is still a valid run, only slower, and
+nothing warns you. Check before trusting a timing:
 
 ```bash
 I_MPI_DEBUG=4 mpirun -n 4 -ppn 4 ./bin/ICE 2>&1 | grep -i 'rank.*pin\|domain'
 ```
 
-Each rank should report a distinct set of cores, and those sets should cover the
-sockets you intended. `numactl --hardware` gives the socket-to-core map to check
-against.
+Each rank should report its own set of cores, and the sets should cover the sockets
+you intended (`numactl --hardware` gives the map of sockets and cores).
 
----
+## Measuring performance
 
-## 5. Measuring parallel scaling
-
-ICE has its own per-iteration instrumentation. It is **off by default**; turn
-it on in the `[ICE-IO]` section of `input.ini`, where `shell-diter` sets how
-often it reports:
+ICE times its own iterations. Switch the timers on in `[ICE-IO]`; `shell-diter` sets
+how often they report:
 
 ```ini
 [ICE-IO]
@@ -170,10 +144,7 @@ timers      = true
 shell-diter = 10
 ```
 
-Read the **last** window, not the wall clock of the batch job. At 80 cores on
-the reference benchmark (job 303350, tag `env-C80-4x20`, third of three
-repetitions, iteration 40's window — `runs/303350/logs/env-C80-4x20-r3.log`)
-it prints:
+At 80 cores (`4 × 20`) on the benchmark below, a report looks like this:
 
 ```text
  ICE Timing | Iter 40 | 10 iters | wall/iter  3.3361E-01 s | rank min  3.3359E-01 avg  3.3361E-01
@@ -184,455 +155,166 @@ it prints:
  ICE Cycles | core-cycles/iter  6.9599E+10 | aggregate    208.62 GHz
 ```
 
-For measurements that mean something:
+For numbers you can compare:
 
-* run enough iterations that the first window is not scored;
-* score the **last** window;
-* disable solution output (`sol-diter`) and keep `res-diter` high;
-* repeat each configuration and take the minimum.
+- run enough iterations to have several reports, and read the **last** one: the first
+  includes the start-up;
+- switch the solution output off (a large `sol-diter`) and keep `res-diter` large;
+- repeat each configuration and keep the fastest run.
 
-### Use core-cycles, not seconds
+### Core-cycles, not only seconds
 
-`core-cycles/iter` is the total over every rank and thread. Under perfect
-parallelism it stays **constant** as cores are added, so it is an efficiency
-measure with the processor's frequency scaling already divided out.
-
-This matters more than it sounds. On the reference node one active core turbos
-to 3.87 GHz while eighty sit at 2.61 (job 303350: `env-C1-1x1` vs.
-`env-C80-4x20`). That factor of 0.67 is the chip's power management, not ICE,
-and it accounts for essentially the whole difference between ICE's wall-clock
-efficiency at a full node (54.4 %) and its core-cycle efficiency (80.8 %).
+`core-cycles/iter` is the work of one iteration summed over every rank and thread.
+With perfect parallelism it does not change as cores are added, so its ratio,
+$C(1)/C(N)$, is the parallel efficiency without the effect of the processor's clock.
+That effect is large: on the benchmark node, one busy core runs at 3.87 GHz and
+eighty at 2.61 GHz, so a full node loses a third of its speed per core to the chip's
+power management, not to ICE.
 
 The counter needs a C compiler at configure time (`ICE_CYCLES`, on by default).
-Without it the `ICE Cycles` line is absent and the timers report wall-clock
-only.
+Without it the `ICE Cycles` line is missing and the timers report seconds only.
 
----
+## How ICE scales
 
-## 6. Strong scaling
+The benchmark is a cube of 192³ = 7,077,888 cells: one family with the IG closure,
+one-way coupled to a frozen Taylor–Green vortex, RK2 with MUSCL and the van Leer
+limiter, CFL 0.5. The machine has 4 sockets × 20 cores per node, with no
+hyperthreading. Each rank count runs its own cut of the mesh.
 
-Strong scaling measures how execution time changes when the **same problem** is
-solved on more cores.
-
-The reference benchmark is **7,077,888 cells** (192³), one dispersed-phase
-family with the IG closure, one-way coupled to a frozen Taylor–Green carrier,
-RK2 with MUSCL/vanleer at CFL 0.5. The reference machine has 4 sockets × 20
-physical cores per node and no hyperthreading. The campaign and its harness are
-Marco Grossi's (job 302995, first full matrix); the table below is job 303350,
-the same harness re-run on `origin/merging` `aeb34a5` — the tree as it stood
-before this session's fixes — on nodes wn[05-07]. It is the only run in this
-campaign with all nine core counts, so it is the source for every table in this
-page unless stated otherwise; what the fixes changed is not yet measured at
-that resolution — see "Since the baseline" below.
-
-<figure>
-  {% include "user/images/scaling-envelope.svg" %}
-</figure>
-
-*(this figure predates job 303350 and the fixes below; it has not been
-regenerated for the numbers on this page)*
-
-| Cores | Nodes | MPI × OpenMP | Wall/iter | Core-cycle efficiency | Ghost-credited |
+| Cores | Nodes | Ranks × threads | Time per iteration | Speed-up | Core-cycle efficiency |
 | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 1 | `1 × 1` | 14.516 s | 100.0 % | 100.0 % |
-| 4 | 1 | `4 × 1` | 3.721 s | 97.5 % | 101.6 % |
-| 8 | 1 | `4 × 2` | 1.913 s | 95.7 % | 99.7 % |
-| 16 | 1 | `4 × 4` | 1.011 s | 95.1 % | 99.1 % |
-| 20 | 1 | `4 × 5` | 0.823 s | 95.5 % | 99.5 % |
-| 40 | 1 | `4 × 10` | 0.475 s | 89.2 % | 92.9 % |
-| 80 | 1 | `4 × 20` | 0.334 s | 80.8 % | 84.2 % |
-| 160 | 2 | `8 × 20` | 0.167 s | 80.5 % | 85.4 % |
-| 240 | 3 | `12 × 20` | 0.117 s | 76.5 % | 84.5 % |
+| 1 | 1 | `1 × 1` | 13.13 s | 1.0 | 100.0 % |
+| 4 | 1 | `4 × 1` | 3.335 s | 3.9 | 98.4 % |
+| 8 | 1 | `4 × 2` | 1.726 s | 7.6 | 95.9 % |
+| 16 | 1 | `4 × 4` | 0.905 s | 14.5 | 96.2 % |
+| 20 | 1 | `4 × 5` | 0.742 s | 17.7 | 95.9 % |
+| 40 | 1 | `4 × 10` | 0.428 s | 30.7 | 89.4 % |
+| 80 | 1 | `4 × 20` | 0.295 s | 44.5 | 82.1 % |
+| 160 | 2 | `8 × 20` | 0.148 s | 89.0 | 82.4 % |
+| 240 | 3 | `12 × 20` | 0.101 s | 130.5 | 80.6 % |
 
-Both efficiency columns are core-cycle efficiencies, `C(1)/C(N)` ([§5](#5-measuring-parallel-scaling)), not
-wall-clock ones: in seconds the full node reaches 54.4 %, and the difference is the
-chip's clock, 3.87 GHz on one active core against 2.61 GHz on eighty. Core-cycle
-efficiency stays above **95 % through a quarter node** (4–20 cores), reaches
-**80.8 % at a full node**, and eases only slightly further to **76.5 % at three
-nodes**.
+The core-cycle efficiency stays near 96 % up to a quarter of a node, is 82 % on a full
+node, and holds at 81 % on three nodes. The speed-up is lower than the core count
+mostly because of the clock: in seconds, a full node reaches 56 % of linear.
 
-**The two efficiency columns differ because the decomposition is real work.**
-Each rank count runs its own cut of the mesh, and cutting adds ghost cells:
-4.2 % more cells at 4 ranks, 10.4 % at 12 (a fixed property of this mesh's cut
-at each rank count — `analyze.py`'s ghost-cell table, shared with the ATLAS MDB
-decomposition analysis — not something that varies between jobs). The raw
-column charges ICE for them; the ghost-credited column does not. Quote the raw
-column when asking "what does this many ranks cost me", and the ghost-credited
-column when asking "how well does the parallelisation itself hold up".
-
-### Since the baseline: the 2026-09-30 optimization wave
-
-The full nine-point matrix on the final tree is job 303485 (tree `461eb4f`,
-the final solver code plus one change measured neutral and reverted
-afterwards), run on the same three nodes (wn[05-07]) as the baseline above,
-so the comparison is clean:
-
-| Cores | Nodes | MPI × OpenMP | 303350 wall/iter | 303485 wall/iter | Change | 303350 core-cycle eff. | 303485 core-cycle eff. |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1 | 1 | `1 × 1` | 14.52 s | 13.13 s | -9.5 % | 100.0 % | 100.0 % |
-| 4 | 1 | `4 × 1` | 3.721 s | 3.335 s | -10.4 % | 97.5 % | 98.4 % |
-| 8 | 1 | `4 × 2` | 1.913 s | 1.726 s | -9.8 % | 95.7 % | 95.9 % |
-| 16 | 1 | `4 × 4` | 1.011 s | 0.9046 s | -10.6 % | 95.1 % | 96.2 % |
-| 20 | 1 | `4 × 5` | 0.8233 s | 0.7422 s | -9.9 % | 95.5 % | 95.9 % |
-| 40 | 1 | `4 × 10` | 0.4753 s | 0.4278 s | -10.0 % | 89.2 % | 89.4 % |
-| 80 | 1 | `4 × 20` | 0.3336 s | 0.2952 s | -11.5 % | 80.8 % | 82.1 % |
-| 160 | 2 | `8 × 20` | 0.1671 s | 0.1475 s | -11.7 % | 80.5 % | 82.4 % |
-| 240 | 3 | `12 × 20` | 0.1174 s | 0.1006 s | -14.3 % | 76.5 % | 80.6 % |
-
-Core-cycle efficiency is anchor cycles over cycles per iteration, each job
-against its own anchor. The multi-rank points gained 9.5–14.5 % in time and
-1.3–4.1 points of core-cycle efficiency (the halo work of
-[§9](#9-scaling-across-nodes) is where the three-node point gained most);
-pure MPI at 24 ranks went from 86.8 % to 90.0 %, the 16 × 5 layout from
-81.0 % to 83.3 %, one socket of 20 threads from 94.1 % to 92.9 % (0.837 →
-0.767 s). The same matrix, at the four points first measured with the reduced
-job 303417 (tree `5575f65`, the same nodes):
-
-| Cores | Layout | 303350 (baseline) | 303417 (wave) | Change |
-| ---: | --- | ---: | ---: | ---: |
-| 1 | `1 × 1` (anchor) | 14.516 s | 13.129 s | −9.5 % |
-| 80 | `4 × 20` | 0.3336 s | 0.2957 s | −11.4 % |
-| 240 | `12 × 20` | 0.1174 s | 0.1004 s | −14.5 % |
-| 80 | `1 × 80` | 0.3241 s | 0.3368 s | +3.9 % |
-
-Every multi-rank point got faster. The single-rank, 80-thread point read
-**slower** in this table, and the reason was found on 2026-10-01: the harness
-reported the **last** 10-iteration window of each run, and every `1 × 80` run of
-a tree without a parallel first touch of the block fields spends its first 45–60 s
-at 6–10× its steady cost. The master thread writes the fields during set-up, so a
-whole block starts on one socket; eighty threads then stream one socket's memory
-(bound there for the whole run, `numactl --membind=0`, the iteration costs 4.0 s
-instead of 0.35 — job 303745) until the kernel's NUMA balancer has moved ~1.7 GB,
-and on a busy node it may never finish (0.38 s instead of 0.30). The last window
-hid this, so the parallel first touch (job 303482, "0.3373 s, unchanged") was
-judged neutral and reverted. It is back since `52060e1`; job 303485 above was
-built from `461eb4f`, which still had it, so its `1 × 80` point is a steady state.
-Interleaving the pages (job 303418) is no remedy: its interleaved runs are flat
-but slow (1.33 s at `1 × 80`), while its plain run was itself crawling
-(2.10 1.28 0.38 0.38 s per window) — the "3.7×" once quoted here compared that
-run's last window with the interleaved one.
-
-**Phase 2 (2026-10-01, job 303748, wn[05-07], the 303485 binary run beside the
-new one at every point; steady state = mean of the second half of the windows).**
-The flux kernel's tiles are scheduled dynamically over shallow plane pieces
-(`c7f2754`) and the block fields are first-touched by the threads (`52060e1`):
-
-| Cores | Layout | 303485 binary (`461eb4f`) | Current tree | Change |
-| ---: | --- | ---: | ---: | ---: |
-| 1 | `1 × 1` (anchor) | 13.120 s | 13.112 s | −0.1 % |
-| 80 | `4 × 20` | 0.2942 s | 0.2927 s | −0.5 % |
-| 240 | `12 × 20` | 0.1008 s | 0.1004 s | −0.4 % |
-| 20 | `1 × 20`, one socket | 1.142 s | 1.131 s | −0.9 % |
-| 80 | `1 × 80` | 0.3408 s | 0.3030 s | **−11.1 %** |
-| 80 | `1 × 80`, 24 blocks (stress) | 0.640 s | 0.690 s | +7.7 % |
-
-Every run of the table is flat from its first window. The last row is not a
-production layout: 24 small blocks on one rank of 80 threads. There the kernel's
-NUMA balancer keeps migrating the pages of the plane-by-plane first touch (a
-24 × 64 plane is far smaller than a 2 MB huge page, so many pages are shared by
-threads of two sockets); with the placement kept and the balancer off
-(`numactl --membind=0-3`) the same binary runs 0.584 s, and the best placement
-the balancer itself reached in an earlier run gave 0.44 s (job 303746). A rank
-holding many small blocks over several sockets was the open item of this page;
-thread groups close it:
-
-**Thread groups (2026-10-03, job 303832, wn03, one node; steady state).** One
-rank of 80 threads pinned with `OMP_PROC_BIND=close`, its blocks owned by four
-groups of 20 threads (one per socket), against one group, the phase-2 binary
-(`935af6b`) and the same cut as four MPI ranks of 20 threads:
-
-| Blocks on the rank | Phase-2 binary | One group | **Four groups** | `4 × 20` |
-| ---: | ---: | ---: | ---: | ---: |
-| 24 (24 × 64 × 192) | 0.550 s | 0.501 s | **0.309 s** | 0.312 s |
-| 12 | — | 0.388 s | **0.299 s** | — |
-| 4 (96 × 96 × 192) | — | 0.343 s | **0.287 s** | 0.279 s |
-| 1 (groups fall back to one) | 0.305 s | — | 0.295 s | — |
-
-Each entry is the best of two runs. Over four runs on the 24-block cut (this job
-and job 303833, which found the four groups by itself with the variable unset)
-four groups took 0.31–0.34 s and `4 × 20` 0.305–0.312 s: a single OpenMP rank
-with groups is within a few per cent of one MPI rank per socket on the same cut,
-and a single block is unaffected (one block cannot be split among groups). On this node the one-group runs also read 3–9 % below the phase-2
-binary. Job 304446 (wn09) attributed it: the six commits from the phase-2 binary to the
-thread groups, each built from one source sync and run with `ICE_THREAD_GROUPS=1`, five
-interleaved passes, medians. From `935af6b` to `f50efc2` the 24-block cut went 0.516 → 0.495 s
-(−4.0 %) and the single block 0.3145 → 0.3046 s (−3.1 %), both beyond the spread (1 % and
-3 × MAD). Most of it is the ghost fill, and it comes with `fddd1cb`, which moved the
-bodies of the ghost loops into procedures (`ghost_record`, `second_ghost_record`) without
-changing the one-group loop: the two ghost regions read 85, then 96 (`e69ebcc`), then 71 ms
-from `fddd1cb` on, on 24 blocks, and 12 → 7 ms on the single block (−13 and −7 ms of the
-−20 and −10 ms). The compiler vectorizes more of a body compiled as its own procedure than of
-the same body inlined in the OpenMP region (ifx optimisation report: about 41 against 21
-vectorized loops in the first ghost body). The flux tiles in procedures (`055f6d4`) took 2–4 %
-off the flux phase (229 → 221 ms on 24 blocks, 183.0 → 178.4 ms with a spread of 0.2 ms on the
-single block), too little to clear the threshold of the whole step; the merge of main and the
-per-cell phases (`037e94f`, `e69ebcc`) moved nothing beyond the spread. A `compute_source` rise on the single block in that
-job's last windows (38.5 → 40.6 ms) did not survive a dedicated job (304520, wn03: twelve
-interleaved passes, 80 iterations, the steady half of each run): 38.6 ± 0.6 against
-37.5 ± 0.6 ms, while the steady iteration again read −3.4 % (306.8 → 296.5 ms). The rest of the 9 %
-in job 303832 was noise: on 24 blocks the runs of one binary span 0.47–0.57 s.
-
-On one node, `4 × 20` (0.293 s) is still faster than `1 × 80` (0.303 s), and
-"one rank per socket" ([§2](#2-selecting-a-parallel-configuration)) remains
-the default; `1 × 80` is now within 4 % of it.
-
-**Decomposition quality** (job 303484, greedy cuts of the campaign against
-the halo-objective cuts of ATLAS MDB's search, same binary): at 12 ranks the
-two are equal (0.1004 vs. 0.1006 s at `12 × 20`; the halo is a few per cent of
-the iteration there), at 16 ranks equal within noise, at 24 ranks the search's
-cut is 3.4 % faster in pure MPI (`24 × 1`, 0.656 → 0.633 s) and 4.3 % faster at
-`4 × 20` with six blocks per rank (0.320 → 0.306 s, exchange wait 6.3 → 3.3 %),
-and 20 ranks — which the greedy cutter could not balance — run at 87 % wall
-efficiency on the search's 5×2×2 cut.
-
----
-
-## 7. MPI, OpenMP and hybrid execution
+Part of the remaining loss is not parallel overhead: cutting the mesh adds ghost cells,
+4.2 % more cells at 4 ranks and 10.4 % at 12, which the one-rank run does not compute.
 
 <figure>
-  {% include "user/images/scaling-modes.svg" %}
+  --8<-- "docs/user/images/scaling-envelope.svg"
+<figcaption>The same curve, as measured in September 2026, before the optimisations of October: they made every multi-rank point 10 to 14 % faster.</figcaption>
 </figure>
 
-*(this figure predates job 303350; it has not been regenerated for the numbers
-on this page)*
+### MPI, OpenMP or both
 
-Job 303350 (tree `aeb34a5`, nodes wn[05-07]), `omp-*` / `mpi-*` / `env-*` rows:
+All three work, and their differences are small compared with the effect of thread
+placement. Core-cycle efficiency, measured in September 2026:
 
-| Cores | Pure OpenMP `1 × N` | Pure MPI `N × 1` | Hybrid `4 × N/4` |
+| Cores | OpenMP `1 × N` | MPI `N × 1` | Hybrid `4 × N/4` |
 | ---: | ---: | ---: | ---: |
-| 4 | **99.0 %** | 97.5 % | 97.5 % |
-| 8 | **96.8 %** | 94.7 % | 95.7 % |
-| 16 | **95.2 %** | 91.3 % | 95.1 % |
-| 20 | **94.6 %** | — | 95.5 % |
+| 4 | 99.0 % | 97.5 % | 97.5 % |
+| 8 | 96.8 % | 94.7 % | 95.7 % |
+| 16 | 95.2 % | 91.3 % | 95.1 % |
+| 20 | 94.6 % | — | 95.5 % |
 | 24 | — | 86.8 % | — |
-| 40 | **90.6 %** | — | 89.2 % |
-| 80 | **83.4 %** | — | 80.8 % |
+| 40 | 90.6 % | — | 89.2 % |
+| 80 | 83.4 % | — | 80.8 % |
 
-All three models work, and the spread between them is small compared with what
-placement does. Pure OpenMP reads highest because it runs an undecomposed mesh
-and therefore computes no ghost cells at all; per cell of real physics the
-hybrid and MPI runs are the more efficient.
-
-Three things to read carefully:
-
-1. **The pure modes are pinned across all four sockets at every core count**, so
-   they are compared on equal hardware rather than on whatever the default
-   placement gives. The hybrid points are launched the way a user would, with
-   `I_MPI_PIN_DOMAIN=omp` and no mask, and below a full node those domains are
-   assigned in core order and need not reach every socket ([§4](#4-verifying-cpu-placement)).
-   On this campaign's own measurement, though, an explicit spread mask cost no
-   more than the default at 20 cores — `sock-C20-4x5-spread` reads 95.6 % against
-   the table's 95.5 %, a 0.1-point difference, inside the campaign's own
-   ~1.3 % core-cycle noise floor. That does not mean the effect is zero at
-   every core count, only that it was not visible here; only the 80-core
-   points fill the node and are free of the question by construction.
-2. **Pure OpenMP's advantage is the ghost cells, not the threading.** At 80
-   cores it computes 4.2–12.5 % fewer cells than any of the hybrid layouts.
-   Credit those cells back and the ranking inverts (84.2 % for `4 × 20` against
-   83.4 % for `1 × 80`) — see
-   [§8](#8-choosing-the-rankthread-split).
-3. **Pure MPI's 24-rank point carries 18.8 % more cells** than the reference —
-   the greedy cut's ghost overhead at 24 ranks. Credited for it, its
-   efficiency reads **103.2 %**: not "in line with the rest", since every
-   hybrid/MPI point up to 16 ranks already credits to 100 % or a little above
-   (101.6 %, 100.6 %, 102.8 %), so this is not a 24-rank-specific effect —
-   plausibly the smaller per-rank working set fitting cache better than the
-   single-block anchor does. What ends the pure-MPI curve well short of 80
-   cores is memory ([§10](#10-memory)), not efficiency: 24 ranks already hold
-   143 GB on one node.
-
----
-
-## 8. Choosing the rank/thread split
+- **OpenMP alone reads highest because it computes no ghost cells**: it runs the uncut
+  mesh. Credited for its ghost cells, the hybrid `4 × 20` is the more efficient.
+- **Pure MPI stops early because of memory, not efficiency**: 24 ranks already hold
+  143 GB on one node.
 
 <figure>
-  {% include "user/images/scaling-layout.svg" %}
+  --8<-- "docs/user/images/scaling-modes.svg"
+<figcaption>The three modes, September 2026.</figcaption>
 </figure>
 
-*(this figure predates job 303350; it has not been regenerated for the numbers
-on this page)*
+### The rank/thread split
 
-At 80 cores on one node, job 303350, `lay-*` rows plus `omp-C80-1x80`:
+At 80 cores on one node, every split is within 3 % of the fastest, while its memory
+varies fifteenfold (September 2026):
 
-| Layout | Ranks per socket | Wall/iter | vs best | Node memory |
-| --- | ---: | ---: | ---: | ---: |
-| `1 × 80` | — | 0.3241 s | best | 6.21 GB |
-| `8 × 10` | 2 | 0.3271 s | +0.9 % | 45.16 GB |
-| `4 × 20` | 1 | 0.3339 s | +3.0 % | 24.46 GB |
-| `16 × 5` | 4 | 0.3330 s | +2.7 % | 92.82 GB |
+| Layout | Ranks per socket | Time per iteration | Memory of the node |
+| --- | ---: | ---: | ---: |
+| `1 × 80` | — | 0.324 s | 6.2 GB |
+| `8 × 10` | 2 | 0.327 s | 45.2 GB |
+| `16 × 5` | 4 | 0.333 s | 92.8 GB |
+| `4 × 20` | 1 | 0.334 s | 24.5 GB |
 
-**Do not over-tune this.** The whole family spans 3.0 %, which is close to the
-measurement floor, while the memory it costs spans a factor of fifteen. Choose
-the rank count on memory and on the block count, and move on.
-
-This ranking is the pre-wave baseline's. The wave that follows it in
-[§6](#6-strong-scaling) changes `1 × 80` specifically — by 3.9 % on its own
-tree, and by far more if pages get interleaved — so re-check §6 before reading
-`1 × 80` as current advice.
-
----
-
-## 9. Scaling across nodes
+**Do not over-tune this.** Choose the number of ranks from the memory and the blocks,
+and move on. After the October optimisations `4 × 20` takes 0.293 s and `1 × 80` (one
+block) 0.303 s: one rank per socket stays the default.
 
 <figure>
-  {% include "user/images/scaling-nodes.svg" %}
+  --8<-- "docs/user/images/scaling-layout.svg"
+<figcaption>The rank/thread split at 80 cores, September 2026.</figcaption>
 </figure>
 
-*(this figure predates job 303350; it has not been regenerated for the numbers
-on this page)*
+### Across nodes
 
-Adding nodes is nearly free on the baseline (job 303350). Referred to the
-80-core point on one node:
+Adding nodes is nearly free. Compared with one full node:
 
 | | Speed-up | Of linear |
 | --- | ---: | ---: |
-| 160 cores, 2 nodes | 1.996 × | **99.8 %** |
-| 240 cores, 3 nodes | 2.843 × | 94.8 % |
+| 160 cores, 2 nodes | 2.00 × | 100 % |
+| 240 cores, 3 nodes | 2.93 × | 98 % |
 
-The first node boundary costs nothing measurable. Splitting the iteration by
-phase locates the remaining ~5 % — using the `ICE Phases` line's `source +
-flux` as "compute" and its `halo` term as "halo", best rep of three at each
-point: from 80 to 240 cores compute goes from 0.2782 s to 0.0942 s (2.96× of a
-3× ideal, **98.5 % of linear**) while the halo phase goes from 0.0465 s to
-0.0236 s (1.97× of 3×, **65.6 % of linear**). The halo phase is the limit, not
-the interconnect — the Timing line's `exchange wait` is the same 5.9–6.1 % at
-80 and 160 cores and only grows at 240 (10.0 %). See
-[§11](#11-known-scalability-limits) for how much the wave has since narrowed
-the halo phase itself.
-
-The practical consequence: **if wall-clock time is what matters, spreading a
-fixed case over more nodes is close to free in efficiency.** It costs node-hours
-in proportion, so it is a trade against allocation budget, not against
-scalability.
-
----
-
-## 10. Memory
+The computation itself scales almost perfectly across nodes; what grows is the
+exchange of ghost cells. If wall-clock time matters most, spreading a case over more
+nodes costs little efficiency — only node-hours.
 
 <figure>
-  {% include "user/images/scaling-memory.svg" %}
+  --8<-- "docs/user/images/scaling-nodes.svg"
+<figcaption>Scaling across nodes, September 2026.</figcaption>
 </figure>
 
-*(this figure predates job 303350; it has not been regenerated for the numbers
-on this page)*
+## Memory
 
-Every MPI rank allocates the **whole domain** and updates only its own blocks,
-so the node footprint grows linearly with rank count instead of shrinking with
-the decomposition. Job 303350, `env-C1-1x1` and the pure-MPI `mpi-*` rows:
+Every rank holds the whole domain, so the memory of a node grows with the number of
+ranks instead of shrinking. On the benchmark (7 M cells):
 
-| Ranks | 1 | 2 | 4 | 8 | 16 | 24 |
+| Ranks on the node | 1 | 2 | 4 | 8 | 16 | 24 |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| GB/node | 6.21 | 12.36 | 24.32 | 45.14 | 92.95 | 143.01 |
+| Memory (GB) | 6.2 | 12.4 | 24.3 | 45.1 | 93.0 | 143.0 |
 
-That is **6.2 GB for a single rank and ~6.0 GB per rank** at 24 ranks (the
-largest single rank measured 6.8 GB), at 7 M cells, whatever the rank count
-otherwise. A 187 GB node therefore holds about **30 ranks** at this problem
-size, and pure MPI at a full node is impossible: `80 × 1` would need some
-480 GB.
+That is about 6 GB per rank at this size: a node of 187 GB holds about 30 ranks, so pure
+MPI on 80 cores (some 480 GB) is out of reach. When memory is tight, use fewer ranks
+and more threads per rank.
 
-This is why the rank count should be chosen on memory. Fewer ranks, more
-OpenMP threads per rank is the right lever when memory is tight — and on the
-pre-wave baseline it cost nothing in speed to do so ([§8](#8-choosing-the-rankthread-split)).
-The optimization wave changes that at the single-rank end: see
-[§6](#6-strong-scaling) before assuming a `1 × N` layout is still free.
+Each grid level of `[ICE-Multigrid]` adds a full set of arrays on every rank, about an
+eighth of the fine grid's in 3-D and a quarter in 2-D, for the whole run.
 
----
+<figure>
+  --8<-- "docs/user/images/scaling-memory.svg"
+<figcaption>Memory against the number of ranks, September 2026.</figcaption>
+</figure>
 
-## 11. Known scalability limits
+## Known limits
 
-**Memory per rank.** Domain-wide structures live on every rank. Very large rank
-counts exhaust memory before they exhaust cores.
+- **Memory per rank**: the whole domain on every rank caps the number of ranks per
+  node.
+- **Blocks**: ranks beyond the number of blocks are idle, and unequal blocks show in the
+  `balance` figure. Cut the mesh for the number of ranks you intend to use.
+- **Equal cells are not equal work**: even at 100 % cell balance, the ranks' compute
+  times differ by up to 6 %. The cost per cell depends on the solution, and a symmetry
+  face costs more than a connection.
+- **Many small blocks on one rank over several sockets** are slow without thread
+  groups, which need pinned threads and at least as many blocks as sockets.
+- **Output is serial**: rank 0 writes alone. Keep `sol-diter` large in big parallel
+  runs.
+- **One problem size**: these measurements are one 7 M-cell case. Larger meshes, more
+  families or more physics will behave differently.
 
-**Block count.** Ranks beyond the number of blocks idle, and an uneven split
-shows up directly in the `balance` figure at startup. Cut the mesh for the rank
-count you intend to use.
+## Quick reference
 
-**Many small blocks on one rank spanning sockets.** Spread over all the
-threads, every block's pages are shared by every socket, and the kernel's NUMA
-balancer keeps migrating them: the 24-block cut of the 192³ case on one rank of
-80 threads ran 0.55–0.69 s per iteration where four ranks of 20 take 0.31 s
-(jobs 303748, 303832). Thread groups ([§1](#1-work-division)) remove this —
-0.309 s with four groups — but need pinned threads (`OMP_PROC_BIND`) to be on by
-themselves, and at least as many blocks as sockets: a rank holding fewer blocks
-than the sockets its threads span uses one group. (The figures once quoted here,
-from job 303417, were last-window readings of runs still in their start-up
-transient; see [§6](#6-strong-scaling).)
-
-**Cell balance is not work balance.** At reported 100 % cell-count balance
-at every rank count in this benchmark, ICE still measures up to 6.3 % spread
-in per-rank compute time (job 303350, `env-C240-12x20`). Two reasons: the
-reconstruction retries on unphysical states, so per-cell cost is data-dependent;
-and a rank's mix of physical boundaries and cut connections is not balanced by
-balancing cells — a symmetry condition costs far more than a connection's
-straight copy.
-
-**The halo phase.** On the pre-wave baseline (job 303350) it is 20.1 % of the
-iteration at 240 cores and scales at 65.6 % of linear from 80 to 240 cores
-([§9](#9-scaling-across-nodes)) — the limit on multi-node runs, not the
-interconnect. The wave's halo work (`C9a`: unique halo cells and MPI statuses;
-`C9b`: threaded pack/unpack) cuts this sharply: at `12 × 20`, comparing job
-303387 (before, tree `5265964`) to job 303402 (after, tree `e7cdef7` =
-C1+C9a+C9b, best rep of two at each), `pack` goes from 5.9 % of the iteration
-to 0.7 %, `wait` from 8.1 % to 4.2 %, `unpack` from 4.3 % to 0.7 %, and the
-Timing line's `exchange wait` from 11.6 % to 3.8 %. On the C4a+C4b tree (job
-303417, same nodes as the baseline) the halo phase itself is down to 10.8 % of
-the iteration at 240 cores — about half the baseline's 20.1 %.
-
-**Serial output.** Solution output is gathered through rank 0, which writes
-alone. Keep `sol-diter` high for large parallel runs.
-
-**Grid levels cost memory.** Each level in `[ICE-Multigrid]` adds a complete set
-of block arrays and one more full-domain ORION field on **every** rank — about an
-eighth of the fine level per level on a 3-D mesh, a quarter on a 2-D one. The
-levels are built at setup and held for the whole run, not freed as the solve
-leaves them behind.
-
-**Problem size.** Everything on this page is strong scaling of one 7 M-cell
-case. Larger meshes, more families, or two-way coupling will behave differently.
-
----
-
-## 12. Quick reference
-
-| Goal | Approach |
+| Goal | How |
 | --- | --- |
-| Cover all sockets | ≥ 1 rank per socket, or `OMP_PROC_BIND=spread` |
-| Keep NUMA locality | Keep each OpenMP team inside one socket; do not interleave pages ([§6](#6-strong-scaling)) |
-| Reduce memory pressure | Fewer ranks, more threads — free in speed on the pre-wave baseline; check [§6](#6-strong-scaling) before relying on it on the current tree |
-| Avoid idle ranks | Cut the mesh into at least as many blocks as ranks |
-| Avoid many small blocks per rank | Especially at `1 × N` — see [§11](#11-known-scalability-limits) |
-| Scale to more nodes | Replicate the same per-node layout |
-| Measure the solver | `shell-diter`, last window, minimum of repetitions |
+| Use every socket | at least one rank per socket, or `OMP_PROC_BIND=spread` |
+| Keep memory local | each rank's threads on one socket; no page interleaving |
+| Save memory | fewer ranks, more threads |
+| Avoid idle ranks | at least as many blocks as ranks |
+| Scale to more nodes | the same layout on every node |
+| Measure | `timers = true`, the last report, the fastest of several runs |
 | Measure efficiency | `core-cycles/iter`, not seconds |
-| Validate placement | `I_MPI_DEBUG=4`, check the rank-to-core map |
-
----
-
-## 13. Job index
-
-Every job referenced on this page, its tree, its node set, and what it ran.
-Results under `results/<job>.tsv`; raw per-repetition logs under
-`runs/<job>/logs/`.
-
-| Job | Tree | Nodes | What it ran |
-| --- | --- | --- | --- |
-| 302995 | `17bc107`+ | other | First full scaling matrix. Campaign design and harness: Marco Grossi. |
-| 303350 | `aeb34a5` (`origin/merging`, before this session's fixes) + `ICE_BIN_DIR` | wn[05-07] | Baseline full matrix, 63 runs — source of every table in §6–§11 unless stated otherwise. |
-| 303351 | same tree as 303350 | wn08 | OpenMP placement sweep (packed vs. spread across sockets), plus a first interleaved-pages test at `1 × 40`/`1 × 80`. |
-| 303387 | `5265964` (W1, W3, W4, W5 + timer regions) | wn[08-10] | Reduced matrix, mid-wave (before C1, C9, C4). Source of the halo breakdown's "before" column. |
-| 303402 | `e7cdef7` (+ C1, C9a, C9b) | wn[04-06] | Reduced matrix. Source of the halo breakdown's "after" column. |
-| 303417 | `5575f65` (+ C4a, C4b) | wn[05-07], same nodes as 303350 | Reduced matrix: the wave's before/after at the four points in §6, plus `blk-C80-1x80-R24`. |
-| 303418 | `5575f65`, same binary as 303417 | wn09 | NUMA: plain (first-touch) vs. interleaved pages at `1 × 40` and `1 × 80`. |
-| 303439 | `3d43d0e` (+ C5b, slab tiles) | wn[05-07] | Reduced matrix: C5b neutral at 1 × 80 (0.338 s), −31/−40 % on the 20-thread socket legs, many-blocks leg doubled → C5b reverted (`461eb4f`). |
-| 303482 | `461eb4f` (+ C3, parallel first touch) | wn[05-07] | Reduced matrix: read as "C3 changed nothing (1 × 80 0.3373 s)" from the last window and reverted — wrongly: C3 removes the 1 × 80 start-up crawl (§6, jobs 303745/303746); re-landed in `52060e1`. |
-| 303484 | `461eb4f` (the final solver code plus C3, reverted afterwards on a last-window reading and re-landed in `52060e1`) | 3 nodes | Greedy vs. halo-objective cuts (ATLAS MDB) at R12, R16, R20, R24 — §6. (303478, its first submission, ran the reverted C5b binary and was cancelled.) |
-| 303485 | `461eb4f` (the final solver code plus C3, reverted afterwards on a last-window reading and re-landed in `52060e1`) | wn[05-07], same nodes as 303350 | The full nine-point matrix on the final tree, 63 runs — the second table of §6 and the before/after of every leg. (303481, its first submission, was cancelled for the same reason as 303478.) |
-| 303562–303572 | `3414a76`–`35edb61` | wn04, wn08, wn[04-05,10] | Phase 2: VTune of `1 × 80` (24 % spin at barriers), scheduling and tile-count legs (`ice-vtune`, `ice-sched*`). Their `1 × 80` last windows sit in the start-up crawl and are not steady states. |
-| 303578–303580 | variants of `fdf9ed3`/C5d | wn04, wn05 | The crawl bisected (`ice-transient*`): every binary without C3 crawls, whatever its schedule; master pinned to CPU 0 in all. |
-| 303745 | `b151bea` rebuilt, and the 303485 binary | wn03 | The flat 303485 binary against its tree rebuilt without C3 (crawls), and the footprint bound to node 0 (4.0 s per iteration). |
-| 303746 | C5d ± C3, `461eb4f` ± C3 | wn05 | C3 makes every `1 × 80` run flat; C5d + C3 0.303 s against 0.343. 24-block cut: 0.71 s (C5d + C3), 0.63 (`461eb4f`), 0.44 (C5d, balancer-placed). |
-| 303748 | `935af6b` (C3 + C5d) beside the 303485 binary | wn[05-07], same nodes as 303350 | Phase-2 verdict, the second table of the single-rank passage in §6. |
-| 303832 | `9a4812b` (thread groups) beside the `935af6b` binary | wn03 | Thread groups at `1 × 80` on 24, 12, 4 and 1 blocks against one group, the phase-2 binary and `4 × 20` — the thread-groups table of §6. |
-| 303833 | `5f020c4` (thread groups, auto) | wn03 | `ICE_THREAD_GROUPS` unset: four groups found at `1 × 80` on 24 blocks (0.333 s), one group at `4 × 20` (0.305 s). |
-| 304446 | `935af6b`, `037e94f`, `e69ebcc`, `fddd1cb`, `055f6d4`, `f50efc2`, built together | wn09 | Attribution of the one-group speed-up (`ice-attr.slurm`, `attr-summary.py`): five interleaved passes of the 24-block cut and the single block at `1 × 80`, one group — §6. |
-| 304520 | `935af6b`, `037e94f`, `e69ebcc`, `f50efc2` (the 304446 binaries) | wn03 | The single block only, twelve interleaved passes of 80 iterations (`ICE_ATTR_SETS=R1 ICE_ATTR_PASSES=12 ICE_ATTR_ITERS=80`): `compute_source` unchanged, steady iteration −3.4 % — §6. |
+| Check the placement | `I_MPI_DEBUG=4` and the core of each rank |

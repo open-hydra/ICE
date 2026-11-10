@@ -1,21 +1,17 @@
 # Input File
 
-`input.ini` is the only configuration file ICE reads, and it is read from the working
-directory. It is an INI file parsed by [FiNeR](https://github.com/szaghi/FiNeR):
-sections in square brackets, `key = value` inside them, and everything optional unless
-noted below.
+`input.ini`, in the case folder, holds every setting of a run. It is an INI file:
+sections in square brackets, with `key = value` lines inside them.
 
-A comment line starts with `;`, `#` or `!`; `;` also works inline, trimming the rest of
-the value.
+- A comment line starts with `;`, `#` or `!`. A `;` also ends a value early, so the
+  rest of the line is a comment.
+- An unknown key in a section of ICE stops the run and is named: a misspelt key would
+  otherwise be ignored without a word. Sections that are not ICE's are left alone, so
+  the file can also hold the settings of other tools.
+- The section names and most keys are the same as [MOSE](https://github.com/open-hydra/MOSE)'s.
 
-A key ICE does not recognise, inside a section it does, stops the run and is named —
-a misspelled or renamed key would otherwise take its default and change nothing
-silently. Sections ICE does not own are left alone, so a case may carry the
-mesh-generator sections that produced it.
-
-The section names and most of the keys mirror
-[MOSE](https://github.com/open-hydra/MOSE), so a case set up for one solver reads the
-same way as a case set up for the other.
+Every key, with its default and allowed values, is listed in the
+[parameter reference](registry.md). This page explains how they fit together.
 
 ## A minimal file
 
@@ -43,29 +39,26 @@ shell-diter = 100
 closure = AG
 ```
 
-`time-scheme`, `cfl`, `time-accurate`, `space-reconstruction` and `closure` are
-required; everything else has a default.
+Five keys are required: `time-scheme`, `cfl`, `time-accurate`,
+`space-reconstruction` and `closure`. Everything else has a default.
 
 ## Sections
 
 | Section | Contents |
 |---|---|
-| `[ICE-Parameters]` | Restart flag and the three stopping thresholds |
-| `[ICE-Numerics]` | Time scheme, CFL number and step ceiling, reconstruction, limiter, shock detector, Riemann solver, residual smoothing |
-| `[ICE-Physics]` | Drag, heat-transfer and evaporation models, and the condensed-material and vapour properties |
-| `[ICE-IO]` | Input and output formats and frequencies, gas-file directory |
-| `[ICE-Multigrid]` | Number of grid levels and the iteration budget of each |
-| `[ICE-Probes]` | Names the section that configures each probe |
-| `[<probe name>]` | One per probe: location, variables, sampling frequency |
+| `[ICE-Parameters]` | Restart, and when to stop |
+| `[ICE-Numerics]` | Time scheme, CFL number, reconstruction, limiter, shock detector, Riemann solver, residual smoothing |
+| `[ICE-Physics]` | Exchange models, and the properties of the materials and their vapour |
+| `[ICE-IO]` | File formats, output frequencies, the folder of the gas field |
+| `[ICE-Multigrid]` | Grid levels and the iterations on each |
+| `[ICE-Probes]` | The names of the probe sections |
+| `[<probe name>]` | One per probe: where, what, how often ([Probes](using.md#probes)) |
 | `[ICE-FamilyN]` | One per particle family: its closure |
 
-Every parameter, with its default and its validation rule, is listed in the
-[parameter reference](registry.md), which is generated from the registry in the source.
+## Families
 
-### Families
-
-The number of families is determined by counting `[ICE-FamilyN]` sections from 1
-upwards, stopping at the first gap. Two families:
+ICE counts the `[ICE-FamilyN]` sections from `[ICE-Family1]` up, and stops at the
+first missing number. Two families:
 
 ```ini
 [ICE-Family1]
@@ -75,14 +68,14 @@ closure = MK
 closure = AG
 ```
 
-Each carries its own state; they share the mesh, the gas field and the numerical
-scheme, and do not interact. `closure` is required — a file with no family section
-stops the run.
+The families share the mesh, the gas field and the scheme, but each has its own state,
+and they do not interact. A file without any family section stops the run.
 
-### Materials
+## Materials
 
-A family is made of one condensed material. `INPUT/<prefix>phase.txt`, which ATLAS writes,
-names the materials after its type line, one line each, `<name> <groups> [key=value ...]`:
+Each family is made of one material. The phase file, `INPUT/part-phase.txt`, written
+by ATLAS, lists the materials after its first line, one per line:
+`<name> <groups> [key=value ...]`.
 
 ```
 condensed-dispersed phase
@@ -90,62 +83,81 @@ A 1 evaporation=CEM
 B 2
 ```
 
-The families map onto the materials in that order: here family 1 is material A and
-families 2 and 3 are material B. Without the file every family uses one material. With
-several, the groups must add up to the `[ICE-FamilyN]` count and the
-[property table](initial-conditions.md#property-table) must give one zone per material.
+The families take the materials in order: here family 1 is material A, families 2
+and 3 are material B. The groups must add up to the number of families. Without the
+file, every family is made of one material. With several materials, the
+[property table](initial-conditions.md#property-table) needs one zone per material.
+
+### Keys with one value per material
+
+These keys of `[ICE-Physics]` take one value per material, in the order of the phase
+file (`emissivity = 0 0` for two materials); another count stops the run:
 
 `density`, `specific-heat`, `latent-heat`, `emissivity`, `vapour-molar-mass`,
-`boiling-temperature` (alias `Tboil`), `boiling-pressure`, `vapour-specific-heat`, `lewis-number`,
-`vapour-mass-fraction` and `evaporation-coefficient` take one value per material, in the phase file's order
-(`emissivity = 0 0` for two materials); any other count stops the run. `latent-heat`,
-`vapour-molar-mass` and `vapour-specific-heat` are 0 for a material whose property table
-carries the `Lv`, `Mv` or `Cpv` column of the same quantity, and `emissivity` is 0 for one
-whose table carries the `Emissivity` column: the table then owns it.
+`boiling-temperature` (or `Tboil`), `boiling-pressure`, `vapour-specific-heat`,
+`lewis-number`, `vapour-mass-fraction`, `evaporation-coefficient`.
 
-The tokens are the ones IGLOO reads. `evaporation`, `interface` and `alpha-e` set that
-material's evaporation model, interface and accommodation coefficient; `[ICE-Physics]
-evaporation`, `evaporation-interface` and `evaporation-coefficient` are the default of every
-material without the token. `solidification = on` makes the material freeze and melt, with
-`T-melt`, `h-fus`, `T-nuc` and `cp-solid` (see [Solidification](../theory/physics.md#solidification)); it
-stops the run without a positive `h-fus` and `cp-solid`, with `T-nuc` at or above `T-melt`, together
-with evaporation, and with a `Density` column that varies (a varying `Cp` is the liquid's).
-`liquid-conduction` (`ITC`, `P2T`) sets the conduction inside the drop, with `k-liq` [W/(m K)] and `mu-liq` [Pa s]
-for `P2T`, or the `Conductivity` and `Viscosity` columns of the
-[property table](initial-conditions.md#property-table) in their place, and `boiling` (`clamp`, `ZGR`) the branch above the boiling temperature (see
-[Conduction inside the drop](../theory/physics.md#conduction-inside-the-drop) and
-[Boiling](../theory/physics.md#boiling-above-the-boiling-temperature)); `[ICE-Physics] liquid-conduction` and
-`boiling` are their defaults. In a coupled run `P2T` stops the run on a material that does not evaporate or
-without a positive `k-liq` or `mu-liq` (or its column), and `ZGR` on a material that does not evaporate. `combustion` accepts only
-`none`, and IGLOO's other numeric keys (`K-burn`, …) are read and ignored. An unknown key, a value that is
-not a number, or `interface = LK` with the d2-law stops the run. `evaporation-blowing` stays global.
-The setup prints each material's evaporation model, with its liquid conduction and boiling branch, and each
-solidifying material's values.
+When the property table has a column for a quantity (`Lv`, `Mv`, `Cpv` or
+`Emissivity`), give the key 0 for that material: the table sets it.
 
-### Choosing the exchange models
+### Tokens on the material line
 
-`drag` and `heat-transfer` are set once in `[ICE-Physics]` and apply to every family;
-`evaporation` is the default of every material (see [Materials](#materials)). They are only consulted when the run is coupled (that is, when
-`INPUT/gas.tec` exists); an uncoupled run ignores them, and a name none of them
-recognises stops the solver with the list of valid ones. In a coupled run `drag` and
-`heat-transfer` are required: leaving either at its default `none` stops the solver with
-that list. `drag = NoDrag` and `heat-transfer = NoHeat` switch the momentum and the
-convective heat exchange off explicitly; radiation stays under `emissivity`.
+The tokens are the same as [IGLOO](https://github.com/open-hydra/IGLOO)'s. The ones
+that also exist in `[ICE-Physics]` override it for that material.
 
-`evaporation` defaults to `none`, and while it is `none` the vapour keys beside it are
-never read. An evaporating material gives `latent-heat`, `vapour-molar-mass`,
-`vapour-specific-heat` (0: the gas cp), `boiling-temperature`, `lewis-number` and
-`vapour-mass-fraction`, or the `Lv`, `Mv` and `Cpv` columns of the property table for the
-first three; without one of them the run stops, naming it. `latent-heat`,
-`vapour-molar-mass` and `boiling-temperature` set the saturation curve unless the property
-table carries a `Psat` column. A table with `Lv`,
-`Mv` and `Cpv` columns supplies the latent heat, the molar mass and the vapour specific
-heat in place of `latent-heat`, `vapour-molar-mass` and `vapour-specific-heat`, the first
-and the last as functions of the particle temperature (see the
-[property table](initial-conditions.md#property-table)). `boiling-temperature`
-may be given as `Tboil`, the name IGLOO also accepts; giving both stops the run. It is the boiling point at
-`boiling-pressure` [Pa], one atmosphere unless given: the saturation curve passes through the two. `evaporation-interface` and `evaporation-blowing` are refinements of
-the selected model rather than models of their own:
+| Token | Meaning |
+|---|---|
+| `evaporation`, `interface`, `alpha-e` | The evaporation model, the interface model and the accommodation coefficient |
+| `liquid-conduction` | `ITC` (uniform drop temperature) or `P2T` (parabolic profile, with `k-liq` [W/(m K)] and `mu-liq` [Pa s], or the `Conductivity` and `Viscosity` columns) |
+| `boiling` | `clamp` or `ZGR`, the behaviour above the boiling temperature |
+| `solidification = on` | The material freezes and melts, with `T-melt`, `h-fus`, `T-nuc` and `cp-solid` |
+| `combustion` | Only `none` is accepted |
+
+The physics of each is in [Particle Physics](../theory/physics.md):
+[conduction inside the drop](../theory/physics.md#conduction-inside-the-drop),
+[boiling](../theory/physics.md#boiling-above-the-boiling-temperature) and
+[solidification](../theory/physics.md#solidification). IGLOO's other numeric keys
+(`K-burn`, …) are read and ignored. At setup, ICE prints the models of each material.
+
+The setup stops on:
+
+- an unknown key, a value that is not a number, or `interface = LK` with the d2-law;
+- solidification without a positive `h-fus` and `cp-solid`, with `T-nuc` at or above
+  `T-melt`, together with evaporation, or with a `Density` column that varies;
+- in a coupled run: `P2T` or `ZGR` on a material that does not evaporate, and `P2T`
+  without a positive `k-liq` and `mu-liq` (or their columns).
+
+`evaporation-blowing` has no token: it applies to every material.
+
+## Exchange models
+
+`drag` and `heat-transfer` apply to every family; `evaporation` is the default of every
+material. ICE reads them only in a coupled run, when `INPUT/gas.tec` exists.
+
+- A coupled run needs `drag` and `heat-transfer`: if either is left at `none`, the run
+  stops and lists the valid names. `NoDrag` and `NoHeat` switch the exchange off on
+  purpose.
+- Radiation is set by `emissivity`, not by these keys.
+- `evaporation` is `none` by default, and while it is, the vapour keys are not read.
+
+### Evaporation
+
+An evaporating material needs six quantities. The run stops and names the one missing.
+
+| Key | Or the table column |
+|---|---|
+| `latent-heat` | `Lv`, a function of temperature |
+| `vapour-molar-mass` | `Mv` |
+| `vapour-specific-heat` (0: the gas cp) | `Cpv`, a function of temperature |
+| `boiling-temperature` (or `Tboil`, not both) | |
+| `lewis-number` | |
+| `vapour-mass-fraction` | |
+
+The saturation pressure follows the Clausius-Clapeyron curve through
+`boiling-temperature` at `boiling-pressure` (one atmosphere unless given), or the
+`Psat` column of the property table when it has one.
+
+`evaporation-interface` and `evaporation-blowing` refine the chosen model:
 
 ```ini
 [ICE-Physics]
@@ -160,7 +172,7 @@ lewis-number          = 1
 vapour-mass-fraction  = 0
 ```
 
-### Grid levels
+## Grid levels
 
 ```ini
 [ICE-Multigrid]
@@ -169,87 +181,86 @@ level1-iter = 5000
 level2-iter = 500
 ```
 
-`levels = 2` adds one coarse grid at half the resolution in every direction, so every
-block dimension must be divisible by 2. The run starts on the coarsest level; see
+`levels = 2` adds a coarse grid with half the cells in every direction, so every block
+dimension must be even. The run starts on the coarsest level. See
 [Grid sequencing](../theory/time-integration.md#grid-sequencing).
 
-Each level is a mesh in its own right and needs **its own boundary file**, because the
-records are per boundary cell and a coarse cell is not a fine one:
+Each level needs **its own boundary file**, because the records are per boundary cell:
 
 | Level | File |
 |---|---|
-| 1 (fine) | `INPUT/<prefix>bc.txt` |
-| 2 | `INPUT/<prefix>bc2.txt` |
-| *n* | `INPUT/<prefix>bc<n>.txt` |
+| 1 (the fine grid) | `INPUT/part-bc.txt` |
+| 2 | `INPUT/part-bc2.txt` |
+| *n* | `INPUT/part-bc<n>.txt` |
 
-ATLAS BCB writes all of them in one pass when `MG-levels` is set in its own
-`[ATLAS-Parameters]`, so the two settings have to agree. ICE checks each file's record
-count against that level's mesh and stops if they disagree, so a stale or missing file
-is reported rather than absorbed.
+ATLAS BCB writes them all when `MG-levels` is set in its `[ATLAS-Parameters]`, so the
+two settings must agree. ICE checks the number of records of each file against its
+level and stops if they differ.
 
-## Time step: `cfl`
+## The time step: `cfl`
 
-`cfl` is the Courant number of the **sum over the directions** of the signal speeds,
-$|\mathbf u\cdot\nabla\xi_d| + a_d|\nabla\xi_d|$, measured on the width of the cell across its
-faces ([theory](../theory/time-integration.md#the-time-step)). Stability limits of the linearised
-scheme (MUSCL with upwind fluxes; the van Leer, van Albada and MC limiters in smooth flow), up to
-which the rule is stable:
+`cfl` is the Courant number of the signal speeds **summed over the directions**, on
+the width of the cell ([theory](../theory/time-integration.md#the-time-step)). The
+largest stable values:
 
-| `time-scheme` | `cfl` ≤ |
+| `time-scheme` | `cfl` up to |
 |---|---|
-| `RK2` (Heun) | 1 |
-| `RK3` | 1.17 (1.256 with `first-order` reconstruction) |
-| `euler` | 1 with `first-order` reconstruction (unstable with `MUSCL`; its limited scheme is TVD up to the limiter's step bound, 0.5 for `vanleer`, `mc`, `superbee`, `koren`, `umist`, `ospre`, 0.586 for `vanalbada`, 0.571 for `sweby`, `osher`, 0.667 for `minmod`: a warning above it) |
+| `RK2` | 1 |
+| `RK3` | 1.17 (1.256 with first-order reconstruction) |
+| `euler` | 1 with first-order reconstruction; with `MUSCL`, the limiter's bound (below) |
 
-Keep a margin below them where shocks and limiters act (for example `cfl = 0.8`). The rule
-used to take the smallest of the direction limits, on the length of the cell edge, which let
-the step exceed these limits by up to a factor 2 on square 2-D cells, 3 on cubes and more on
-skewed cells: **the same `cfl` now gives a smaller step than before.**
+With `euler` and `MUSCL` the bound is 0.5 for `vanleer`, `mc`, `superbee`, `koren`,
+`umist` and `ospre`; 0.586 for `vanalbada`; 0.571 for `sweby` and `osher`; 0.667 for
+`minmod`. Above it ICE warns.
+
+Keep a margin where shocks and limiters act, for example `cfl = 0.8` with `RK2`.
 
 ## Stopping conditions
 
-`iter-threshold`, `time-threshold` and `res-threshold` are independent, and the run
-stops at whichever is met first. `res-threshold` ends steady runs only
-(`time-accurate = false`): the density change of a time step says nothing about
-convergence, so a time-accurate run ends on the other two. Their defaults are
-effectively infinite for the first two and $10^{-10}$ for the third, so a steady run
-that sets none of them stops on the residual. Set `res-threshold = 0` to disable it.
+The run stops at the first of three thresholds:
 
-`res-threshold` is relative: a steady run ends when its density residual (the L2 norm
-over the cells, and over the families when there are several, of the change of density in one
-iteration, the third column of `residual-history.dat`, after the iteration and the time; the
-families' own norms follow the domain's, see [Input and output formats](using.md#input-and-output-formats)) has fallen by that factor from the first non-zero one, on the
-finest level. The residual scales with the loading and with the square root of the
-number of cells, so a relative test stops the same flow at the same iteration whatever
-its density, and a dilute cloud does not stop at its first iteration. The reference is
-the first non-zero residual rather than the first one, because a cloud at rest that the
-gas starts to move can have no density change at its first step (none with the one-stage
-`euler` scheme); while every residual is zero, the residual ends nothing, and
-`iter-threshold` ends a run in which nothing moves. A `res-threshold` switched on by a
-re-read of `input.ini` (from 0) measures from the first non-zero residual after it. If a
-residual rises before it falls, the run ends when it is `res-threshold` times the first
-one, later than a test relative to the peak would. A steady restart takes back the
-reference of the run it continues, which the solution stores (`ICE_RES_REFERENCE`, see
-[Restarting](using.md#restarting)); from a solution without it, the first non-zero
-residual of its own run, and says so. An input written for the former absolute test keeps its stop with
-`res-threshold` divided by that first residual.
+| Key | Stops when | Default |
+|---|---|---|
+| `iter-threshold` | the iterations reach it | never, in practice |
+| `time-threshold` | the simulation time reaches it | never, in practice |
+| `res-threshold` | the density residual has fallen by this factor (steady runs only) | $10^{-10}$ |
 
-## Re-reading at runtime
+So a steady run with no threshold set stops on the residual. `res-threshold = 0`
+switches the residual test off. A time-accurate run ignores it: the change of one time
+step says nothing about convergence.
 
-If `ini-diter` is set, `input.ini` is re-read every that many iterations. Thresholds
-and output frequencies then take effect during a run: an `iter-threshold` or
-`level<n>-iter` lowered below the iterations already done ends that level at the next
-iteration. Anything consumed once at setup does not: the scheme, and the materials with
-their properties, models and property table; `irs = true` in a time-accurate run is
-ignored, with a warning.
+`res-threshold` is **relative**: it compares the density residual (column 3 of the
+[residual history](using.md#the-residual-history)) with the first non-zero one, on the
+finest grid. The same flow therefore stops at the same iteration whatever its
+loading. The first *non-zero* residual is the reference because a cloud at rest that
+the gas starts moving may not change at its first step.
 
-An error in a re-read does what `ini-error` of `[ICE-IO]` says: a file that cannot be
-read or holds no key, a value that does not read as its type or breaks its rule, a change
-of `levels` or of a family's `closure` (which setup has sized the run for), or
-`riemann-solver = Saurel` with an IG or AG family. With `warn`, the default, the re-read
-is not taken: ICE prints a warning with the iteration and the error, and the run goes on
-with every value it had before the re-read, those of the keys the same re-read had right
-too, so that keys that go together (`cfl` and `dt-max`, an output and its frequency)
-never change one without the other. With `stop` the run stops with the error and exit
-code 1. The value of `ini-error` in force when a re-read starts decides, whatever the
-file read then says. At setup every error stops the run, whatever `ini-error` says.
+- A steady restart takes back the reference of the run it continues
+  ([Restarting](using.md#restarting)).
+- A `res-threshold` switched on while the run goes on (from 0, see below) measures from
+  the first non-zero residual after it.
+- A residual that first rises and then falls is compared with the first one, not with
+  its peak.
+
+## Reading again during the run
+
+With `ini-diter` set, ICE reads `input.ini` again every that many iterations:
+
+- the thresholds and the output frequencies take effect at once. A threshold lowered
+  below the iterations already done ends the run (or the grid level) at the next
+  iteration;
+- what is set up once does not change: the scheme, and the materials with their
+  properties, models and tables. `irs = true` in a time-accurate run is ignored, with a
+  warning.
+
+An error in the new file — a value that breaks its rule, a changed `levels` or
+`closure`, `riemann-solver = Saurel` with an IG or AG family, a file that cannot be
+read or holds no key — is handled as `ini-error` says:
+
+| `ini-error` | What happens |
+|---|---|
+| `warn` (default) | ICE warns, with the iteration and the error, and keeps **all** its previous settings, including the keys the new file had right. Keys that go together, such as `cfl` and `dt-max`, never change one without the other. |
+| `stop` | The run stops with the error and exit code 1. |
+
+The value of `ini-error` in force when the reading starts decides. At setup, every
+error stops the run.

@@ -1,177 +1,150 @@
 # Performance Notes
 
-This page is about what makes a single ICE process fast. For choosing a parallel
-configuration and for the measured scaling curves, see
+This page is about what makes one ICE process fast, and how the parallel code is built.
+For choosing a parallel configuration and for the measured scaling, see
 [Parallel Execution](../user/parallel.md).
 
 ## Where the time goes
 
-A step is dominated by the flux loop, which is swept once per direction per
-Runge-Kutta stage per family. Everything else — sources, ghost fill, residual, state
-update — is a single pass over the cells.
+A step is dominated by the flux loop, swept once per direction, per Runge-Kutta stage,
+per family. Everything else — sources, ghost fill, residual, update — is a single pass
+over the cells. The settings that matter most are those that change the number of flux
+sweeps:
 
-So the first-order levers are the ones that change how many flux sweeps happen:
-
-| Lever | Effect |
+| Setting | Effect |
 |---|---|
 | `time-scheme` | Three stages cost about 1.5× two |
-| Number of families | Linear: each is a full independent sweep |
-| `space-reconstruction` | First order skips the limiter but not the sweep; the saving is modest |
-| `dt-max` | Often the real cost driver. If the ceiling binds rather than the CFL condition, every step is smaller than it needs to be — see [Time Integration](../theory/time-integration.md#the-time-step) |
+| Number of families | Linear: each family is a full sweep of its own |
+| `space-reconstruction` | First order skips the limiter, not the sweep: a modest saving |
+| `dt-max` | Often the real cost: if the ceiling binds instead of the CFL condition, every step is smaller than it needs to be |
 
-Check `dt-max` first on a slow run: compare the reported `Delta t` against
-`cfl * dt-max`. If they are equal, the ceiling is what is setting the pace, and raising
-it costs nothing in stability.
+On a slow run, check `dt-max` first: if the reported `Delta t` equals `cfl * dt-max`,
+the ceiling sets the pace, and raising it costs nothing in stability
+([Time Integration](../theory/time-integration.md#the-time-step)).
 
 ## OpenMP
 
-Threading is over the cells of a block, not over blocks, so a single large block
-threads as well as many small ones. Two details shape the scaling:
+The threads share the cells of a block, not the blocks, so one large block threads as
+well as many small ones. Which thread computes a cell never changes the arithmetic:
+the results are bit-for-bit the same for any thread count.
 
-- The interior flux loop gathers: each thread owns a tile of the block (a range of
-  whole k-planes when the block has at least as many planes as threads, pieces of a
-  plane otherwise), computes every face flux of its tile once into private line, row
-  and plane buffers, and applies the two faces of each direction to each cell in the
-  order the earlier odd-then-even scatter passes gave them — so the residual is bit
-  for bit the scatter form's, and independent of the thread count. Per block and stage
-  there are two worksharing loops (the faces on the tile seams, the sweep) where the
-  scatter form had a pass per parity per direction. The shock-detector weights are a
-  pass of their own over the same tiles (`compute_beta`), after the ghost fill and
-  before the boundary fluxes, which read them too (`Equiv3DThreadsSD`, `Equiv3DGroupsSD`:
-  the threads and groups legs with the detector on).
-- The boundary flux loop is `SCHEDULE(DYNAMIC, 16)` over the rank's boundary cells of
-  the family, each cell accumulating its records in face order on one thread — a
-  block corner in 3-D carries three — so 2-D and 3-D runs are bit-identical across
-  thread counts (`test/fast/equiv3d`: RED on the record-parallel `ATOMIC` loop, GREEN
-  since 2026-09-30). The cost per cell varies a great deal by type: a chimera cell
-  blends several donors, an extrapolation cell copies.
+**The interior flux loop.** Each thread owns a tile of the block — whole k-planes when
+the block has at least as many planes as threads, pieces of a plane otherwise. It
+computes every face flux of its tile once, into private buffers, and adds the two faces
+of each direction to each cell in a fixed order, so the residual does not depend on the
+thread count. The shock-detector weights are a pass of their own over the same tiles.
 
-Thread counts beyond a few hundred cells per thread stop paying: the loop bodies are
-short and the barriers are frequent.
+**The boundary flux loop** runs over the boundary cells, each cell on one thread
+accumulating its records in face order (a 3-D block corner carries three). The cost per
+cell varies a lot: a chimera cell blends several donors, an extrapolation cell copies.
 
-The two loop classes of the step are scheduled differently, and neither choice touches a
-result (which thread sweeps a cell is not arithmetic):
+**Scheduling.** The two kinds of loop are scheduled differently:
 
-- the **flux kernel's tile loops** are `SCHEDULE(DYNAMIC, 1)` over `ICE_TILES_PER_THREAD`
-  tiles per thread (default 4), because the particle cloud fills only part of the domain
-  and equal cell counts are not equal work: with one static tile per thread a rank of 80
-  threads spent 24 % of the sweep's CPU time at its barrier (VTune, monolith, 2026-10-01).
-  The kernel takes its deep tiling (private plane buffers) only while the threads' buffers
-  together fit `plane_buffer_budget` (16 MiB); above it, the shallow tiling computes every
-  k-face once into the shared array.
-- the **per-cell loops** (`zero_residual`, `compute_source`, `compute_residual`,
-  `state_update`, `state_copy`, `set_dt_global`, `compute_dt`) are `SCHEDULE(RUNTIME)`, and
-  ICE sets that schedule itself at set-up: static. `OMP_SCHEDULE` therefore has no effect on
-  ICE (a dynamic schedule on these loops dispatches per cell and cost up to 25× at 80
-  threads); `ICE_OMP_SCHEDULE=<kind>[,<chunk>]` is the measurement override.
+- the flux tiles are `SCHEDULE(DYNAMIC, 1)`, with `ICE_TILES_PER_THREAD` tiles per thread
+  (default 4): the cloud fills only part of the domain, so equal cell counts are not equal
+  work, and one static tile per thread left a rank of 80 threads waiting at its barriers
+  for a quarter of the sweep. The deep tiling, with private plane buffers, is used only
+  while the buffers fit 16 MiB together; above that, the k-faces go to a shared array;
+- the per-cell loops (sources, residual, update, time step) are `SCHEDULE(RUNTIME)`, and
+  ICE sets that schedule to static at setup, so `OMP_SCHEDULE` has no effect on it (a
+  dynamic schedule there cost up to 25× at 80 threads). `ICE_OMP_SCHEDULE=<kind>[,<chunk>]`
+  overrides it for measurements.
 
-On the 192³ case at one rank of 80 threads (monolith, job 303746, steady state over the last
-30 of 60 iterations, two runs each) the two together run 0.303 s per iteration against 0.343
-for the kernel before them: −12 %.
+Beyond a few hundred cells per thread, more threads stop paying: the loop bodies are
+short and the barriers frequent.
 
-**First touch.** `Allocate_Block` writes the block fields (`prim`, `prim_old`, `tau`, `beta`,
-`source`, `residual`) from a static parallel loop over the k-planes, so each plane's pages
-start on the socket of the thread that sweeps it. Written serially, a whole block starts on
-the master's socket: a rank of 80 threads over four sockets then streams one socket's memory
-(the whole footprint bound to one node runs 4.15 s per iteration instead of 0.35, job 303745),
-and until the kernel's NUMA balancer has moved ~1.7 GB — 45 to 60 s — the iteration costs
-6–10× its steady value; on a busy node it may never recover (0.38 s instead of 0.30). With
-the parallel first touch every run is flat from its first iteration (jobs 303746). Ranks of
-20 threads pinned to one socket do not need it, which is why the multi-rank layouts never
-showed the effect. The windows of the `ICE Timing` lines show it; a last-window number does
-not.
+### First touch
 
-**Thread groups: many blocks on one rank spanning sockets.** Spread over all the threads, every
-block's pages are shared by every socket; on many small blocks the NUMA balancer then keeps
-migrating them (24 blocks of 24 × 64 × 192 at one rank of 80 threads: 0.69 s per iteration,
-195 000 hinting faults per run). `Mod_ThreadGroups` cuts the team into groups of consecutive
-thread ids — by default, with pinned threads, one per socket the team spans (each thread reads
-its CPU with `sched_getcpu` and the CPU's socket from `/sys`); `ICE_THREAD_GROUPS=<n>` forces n
-equal groups, `1` turns them off — and assigns each local block to one group by
-longest-processing-time on cell counts (`lpt_assign`, the rule for blocks over ranks). Every
-phase then keeps a block on its group:
+A page of memory lives on the socket of the thread that first writes it.
+`Allocate_Block` therefore writes the block fields from a parallel loop over the
+k-planes, so each plane starts on the socket of the thread that will sweep it. Written
+by one thread, a whole block would start on one socket: a rank of 80 threads over four
+sockets would then stream one socket's memory, and its first minute of iterations would
+cost several times their steady value while the kernel moves the pages. Ranks of 20
+threads pinned to one socket do not need this.
 
-- set-up partitions the blocks and builds the groups before `allocate_data`, and a group's
-  threads write each array of its blocks first (`touch_by_group`), so the pages land on the
-  group's socket;
-- the per-cell phases give each thread its slice (`cell_slice`: the split a static
-  `collapse(3)` makes) of its group's blocks;
-- the ghost fill and the boundary fluxes take each record or boundary cell on a thread of the
-  group owning its block (group-ordered lists built by `build_local_bc_index`);
-- the shock-detector pass gives the tiles of each block to the threads of its group
-  (`compute_beta_grouped`);
-- the flux kernel runs in rounds, round r sweeping the r-th block of every group at once with
-  the group's own tiles, shared planes and tile counter, so its barriers stay team barriers
-  (`compute_flux_grouped`).
+The `ICE Timing` lines show such a start-up transient window by window; a single
+end-of-run number hides it.
 
-Which thread computes a cell is not arithmetic: results are bit-identical with and without
-groups (`Equiv3DGroups`). One rank of 80 threads on the 24-block cut went from 0.501 to
-0.31–0.34 s per iteration (four runs, jobs 303832/303833), against 0.305–0.312 s for four ranks of
-20 threads on the same cut. A single block keeps the whole team: groups need at least as many blocks as groups.
+### Thread groups
 
-With one group the branch is 3–4 % faster than the phase-2 binary as well (job 304446, five
-interleaved passes): the ghost fill, since its loop bodies became the procedures `ghost_record`
-and `second_ghost_record` (`fddd1cb`) — ifx vectorizes more of the body as a procedure of its own
-than inlined in the OpenMP region. Keep loop bodies of the large `select case` kind in their own
-procedures.
+A rank whose threads span several sockets and which holds many blocks shares every
+block's pages among all the sockets, and the kernel keeps migrating them.
+`Mod_ThreadGroups` cuts the threads into groups — by default one per socket, when the
+threads are pinned — and gives each block to one group, balancing the cells
+(`lpt_assign`, the same rule as blocks over ranks). Every phase then keeps a block on
+its group:
 
-`Equiv3DGroups` does not see a missing barrier between the kernel's k-faces and its sweep: on
-its 8×8×6 blocks a sweep tile never reads a seam before its writer has finished (5 runs green with
-the barrier removed). That barrier has its own gate on a race-probe build, outside the `fast`
-tier and the CI: configure with `-DICE_RACE_PROBE=ON` (`test/bench/monolith/build-cfg.sh
-omp-race`) and run `ctest -L race` (`Equiv3DGroupsRace`, the groups leg: ~40 s with ifx RELEASE, ~6 min with gfortran TESTING on a busy host, timeout 900 s). In that build every
-round of `compute_flux_grouped` starts with the group's shared k-face planes set to NaN and k-face
-tile 1 sleeps 2 ms before writing; the group's other threads empty the k-face counter meanwhile,
-so without the barrier one of them takes sweep tile 1, reads the NaN and `state_update` stops the
-run. Measured 2026-10-08: RED 10 of 10 with the barrier removed, GREEN on the real code (record
-`plan-bucket/records/2026-10-08-openmp-loose-ends/`). It covers that barrier only: not the
-round-start barrier, not the ungrouped `compute_flux`. Run it before merging a
-change to the grouped kernel. Without the option the code compiled is the normal one.
+- at setup, a group's threads write its blocks' arrays first, so the pages land on its
+  socket;
+- the per-cell phases give each thread a slice of its group's blocks;
+- the ghost fill and the boundary fluxes take each record on a thread of the block's
+  group;
+- the flux kernel runs in rounds, round $r$ sweeping the $r$-th block of every group at
+  once (`compute_flux_grouped`).
+
+`ICE_THREAD_GROUPS=<n>` forces `n` groups, and `1` turns them off. A rank with fewer
+blocks than groups uses one group. With the groups, one rank of 80 threads on a
+24-block cut runs about as fast as four ranks of 20 threads on the same cut.
+
+Keep large `select case` loop bodies, such as those of the ghost fill, in procedures of
+their own: the compiler vectorises more of a body compiled as its own procedure than of
+the same body inlined in an OpenMP region.
+
+### The race probe
+
+`Equiv3DGroups` cannot see a missing barrier between the kernel's k-faces and its sweep:
+on its small blocks, a sweep tile never reads a seam before its writer has finished.
+That barrier has its own test, on a special build outside the `fast` tier and the CI:
+
+```bash
+cmake -B build-race -DICE_RACE_PROBE=ON -DICE_BIN_DIR=$PWD/bin-race && cmake --build build-race
+ctest --test-dir build-race -L race      # Equiv3DGroupsRace: ~40 s (ifx, RELEASE), ~6 min (gfortran, TESTING)
+```
+
+In that build, every round of `compute_flux_grouped` fills the group's shared k-face
+planes with NaN and delays one writer, so a missing barrier makes a thread read a NaN
+and stops the run. It covers that barrier only. Run it before merging a change to the
+grouped kernel; without the option, the normal code is compiled.
 
 ## MPI
 
-Blocks are assigned whole, largest first, to the least-loaded rank. Two consequences
-follow directly:
+The blocks go whole to the ranks, largest first, each to the least-loaded rank. So:
 
-- **Ranks beyond the block count idle.** The startup line `MPI partition: N blocks over
-  R ranks, balance X% of ideal` is the thing to read. A balance well under 100% means
-  the blocks are unequal, and the fix is in the mesh, not in the launch.
-- **Every rank allocates the whole domain**, and only updates its own blocks. Memory
-  per rank therefore does not fall as ranks are added, which caps how many ranks fit on
-  a node for a large mesh.
+- **Ranks beyond the block count are idle.** Read the startup line
+  `MPI partition: N blocks over R ranks, balance X% of ideal`: a balance well under 100 %
+  means unequal blocks, and the fix is in the mesh.
+- **Every rank holds the whole domain** and updates only its own blocks, so the memory
+  per rank does not fall as ranks are added.
 
-The halo exchange runs once per family per Runge-Kutta stage and carries the interior
-cells that a remote ghost cell of that family reads; the ghost fill that follows it
-refills that family's ghosts only (a record of family p reads p's cells alone, so the
-families are independent). The size printed at startup, `MPI halo: N cells exchanged
-per ghost fill`, is the sum over the families — what the set-up fill exchanges; a stage
-of family p moves p's share of it. One schedule and one message tag per family and
-grid level; a cell that several records read (a block edge seen from two faces, a
-chimera donor of several receivers) is listed once per message — the set-up prints how
-many records were merged, when any were; persistent requests are set up once, so the
-per-fill cost is the start/wait pair plus the transfer, and the packing and unpacking,
-which the threads share (every cell owns a slice of the buffer). Every collective and
-message of ICE goes through `ice_comm`
-(`Mod_MPI`), the world unless a host program passes its own to `mpi_init_env`. A
-consequence for anything that reads a ghost cell outside the stage loop (nothing in the
-solver does; a probe placed on a ghost row would): at the end of a step family p's
-ghosts hold the values of p's last stage, no longer refreshed by the later families'
-stages.
+**The halo exchange** runs once per family per Runge-Kutta stage, and carries the
+interior cells a remote ghost cell of that family reads. The families are independent:
+a record of family $p$ reads only $p$'s cells. Each family and grid level has one
+schedule and one message tag; a cell read by several records is sent once; persistent
+requests are set up once, so each exchange costs a start and a wait, the transfer, and
+the packing, which the threads share.
 
-Output is gathered to rank 0, which writes alone. For a large mesh written often, this
-is a serial section in an otherwise parallel run — lowering `sol-diter` is expensive in
-a way the solve itself is not.
+Every collective and message of ICE goes through `ice_comm` (`Mod_MPI`): the world,
+unless a host program passes its own communicator to `mpi_init_env`.
+
+One consequence for code that reads a ghost cell outside the stage loop (nothing in the
+solver does): at the end of a step, family $p$'s ghosts hold the values of $p$'s last
+stage.
+
+**Output** is gathered to rank 0, which writes alone: a serial section in an otherwise
+parallel run. A small `sol-diter` costs time the solve itself does not.
 
 ## Profiling
 
 ```bash
-./install.sh build --compilers=gnu --use-openmp
-cmake -B build -DCMAKE_BUILD_TYPE=TESTING -DCMAKE_Fortran_FLAGS=-g && cmake --build build --parallel
+cmake -B build -DCMAKE_BUILD_TYPE=TESTING -DCMAKE_Fortran_FLAGS=-g
+cmake --build build --parallel
 ```
 
 The build types are `RELEASE`, `TESTING` (`-O2`) and `DEBUG` (`-O0`, bounds checks);
-`RelWithDebInfo` is refused by `cmake/SetFortranFlags.cmake`. `gprof`, `perf` and
-Intel VTune all work on the result, and `[ICE-IO] timers = true` prints the per-phase
-and per-region wall times of the iteration. Note that the reported
-"Time of operation" in ICE's own output is CPU time divided by the thread count, not
-wall-clock, so it is not a substitute for timing the process.
+`RelWithDebInfo` is refused. `gprof`, `perf` and Intel VTune all work on the result, and
+`[ICE-IO] timers = true` prints the wall time of each phase and region of the
+iteration.
+
+ICE's own "Time of operation" is CPU time divided by the thread count, not wall-clock
+time: it does not replace timing the process.

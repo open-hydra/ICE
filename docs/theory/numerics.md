@@ -12,31 +12,33 @@ $$
 $$
 
 with $\Omega_i$ the cell volume, $A_f$ the face area and $\hat{\mathbf{n}}_f$ the outward
-unit normal. Face areas, normals, cell volumes and the three cell lengths are computed
-once at setup from the node coordinates and stored. The volume of a cell is the integral
-of the Jacobian determinant of the trilinear map of its eight nodes,
+unit normal. Face areas, normals, volumes and the three cell lengths are computed once, at
+setup, from the node coordinates.
+
+The volume of a cell is the integral of the Jacobian determinant of the trilinear map of its
+eight nodes,
 $\Omega = \frac{1}{6} \sum_d \mathbf{e}_d \cdot (\mathbf{S}_d^- + \mathbf{S}_d^+)$, with
 $\mathbf{e}_d$ the mean edge of direction $d$ and $\mathbf{S}_d^\mp$ the area vectors (half
-the cross product of the diagonals, both along $+d$) of its two faces of that direction:
-exact on every cell, twisted faces included, so that the volumes of the cells add up to
-the volume their boundary faces enclose. A cell whose volume is zero, or has not the sign
-of the determinant of its mean edges (it is then turned over somewhere), stops the setup.
+the cross product of the diagonals) of its two faces of that direction. It is exact on every
+cell, twisted faces included, so the cell volumes add up to the volume their boundary
+encloses. A cell whose volume is zero, or turned over, stops the setup.
 
-Each block carries **two ghost layers** on every face. The dimensionality is inferred
-from the blocks: the mesh is 3-D if a block has more than one cell in $k$, 2-D if not and
-a block has more than one cell in $j$, 1-D otherwise. Nothing has to be declared — the
-flux loops over a direction with a single cell simply do no work. A 2-D mesh is an
-axisymmetric wedge when, in every block, the $k = 1$ node plane is the $k = 0$ plane turned
-about the $x$ axis by the same angle ($x$ and $r = \sqrt{y^2+z^2}$ kept), and plane when, in
-every block, it is the $k = 0$ plane translated. Every node is checked against 1 % of the
-thickness of its block, the largest move of a node from one plane to the other; a mesh
-with blocks of both kinds, or a block that fits neither to 1 % (coordinates written with
-too few digits, or $k$ planes neither parallel nor turned about $x$), stops at setup, and
-the setup summary names the type. The ghost nodes, one layer beyond every face, are
-extrapolated linearly along the index lines, $\mathbf{x}_{-1} = 2\mathbf{x}_0 - \mathbf{x}_1$,
-so that a ghost cell has the length across the face of the first cell, whatever the
-stretching (the length the reconstruction at the faces next to a boundary reads); beyond
-the side faces of a wedge they are rotated by its angle instead.
+Each block carries **two ghost layers** on every face. Nothing about the dimensions has to
+be declared:
+
+- the mesh is 3-D if a block has more than one cell in $k$, 2-D if not and a block has more
+  than one cell in $j$, and 1-D otherwise. The flux loops over a direction with one cell
+  simply do no work;
+- a 2-D mesh is an **axisymmetric wedge** when, in every block, the $k = 1$ node plane is the
+  $k = 0$ plane turned about the $x$ axis by the same angle, and **plane** when it is the
+  $k = 0$ plane translated. Every node is checked to 1 % of the thickness of its block; a
+  mesh with blocks of both kinds, or a block that fits neither, stops at setup. The setup
+  summary names the type.
+
+The ghost nodes, one layer beyond every face, are extrapolated linearly along the index
+lines, $\mathbf{x}_{-1} = 2\mathbf{x}_0 - \mathbf{x}_1$, so a ghost cell has the width of the
+first cell across the face, whatever the stretching. Beyond the side faces of a wedge they
+are rotated by its angle instead.
 
 The interior faces of a block are swept in two passes, odd faces then even, so that two
 faces sharing a cell never accumulate into it at the same time. This is what makes the
@@ -55,14 +57,11 @@ $$
 
 where $s$ are the one-sided slopes on the non-uniform mesh, $\phi$ the limiter and $\beta$ the shock-detector weight described below.
 
-A side whose three cells include an empty one, a density at or below $10^{-6}$ kg/m³, is first order: $\mathbf{P}_L$ is
-then $\mathbf{P}_i$, and $\mathbf{P}_R$ is $\mathbf{P}_{i+1}$. Each side looks at its own three cells, $i-1$, $i$ and
-$i+1$ for $\mathbf{P}_L$ and $i$, $i+1$ and $i+2$ for $\mathbf{P}_R$, so the two sides of a face fall back as their
-mirror images do. A test of $i-1$, $i$ and $i+1$ for both sides made a face next to a vacuum first order on one side of
-a symmetric flow and second order, with the empty cell in its slope, on the other: the crossing jets without the
-detector were $6\times10^{-3}$ (MK), $2\times10^{-4}$ (IG) and $8\times10^{-5}$ (AG) of the peak density away from
-their mirror image, and are now symmetric to round-off; IG's residual, which jumped to $3\times10^{-5}$ every 30 to 80
-iterations, now stays below $2\times10^{-6}$ over the last 1000 of its 5000.
+A side whose three cells include an empty one (a density at or below $10^{-6}$ kg/m³) is
+first order: $\mathbf{P}_L$ is then $\mathbf{P}_i$, and $\mathbf{P}_R$ is $\mathbf{P}_{i+1}$.
+Each side looks at its own three cells — $i-1$, $i$, $i+1$ for $\mathbf{P}_L$ and $i$, $i+1$,
+$i+2$ for $\mathbf{P}_R$ — so the two sides of a face fall back as their mirror images do, and
+a symmetric flow stays symmetric to round-off.
 
 A family of a solidifying material reconstructs, in place of $T_p$, its liquid-branch temperature $T_\ell = e/c_l$,
 which is continuous where the content nucleates, and takes each face's $T_p$ and $f$ from the face's $T_\ell$ and
@@ -88,16 +87,23 @@ slope of cell $i$; for $\mathbf{P}_R$ the same of cell $i+1$.
 | `koren` | $\max(0, \min(2r, (1 + 2r)/3, 2))$ | 1/2 |
 | `superbee` | $\max(0, \min(2r, 1), \min(r, 2))$ | 1/2 |
 
-$\nu_{\max}$ is the largest `cfl` at which explicit Euler (`time-scheme = euler`) keeps the reconstruction TVD for 1-D
-scalar advection on a uniform mesh: Harten's sufficient condition in incremental form, over every $r$ and both signs
-of the speed, $\nu_{\max} = 1/(1 + A/2 - \psi_{\min}/2)$ for $a > 0$ and $1/(1 + \psi_{\max}/2 - B/2)$ for $a < 0$, with
-$A$ and $B$ the largest and smallest $\psi(r)/r$. It bounds `cfl` because `cfl` bounds the sum of the direction limits
-([time step](time-integration.md#the-time-step)). Van Albada's $\psi$ is not clipped at $r < 0$ (it goes down to
-$(1 - \sqrt{2})/2$), so its bound is below the 0.624 of $r > 0$ alone; OSPRE's is not either (down to $-1/2$ at
-$r = -1/2$), which brings its bound from the 4/7 of $r > 0$ alone to 1/2; $\mathbf{P}_R$ reads Osher's $\psi$ at the ratio of
-cell $i+1$, so $a < 0$ gives 4/7 where $a > 0$ gives 2/3. Above $\nu_{\max}$ the run goes on with
-`[WARNING] [ICE-Numerics] forward Euler with MUSCL ...`, at set-up and at the re-read of `input.ini` that sets it; with
-`irs = true` an `[INFO]` line takes its place. RK2 and RK3 are not checked.
+$\nu_{\max}$ is the largest `cfl` at which explicit Euler (`time-scheme = euler`) keeps the
+reconstruction TVD for 1-D scalar advection on a uniform mesh. It follows from Harten's
+sufficient condition in incremental form, over every $r$ and both signs of the speed:
+$\nu_{\max} = 1/(1 + A/2 - \psi_{\min}/2)$ for $a > 0$ and $1/(1 + \psi_{\max}/2 - B/2)$ for
+$a < 0$, with $A$ and $B$ the largest and smallest $\psi(r)/r$. It bounds `cfl` because `cfl`
+bounds the sum of the direction limits ([time step](time-integration.md#the-time-step)).
+
+- Van Albada's $\psi$ is not clipped at $r < 0$ (it goes down to $(1 - \sqrt{2})/2$), so its
+  bound is below the 0.624 of $r > 0$ alone.
+- OSPRE's goes down to $-1/2$ at $r = -1/2$, which brings its bound from 4/7 to 1/2.
+- $\mathbf{P}_R$ reads Osher's $\psi$ at the ratio of cell $i+1$, so $a < 0$ gives 4/7 where
+  $a > 0$ gives 2/3.
+
+Above $\nu_{\max}$ the run goes on with a warning,
+`[WARNING] [ICE-Numerics] forward Euler with MUSCL ...`, at setup and whenever `input.ini`
+is read again; with `irs = true` an `[INFO]` line takes its place. RK2 and RK3 are not
+checked.
 
 ### Shock detector
 
@@ -123,32 +129,28 @@ two cells, $\min(\beta_L, \beta_R)$, and so does a face between two connected bl
 domain just the same ([Boundary faces](#boundary-faces)). A face on a physical boundary, and a chimera face (`102`), whose
 ghost is a blend of donor cells rather than a cell, take their own cell's weight.
 
-The form is that of Tramel, Nichols and Buning (AIAA 2009-3988, Eqs. 29-30), with one change. There the weight is
-$1 - \tanh(10\,\varphi^3)$ with $\varphi = s/\Delta$, and $\Delta$ between 1 and 10 was found adequate. With
-$\varphi = s/\Delta$ and $\Delta = 20$, $\tanh(10\,\varphi^3)$ stays below $1.6\times10^{-7}$ for every $s$ below the
-threshold $1/\Delta$, so $\beta$ is a switch: 1 below the threshold and 0 above it. ICE takes $\varphi = s\,\Delta$, which
-keeps the threshold and spreads the fall of $\beta$ over $0 \le s < 1/\Delta$, from 1 at $s = 0$ to $1 - \tanh 10$
-($4\times10^{-9}$) at the threshold. The paper also thickens the sensor (its Eq. 31 takes, for each cell, the largest $s$
-of the 27 cells around it); the face weight $\min(\beta_L, \beta_R)$ gives each face the weight of the more shocked of the
-two cells it separates, and treats a face the same from both sides. With the switch and the weight of the cell on the
-face's low-index side, the crossing jets of MK and AG, mirror images of each other, were $1.0\times10^{-2}$ and
-$1.7\times10^{-2}$ away from their own mirror image at iteration 5000; both are now symmetric to round-off. AG's
-steady state with the detector kept an asymmetry of $3\times10^{-5}$ until each side of a face took the empty-cell test
-of its own three cells ([Reconstruction](#reconstruction)).
+The form is that of Tramel, Nichols and Buning (AIAA 2009-3988, Eqs. 29-30), with one
+change. There the weight is $1 - \tanh(10\,\varphi^3)$ with $\varphi = s/\Delta$; with
+$\Delta = 20$ this is a switch, 1 below the threshold $1/\Delta$ and 0 above it. ICE takes
+$\varphi = s\,\Delta$, which keeps the threshold but spreads the fall of $\beta$ over
+$0 \le s < 1/\Delta$, from 1 at $s = 0$ to $1 - \tanh 10$ ($4\times10^{-9}$) at the threshold.
 
-A switch also kept steady computations from converging: the cells near the threshold switched from one iteration to the
-next, so the density residual levelled off (at about $2\times10^{-3}$ for MK and $4\times10^{-3}$ for AG on the crossing
-jets) instead of falling. With the continuous weight both converge: MK reaches the default `res-threshold` at iteration
-2493 and AG at iteration 6907. Below the threshold the weight is smaller than the switch's wherever the sensor is not
-zero, so the scheme is more dissipative there: on the AG crossing jets the RMS distance to the exact solution grows from
-$2.7\times10^{-2}$ to $2.8\times10^{-2}$ kg/m³, and the field's maximum, which lies on a jet (0.1 kg/m³ in the exact
-solution), falls from 0.16, where the jets meet, to 0.12, just upstream of the crossing. A domain split into connected
-blocks gets the weights of the same domain in
-one block, so the two differ by round-off only — which the detector amplifies where the crossing jets collide: the
-four-block crossing jets, cut at $y = 0$ through the collision, differ from the single block by $2\times10^{-9}$ of the
-peak density at iteration 5000, less than a change of one inlet value in its last digit moves the single block
-($3\times10^{-8}$; [Multi-block and MPI](../vv/multiblock-mpi.md)). Blocks joined by chimera faces still differ where
-the detector acts at the interface.
+The paper also thickens the sensor (its Eq. 31 takes the largest $s$ of the 27 cells around a
+cell). ICE gives each face the weight of the more shocked of its two cells,
+$\min(\beta_L, \beta_R)$, which treats a face the same from both sides and keeps mirror-image
+flows symmetric to round-off.
+
+The continuous weight matters for steady computations: with a switch, the cells near the
+threshold flip from one iteration to the next and the residual levels off instead of
+falling. The price is a little more dissipation below the threshold: on the AG crossing
+jets, the RMS distance to the exact solution grows from $2.7\times10^{-2}$ to
+$2.8\times10^{-2}$ kg/m³.
+
+A domain split into connected blocks gets the same weights as in one block, so the two
+differ by round-off only, which the detector can amplify where the crossing jets collide:
+$2\times10^{-9}$ of the peak density after 5000 iterations, less than a change of the last
+digit of an inlet value ([Multi-block and MPI](../vv/multiblock-mpi.md)). Blocks joined by
+chimera faces still differ where the detector acts at the interface.
 
 On the [crossing jets](../vv/crossing-jets.md) the detector lets the MK and AG runs converge, keeps the AG pressure
 tensor off its floor in the nearly empty cells around the jets, and keeps AG from gathering mass on either side of the
@@ -177,13 +179,13 @@ reaches the flux loop through the same path. The ghost fill is described under [
 On the side faces of an axisymmetric wedge the ghost is the cell's mirror image, so the flux carries no mass, and for IG and
 AG the pressure on those faces is the hoop term of the radial momentum; MK has no flux there.
 
-A face between two blocks (`101`, `201`) has a record in each block. Its flux is computed once, from the owner record — the
-one on the face's low-index side when the face is the high face of one block and the low face of the other, otherwise the
-first in (block, face, k, j, i) order — with that block's stencil and, as for a face inside a block, the smaller of its two
-cells' detector weights; the other block's cell takes its negative. The two blocks therefore exchange the same mass,
-momentum and energy across the cut, which a reconstruction from each side would not give: each block would take the lengths
-of the other's cells from its own extrapolated ghost nodes. With MPI the rank of the other block sends its cell's weight to
-the owner's rank, and the owner's rank sends back the flux, once per stage.
+A face between two blocks (`101`, `201`) has a record in each block. Its flux is computed
+once, by one of the two blocks — the one on the low-index side when the face is the high
+face of one block and the low face of the other, otherwise the first in
+(block, face, k, j, i) order — and the other block takes its negative. The two blocks
+therefore exchange exactly the same mass, momentum and energy across the cut. With MPI,
+the other block's rank sends its cell's detector weight, and gets the flux back, once per
+stage.
 
 The state an inlet injects is the state of the boundary face, not of the ghost cell's centre: the reconstructions take the
 length of an injecting ghost as zero, so the first cell's slope toward the inlet is the one-sided slope from the face, on

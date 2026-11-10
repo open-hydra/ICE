@@ -1,45 +1,37 @@
 # Using ICE
 
-## Case directory layout
+## The case folder
 
-ICE runs in the case directory and resolves every path relative to it. All of its
-files are prefixed `part-`.
+ICE runs in the case folder and reads every path relative to it. Its own files carry
+the prefix `part-`.
 
 ```
 my_case/
-├── input.ini                       # the only configuration file
+├── input.ini                       # the settings of the run
 ├── INPUT/
-│   ├── part-ic.tec                 # initial condition, and the mesh with it
-│   ├── part-bc.txt                 # boundary condition table (ATLAS BCB)
-│   ├── part-properties.dat         # optional rho(T), cs(T) table
-│   └── gas.tec                     # optional gas field; its presence enables coupling
-└── OUTPUT/                         # created by ICE
-    ├── part-field.tec              # solution, and the restart file
-    ├── part-residual-history.dat   # residual per iteration
-    └── <probe>.txt                 # one per probe, if any
+│   ├── part-ic.tec                 # the mesh and the initial state
+│   ├── part-bc.txt                 # the boundary conditions (ATLAS BCB)
+│   ├── part-phase.txt              # the materials (ATLAS); optional with one material
+│   ├── part-properties.dat         # the material properties against temperature; optional
+│   └── gas.tec                     # the gas field; optional, and it switches the coupling on
+└── OUTPUT/                         # create it before the run
+    ├── part-field.tec              # the solution, also read by a restart
+    ├── part-residual-history.dat   # the residuals
+    └── <probe>.txt                 # one file per probe
 ```
 
-`OUTPUT/` must exist before the run; the `ICE.sh` script in each test case creates it.
-The mesh is carried in `part-ic.tec` itself — the node coordinates are the first three
-variables of the file — so there is no separate mesh input. A `MESH/` directory appears
-in the shipped cases only because the mesh generator wrote it there.
+- **The mesh is inside `part-ic.tec`**: its first three variables are the node
+  coordinates. There is no separate mesh file. (The `MESH/` folder of the shipped
+  cases is only where the mesh generator wrote its files.)
+- **The gas file decides the coupling.** If `INPUT/gas.tec` exists, ICE reads the gas
+  field and exchanges momentum, heat and, if asked, radiation and mass with it; it
+  never changes the gas (one-way coupling). If it does not exist, the cloud moves with
+  no exchange at all. `gas-path` changes the folder ICE looks in.
+- **`OUTPUT/` must exist** before the run. The `ICE.sh` script of the shipped cases
+  creates it.
 
-Whether the run is coupled is decided by one thing: whether `INPUT/gas.tec` exists. If
-it does, drag, heat and, with a non-zero `emissivity`, radiation are active and the gas
-field is read but never modified (1-way coupling); if it does not, the cloud is transported
-with no source terms at all (0-way). `gas-path` moves the directory ICE looks in.
-
-## Workflow
-
-1. **Prepare the inputs** — mesh and initial condition in `INPUT/part-ic.tec`
-   ([format](initial-conditions.md)), the boundary table in `INPUT/part-bc.txt`
-   ([format](boundary-conditions.md)), optionally a property table and a gas field.
-2. **Write `input.ini`** — at minimum one `[ICE-FamilyN]` section naming the closure,
-   and a stopping condition. See the [input file](input.md) page and the full
-   [parameter reference](registry.md).
-3. **Run** — `bin/ICE` from the case directory.
-4. **Post-process** — open `OUTPUT/part-field.tec` (or the VTK equivalent) in Tecplot,
-   ParaView or VisIt.
+The formats are described in [Initial Conditions](initial-conditions.md) and
+[Boundary Conditions](boundary-conditions.md); the settings in [Input File](input.md).
 
 ## Running
 
@@ -49,208 +41,199 @@ mkdir -p OUTPUT
 /path/to/bin/ICE
 ```
 
-With OpenMP:
+With OpenMP threads:
 
 ```bash
 export OMP_NUM_THREADS=8
 /path/to/bin/ICE
 ```
 
-With MPI (the build must use `--use-mpi`), optionally with OpenMP threads inside each
-rank:
+With MPI ranks (a build with `--use-mpi`), with or without threads inside each rank:
 
 ```bash
 export OMP_NUM_THREADS=4
 mpirun -np 2 /path/to/bin/ICE
 ```
 
-The `ICE.sh` script in each test case wraps all three: `./ICE.sh -m 2 -p 4 solve` runs
-on two ranks of four threads. It also copies the master `bin/ICE` into the case when
-the master is newer, so a case always runs against the current build.
+Each shipped case has an `ICE.sh` script that does all of this:
+`./ICE.sh -m 2 -p 4 solve` runs two ranks of four threads. It also copies `bin/ICE`
+into the case when the build is newer, so the case always runs the current build.
 
-### What the startup report tells you
+[Parallel Execution](parallel.md) explains how to choose ranks and threads.
+
+## The startup report
+
+Before the first iteration, ICE prints what it is about to do. For a coupled run with
+evaporation:
 
 ```
+ Global time step 1-way coupled simulation
+
  ICE phase model:
- - AG particle families  -->    1
+ - IG particle families  -->    1
 
  ICE numerical scheme:
- - Space   --> MUSCL with MC flux limiter
- - Time    --> Explicit Runge-Kutta 2
- - Drag    --> Stokes
+ - Space   --> MUSCL with vanleer flux limiter
+ - Time    --> Explicit RK2
+ - Drag    --> Schiller-Naumann
  - Heat    --> Ranz-Marshall (Nu = 2 + 0.6 Re^0.5 Pr^1/3)
- - Evap    --> CEM
+ - Evap    --> material 1 (A): CEM
+ - Interf  --> VLE
 
  Boundary Conditions:
-   Extrapolation                  2
+   Symmetry                       80
+   Inflow                         20
+   Extrapolation                  300
 ```
 
-The exchange models appear only in a coupled run, and the interface and blowing lines
-only when an evaporation model is selected. Worth checking before a long run: the
-closure count matches the families you meant to declare, the scheme line says `MUSCL`
-rather than `I order` if you asked for it, and every boundary type you expect appears
-with the right count. A type that is absent
-from the list has no faces carrying it.
+Check it before a long run:
 
-### How MPI divides the work
+- the first line: a global time step means time accurate, a local one steady state;
+  `0-way` means no gas field was found;
+- the number of families of each closure is the one you meant;
+- `Space` says `MUSCL` if you asked for it, not `first order`;
+- every boundary type you expect is listed. A type that is missing has no face
+  carrying it.
 
-ICE distributes **whole blocks** over the ranks, largest first, each to the rank with
-the least work so far. At startup it prints how even the split is:
+The exchange models appear only in a coupled run, and the drop's conduction and
+boiling lines only when they are switched on.
+
+With MPI, ICE also prints how it split the blocks among the ranks:
 
 ```
   MPI partition: 4 blocks over 2 ranks, balance 100.0% of ideal
-  MPI halo: 400 cells exchanged per ghost fill
-  MPI halo: 100 connection faces whose flux crosses ranks
 ```
 
-- A block is never split, so ranks beyond the number of blocks sit idle. To use more
-  ranks, split the mesh into more blocks.
-- Every rank reads the whole mesh and solution, and updates only its own blocks. Before
-  each ghost-cell fill — that is, once per Runge-Kutta stage — the interior cells that
-  a connection (`101`/`201`) or chimera (`102`) face reads from a block owned by
-  another rank are sent to it. The flux through a connection face is computed once, by
-  the rank of one of its two blocks, and sent to the rank of the other, which first sends
-  the shock-detector weight of its cell.
-- Rank 0 gathers the blocks and writes the output files.
+## The solution files
 
-The result does not depend on the number of ranks: the solution is bit-for-bit the same
-as a serial run. See [Multi-block and MPI](../vv/multiblock-mpi.md).
+`ic-format` sets the format of the initial state, `sol-format` that of the solution.
+They are independent: a case can start from Tecplot ASCII and write VTK.
 
-For how to choose the rank/thread split, where to place the threads, and how well ICE
-scales on one node and across three, see [Parallel Execution](parallel.md).
-
-## Input and output formats
-
-Two keys, both a writer and a mode: `ic-format` names the format of
-`INPUT/part-ic.*`, and `sol-format` the format of `OUTPUT/part-field.*`. They are
-independent — a case may be given in Tecplot ASCII and written in VTK.
-
-| Value | File |
+| Value | Solution file |
 |---|---|
-| `tecplot ascii` | `part-field.tec` |
-| `tecplot binary` | `part-field.szplt`; needs a build with TecIO (`-DUSE_TECIO=ON`), refused at set-up otherwise |
-| `vtk ascii` / `vtk binary` / `vtk raw` | `part-field.vtm` plus one `.vts` per block under `vtk/` |
+| `tecplot ascii` | `OUTPUT/part-field.tec` |
+| `tecplot binary` | `OUTPUT/part-field.szplt`; needs a build with TecIO (`-DUSE_TECIO=ON`) |
+| `vtk ascii`, `vtk binary`, `vtk raw` | `OUTPUT/part-field.vtm`, with one `.vts` file per block in `OUTPUT/vtk/` |
 
-The file holds the node coordinates followed by the primitive variables of every
-family, cell-centred, named `rho_p1`, `u_p1`, … `n_p1`, `rho_p2`, …, a solidifying family adding `f_p1` and
-`chi_p1` after `n_p1` (a probe takes the same names), every value to 17 significant
-digits in the ASCII formats. The solution time is recorded in the zone header
-(`SOLUTIONTIME`) and in the `TIME` field data of a vtk file; in steady-state mode it
-carries the global iteration count instead, negated. Next to it every solution stores the
-counters a restart takes back (see [Restarting](#restarting)): data set auxiliary data
-records after the zones of a Tecplot file (`DATASETAUXDATA CYCLE = "40"`, ...), field data
-of every block file of a vtk one.
+The file holds the node coordinates, then the variables of every family at the cell
+centres: `rho_p1`, `u_p1`, …, `n_p1`, then `rho_p2`, and so on (the list of each
+closure is in [Initial Conditions](initial-conditions.md#variable-order)). The ASCII
+formats write 17 significant digits, so a value read back is the value written.
 
-`sol-diter` and `sol-dtime` control how often the solution is written. With
-`sol-overwrite = false` each write appends a counter to the name, giving a numbered
-series instead of one file that is repeatedly replaced.
+`sol-diter` and `sol-dtime` set how often the solution is written. By default each
+write replaces the previous file; with `sol-overwrite = false` the files are numbered
+instead.
 
-`shell-diter` sets how often the progress line is printed and `res-diter` how often a
-row is appended to `OUTPUT/part-residual-history.dat`. A row holds the global iteration, the
-time and the five residual norms of the domain: the L2 norms, over every cell, of the change in
-one iteration of the density, the three velocity components and the temperature. With several
-families, the same five norms of each family alone follow, family after family, so a row has
-$2 + 5\,(1 + n_f)$ values; each norm of the domain is the root of the sum of the squares of the
-families' ones. A run of one family writes the seven values only. `res-threshold` reads the
-density norm of the domain, the third value of the row ([Stopping conditions](input.md#stopping-conditions)).
+The file also records the simulation time and the counters a restart needs. In
+steady-state mode the time is replaced by the iteration count, as a negative number.
+
+## The residual history
+
+`OUTPUT/part-residual-history.dat` gets a row every `res-diter` iterations, and one at
+the last iteration. A row holds:
+
+1. the global iteration;
+2. the time;
+3. to 7. the residuals of the density, the three velocity components and the
+   temperature: the L2 norm, over the cells, of their change in one iteration.
+
+With several families, five more columns follow for each family alone, so a row has
+$2 + 5\,(1 + n_f)$ values. `res-threshold` reads column 3, the density residual of the
+whole domain ([Stopping conditions](input.md#stopping-conditions)).
+
+`shell-diter` sets how often the progress line is printed on screen.
 
 ## Restarting
 
-Set `newrun = false`. ICE then reads its initial state from `OUTPUT/part-field.*`
-instead of `INPUT/part-ic.*`, goes on from the time of that solution, and continues
-appending to the residual history. The restart file is a solution ICE wrote itself, so
-it is `sol-format` — not `ic-format` — that names it.
+Set `newrun = false` in `[ICE-Parameters]`. ICE then:
 
-The time of the solution is its `SOLUTIONTIME` (Tecplot, ASCII or binary) or its `TIME`
-(vtk). A negative one marks a steady solution, and a steady restart goes on from its
-iteration count; the Tecplot files of earlier versions, which hold the count positive with
-`STRANDID = 0` in their zone headers, are read the same way. A time-accurate restart goes
-on from the time of a time-accurate solution, and starts at $t = 0$ from a steady one. A
-Tecplot solution whose zone header has no `SOLUTIONTIME` cannot tell where to go on: the
-restart stops (use the file as the initial condition instead, with `newrun = true`). A vtk
-solution without `TIME` reads as time 0.
+- reads its initial state from the solution, `OUTPUT/part-field.*`, in the format of
+  `sol-format` (not `ic-format`);
+- goes on from the time of that solution;
+- appends to the residual history and to the probe files.
 
-Every solution also stores the counters that make a restart go on as the uninterrupted
-run would: `CYCLE`, the global iteration count (the first column of the residual
-history), `ICE_ITERATION`, the iterations of the grid level of the solution, the finest
-for `part-field` (which the CFL ramp of `cfl-rise-threshold` and the `sol-diter` and
-`res-diter` cadences count),
-`ICE_OUTPUT_NUMBER`, the last number of the series of `sol-overwrite = false`,
-`ICE_GRID_LEVEL`, the grid level being solved, `ICE_LAST_OUTPUT_TIME`, the time of the
-last `sol-dtime` solution, and `ICE_RES_REFERENCE`, the unit of `res-threshold`. A
-restart of the same kind as the run that wrote the solution, steady after steady or
-time-accurate after time-accurate, takes them back, and writes the solutions, the
-residual history and the probe rows that the uninterrupted run would have written; every
-run writes a residual row at its last iteration, so a restart that does not fall on a
-multiple of `res-diter` adds that one row. A restart of the other kind, or from a solution
-without them (written by an earlier version of ICE, or by another program), starts them
-as a new run does: a steady one then measures `res-threshold` from its own first non-zero
-residual, and says so. A multigrid run resumes on the grid level of its solution;
-`part-field` is written on the finest level only, so a restart from it skips the coarse
-levels. A counter that is not finite, or a count out of range, stops the run.
+A restart of the same kind as the run that wrote the solution — steady after steady,
+or time accurate after time accurate — goes on exactly as the uninterrupted run would:
+the same iteration count, the same output times and numbers, the same residual
+reference. ICE stores these counters in every solution it writes.
 
-A run that went on past the solution the restart reads (it stopped after its last
-output) left in the residual history and in the probe files rows that the restart writes
-again, and the restart drops them first. From a solution that holds the counters, in any
-format, it drops the rows of the iterations after its `CYCLE` (the residual rows and the
-iteration rows of a probe) and, time-accurate, the time rows of a probe after its time.
-From a `tecplot ascii` solution without them, a steady restart drops the rows of later
-iterations, a time-accurate one the residual rows and the time-based probe rows of later
-times (the iteration rows of a probe stay: such a restart counts its iterations from 0).
-In a file written by several runs whose count started again, the rows before the last one
-not later than the solution stay. A last row cut in the middle goes too, and a file whose
-last line has no newline gets one. From the other solutions nothing is dropped: remove
-those rows by hand, and end the file with a newline.
+Otherwise the restart starts its counters afresh, as a new run does:
 
-With `sol-overwrite = false` the solutions form a numbered series; restarting from a
-particular one means renaming it back to `part-field`. A restart that finds no
-`part-field` (a run stopped before its last write) reads the last of the series.
+- a time-accurate restart from a steady solution starts at $t = 0$;
+- a restart from a solution without the counters (written by another program or an
+  older ICE) measures `res-threshold` from its own first residual, and says so.
+
+ICE stops instead of guessing in two cases: a Tecplot solution with no
+`SOLUTIONTIME` in its zone header (use it as an initial condition, with
+`newrun = true`), and a counter that is not finite or out of range. A VTK solution
+with no `TIME` is read as time 0.
+
+With grid levels, the restart resumes on the level of the solution. `part-field` is
+written on the finest level only, so a restart from it skips the coarse levels.
+
+??? note "Rows written after the solution"
+    A run may go on after its last solution, and write residual and probe rows the
+    restart will write again. The restart removes them first:
+
+    - from a solution with the counters, any format: the residual rows and the probe
+      iteration rows after its iteration count and, time accurate, the probe time rows
+      after its time;
+    - from a `tecplot ascii` solution without the counters: in a steady restart the rows
+      of later iterations; in a time-accurate one the residual rows and the probe time
+      rows of later times (the probe iteration rows stay, since such a restart counts
+      its iterations from 0).
+
+    In a file written by several runs whose count started again, only the rows after
+    the last row not later than the solution go. A last row cut in the middle goes too,
+    and a missing final newline is added. From the other solutions nothing is removed:
+    delete those rows by hand, and end the file with a newline.
+
+**Numbered solutions.** With `sol-overwrite = false`, rename the solution you want to
+restart from to `part-field`. If no `part-field` exists (the run stopped before its
+last write), the restart reads the last numbered one.
 
 ## Probes
 
 A probe writes the history of a few variables at one point to `OUTPUT/<name>.txt`.
-Declare it in two steps — a reference in `[ICE-Probes]` and a section of its own:
+Name it in `[ICE-Probes]`, then give it a section of its own:
 
 ```ini
 [ICE-Probes]
 probe1 = centreline
 
 [centreline]
-variables      = rho_p1 u_p1 T_p1
-position       = 0.5 0.0 0.0
-dtime          = 1e-4
+variables = rho_p1 u_p1 T_p1
+position  = 0.5 0.0 0.0
+dtime     = 1e-4
 ```
 
-Give either `position` (physical coordinates: the probe takes the cell whose centre is
-nearest, over every block) or
-`index-position` as `b i j k`; an `index-position` that is not a cell of the mesh stops
-the run. `dtime` and `diter` set how often the probe samples: a row every `diter`
-iterations of the global count (the first column of the residual history), written on the
-finest grid level, and a row at the first step at or past each multiple of `dtime` of
-physical time, from the first, with the time in its first column (one row for a step past
-several multiples; a step can write both rows). A restart that goes on in time writes the
-time rows the uninterrupted run would.
+| Key | Meaning |
+|---|---|
+| `position` | Physical coordinates: the probe takes the cell whose centre is nearest, over every block |
+| `index-position` | `b i j k` instead: a block and the cell indices; a cell outside the mesh stops the run |
+| `diter` | A row every that many global iterations, on the finest grid level |
+| `dtime` | A row at the first step at or past each multiple of `dtime`, with the time in the first column |
+| `variables` | The names of the solution file, as many as you like |
 
-The variables of family `n` are those of the solution files, `rho_p<n>`, `u_p<n>`,
+The variables of family `n` are those of the solution files: `rho_p<n>`, `u_p<n>`,
 `v_p<n>`, `w_p<n>`, `T_p<n>`, `n_p<n>`, the pressure `P_p<n>` of an IG family, the
-tensor `P11_p<n>`, `P12_p<n>`, `P13_p<n>`, `P22_p<n>`, `P23_p<n>`, `P33_p<n>` of an AG family
-(an MK family has none), and `f_p<n>`, `chi_p<n>` for a solidifying family;
-the same names without the `p` (`rho_<n>`, `P11_<n>`, …) are accepted too, and a probe takes as many names as
-its `variables` key holds. `Ts_p<n>` is the surface temperature of the
-family's drops at the row's state, as the source computes it: it equals `T_p<n>` without `liquid-conduction = P2T`
-or the boiling branch of `boiling = ZGR`, in an empty cell and in an uncoupled run. Any other name stops the
-run at set-up.
+tensor `P11_p<n>` … `P33_p<n>` of an AG family, and `f_p<n>`, `chi_p<n>` of a
+solidifying family. The same names without the `p` (`rho_<n>`, `P11_<n>`) work too.
+`Ts_p<n>` gives the surface temperature of the drops, which differs from `T_p<n>` only
+with `liquid-conduction = P2T` or while `boiling = ZGR` boils. Any other name stops
+the run at setup.
 
-A new run replaces the probe files; a restart appends to them, after the rows written past
-its solution are dropped (see [Restarting](#restarting)), and creates any that are
-missing (for example a probe added before the restart).
+A new run replaces the probe files. A restart appends to them, and creates those of
+probes added since.
 
-## Re-steering a running simulation
+## Changing settings during a run
 
-If `ini-diter` is set, ICE re-reads `input.ini` every that many iterations, so
-thresholds (the iteration budgets included) and output frequencies can be changed while
-the run is in progress. Values that are consumed once at setup — the mesh, the scheme,
-the materials and their properties — are not affected. An edit with an error (a value
-that breaks its rule, a changed `levels` or `closure`, a file saved half-written) is not
-taken by default: ICE warns and the run keeps every value it had; with
-`ini-error = stop` it stops instead (see [Re-reading at runtime](input.md#re-reading-at-runtime)).
+With `ini-diter` set, ICE reads `input.ini` again every that many iterations. The
+stopping thresholds and the output frequencies then take effect at once; what is set
+up once at the start — the mesh, the scheme, the materials and their properties —
+does not change.
+
+A file with an error (a value that breaks its rule, a changed `levels` or `closure`,
+a file saved half-written) is ignored with a warning, and the run keeps its previous
+settings. With `ini-error = stop`, the run stops instead. See
+[Reading again during the run](input.md#reading-again-during-the-run).

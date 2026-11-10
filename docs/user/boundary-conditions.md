@@ -1,191 +1,187 @@
 # Boundary Conditions
 
-ICE reads its boundary conditions from `INPUT/part-bc.txt`, written by
-[ATLAS BCB](https://github.com/open-hydra/ATLAS). Boundary types are chosen per block
-face in the ATLAS input; ICE only consumes the resulting table.
+ICE reads its boundary conditions from `INPUT/part-bc.txt`, a table written by
+[ATLAS BCB](https://open-hydra.github.io/ATLAS/user-guide/bcb/). The type of each face
+is chosen in ATLAS; ICE applies the table.
 
-Every boundary type reaches the solver through the same path: `compute_ghost` fills the
-first ghost layer, `fill_second_ghost` the second, and the boundary flux is then built
-from the ghost values by the same reconstruction and Riemann solver as an interior
-face. Each block has two ghost layers on every face.
+Every block has two layers of ghost cells around it. A boundary condition sets the
+ghost cells, and the flux through the boundary face is then computed from them with
+the same reconstruction and Riemann solver as an interior face.
+
+## The codes
+
+| Code | Type | What ICE does |
+|------|------|---------------|
+| `0` | None | The ghost copies the interior cell, and no flux crosses. For the faces of a direction the mesh does not resolve, such as faces 5 and 6 of a planar 2-D case |
+| `101` | Connection | The ghost cells come from the neighbouring block; the flux through the face is computed once, for both blocks |
+| `201` | Periodic | As `101` |
+| `102` | Chimera | Each ghost layer is a weighted blend of donor cells of an overlapping block ([below](#chimera)) |
+| `200` | Axisymmetry | The side faces of an axisymmetric wedge ([below](#axisymmetry-200)) |
+| `300` | Symmetry | Reflects the cloud, or lets it leave ([below](#symmetry-and-walls-300-301)) |
+| `301` | Wall | As `300` |
+| `400` | Extrapolation | The ghost copies the interior cell: a zero-gradient outflow ([below](#extrapolation-400)) |
+| `401` | Inlet, as ratios to the gas | [Inlets](#inlets) |
+| `402` | Inlet, absolute values | [Inlets](#inlets) |
+| `403` | Inlet, the speed as a ratio to the gas | [Inlets](#inlets) |
+
+Any other code stops ICE at setup.
 
 ## File format
 
-One record per boundary **cell**, in ATLAS's layout — a header line
+There is one record per boundary **cell**. A record starts with the line
 
 ```
 block  i  j  k  face  code
 ```
 
-followed by zero or more payload lines depending on `code`. Faces are numbered 1 and 2
-for the low and high $i$ sides, 3 and 4 for $j$, 5 and 6 for $k$; the cell index is the
-interior cell against the face, so face 2 records carry $i = n_x$ and face 4 records
-$j = n_y$.
+followed by the data lines its code needs. The faces are numbered 1 and 2 for the low
+and high $i$ sides, 3 and 4 for $j$, 5 and 6 for $k$. The cell is the interior cell
+against the face, so a face-2 record has $i = n_x$, a face-4 record $j = n_y$.
 
-ICE expects exactly
+A block has $2\,(n_y n_z + n_x n_z + n_x n_y)$ boundary cells, and the table holds one
+record for each. A header line whose sixth column is not `0` or a three-digit code
+stops the run, naming the record: that is what a file in an older format looks like.
 
-$$
-2\,(n_y n_z + n_x n_z + n_x n_y)
-$$
+### Several families
 
-records per block per **copy** of the boundary table, covering every boundary cell of
-every face once.
-
-A header whose sixth column is neither `0` nor a three-digit code stops the run with
-the record number — which is what a file in an older, wider format looks like when it
-is read with this schema.
-
-### Populations
-
-A dispersed phase can carry several materials, each with several populations, declared
-in the ATLAS phase file as `<material> <npCP>`. ATLAS writes the whole boundary table
-once per (material, population) pair — block by block, the copies of a block together —
-and the copies differ only in the payload of their `401`–`403` records. ICE binds them
-to its `[ICE-Family*]` sections:
+A phase can have several materials, each with several populations
+(`<material> <populations>` in the ATLAS phase file). ATLAS then writes the whole table
+once per (material, population) pair: the copies differ only in the data of their inlet
+records. ICE matches them with its families:
 
 | Copies in the file | What ICE does |
 |---|---|
-| 1 | The record applies to every family, which is what a single-population case and every case written before populations look like. The file may be in any order. |
-| one per family | Copy *c* belongs to family *c*. The order is what identifies a copy, so the file must keep ATLAS's: blocks in mesh order, the copies of a block together, each copy over the same cells in the same order. |
-| anything else | The setup stops. Neither reading is right, and binding the wrong copy to a family would inject the wrong size class with no other symptom. |
+| 1 | Every family uses it. This is the single-population case. |
+| One per family | Copy *c* belongs to family *c*. ICE identifies the copies by their order, so the file must keep ATLAS's: blocks in mesh order, the copies of a block together, each copy over the same cells. |
+| Any other number | The setup stops: binding a wrong copy would inject the wrong particles without any other sign. |
 
-So a phase with two materials, one of them in two populations, needs three
-`[ICE-Family*]` sections, and family 3 is the second material's single population.
+For example, a phase with two materials, the first in two populations, needs three
+`[ICE-FamilyN]` sections; family 3 is the second material.
 
-## Supported codes
+## Symmetry and walls (`300`, `301`)
 
-| Code | Type | Payload | ICE treatment |
-|------|------|---------|---------------|
-| `0` | Null | none | The ghost copies the interior cell; no boundary flux. This is the code for the faces of a direction the mesh does not resolve — faces 5 and 6 of a planar 2-D case |
-| `101` | Connection | `b2 i2 j2 k2 f2 c1 c2 c3 c4` | Both ghost layers copied from the interior cells of the neighbouring block; the face's flux is computed once and the neighbouring block takes its negative |
-| `201` | Periodic | as `101` | As `101` |
-| `102` | Chimera (overset) | donor counts per layer, then `b i j k weight` per donor | Each ghost layer set to the weighted blend of its own donors, in conservative variables |
-| `200` | Axisymmetry | none | The side faces of an axisymmetric wedge: see below |
-| `300` | Symmetry | none | See below |
-| `400` | Extrapolation | none | Ghost copies the interior cell: zero gradient. Particles that move into the domain through it enter with the state of the boundary cell, and the run says so: a line the first time a cell that carries the phase (density above the empty-cell density, $10^{-6}$ kg/m³) moves into the domain faster than round-off (above $10^{-12}$ of the signal speed $\sqrt{P/\rho}$ for IG and AG, of its own speed for MK, which has no signal speed) through the `400` faces of a face of a block (per family and grid level), with the iteration, the faces and the largest $\lvert w\rvert$ ($w$ the velocity along the normal out of the domain; $\lvert w\rvert/\sqrt{P/\rho}$ for IG, $\lvert w\rvert/\sqrt{P_{nn}/\rho}$ for AG), another each time that largest value is more than 10 times that of the last line, and at the end of a standalone run the stages each such face let particles in (under MPI the rank that owns the block prints its lines, at once, and rank 0 the end lines; inside hydra only the first-inflow and 10-times lines print, not the end lines, since hydra never runs ICE's end of run) |
-| `401` | Inlet, ratios to the gas | `k kV alpha beta kT rp`, field 10 `G` | See below |
-| `402` | Inlet, absolute | `gp v alpha beta Tp rp` | |
-| `403` | Inlet, speed as a ratio | `gp kV alpha beta Tp rp` | |
+The ghost copies the interior cell with its velocity mirrored about the face (for AG,
+the dispersion tensor too, $\mathsf{P}' = H\mathsf{P}H$ with
+$H = I - 2\hat{\mathbf n}\hat{\mathbf n}^T$). A cloud that reaches the face is
+reflected.
 
-Any other code stops ICE at setup.
-
-The second ghost layer is copied from the neighbour for `101`/`201` and taken from its own
-donors for `102`. On a `200`, `300`/`301` or inlet face it follows the rule of the first:
-the mirror image of the second interior cell where the first ghost mirrors the first, a copy
-of it where the first is a copy, and the injected state again where an inlet injects. `400`
-builds it by a second-order extrapolation $P_{g2} = 3P_{g1} - 3P_m + P_{m+1}$, which from its
-copied first ghost is the second interior cell too; `0` leaves it unfilled, since no stencil
-reaches it.
-
-## Symmetry (`300`)
-
-The ghost copies the interior cell and its velocity is mirrored about the face normal (for
-AG the dispersion tensor too, $\mathsf{P}' = H\mathsf{P}H$ with $H = I - 2\hat{\mathbf n}\hat{\mathbf n}^T$) —
-except when the particles are moving *out* through the face, in which case the copy is
-left unmirrored and the face behaves as an outflow. A cloud reaching a symmetry plane
-is therefore reflected, while one leaving through it is allowed to go.
-
-Face 3 is the exception: it always mirrors, because it is conventionally the axis of an
-axisymmetric case, where letting the cloud leave would be wrong.
+A cloud moving **out** through the face is let go instead: the ghost is not mirrored,
+and the face acts as an outflow. The exception is face 3, the axis of an axisymmetric
+case, which always mirrors.
 
 ## Axisymmetry (`200`)
 
-A 2-D axisymmetric mesh is one layer of cells rotated about the $x$ axis, and its two side
-faces (5 and 6) carry `200`. The ghost is the mirror image of the interior cell, with the
-velocity (and for AG the dispersion tensor) reflected about the face; for a state without swirl this is exactly the
-neighbouring wedge rotated into place. The second ghost mirrors the second interior cell.
-For IG and AG the boundary flux is the Riemann flux between the cell and its mirror image:
-no mass crosses, and the pressure on the two side faces supplies the hoop term of the
-radial momentum. A pressureless MK cloud has no flux through these faces.
+A 2-D axisymmetric mesh is one layer of cells rotated about the $x$ axis; its two side
+faces (5 and 6) carry `200`. The ghost is the mirror image of the interior cell: for a
+flow without swirl, this is exactly the neighbouring wedge rotated into place. For IG
+and AG, no mass crosses these faces, and the pressure on them supplies the hoop term of
+the radial momentum. A pressureless MK cloud has no flux through them.
 
-The axis face (face 3) of such a mesh mirrors whether it carries `200` or `300`.
+The axis (face 3) mirrors whether it carries `200` or `300`.
 
-## Faces of a direction with one cell
+## Extrapolation (`400`)
 
-Faces 5 and 6 of a 2-D mesh, and faces 3 to 6 of a 1-D one, bound a direction the mesh does
-not resolve. Where both faces of such a direction mirror the flow (`200`, `300` or `301`), the
-components of the state that are odd across them have a mode the time step does not follow:
-between two mirror planes $\Delta z$ apart, $dw/dt = -2a\,w/\Delta z$ ($a$ the signal speed of the
-closure), which on a layer thin against its in-plane cells makes round-off in $w$ grow until the
-run fails. The flow between two mirror planes has those components zero, so ICE sets them to zero
-at set-up and does not integrate them, and says so in a warning:
+The ghost copies the interior cell, so the gradient across the face is zero: the cloud
+leaves freely.
 
-| Mesh | Faces | Not integrated (with AG also) |
-|---|---|---|
-| 2-D plane | 5 and 6 all `200`, `300` or `301`, each $k$ node plane normal to $z$ | $w$ ($P_{13}$, $P_{23}$) |
-| 2-D axisymmetric wedge | 5 and 6 all `200`, the $k$ node planes at $\mp\theta/2$ about $z = 0$ | $w$, the swirl ($P_{13}$, $P_{23}$) |
-| 1-D | 3 and 4 as above, each $j$ node plane normal to $y$ | $v$ ($P_{12}$, $P_{23}$) |
-| 1-D | 5 and 6 as above | $w$ ($P_{13}$, $P_{23}$) |
+Particles can also *enter* through such a face, with the state of the boundary cell.
+Since that is rarely intended, ICE reports it:
 
-A plane is checked to 1 % of the thickness of its block. A wedge whose side faces carry any other
-code, or that is not symmetric about $z = 0$, stops the setup. Mirror faces that are not planes
-normal to their axis, as on a layer between parallel planes inclined to $z$, ask the cloud to
-follow them across the layer: the component is then integrated, with a warning, and a layer thin
-against its other cells can still fail. So can a layer with a mirror on one side only and `0` or
-`400` on the other, where the mode is half as fast: give both faces the same code.
+- a line the first time particles enter through the `400` faces of a block face (per
+  family and grid level), with the iteration and how fast they enter compared with the
+  signal speed of the cloud;
+- another line each time that speed grows more than tenfold;
+- at the end of a standalone run, which faces let particles in.
 
-## Inlets (`401`–`403`)
+Only cells that hold particles (density above $10^{-6}$ kg/m³) moving in faster than
+round-off count.
 
-All three prescribe a mass flux, a direction, a temperature and a particle radius; they
-differ in whether those are absolute or ratios to the local gas.
+## Inlets (`401`–`403`) { #inlets }
 
-| | Mass term | Velocity | Temperature |
-|---|---|---|---|
-| `401` | `k` $= krho/(1-krho_{tot})$ and `G` (below): $\rho_{p,i} = k_i\,\rho_g / kV + k_i\,G/\lvert v_{p,n}\rvert$ | `kV` times the gas velocity into the domain across the face | `kT` times the gas temperature |
-| `402` | `gp`, a mass flux in kg s⁻¹ m⁻²: $\rho_p = gp/|v_n|$ | `v`, an absolute speed | `Tp`, absolute |
-| `403` | `gp`, as `402` | `kV` times the gas speed | `Tp`, absolute |
+An inlet prescribes a mass flux, a direction, a temperature and a particle radius.
+The three codes differ in what is absolute and what is a ratio to the local gas:
 
-The `401` record carries the mixture rule over every dispersed phase of the cell as ATLAS BCB applies it: with
-$krho_{tot}$ the sum of `krho` over every `401` (material, population) of every phase of the cell and $G$ the sum of
-`gp` over its `402`/`403` ones, field 1 is $k = krho/(1-krho_{tot})$ and field 10 is $G$. ICE takes both as written:
-along the normal, family $i$ injects the mass flux $k_i\,(\rho_g u_{g,n} + G)$, i.e. $k_i\,(\dot m_{gas} + G A)$ through
-the face, the gas flow not in $G$, as IGLOO does ($v_{p,n}$ is the normal speed of the injection, $kV\,u_{g,n}$). With
-the direction given as angles the gas part is $\rho_p v_{p,n}$ and carries the cosine between the direction and the
-normal, the $G$ part not (it is divided by $v_{p,n}$, as `403` divides `gp`). $G$ enters only where it is positive
-and the injection has a normal speed: at a gas at rest at the face, nothing is divided by zero. A `401` line without
-its 10th field (a file of an ATLAS before the rule, whose field 1 is `krho`) stops the setup: regenerate the file with
-ATLAS BCB; so does a negative field 1 or a $G$ that is negative or not finite (a `krho` sum of 1 or more is ATLAS's
-to refuse).
+| Code | Data | Mass flux | Speed | Temperature |
+|---|---|---|---|---|
+| `401` | `k kV alpha beta kT rp`, then `G` | ratios to the gas flow, plus `G` (below) | `kV` × the gas speed | `kT` × the gas temperature |
+| `402` | `gp v alpha beta Tp rp` | `gp`, in kg s⁻¹ m⁻² | `v`, absolute | `Tp`, absolute |
+| `403` | `gp kV alpha beta Tp rp` | `gp`, in kg s⁻¹ m⁻² | `kV` × the gas speed | `Tp`, absolute |
 
-`alpha` and `beta` give the injection direction: written as the literal `normal` (both of
-them, the usual choice), the particles enter along the face normal into the domain, on any
-face and whatever way the face is turned; written as numbers, they are angles in the global
-frame, $\alpha$ in the $x$-$y$ plane from $x$ and $\beta$ out of it, so the direction is
-$(\cos\beta\cos\alpha, \cos\beta\sin\alpha, \sin\beta)$ — $0$ and $0$ included, which is $+x$.
-One `normal` and one number is refused at set-up.
-The number density follows from the prescribed radius,
-$n = \rho_p / \big(\rho_{al}(T_p)\tfrac43\pi r_p^3\big)$, with the condensed density at the
-inlet temperature: the property table's when the case has one, the constant `density` of
-`[ICE-Physics]` otherwise. For the Gaussian closures the dispersion in
-the ghost cell is set to $10^{-6}$, so an inlet injects an effectively monokinetic
-stream.
+- **Direction.** `alpha beta` written as `normal normal` (the usual choice) inject
+  along the inward normal of the face. Written as numbers, they are angles in the global
+  frame: $\alpha$ in the $x$–$y$ plane from $x$, and $\beta$ out of it, giving the
+  direction $(\cos\beta\cos\alpha, \cos\beta\sin\alpha, \sin\beta)$. One `normal` and
+  one number is refused.
+- **Number density.** It follows from the radius `rp`:
+  $n = \rho_p / \big(\rho_{al}(T_p)\tfrac43\pi r_p^3\big)$, with the material density
+  at the inlet temperature (from the property table, or the constant `density`).
+- **Dispersion.** The Gaussian closures inject a dispersion of $10^{-6}$: an
+  effectively monokinetic stream.
+- **A reversed inlet.** Where the particles at the face are already leaving, the inlet
+  acts as an extrapolation, so it never injects against an outflow.
+- **A zero mass flux.** The face acts as a symmetry: this is how a partly active inlet
+  face is written.
+- **Without gas.** `401` and `403` take values from the gas, so an uncoupled run
+  refuses them; use `402`.
 
-Two cases are handled before any of that:
+### The mass flux of `401`
 
-- if the particles at the face are already **leaving** the domain, the inlet becomes an
-  extrapolation, so a wrongly-placed inlet does not inject against an outflow;
-- if the mass flux is **zero**, the inlet becomes a symmetry, which is how a partly
-  active inlet face is expressed.
+`401` shares the gas flow among all the dispersed phases of the cell, as ATLAS BCB
+computes it. With $krho_{tot}$ the sum of `krho` over every `401` population of the
+cell and $G$ the sum of `gp` over its `402` and `403` ones, ATLAS writes
+$k = krho/(1-krho_{tot})$ as the first value and $G$ as the tenth. Family $i$ then
+injects the mass flux
 
-`401` takes its density, velocity and temperature from the gas, and `403` its velocity: a run without a gas
-phase (0-way) refuses an injecting `401` or `403` record at set-up; use `402` there.
+$$
+k_i\,(\rho_g u_{g,n} + G)
+$$
+
+along the normal, as IGLOO does. With the direction given as angles, the gas part
+carries the cosine between the direction and the normal, and $G$ does not. $G$ only
+counts where it is positive and the injection moves into the domain. A `401` line without the tenth value comes from an
+older ATLAS: regenerate the file with ATLAS BCB. A negative $k$, or a $G$ that is
+negative or not finite, stops the setup.
 
 ## Chimera (`102`) { #chimera }
 
-ATLAS BCB finds the donor cells overlapping each of the two ghost layers and writes
-their volume weights, normalised to 1 per layer. ICE blends the donors in conservative
-variables, converting back to primitives afterwards, so the interpolation conserves
-mass, momentum and energy.
+ATLAS BCB finds the cells of an overlapping block that cover each ghost layer, and
+writes their volume weights, which add up to 1 per layer. ICE blends these donor cells
+in conservative variables, so the interpolation conserves mass, momentum and energy.
 
-ICE stops at setup if any ghost layer's weights sum to nearly zero, which means ATLAS
-found no donor for it. Partial coverage is *not* caught: ATLAS normalises over the
-donors it did find, so a ghost cell covered by half a donor block still gets weights
-summing to 1. Check `chimera.log` from the BCB run.
+ICE stops at setup if the weights of a layer add up to nearly zero: ATLAS found no
+donor for it. Partial coverage is **not** caught, because ATLAS normalises the weights
+over the donors it did find. Check `chimera.log` from the BCB run.
 
-See [Chimera Overset](../vv/chimera.md) for the accuracy this reaches.
+[Chimera Overset](../vv/chimera.md) shows the accuracy this reaches.
 
-## File naming
+## Directions with a single cell
 
-All of ICE's input files carry the phase prefix `part-`, which is fixed for the
-standalone solver; it is a variable only so that a coupled Hydra run can give each
-phase its own set of files.
+Faces 5 and 6 of a 2-D mesh, and faces 3 to 6 of a 1-D one, close a direction the mesh
+does not resolve. When both faces of such a direction mirror the flow (`200`, `300` or
+`301`), the velocity across them can grow from round-off on a thin layer until the run
+fails. Since that component is zero anyway between two mirror planes, ICE sets it to
+zero at setup, does not integrate it, and says so:
+
+| Mesh | Faces | Not integrated (AG also) |
+|---|---|---|
+| 2-D plane | 5 and 6, each a plane normal to $z$ | $w$ ($P_{13}$, $P_{23}$) |
+| 2-D axisymmetric wedge | 5 and 6 all `200`, symmetric about $z = 0$ | $w$, the swirl ($P_{13}$, $P_{23}$) |
+| 1-D | 3 and 4, planes normal to $y$ | $v$ ($P_{12}$, $P_{23}$) |
+| 1-D | 5 and 6 | $w$ ($P_{13}$, $P_{23}$) |
+
+A wedge whose side faces carry another code, or that is not symmetric about $z = 0$,
+stops the setup. Mirror faces that are not planes normal to their axis, or a mirror on
+one side only, leave the component integrated, with a warning: give both faces the
+same code.
+
+??? note "The second ghost layer"
+    `101` and `201` copy it from the neighbour, `102` blends its own donors. On `200`,
+    `300`, `301` and inlet faces it follows the first layer's rule: the mirror image of
+    the second interior cell, a copy of it, or the injected state again. `400` builds it
+    by second-order extrapolation, $P_{g2} = 3P_{g1} - 3P_m + P_{m+1}$, which gives the
+    second interior cell again. `0` leaves it unset, since no stencil reaches it.
+
+## File names
+
+All of ICE's input files carry the prefix `part-`. A coupled Hydra run gives each
+phase its own prefix, through the `phase` key of `[ICE-Parameters]`.

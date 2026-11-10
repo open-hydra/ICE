@@ -1,17 +1,15 @@
 # Initial Conditions
 
-ICE reads its initial state from a single file, `INPUT/part-ic.tec`, which carries the
-**mesh and the solution together**: node coordinates as the first three variables, then
-the primitive variables of every family as cell-centred data. There is no separate mesh
-input, and no per-block or per-family file.
+ICE reads its initial state from one file, `INPUT/part-ic.tec`, which holds the
+**mesh and the state together**: the node coordinates first, then the variables of
+every family at the cell centres. There is no separate mesh file.
 
-The reader is chosen by `ic-format`, so the file is Tecplot ASCII by default and
-`INPUT/part-ic.vtm` (plus `INPUT/vtk/*.vts`) when `ic-format` names VTK.
+The format is set by `ic-format`: Tecplot ASCII by default, binary Tecplot
+(`part-ic.szplt`), or VTK (`part-ic.vtm` with its block files).
 
 ## Variable order
 
-The variables follow the families in order, and within a family they are the primitive
-variables of its closure:
+The families follow one another, and each brings the variables of its closure:
 
 | Closure | Variables, in order |
 |---|---|
@@ -19,41 +17,41 @@ variables of its closure:
 | IG | `rho_p` `u_p` `v_p` `w_p` `P_p` `T_p` `n_p` |
 | AG | `rho_p` `u_p` `v_p` `w_p` `P11_p` `P12_p` `P13_p` `P22_p` `P23_p` `P33_p` `T_p` `n_p` |
 
-A family of a solidifying material (see [Solidification](../theory/physics.md#solidification)) has two more
-variables after `n_p`: `f_p`, the frozen fraction, and `chi_p`, the nucleated fraction. An initial condition may leave
-them out for every solidifying family at once; they are then derived from `T_p` as IGLOO injects a particle, solid and
-nucleated at or below `T-nuc`, liquid above it. Any other variable count stops the run. An inlet injects the two
-fractions by the same rule.
+A family of a [solidifying](../theory/physics.md#solidification) material has two more
+variables after `n_p`: `f_p`, the frozen fraction, and `chi_p`, the nucleated fraction.
+They may be left out of the file for every solidifying family at once: ICE then takes
+a particle at or below `T-nuc` as solid, and above it as liquid, as IGLOO does.
 
-For two families, family 1's block is followed by family 2's. ICE names them with the
-family index appended — `rho_p1`, `u_p1`, … `rho_p2` — when it writes, but the reader
-goes by **position, not by name**: a file whose variables are in the wrong order is
-read without complaint and gives a wrong answer.
+!!! warning "Order, not names"
+    ICE writes the names with the family number appended (`rho_p1`, `u_p1`, …, then
+    `rho_p2`), but it **reads by position**. A file with the variables in another
+    order is read without complaint, and gives a wrong answer.
 
 | Symbol | Meaning | Units |
 |---|---|---|
-| $\rho_p$ | bulk density: condensed mass per unit volume of mixture | kg/m³ |
+| $\rho_p$ | bulk density: particle mass per unit volume of mixture | kg/m³ |
 | $u_p, v_p, w_p$ | particle velocity | m/s |
-| $P$, $P_{ij}$ | velocity dispersion (IG: scalar, AG: symmetric tensor) | Pa |
+| $P$, $P_{ij}$ | velocity dispersion (IG: a scalar, AG: a symmetric tensor) | Pa |
 | $T_p$ | particle temperature | K |
 | $n_p$ | number density | m⁻³ |
 
-$\rho_p$ and $n_p$ together fix the particle radius,
-$R_p = \big(\tfrac{3}{4\pi}\rho_p/(n\rho_{al})\big)^{1/3}$; there is no radius variable.
-A cloud of radius $R_p$ at bulk density $\rho_p$ therefore needs
+There is no radius variable: $\rho_p$ and $n_p$ fix it. For particles of radius $R_p$
+at bulk density $\rho_p$, set
 
 $$
-n = \frac{\rho_p}{\rho_{al}\,\tfrac43\pi R_p^3}.
+n_p = \frac{\rho_p}{\rho_{al}\,\tfrac43\pi R_p^3},
 $$
 
-For the Gaussian closures a strictly positive dispersion is needed even where the cloud
-is nominally monokinetic; the shipped cases use $10^{-6}$ as a floor, which is also
-what ICE writes into an inlet ghost cell.
+with $\rho_{al}$ the density of the material.
+
+The Gaussian closures need a strictly positive dispersion, even for a cloud meant to
+be monokinetic. The shipped cases use $10^{-6}$, the value ICE also gives the
+particles an inlet injects.
 
 ## File layout
 
-A Tecplot ASCII file, one `ZONE` per block, `DATAPACKING=BLOCK`, with the coordinates
-nodal and the rest cell-centred:
+A Tecplot ASCII file has one `ZONE` per block, in `BLOCK` packing, with the
+coordinates at the nodes and the rest at the cell centres:
 
 ```
 VARIABLES ="x" "y" "z" "rho_p1" "u_p1" "v_p1" "w_p1" "T_p1" "n_p1"
@@ -65,95 +63,29 @@ ZONE T = Block1, I=101, J=101, K=2, DATAPACKING=BLOCK, VARLOCATION=([1-3]=NODAL,
 ...
 ```
 
-`I`, `J`, `K` count **nodes**, so a block of $n_x \times n_y \times n_z$ cells has
-`I = nx+1` and so on. A 2-D case is written with `K=2`, a 1-D case with `J=K=2`; ICE
-infers the dimensionality from the resulting cell counts.
+`I`, `J` and `K` count **nodes**: a block of $n_x \times n_y \times n_z$ cells has
+`I = nx+1`, and so on. A 2-D case has `K=2`, a 1-D case `J=K=2`; ICE infers the
+dimensions from the cell counts.
 
-!!! warning "The `VARIABLES` line must be one line, with the names separated"
-    Writing it with Fortran list-directed output wraps it at 80 columns and runs the
-    quoted names together. The reader then sees a single very long variable name, finds
-    no blocks, and ICE fails afterwards in a way that gives no hint of the cause. Write
-    it with an explicit `'(A)'` format and put a space between the names.
+!!! warning "Write the `VARIABLES` line as one line, with spaces between the names"
+    Fortran list-directed output wraps it at 80 columns and runs the quoted names
+    together. ICE then sees one very long name, finds no blocks, and fails later with
+    no hint of why. Write it with an explicit `'(A)'` format.
 
-## Restarting
+A restart reads the same layout from `OUTPUT/part-field.*`: see [Restarting](using.md#restarting).
 
-With `newrun = false` the initial state is read from `OUTPUT/part-field<ext>` instead,
-and the run goes on from the time of that solution: the `SOLUTIONTIME` of its zone
-header (Tecplot) or its `TIME` (vtk), negative for a steady solution, whose global
-iteration count it is, and with the counters stored next to that time (see
-[Restarting](using.md#restarting)). The format and variable
-order are identical — it is the same writer. A vtk field, initial condition or
-solution, is read from the folder of its `.vtm`, which lists its block files.
+## Gas field
+
+`INPUT/gas.tec` is read only if it exists, and its presence switches the exchange
+with the gas on. It must match the mesh block by block, with ten variables per cell:
+density, the three velocity components, temperature, $R$, $\gamma$, thermal
+conductivity, viscosity and a time step. ICE reads it once and never changes it.
 
 ## Property table
 
-`INPUT/part-properties.dat` gives $\rho_{al}(T)$, $c_s(T)$ and $h(T)$ of the condensed
-materials, one zone per material in the order of the [phase file](input.md#materials),
-every zone on the same temperatures. It is optional with one material and required with
-several. It is a Tecplot point file whose first `VARIABLES` line names the columns:
-`Temperature` first, then `Cp`, `Density` and one enthalpy column, in any order. The
-enthalpy is either `Enthalpy` (relative: $c_p T$ for a constant $c_p$) or `Enthalpy_abs`
-(absolute: its offset is kept as the material's datum). An optional `Psat` column (Pa)
-replaces the Clausius-Clapeyron saturation curve of the evaporation models, and optional
-`Lv` (J/kg), `Mv` (kg/kmol) and `Cpv` (J/(kg K)) columns after it give the latent heat,
-the vapour molar mass and the vapour specific heat; ATLAS writes the four from the
-material's liquid/vapour pair. An optional `Emissivity` column gives the material's
-emissivity as a function of its temperature, read for every material: a column of zeros is
-absent, one zero on some rows only or not positive is refused, rows above 1 are cut to 1
-with a warning, and a non-zero `emissivity` beside it stops the run. Optional `Conductivity`
-(W/(m K)) and `Viscosity` (Pa s) columns give the liquid conductivity and viscosity of a material that runs
-`liquid-conduction = P2T`, in place of its `k-liq` and `mu-liq` tokens: a column of zeros is absent, one zero on
-some rows only or not positive is refused, as is a non-zero token beside it; on any other material they are
-reported as not used. A `Sigma` column, the surface tension IGLOO reads, is recognised and not used. Other names are
-ignored. The rows sit on consecutive **integer** kelvins from any $T_{min}$, at least
-two of them. Between the nodes the density and $c_p$ are linear in $T$, and outside
-$[T_{min}, T_{max}]$ they keep the end values. When $c_p$ varies, the particle energy is
-the enthalpy column itself, less its value extrapolated to 0 K, so its datum does not
-matter ([Energy and temperature](../theory/governing-equations.md#energy-and-temperature)).
-
-ICE refuses a table that is missing a column, names a column twice or names two
-enthalpies; that has a zone count other than the number of materials, zones on different
-temperatures, a row that does not hold a number for every column, a row count other than
-the one its zone announces, a row below 0 K, rows off the integer nodes (by more than
-$10^{-6}$ K) or anything after the last row; or whose density or $c_p$ is not positive,
-whose enthalpy does not increase or disagrees with $c_p$, or whose relative `Enthalpy` has
-an offset. A constant $c_p$ must give $h = c_p T + h_{off}$ on every row, and a varying one
-must match the trapezoidal integral of $c_p$ within 0.1 % per step, or within
-$10^{-6}\,|h|$ when that is larger, the rounding of an absolute enthalpy printed to seven
-digits. For a material that evaporates it also refuses a `Psat` column that is not finite,
-is negative, decreases with $T$ or is constant, or does not give its `boiling-pressure` (one atmosphere by
-default) within a factor 2 at its `boiling-temperature`, which must lie in $[T_{min}, T_{max}-1]$; a column of zeros counts
-as absent, and a material that does not evaporate does not use the column.
-
-The `Lv`, `Mv` and `Cpv` columns follow the same rule: they serve a material that
-evaporates, and the three at zero count as absent. A material that evaporates takes the
-latent heat and the vapour specific heat at the particle temperature, linear between the
-nodes and the end values outside, in the latent sink of the energy equation, in the
-transfer number of the d2-law and in the gas-side heat of ASM and TC; `Mv` must be the
-same on every row. ICE refuses vapour columns that are not finite (*vapour column: a value
-is not finite*), that are zero on some rows and not on others, that are negative, an `Mv`
-that varies, the vapour columns without a `Psat` column (*vapour columns without a Psat
-column*), and an `Lv` column whose Clausius-Clapeyron slope at the boiling temperature is
-not within a factor 2 of the `Psat` column's (*Lv column: not the slope of the Psat column
-at boiling-temperature*); the slope takes $M_v$ from the `Mv` column, and an `Lv` column
-without one needs `vapour-molar-mass` set non-zero. IGLOO applies the same checks with the
-same words.
-
-With a table, `density` and `specific-heat` of `[ICE-Physics]` may be left out; if one is
-given it must equal its material's constant column, and it may not be given against a
-column that varies. If the file is absent, the single material takes those two constants;
-ICE prints which of the two applies.
-
-The vapour keys follow a stricter rule: `latent-heat`, `vapour-molar-mass` or
-`vapour-specific-heat` given non-zero for a material whose column of the same quantity is
-non-zero stops the run, even when the two agree, and 0 leaves the quantity to the table
-(one value per material, so `latent-heat = 0 2.26e6` serves a tabulated material A beside
-a material B without the columns). An evaporating material with `latent-heat`,
-`vapour-molar-mass` or `vapour-specific-heat` left out, or `latent-heat` or
-`vapour-molar-mass` at 0, and no column to replace it stops the run; IGLOO refuses such a
-material too. The setup prints the
-tabulated values of each such material: $L_v$ at 298.15 K, which becomes its scalar latent
-heat, and at the boiling temperature, $M_v$, and $c_{p,v}$ at the boiling temperature.
+`INPUT/part-properties.dat` gives the properties of the materials as functions of
+temperature. It is optional with one material, and required with several. ATLAS writes
+it; this is its layout:
 
 ```
 TITLE = "Mass Thermodynamic Properties"
@@ -165,9 +97,81 @@ I=5000, F=POINT
    ...
 ```
 
-## Gas field
+- **One zone per material**, in the order of the [phase file](input.md#materials),
+  all on the same temperatures.
+- **The rows sit on consecutive integer kelvins**, at least two of them, from any
+  first temperature. Between the rows the values are linear in $T$; outside the table
+  they keep the end values.
+- **Packing:** `F=POINT` (one row per line, as above) or `BLOCK` (one column after
+  the other). A zone that gives neither is `BLOCK`, as Tecplot reads it.
 
-`INPUT/gas.tec` is read only if it exists, and its presence is what turns on the source
-terms. It must match the mesh block for block and supply ten variables per cell:
-density, the three velocity components, temperature, $R$, $\gamma$, thermal
-conductivity, viscosity and a time step. ICE reads it once and never modifies it.
+### Columns
+
+`Temperature` comes first; the others may be in any order.
+
+| Column | Unit | Required | Used for |
+|---|---|---|---|
+| `Temperature` | K | yes | the rows |
+| `Cp` | J/(kg K) | yes | the specific heat of the material |
+| `Density` | kg/m³ | yes | the density of the material |
+| `Enthalpy` or `Enthalpy_abs` | J/kg | one of the two | the energy of the particles (below) |
+| `Psat` | Pa | no | the saturation pressure, in place of the Clausius-Clapeyron curve |
+| `Lv` | J/kg | no | the latent heat, against temperature |
+| `Mv` | kg/kmol | no | the vapour molar mass, the same on every row |
+| `Cpv` | J/(kg K) | no | the vapour specific heat, against temperature |
+| `Emissivity` | – | no | the emissivity, against temperature |
+| `Conductivity`, `Viscosity` | W/(m K), Pa s | no | the liquid conductivity and viscosity of a `P2T` material |
+| `Sigma` | N/m | no | recognised (IGLOO reads it) and not used |
+
+Other columns are ignored. `Enthalpy` is relative ($c_p T$ for a constant $c_p$);
+`Enthalpy_abs` is absolute, and its offset is kept as the material's datum. When $c_p$
+varies, the particle energy is the enthalpy column itself, so its datum does not matter
+([Energy and temperature](../theory/governing-equations.md#energy-and-temperature)).
+
+The optional columns are read only where they apply: `Psat`, `Lv`, `Mv` and `Cpv` for
+a material that evaporates, `Conductivity` and `Viscosity` for one that runs
+`liquid-conduction = P2T`, `Emissivity` for every material. A column of zeros counts
+as absent. Emissivities above 1 are cut to 1, with a warning.
+
+### Columns and INI keys together
+
+- **`density` and `specific-heat`** may be left out with a table. If given, a value
+  must equal the material's constant column; against a column that varies it stops the
+  run. Without a table, the one material takes these two constants. ICE prints which
+  of the two it uses.
+- **`latent-heat`, `vapour-molar-mass`, `vapour-specific-heat` and `emissivity`** must
+  be 0 for a material whose table has the same quantity as a column, even if the two
+  agree. With two materials, `latent-heat = 0 2.26e6` lets the table set A's and gives
+  B, which has no column, its value.
+- **`k-liq` and `mu-liq`** on the material line must be absent (or 0) when the table
+  has the `Conductivity` and `Viscosity` columns.
+
+At setup ICE prints the tabulated vapour values of each evaporating material: $L_v$ at
+298.15 K, which becomes its scalar latent heat, and $L_v$, $M_v$ and $c_{p,v}$ at the
+boiling temperature.
+
+### Checks
+
+ICE refuses the table, with the reason, when:
+
+- **ORION cannot read the file**: a row with a number too many or too few, a zone that
+  holds another number of rows than it announces, anything after the last row. ORION's
+  message says what and where;
+- **the columns** are missing one, name one twice, or name both enthalpies;
+- **the zones** are not one per material, are not one line of rows (`J=` or `K=` above
+  1), or are not on the same temperatures;
+- **the rows** go below 0 K or are off the integer kelvins (by more than $10^{-6}$ K);
+- **the values** are not physical: a density or $c_p$ that is not positive, an
+  enthalpy that does not increase with $T$, or disagrees with $c_p$ (with a constant
+  $c_p$, $h = c_p T + h_{off}$ on every row; with a varying one, the trapezoidal
+  integral of $c_p$ within 0.1 % per step), or a relative `Enthalpy` with an offset;
+- **`Psat`**, for an evaporating material, is not finite, is negative, constant or
+  decreasing, or does not give `boiling-pressure` within a factor 2 at
+  `boiling-temperature` (which must lie inside the table);
+- **`Lv`, `Mv`, `Cpv`** are not finite, negative, zero on some rows only, given without
+  `Psat`, an `Mv` that varies, or an `Lv` whose Clausius-Clapeyron slope at the boiling
+  temperature is not within a factor 2 of the `Psat` column's. An `Lv` column without
+  `Mv` needs `vapour-molar-mass`, which the slope uses. IGLOO applies the same vapour
+  checks, with the same messages;
+- **`Emissivity`, `Conductivity`, `Viscosity`** are zero on some rows only, or not
+  positive.
