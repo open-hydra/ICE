@@ -14,6 +14,11 @@ change an input or a build.
 - The property table takes an `Emissivity` column by material, and a liquid cp that varies with temperature.
 - The banner prints the compiler options of the build.
 - CI builds and tests with TecIO (`USE_TECIO=ON`) too.
+- `install.sh build --update-deps` selects the newest ORION 2.x again; a [Versioning](docs/development/versioning.md)
+  page.
+- The documentation is built with Zensical (strict in CI), with a new home page, and its pages were rewritten to
+  read more easily; the Overview moved into Getting Started.
+- The Code Verification page is split into five topic pages, and the V&V section is grouped by subject.
 
 ### Changed
 
@@ -21,6 +26,14 @@ change an input or a build.
   temperature, ...): the run stops naming what is missing, instead of using aluminium's values.
 - A negative density after the update, floored silently before, is now counted and warned.
 - Near-empty IG/AG cells have their dispersion capped, so an empty domain fills without diverging.
+- **Breaking.** ORION 2.1 or a later 2.x is required, in place of the submodule `lib/ORION`. The configure checks it
+  out in `lib/ORION`. Results are unchanged.
+- **Breaking.** `ORION_PATH` and `FINER_PATH` are removed: use `FETCHCONTENT_SOURCE_DIR_ORION` and
+  `FETCHCONTENT_SOURCE_DIR_FINER` (`install.sh --include-*` as before). `install.sh update --remote` is removed.
+- FiNeR (v2.3.0) moves to `lib/FiNeR`; delete an old `lib/third_party`. Its dependencies follow their default
+  branches (`ICE_FINER_DEPS=BACKUP` for fixed releases).
+- The property table is read by ORION's Tecplot reader: BLOCK packing works too, and ORION's message says why a
+  file cannot be read.
 
 ### Fixed
 
