@@ -34,7 +34,7 @@ $$
 with the matching work term $\rho_p\,\mathbf u_p\cdot(\mathbf u_g-\mathbf u_p)/\tau_p$
 in the energy equation. For $C_d = 24/Re$ the relaxation time reduces exactly to the
 Stokes value $\rho_{al}d_p^2/(18\mu_g)$, which is the identity
-[case A](../vv/verification.md) verifies.
+[case A](../vv/verification/exchange.md#a-relaxation-under-stokes-drag) verifies.
 
 | Name | $C_d$ | Notes |
 |---|---|---|
@@ -55,7 +55,7 @@ Stokes value $\rho_{al}d_p^2/(18\mu_g)$, which is the identity
 Each correlation is a pure function of $(Re, Ma, \gamma, T_r)$; the choice travels as an
 integer, so nothing mutable is shared between threads. Every one of them is checked
 against an independent integration in
-[case D](../vv/verification.md#d-every-drag-correlation), including at transonic and
+[case D](../vv/verification/exchange.md#d-every-drag-correlation), including at transonic and
 supersonic slip for the four that have a compressible branch.
 
 ## Convective heat transfer
@@ -184,7 +184,7 @@ $f_2 \to 1$ as the rate vanishes.
     heat $2\pi d k_g (T_g-T_p) f_2$ equals the latent sink $-\dot m L_v$ term for
     term — for any gas, any material and any droplet temperature. That combination
     holds $T_p$ fixed and reproduces the textbook $d^2$ law exactly, which is what
-    [case F](../vv/verification.md#f-evaporation) uses as its sharpest check.
+    [case F](../vv/verification/phase-change.md#an-exact-check-with-nothing-frozen) uses as its sharpest check.
 
 ### Conduction inside the drop
 

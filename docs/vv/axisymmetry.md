@@ -14,7 +14,7 @@ places it, so the axis face is a regular face of tiny area rather than a degener
 | `Axis/IG` | IG | Uniform cloud at rest, $P = 1$ Pa | The side faces carry the pressure that holds the cloud in equilibrium | $10^{-10}$ on $\lvert\mathbf{u}\rvert/c$, $\rho$ and $P$ |
 | `Axis/AG` | AG | Uniform cloud at rest, $\mathbf{P} = \mathbf{I}$ Pa | The same, through the tensor closure | $10^{-10}$ on $\lvert\mathbf{u}\rvert/c$, $\rho$ and $P_{11}, P_{22}, P_{33}$ |
 
-### A pressureless cloud along the axis (`Axis/MK`)
+## A pressureless cloud along the axis (`Axis/MK`)
 
 The cloud moves along $x$ at 20 m/s with a density that grows away from the axis,
 $\rho_p = 1 + 4\,(r/R)^2$, fed through a mass-flux inlet (code 402) that carries the same
@@ -37,7 +37,7 @@ solution time of 200 iterations).
 field is at roundoff from the first iteration, and a residual at roundoff does not fall by
 the default relative threshold of $10^{-10}$ either.
 
-### A cloud at rest in a closed wedge (`Axis/IG`, `Axis/AG`)
+## A cloud at rest in a closed wedge (`Axis/IG`, `Axis/AG`)
 
 A uniform cloud at rest, $\rho_p = 1$ kg/m³ and $P = 1$ Pa ($\mathbf{P} = \mathbf{I}$ for
 AG), fills the wedge; every face is closed (the four meridional faces are symmetry, code
@@ -61,3 +61,11 @@ for IG, $\lvert v\rvert/c = 0.23$ after 50 iterations and 1.1 after 300.
 `res-threshold = 0` says the same here: at equilibrium the density residual is exactly
 zero, which ends nothing (the test is relative to the first non-zero residual), and the
 run ends on `iter-threshold`.
+
+## Running them
+
+```bash
+ctest --test-dir build -R Axis --output-on-failure
+```
+
+The three cases carry the `fast` label, so the pre-push hook runs them.

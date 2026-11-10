@@ -32,22 +32,21 @@ input for the connections.
 | Single-block cases on 2 ranks (one rank idle) vs serial | Bit-identical output |
 
 A connection passes the two cells behind the interface to the neighbour's ghost layers, so
-the four-block run uses the same stencil as the single block and matches it to round-off.
-The flux through a connection face is computed once, by one of the face's two records, and
-the other block takes its negative, so the blocks exchange exactly the same mass, momentum
-and energy. With the shock detector on, that face takes the smaller detector weight of its two
-cells, as a face inside a block does, so the four-block run weights every face as the single
-block does. It still differs by round-off, from the ghost lengths each block extrapolates
-and from the order in which a cell next to a cut sums its fluxes, and where the two jets
-collide, on the cut at $y = 0$, the detector amplifies any round-off difference: the four-block
-run differs from the single block by $2 \times 10^{-9}$ of the peak
-density at 5000 iterations, while a change of one inlet value in its last digit moves the single
-block itself by $3 \times 10^{-8}$. With the weight of one of the two cells it was
-$7 \times 10^{-7}$, and when each block computed the face itself, with its own cell's weight,
-$3.4 \times 10^{-6}$. The MPI runs exchange exactly the values a serial run reads — the cells
-the ghost layers copy, the partner cells' weights and the connection faces' fluxes — so the
-number of ranks does not change the result at all; the rank rows above and the timings below
-were measured with the detector on.
+the four-block run uses the same stencil as the single block. The flux through a connection
+face is computed once, by one of its two records, and the other block takes its negative, so
+the blocks exchange exactly the same mass, momentum and energy. With the shock detector on,
+the face takes the smaller detector weight of its two cells, as a face inside a block does.
+
+The two runs still differ by round-off, from the ghost lengths each block extrapolates and
+from the order in which a cell next to a cut sums its fluxes. Where the jets collide, on the
+cut at $y = 0$, the detector amplifies it: the four-block run differs from the single block
+by $2 \times 10^{-9}$ of the peak density after 5000 iterations, while changing one inlet
+value in its last digit moves the single block itself by $3 \times 10^{-8}$.
+
+The MPI runs exchange exactly the values a serial run reads — the cells the ghost layers
+copy, the partner cells' weights and the connection fluxes — so the number of ranks does not
+change the result at all. The rank rows above and the timings below were measured with the
+detector on.
 
 Wall-clock time for 5000 iterations, 2 OpenMP threads per rank:
 
@@ -61,3 +60,14 @@ Wall-clock time for 5000 iterations, 2 OpenMP threads per rank:
 On 3 ranks one rank still holds two blocks and sets the pace, so the time is the same as on 2
 ranks. The work is divided by whole blocks, so the number of ranks that pays off is one
 that divides the blocks evenly.
+
+## Running it
+
+```bash
+ctest --test-dir build -R DoisneauSplit4 --output-on-failure
+```
+
+The case compares its fields against a stored reference. In an MPI build, the
+implementation tests `MPIEquivConnection` and `MPIEquivConnectionSD` (the shock detector on)
+rerun it on several ranks and require the serial output; `MPIEquivChimera` does the same for
+the [chimera case](chimera.md).

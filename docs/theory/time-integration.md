@@ -22,9 +22,23 @@ Expanding the last row recovers the familiar Shu-Osher form
 $\mathbf{U}^{(2)} = \tfrac34\mathbf{U}^n + \tfrac14(\mathbf{U}^{(1)} + \Delta t \mathcal R^{(1)})$,
 $\mathbf{U}^{n+1} = \tfrac13\mathbf{U}^n + \tfrac23(\mathbf{U}^{(2)} + \Delta t \mathcal R^{(2)})$.
 
-Every stage is a full pass: sources, ghost fill (including the MPI halo exchange), shock-detector weights, boundary fluxes, interior fluxes, residual, optional smoothing, update. The stage update is done in conservative variables — the primitives are converted in, integrated, and converted back. The conversion floors a density below $10^{-25}$: the density, the velocity, the temperature, the number density and the pressure (IG) or the tensor's diagonal (AG) are set to $10^{-25}$, the tensor's off-diagonal terms and a solidifying family's $f$ and $\chi$ to 0. A negative density floored this way is counted and warned about ("negative density after the update", the first one with its family, block, cell, stage, level and iteration; then "negative densities floored after an update" with the count at the shell cadence and at the end of the run). The count is of update events, a cell counting once per stage of each iteration; a density between 0 and $10^{-25}$ is floored without being counted, and the converted-back state is checked for NaN and infinity, which stop the run.
+Every stage is a full pass: sources, ghost fill (with the MPI exchange), shock-detector
+weights, boundary fluxes, interior fluxes, residual, optional smoothing, update. The update
+is done in conservative variables: the primitives are converted in, integrated, and
+converted back.
 
-The measured orders of these schemes on a problem with an exact solution are in [Code Verification](../vv/verification.md).
+The conversion back floors a density below $10^{-25}$: the density, the velocity, the
+temperature, the number density and the pressure (IG) or the diagonal of the tensor (AG)
+are set to $10^{-25}$; the off-diagonal terms, and the fractions $f$ and $\chi$ of a
+solidifying family, to 0.
+
+- A **negative** density floored this way is counted and reported: the first one with its
+  family, block, cell, stage, level and iteration, then the count at every progress line
+  and at the end of the run. A cell counts once per stage.
+- A density between 0 and $10^{-25}$ is floored without being counted.
+- A NaN or an infinity after the conversion stops the run.
+
+The measured orders of these schemes on a problem with an exact solution are in [Drag and Heat](../vv/verification/exchange.md#a-relaxation-under-stokes-drag).
 
 ## The time step
 
@@ -43,30 +57,26 @@ $$
 
 so `dt-max` bounds the step that is actually taken. If a CFL ramp is set, the CFL factor is additionally scaled by $\min(1, \text{iteration}/N)$, ramping it linearly from zero over the first $N$ iterations; the ceiling is applied after that too.
 
-A scheme that is not split by direction needs the sum of the direction limits, not the smallest of
-them (W. Hundsdorfer, *Numerical solution of advection-diffusion-reaction equations*, lecture
-notes, CWI, 2000, sec. 9.3), and the width of the cell rather than its edge, which is longer on a
-skewed cell. For the linearised MUSCL scheme with upwind fluxes (the van Leer, van Albada and MC
-slopes, in smooth flow) the rule is stable for $\mathrm{CFL} \le 1$ with RK2 (Heun) and
-$\mathrm{CFL} \le 1.17$ with RK3, $1.256$ with first-order fluxes (von Neumann limits of the
-linearised scheme); explicit Euler is stable with first-order fluxes only, up to 1. With MUSCL its
-limited scheme stays TVD (1-D scalar advection, Harten's sufficient condition) only up to the
-limiter's step bound, 0.5 for van Leer ([Limiters](numerics.md#limiters)): above it ICE writes a
-warning and the run goes on, with `irs = true` an info line instead. Keep a margin
-below these where limiters and shocks act. The rule used to take the smallest of
-$\ell_d/(|\mathbf u\cdot\hat{\mathbf e}_d| + a_d)$ over the three index directions, with $\ell_d$
-the length of the cell edge: the same CFL now gives a step down to one half of that on square 2-D
-cells and to one third on cubes.
+A scheme that is not split by direction needs the sum of the direction limits, not the
+smallest of them (W. Hundsdorfer, *Numerical solution of advection-diffusion-reaction
+equations*, lecture notes, CWI, 2000, sec. 9.3), and the width of the cell rather than its
+edge, which is longer on a skewed cell.
 
-The directions the mesh does not resolve add nothing. Across them a cell has boundary faces only,
-and the flux between the cell and its ghost gives a mode only to the components that are odd
-across a mirror face: $w$ between the $k$ faces of a 2-D layer of thickness $\Delta z$,
-$dw/dt = -2a\,w/\Delta z$, which on a layer thin against its in-plane cells no explicit scheme
-follows at the in-plane step. Where those faces mirror the flow, ICE sets those components to zero
-and does not integrate them
-(see [Boundary Conditions](../user/boundary-conditions.md#faces-of-a-direction-with-one-cell)). The
-old rule bounded the step by that width too, so cells thin across those faces, as near the axis of
-a wedge, now take a larger step.
+For the linearised MUSCL scheme with upwind fluxes (the van Leer, van Albada and MC slopes,
+in smooth flow), the rule is stable up to $\mathrm{CFL} = 1$ with RK2 (Heun) and 1.17 with
+RK3 (1.256 with first-order fluxes): these are the von Neumann limits of the linearised
+scheme. Explicit Euler is stable with first-order fluxes only, up to 1. With MUSCL, its
+limited scheme stays TVD only up to the limiter's step bound, 0.5 for van Leer
+([Limiters](numerics.md#limiters)): above it ICE warns and goes on (with `irs = true`, an
+info line instead). Keep a margin below these limits where limiters and shocks act.
+
+The directions the mesh does not resolve add nothing. Across them a cell has boundary faces
+only, and the flux between the cell and its ghost gives a mode only to the components that
+are odd across a mirror face: $w$ between the $k$ faces of a 2-D layer of thickness
+$\Delta z$, with $dw/dt = -2a\,w/\Delta z$, which no explicit scheme follows at the
+in-plane step on a thin layer. Where those faces mirror the flow, ICE sets those
+components to zero and does not integrate them (see
+[Boundary Conditions](../user/boundary-conditions.md#directions-with-a-single-cell)).
 
 `dt-max` and `tau-factor` exist because the source terms are explicit: the relaxation time $\tau_p$ does not appear in the CFL condition at all, so nothing else stops the step from overshooting it. `dt-max` is a fixed ceiling with a finite default, and on a coarse mesh or a slow flow it — rather than the CFL condition — is what sets the pace. `tau-factor` follows $\tau_p$ cell by cell. It applies to coupled runs only, and only in cells that carry the phase ($\rho_p > 10^{-6}$) and have a finite $\tau_{p,i}$; `tau-factor = 0` switches it off. $\tau_{p,i}$ is the value the source terms computed during the previous step, so the first step of a run is bounded by `dt-max` alone.
 
@@ -97,7 +107,17 @@ applied direction by direction, with $\beta$ a free coefficient and **two** Jaco
 Coarse grids are built by halving every block dimension, so
 each block must be divisible by $2^{\texttt{levels}-1}$;.
 
-The run then **starts on the coarsest level** and works up. Each level is advanced for its own iterations, after which the solution is prolongated onto the next finer grid and the iteration counter restarts. There is no fine-to-coarse transfer during the solve: this is grid sequencing — a cheap way to get a good initial guess on the fine grid — not a multigrid cycle, and it does not accelerate the fine-level convergence once it is reached. A restart resumes on the level of the solution it reads (`ICE_GRID_LEVEL`, see [Restarting](../user/using.md#restarting)): the solution is written on the finest level, so a restart from it does not run the coarse levels again. While a coarse level is solved, its outputs are its own: `field-level<n>` and `residuals-level<n>` hold that level's grid and fields, stamped with its time (minus the global iteration count in a steady run) and with `ICE_GRID_LEVEL = n` and the level's iteration count.
+The run then **starts on the coarsest level** and works up. Each level runs its own
+iterations; the solution is then interpolated onto the next finer grid, and the iteration
+count starts again. There is no transfer from fine to coarse during the solve: this is
+grid sequencing, a cheap way to get a good initial guess on the fine grid, not a multigrid
+cycle, and it does not speed up the convergence on the fine grid itself.
+
+- A restart resumes on the level of the solution it reads ([Restarting](../user/using.md#restarting)).
+  The solution file is written on the finest level, so a restart from it does not run the
+  coarse levels again.
+- While a coarse level runs, it writes its own files, `field-level<n>` and
+  `residuals-level<n>`, with that level's grid, fields, time and iteration count.
 
 The one fine-to-coarse transfer happens at setup, where the initial solution is restricted onto every level in turn so that the coarsest one starts from the initial condition rather than from nothing. Restriction is volume-weighted and done in conserved variables, so it conserves mass; prolongation is trilinear.
 
