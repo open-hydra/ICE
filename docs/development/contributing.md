@@ -58,12 +58,17 @@ the point.
 
 ## Documentation
 
-The docs are MkDocs with the Material theme, built from `docs/` and `mkdocs.yml`:
+The site is built with [Zensical](https://zensical.org) from `docs/` and `mkdocs.yml`:
 
 ```bash
-mkdocs serve          # preview at localhost:8000
-mkdocs build --strict # what CI checks: fails on a broken internal link
+pip install -r requirements-docs.txt
+zensical serve            # preview at http://localhost:8000
+zensical build --strict   # what CI checks: fails on a broken link or anchor
 ```
+
+Write links relative to the page: a link that starts with `/` would leave the published
+site, and CI refuses it. A figure goes inline with a snippet,
+`--8<-- "docs/<path>.svg"`, inside a `<figure>`, so it follows the light and dark themes.
 
 The figures on the V&V pages are regenerated from the case outputs by the `plot_vv.py`
 scripts under `test/`, after the corresponding cases have run.

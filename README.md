@@ -87,13 +87,13 @@ ICE/
 │       ├── parallel/    # MPI decomposition and ghost exchange
 │       ├── driver/      # Setup, solve and post-processing stages
 │       └── diagnostic/  # Residuals and run-time reporting
-├── lib/               # Git submodule dependencies
+├── lib/               # ORION (a release, checked out by the configure) and FiNeR (submodule)
 ├── test/              # Verification & validation cases
 │   ├── Doisneau/      #   Crossing jets, one case per closure
 │   ├── Berthon/       #   Riemann problems for the Gaussian closure
 │   ├── verification/  #   Exact-solution cases, inputs generated on the fly
 │   └── fast/          #   Short invariant checks
-├── docs/              # MkDocs documentation source
+├── docs/              # documentation source (Zensical, mkdocs.yml)
 ├── cmake/             # CMake modules
 ├── install.sh         # Build helper script
 └── CMakeLists.txt

@@ -5,11 +5,11 @@
 ```
 ICE/
 ├── bin/                        # ICE and DocGen (generated)
-├── cmake/                      # Compiler-flag probing and Find modules
-├── docs/                       # This documentation (MkDocs)
+├── cmake/                      # Compiler flags, Find modules, the libraries (SemVerDeps)
+├── docs/                       # This documentation (Zensical, mkdocs.yml)
 ├── lib/
-│   ├── ORION/                  # Submodule: mesh and solution I/O
-│   └── third_party/FiNeR/      # Submodule: INI parser
+│   ├── ORION/                  # A release checked out by the configure (git ignored): mesh and solution I/O
+│   └── FiNeR/                  # Submodule: INI parser
 ├── src/
 │   ├── app/
 │   │   ├── main.f90            # The solver executable
