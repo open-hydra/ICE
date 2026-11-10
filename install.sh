@@ -23,17 +23,15 @@ Global Options:
 
 Commands:
   build                     Perform a full build
-    --include-orion=<path>  Set external ORION path
-    --include-finer=<path>  Set external FiNeR path
+    --include-orion=<path>  Build an external ORION clone instead of the release ICE selects
+    --include-finer=<path>  Build an external FiNeR clone instead of the submodule lib/FiNeR
+    --update-deps           Select again the newest release of ORION (deps.lock)
     --compilers=<name>      Set compilers (intel, gnu)
     --use-openmp            Use OpenMP
     --use-mpi               Use MPI
     --use-tecio             Use TecIO
 
   compile                   Compile the program using the CMakePresets file
-
-  update                    Download git submodules
-    --remote                Use the latest remote commit
 
 EOF
     exit 1
@@ -59,9 +57,18 @@ task() {
 
 # Create default CMakePresets.json if it doesn't exist
 function write_presets() {
-  FC=$(grep '^CMAKE_Fortran_COMPILER:FILEPATH=' "$BUILD_DIR/CMakeCache.txt" | cut -d= -f2-)
-  CC=$(grep '^CMAKE_C_COMPILER:FILEPATH=' "$BUILD_DIR/CMakeCache.txt" | cut -d= -f2-)
-  CXX=$(grep '^CMAKE_CXX_COMPILER:FILEPATH=' "$BUILD_DIR/CMakeCache.txt" | cut -d= -f2-)
+  # the type is FILEPATH when CMake finds the compiler, STRING when it is given with -D (check_language: another)
+  FC=$(grep -E '^CMAKE_Fortran_COMPILER:[A-Z]+=' "$BUILD_DIR/CMakeCache.txt" | cut -d= -f2-)
+  CC=$(grep -E '^CMAKE_C_COMPILER:[A-Z]+=' "$BUILD_DIR/CMakeCache.txt" | cut -d= -f2-)
+  CXX=$(grep -E '^CMAKE_CXX_COMPILER:[A-Z]+=' "$BUILD_DIR/CMakeCache.txt" | cut -d= -f2-)
+  # the external clones, when given
+  local sources=""
+  if [[ -n $ORION_PATH ]]; then
+    sources+="        \"FETCHCONTENT_SOURCE_DIR_ORION\": \"${ORION_PATH}\","$'\n'
+  fi
+  if [[ -n $FINER_PATH ]]; then
+    sources+="        \"FETCHCONTENT_SOURCE_DIR_FINER\": \"${FINER_PATH}\","$'\n'
+  fi
 
   cat <<EOF > CMakePresets.json
 {
@@ -76,9 +83,7 @@ function write_presets() {
       "description": "Default preset",
       "binaryDir": "\${sourceDir}/build",
       "cacheVariables": {
-        "ORION_PATH": "${ORION_PATH}",
-        "FINER_PATH": "${FINER_PATH}",
-        "CMAKE_BUILD_TYPE": "${BUILD_TYPE}",
+${sources}        "CMAKE_BUILD_TYPE": "${BUILD_TYPE}",
         "CMAKE_Fortran_COMPILER": "${FC}",
         "CMAKE_C_COMPILER": "${CC}",
         "CMAKE_CXX_COMPILER": "${CXX}",
@@ -96,18 +101,18 @@ EOF
 # Default global values
 COMMAND=""
 COMPILERS=""
-ORION_PATH=$(pwd)'/lib/ORION/'
-FINER_PATH=$(pwd)'/lib/third_party/FiNeR/'
+# ORION and FiNeR: the release ICE selects and the submodule (see CMakeLists.txt), or external clones
+ORION_PATH=""
+FINER_PATH=""
+UPDATE_DEPS="false"
 USE_OPENMP="false"
 USE_MPI="false"
 USE_TECIO="false"
-REMOTE="false"
 BUILD_TYPE="RELEASE"
 
 # Define allowed options for each command using regular arrays
-CMD=("build" "compile" "update")
-CMD_OPTIONS_build=("--compilers --include-orion --include-finer --use-openmp --use-mpi --use-tecio")
-CMD_OPTIONS_update=("--remote")
+CMD=("build" "compile")
+CMD_OPTIONS_build=("--compilers --include-orion --include-finer --update-deps --use-openmp --use-mpi --use-tecio")
 
 # Parse global options
 while getopts "hv-:" opt; do
@@ -145,11 +150,17 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --include-orion=*)
             [[ "$COMMAND" == "build" ]] || { error " --include-orion is only valid for 'build' command"; exit 1; }
-            ORION_PATH="${1#*=}"
+            # absolute: CMake takes the folder from the build directory
+            ORION_PATH=$(cd "${1#*=}" && pwd) || { error "No folder ${1#*=}"; exit 1; }
             ;;
         --include-finer=*)
             [[ "$COMMAND" == "build" ]] || { error " --include-finer is only valid for 'build' command"; exit 1; }
-            FINER_PATH="${1#*=}"
+            # absolute: CMake takes the folder from the build directory
+            FINER_PATH=$(cd "${1#*=}" && pwd) || { error "No folder ${1#*=}"; exit 1; }
+            ;;
+        --update-deps)
+            [[ "$COMMAND" == "build" ]] || { error " --update-deps is only valid for 'build' command"; exit 1; }
+            UPDATE_DEPS="true"
             ;;
         --compilers=*)
             [[ "$COMMAND" == "build" ]] || { error " --compilers is only valid for 'build' command"; exit 1; }
@@ -171,10 +182,6 @@ while [[ $# -gt 0 ]]; do
             [[ "$COMMAND" == "build" ]] || { error " --use-tecio is only valid for 'build' command"; exit 1; }
             USE_TECIO="true"
             ;;
-        --remote)
-            [[ "$COMMAND" == "update" ]] || { error " --remote is only valid for 'update' command"; exit 1; }
-            REMOTE="true"
-            ;;
         *)
             eval "opts=(\"\${CMD_OPTIONS_${COMMAND}[@]}\")"
             error "Unknown option '$1' for command '$COMMAND'. Valid options: ${opts[@]}"
@@ -192,9 +199,10 @@ case "$COMMAND" in
         task "Building $project"
 
         task "Cloning submodules"
-        [[ $ORION_PATH == $(pwd)'/lib/ORION/' ]] && git submodule update --init lib/ORION
-        [[ $FINER_PATH == $(pwd)'/lib/third_party/FiNeR/' ]] && git submodule update --init lib/third_party/FiNeR
-        # FiNeR's own dependencies are cloned by CMake at configure time (ensure_finer_dependencies).
+        # sync first: a clone made before FiNeR moved (lib/third_party/FiNeR to lib/FiNeR) lacks its new entry
+        git submodule sync --quiet
+        [[ -z $FINER_PATH ]] && git submodule update --init lib/FiNeR
+        # ORION (a release, in lib/ORION) and FiNeR's own dependencies are cloned by CMake at configure time.
 
         task "Configuring and building $project"
         if [[ $COMPILERS == "intel" ]]; then
@@ -208,8 +216,9 @@ case "$COMMAND" in
         fi
         log "Build dir: $BUILD_DIR"
         log "Build type: $BUILD_TYPE"
-        log "ORION path: $ORION_PATH"
-        log "FINER path: $FINER_PATH"
+        log "ORION: ${ORION_PATH:-release}"
+        log "FiNeR: ${FINER_PATH:-lib/FiNeR}"
+        log "Update ORION: $UPDATE_DEPS"
         log "Use OpenMP: $USE_OPENMP"
         log "Use MPI: $USE_MPI"
         log "Use TecIO: $USE_TECIO"
@@ -219,7 +228,17 @@ case "$COMMAND" in
           log "Compilers: FC=$FC, CXX=$CXX, CC=$CC"
         fi
         rm -rf $BUILD_DIR
-        cmake -B $BUILD_DIR -DORION_PATH=$ORION_PATH -DFINER_PATH=$FINER_PATH -DUSE_TECIO=$USE_TECIO -DUSE_OPENMP=$USE_OPENMP -DUSE_MPI=$USE_MPI -DCMAKE_BUILD_TYPE=$BUILD_TYPE || exit 1
+        CMAKE_ARGS=(-B "$BUILD_DIR" -DUSE_TECIO="$USE_TECIO" -DUSE_OPENMP="$USE_OPENMP" -DUSE_MPI="$USE_MPI" -DCMAKE_BUILD_TYPE="$BUILD_TYPE")
+        if [[ -n $ORION_PATH ]]; then
+          CMAKE_ARGS+=(-DFETCHCONTENT_SOURCE_DIR_ORION="$ORION_PATH")
+        fi
+        if [[ -n $FINER_PATH ]]; then
+          CMAKE_ARGS+=(-DFETCHCONTENT_SOURCE_DIR_FINER="$FINER_PATH")
+        fi
+        if [[ $UPDATE_DEPS == true ]]; then
+          CMAKE_ARGS+=(-DSEMVER_UPDATE=ALL)
+        fi
+        cmake "${CMAKE_ARGS[@]}" || exit 1
         cmake --build $BUILD_DIR || exit 1
         log "[OK] Compilation successful"
 
@@ -232,17 +251,6 @@ case "$COMMAND" in
         cmake --preset default || exit 1
         cmake --build $BUILD_DIR || exit 1
         log "[OK] Compilation successful"
-        ;;
-    update)
-        task "Updating git submodules"
-        if [[ "$REMOTE" == "true" ]]; then
-          log "Updating submodules to latest remote commit"
-          git submodule update --init --remote
-        else
-          log "Updating submodules to current commit"
-          git submodule update --init
-        fi
-        log "[OK] Submodules updated"
         ;;
     *)
         error "Unknown command '$COMMAND'"

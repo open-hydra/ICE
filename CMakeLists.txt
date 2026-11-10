@@ -2,18 +2,12 @@
 
 cmake_minimum_required(VERSION 3.23)
 
-# Name the code
 set(solver ICE)
-
 project (${solver} LANGUAGES Fortran)
-
 include(CTest)
 
-# The core-cycle counter (src/lib/diagnostic/ice_cycles.c) is the only C in the
-# tree: perf_event_open has no Fortran binding. It is optional, because a
-# toolchain that cannot link a C program must still be able to build ICE -- the
-# timers then report wall-clock only. Configure with -DICE_CYCLES=OFF to skip
-# it deliberately.
+# The core-cycle counter (src/lib/diagnostic/ice_cycles.c) is the only C in the tree. It is optional, because a toolchain that cannot link a C program must still be able to build ICE -- the timers then report wall-clock only. 
+# Configure with -DICE_CYCLES=OFF to skip it deliberately.
 OPTION(ICE_CYCLES "Count core-cycles per iteration (needs a working C compiler)" ON)
 set(ICE_HAVE_CYCLES OFF)
 IF(ICE_CYCLES)
@@ -28,6 +22,30 @@ IF(ICE_CYCLES)
   ENDIF()
 ENDIF()
 
+# Libraries requirements
+# - ORION. 
+# Required by a range of releases with semver_dependency of cmake/SemVerDeps.cmake. 
+# Standalone, the release is checked out in lib/ORION, out of the build folder, and kept in deps.lock (both git ignored); -DSEMVER_UPDATE=ALL selects the newest one again.
+set(ICE_ORION_VERSION 2.1)
+set(ICE_ORION_URL https://github.com/MarcoGrossi92/ORION.git)
+# - FiNeR.
+# Directly pinned at one release (bump the gitlink and the tag together).
+set(ICE_FINER_TAG v2.3.0)
+# FiNeR's own dependencies (cmake/FiNeRDependencies.cmake). 
+# FREE fetches them as FiNeR's author does (`fobis fetch`)
+# BACKUP checks out the releases below, which ICE builds and passes its tests with.
+# When an upstream change breaks ICE, set BACKUP here, or configure one build with -DICE_FINER_DEPS=BACKUP (kept in its cache until -UICE_FINER_DEPS).
+if (NOT DEFINED ICE_FINER_DEPS)
+  set(ICE_FINER_DEPS "FREE")
+endif()
+set(ICE_FINER_BACKUP_PINS
+  "PENF=v2.0.1"
+  "StringiFor=v1.8.0"
+  "FACE=v1.1.17"
+  "FLAP=v2.5.3"
+  "BeFoR64=v1.2.4")
+
+# If ICE is built as a standalone project, the following code is applied.
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
   set(CMAKE_VERBOSE_MAKEFILE FALSE)
@@ -38,21 +56,14 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   OPTION(USE_MPI    "Use the MPI library for parallelization" OFF)
   OPTION(USE_OPENMP "Use OpenMP for parallelization"          OFF)
 
-  # Binary Tecplot (.szplt) through TecIO, which ORION builds as a static C++
-  # library. Off unless asked for: declared here, it takes precedence over ORION's
-  # own option, which defaults to ON. The archive brings no C++ runtime, and CMake
-  # adds that runtime to a Fortran link only where CXX is enabled; ORION enables it
-  # in its own directory alone, so without this the executables do not link.
+  # Binary Tecplot (.szplt) through TecIO, which ORION builds as a static C++ library. The archive brings no C++ runtime, and CMake adds that runtime to a Fortran link only where CXX is enabled.
   OPTION(USE_TECIO  "Binary Tecplot I/O through TecIO (needs a C++ compiler)" OFF)
   if (USE_TECIO)
     enable_language(CXX)
   endif()
 
-  # Interprocedural optimisation across the modules. The flux path reaches the
-  # reconstruction, the limiter and the Riemann solver through procedures of
-  # other files, which -O3 alone never inlines. Off by default, because it moves
-  # the last bits of the fields and the references were made without it;
-  # measured 6-10 % off the flux region at one thread (ifx 2023.1, 2026-09-30).
+  # Interprocedural optimisation across the modules.
+  # Off by default, because it moves the last bits of the fields and the references were made without it.
   OPTION(ICE_ENABLE_IPO "Interprocedural optimisation (moves round-off: re-baseline)" OFF)
   if (ICE_ENABLE_IPO)
     include(CheckIPOSupported)
@@ -70,121 +81,36 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   # never for production.
   OPTION(ICE_RACE_PROBE "Race probe of the grouped flux rounds (test build only)" OFF)
 
-  # This INCLUDE statement executes code that sets the compile flags for DEBUG,
-  # RELEASE, and TESTING. You should review this file and make sure the flags
-  # are to your liking.
+  # This INCLUDE statement executes code that sets the compile flags for DEBUG, RELEASE, and TESTING.
   INCLUDE(${CMAKE_MODULE_PATH}/SetFortranFlags.cmake)
-  # Locate and set parallelization libraries. There are some CMake peculiarities
-  # taken care of here, such as the fact that the FindOpenMP routine doesn't know
-  # about Fortran.
+  # Locate and set parallelization libraries.
   INCLUDE(${CMAKE_MODULE_PATH}/SetParallelizationLibrary.cmake)
 
   # Set directories
   include(GNUInstallDirs)
   set(CMAKE_Fortran_MODULE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/modules")
 
-  # -------- Path fallbacks (standalone builds) --------
-  if (NOT DEFINED ORION_PATH)
-    set(ORION_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lib/ORION/")
-  endif()
-  if (NOT DEFINED FINER_PATH)
-    set(FINER_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lib/third_party/FiNeR/")
-  endif()
-  # A relative path (e.g. --include-finer=lib/third_party/FiNeR/) is taken from the source dir: the
-  # helpers below need an absolute one, file(RELATIVE_PATH) refuses anything else.
-  foreach(_path_var ORION_PATH FINER_PATH)
-    get_filename_component(${_path_var} "${${_path_var}}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-  endforeach()
-
-  # -------- Helper: initialize a git submodule from the correct git root --------
-  macro(ensure_submodule_initialized SUBMOD_PATH)
-    if (NOT EXISTS "${SUBMOD_PATH}/CMakeLists.txt")
-      message(STATUS "Submodule at ${SUBMOD_PATH} not initialized. Attempting git submodule update --init...")
-      get_filename_component(_sm_parent "${SUBMOD_PATH}" DIRECTORY)
-      execute_process(
-        COMMAND git rev-parse --show-toplevel
-        WORKING_DIRECTORY "${_sm_parent}"
-        OUTPUT_VARIABLE _sm_git_root
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        RESULT_VARIABLE _sm_git_result)
-      if(_sm_git_result EQUAL 0)
-        file(RELATIVE_PATH _sm_rel "${_sm_git_root}" "${SUBMOD_PATH}")
-        execute_process(
-          COMMAND git submodule update --init "${_sm_rel}"
-          WORKING_DIRECTORY "${_sm_git_root}"
-          RESULT_VARIABLE _sm_init_result)
-        if(NOT _sm_init_result EQUAL 0)
-          message(FATAL_ERROR "Failed to initialize submodule: ${SUBMOD_PATH}")
-        endif()
-      else()
-        message(FATAL_ERROR "Could not find git root for submodule: ${SUBMOD_PATH}")
-      endif()
+  # Libraries building
+  # An external clone given by a relative path is taken from the source folder
+  foreach(_name ORION FINER)
+    if (FETCHCONTENT_SOURCE_DIR_${_name})
+      get_filename_component(FETCHCONTENT_SOURCE_DIR_${_name} "${FETCHCONTENT_SOURCE_DIR_${_name}}" ABSOLUTE
+                             BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
     endif()
-  endmacro()
+  endforeach()
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/SemVerDeps.cmake)
+  semver_dependency(ORION GIT_REPOSITORY ${ICE_ORION_URL} VERSION ${ICE_ORION_VERSION} SOURCE_DIR lib/ORION)
+  # FiNeR and its dependencies, the checks of both libraries, and FetchContent_MakeAvailable
+  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/AddLibraries.cmake)
 
-  # -------- Helper: fetch FiNeR's own dependencies --------
-  macro(ensure_finer_dependencies FINER_ROOT)
-    set(_finer_dep_pins
-      BeFoR64=40d19c5f6127088126606b90448e99e02d8b641c
-      FACE=95226cd6135b9daeb8ff2c748d2065deee230358
-      FLAP=7f5ec8e1f26be5e2a263fdd2118501b340c0d461
-      PENF=34e10af852f81822bac0df7c5f73936e0655f54f
-      StringiFor=77b75b1d7f7012d2984135b231008f751ab32dda)
-    foreach(_pin ${_finer_dep_pins})
-      string(REPLACE "=" ";" _pin "${_pin}")
-      list(GET _pin 0 _dep)
-      list(GET _pin 1 _dep_sha)
-      set(_dep_url "https://github.com/szaghi/${_dep}")
-      set(_dep_dir "${FINER_ROOT}/src/third_party/${_dep}")
-      if (NOT EXISTS "${_dep_dir}")
-        message(STATUS "FiNeR dependency ${_dep} missing. Cloning ${_dep_url}...")
-        execute_process(
-          COMMAND git clone ${_dep_url} "${_dep_dir}"
-          RESULT_VARIABLE _dep_result)
-        if(NOT _dep_result EQUAL 0)
-          message(FATAL_ERROR "Failed to clone FiNeR dependency ${_dep} into ${_dep_dir}")
-        endif()
-      elseif (NOT EXISTS "${_dep_dir}/.git")
-        message(FATAL_ERROR "FiNeR dependency ${_dep}: ${_dep_dir} exists but is not a git checkout; "
-                            "remove it to let CMake clone ${_dep_url} at ${_dep_sha}")
-      endif()
-      execute_process(
-        COMMAND git rev-parse HEAD
-        WORKING_DIRECTORY "${_dep_dir}"
-        OUTPUT_VARIABLE _dep_head
-        OUTPUT_STRIP_TRAILING_WHITESPACE)
-      if (NOT _dep_head STREQUAL _dep_sha)
-        message(STATUS "FiNeR dependency ${_dep} at '${_dep_head}'. Checking out ${_dep_sha}...")
-        execute_process(
-          COMMAND git fetch ${_dep_url} ${_dep_sha}
-          WORKING_DIRECTORY "${_dep_dir}"
-          RESULT_VARIABLE _dep_result)
-        if(_dep_result EQUAL 0)
-          execute_process(
-            COMMAND git -c advice.detachedHead=false checkout ${_dep_sha}
-            WORKING_DIRECTORY "${_dep_dir}"
-            RESULT_VARIABLE _dep_result)
-        endif()
-        if(NOT _dep_result EQUAL 0)
-          message(FATAL_ERROR "Failed to check out FiNeR dependency ${_dep} at ${_dep_sha} in ${_dep_dir}")
-        endif()
-      endif()
-    endforeach()
-  endmacro()
+else()
 
-  # ORION
-  if (NOT TARGET ORION)
-    ensure_submodule_initialized("${ORION_PATH}")
-    set(orionD "${ORION_PATH}" "${CMAKE_BINARY_DIR}/lib/ORION")
-    add_subdirectory(${orionD})
-  endif()
-
-  # FiNeR
-  if (NOT TARGET FiNeR)
-    ensure_submodule_initialized("${FINER_PATH}")
-    ensure_finer_dependencies("${FINER_PATH}")
-    set(finerD "${FINER_PATH}" "${CMAKE_BINARY_DIR}/lib/third_party/FiNeR")
-    add_subdirectory(${finerD})
+  # Part of a larger project, which gives ICE its ORION and FiNeR. 
+  # When that project selected ORION with SemVerDeps, its release is checked against ICE's requirement; nothing is added here.
+  get_property(_ice_orion_selected GLOBAL PROPERTY SEMVER_ORION_SOURCE SET)
+  if (_ice_orion_selected)
+    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/SemVerDeps.cmake)
+    semver_dependency(ORION GIT_REPOSITORY ${ICE_ORION_URL} VERSION ${ICE_ORION_VERSION})
   endif()
 
 endif()
