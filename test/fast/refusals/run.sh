@@ -7,7 +7,8 @@
 #  first rows are refused while the input is read (a value outside its allowed
 #  list, binary Tecplot in a build without TecIO, a required model left unset in
 #  a coupled run, the heat name Chang, whose
-#  formula is JAXA3, a property table that is malformed or contradicts the INI,
+#  formula is JAXA3, a property table that ORION cannot read or that is
+#  malformed or contradicts the INI,
 #  a Psat column an evaporation model cannot use, Lv, Mv and Cpv columns that do
 #  not fit the Psat column or meet a vapour key set non-zero, a latent heat or
 #  molar mass of 0 with no column to replace it, an evaporating material without
@@ -17,8 +18,8 @@
 #  the last one diverges at run time (a NaN source in one cell) and must be
 #  caught after the update. A solver that reports success on
 #  any of these would let a harness read a broken run as a pass. There are
-#  sixty-five refuse rows as written (the loop over the six vapour keys counted
-#  once). Twenty-nine accept rows go the
+#  seventy refuse rows as written (the loop over the six vapour keys counted
+#  once). Thirty-one accept rows go the
 #  other way: an INI value equal to the table's must be accepted, the boiling
 #  temperature must be read under either of its names, the vapour columns must be
 #  read with the vapour keys left out or set to 0, the six vapour keys must be
@@ -139,11 +140,11 @@ refuse Refuse/MK   "heat Chang points to JAXA3"  "sed -i 's/^heat-transfer .*/he
 refuse Doisneau/MK "table: two zones for one material" "sed -n '3,\$p' INPUT/part-properties.dat > t && cat t >> INPUT/part-properties.dat && rm t" \
        "one zone expected;expected: VARIABLES"
 refuse Doisneau/MK "table: no VARIABLES line" "sed -i '/VARIABLES/d' INPUT/part-properties.dat" \
-       "no VARIABLES line"
-refuse Doisneau/MK "table: both enthalpy columns" "sed -i 's/\"Enthalpy\"/\"Enthalpy\", \"Enthalpy_abs\"/' INPUT/part-properties.dat" \
+       "not a Tecplot table ORION can read;VARIABLES header not found"
+refuse Doisneau/MK "table: both enthalpy columns" "sed -i 's/\"Enthalpy\"/\"Enthalpy\", \"Enthalpy_abs\"/' INPUT/part-properties.dat && awk 'NR<=4{print;next}{print \$0, \$4}' INPUT/part-properties.dat > t && mv t INPUT/part-properties.dat" \
        "the enthalpy datum is ambiguous"
 refuse Doisneau/MK "table: a short row" "sed -i '104s/ [^ ]*$//' INPUT/part-properties.dat" \
-       "unreadable rows"
+       "not a Tecplot table ORION can read;unexpected end of file"
 refuse Doisneau/MK "table: relative enthalpy with an offset" "awk 'NR<=4{print;next}{\$4=\$4+1e5;print}' INPUT/part-properties.dat > t && mv t INPUT/part-properties.dat" \
        "relative \"Enthalpy\" column with an offset"
 refuse Doisneau/MK "table: rows in degrees Celsius" "sed -i 's/\"Enthalpy\"/\"Enthalpy_abs\"/' INPUT/part-properties.dat && awk 'NR<=4{print;next}{\$1=\$1-273;\$4=\$4-409500;print}' INPUT/part-properties.dat > t && mv t INPUT/part-properties.dat" \
@@ -156,13 +157,24 @@ refuse Doisneau/MK "table: INI cp against a varying column" \
        "python3 -c \"L=open('INPUT/part-properties.dat').read().split(chr(10))[:4]; L+=['%.1f %.10g 2000.0 %.10g' % (T, 1500+0.1*T, 1500*T+0.05*T*T) for T in range(1, 5001)]; open('INPUT/part-properties.dat','w').write(chr(10).join(L)+chr(10))\" && sed -i '/^heat-transfer/a specific-heat = 1500' input.ini" \
        "specific-heat is set but the table"
 refuse Doisneau/MK "table: text after the last row" "echo END >> INPUT/part-properties.dat" \
-       "text after the last data row"
+       "not a Tecplot table ORION can read"
 refuse Doisneau/MK "table: fewer rows announced than held" "sed -i 's/^I=5000,/I=4999,/' INPUT/part-properties.dat" \
-       "the zone announces 4999 rows but holds 5000"
+       "not a Tecplot table ORION can read"
 refuse Doisneau/MK "table: more rows announced than held" "sed -i 's/^I=5000,/I=5001,/' INPUT/part-properties.dat" \
-       "the zone announces 5001 rows but holds 5000"
+       "not a Tecplot table ORION can read;unexpected end of file"
 refuse Doisneau/MK "table: a value that is not a number" "sed -i '1000s/ [^ ]*\$/ abc/' INPUT/part-properties.dat" \
-       "unreadable rows: line 1000 does not hold 4 numbers"
+       "not a Tecplot table ORION can read;invalid numeric token"
+# ORION reads the numbers of a zone as one stream: a row with a number more, a second line of nodes (J=2), and rows
+# without F=POINT (BLOCK packing, Tecplot's default: the columns come out mixed) must not be read as a table
+refuse Doisneau/MK "table: a row with a number more" "sed -i '104s/\$/ 7.0/' INPUT/part-properties.dat" \
+       "not a Tecplot table ORION can read"
+refuse Doisneau/MK "table: two lines of nodes (J=2)" "sed -i 's/^I=5000, F=POINT/I=5000, J=2, F=POINT/' INPUT/part-properties.dat" \
+       "not a Tecplot table ORION can read;unexpected end of file"
+refuse Doisneau/MK "table: rows without F=POINT" "sed -i 's/^I=5000, F=POINT/I=5000/' INPUT/part-properties.dat" \
+       "rows not on consecutive integer kelvins"
+accept Doisneau/MK "table: BLOCK packing" \
+       "python3 -c \"L=open('INPUT/part-properties.dat').read().split(chr(10)); R=[l.split() for l in L[4:] if l.strip()]; L=L[:3]+['I=%d, DATAPACKING=BLOCK' % len(R)]+[r[c] for c in range(4) for r in R]; open('INPUT/part-properties.dat','w').write(chr(10).join(L)+chr(10))\" && sed -i 's/^iter-threshold .*/iter-threshold = 20/' input.ini" \
+       "condensed properties: INPUT/part-properties.dat, 5000 rows"
 accept Doisneau/MK "table: INI density equal to the constant column" \
        "sed -i '/^heat-transfer/a density = 2000' input.ini && sed -i 's/^iter-threshold .*/iter-threshold = 20/' input.ini" \
        "material 1: density 2.00000E+03 (constant)"
