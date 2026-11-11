@@ -84,14 +84,14 @@ $T_p$, $f$ and $\chi$ cell by cell to $10^{-12}$.
 | Leg | Measured |
 |---|---|
 | O0 | identical |
-| O1 | front in cell 31, exit at 914.2832 K; $T$ $1.3\times10^{-14}$, $f$ $3\times10^{-15}$; balance $3\times10^{-15}$ |
+| O1 | front in cell 31, exit at 914.2832 K; $T$ $1.1\times10^{-14}$, $f$ $2.9\times10^{-15}$; balance $3.2\times10^{-15}$ |
 | O2 | fronts 31, 61, 122; exits 906.8681, 906.8465, 907.3422 K; liquid errors 0.0290, 0.0075, 0.0019 K; every $n_x$ a fixed point |
 | O3 | front 61; $\chi$ $2.5\times10^{-5}$ upstream |
-| O3b | fronts 30 and 29; $T$ $7\times10^{-14}$, $1.5\times10^{-13}$ |
-| O4 | first mush/liquid cells 34/74 and 66/147; exits 2608.6368 and 2610.1672 K; MK $10^{-14}$, IG $2\times10^{-7}$ |
-| O4u | $2.1\times10^{-14}$, $6.9\times10^{-15}$, $1.3\times10^{-13}$ (tolerance $2\times10^{-12}$) |
-| O5 | fronts 26, then 42; per cell $3\times10^{-14}$ from a fresh run |
-| O6 | first order value for value; MUSCL $T$ $4.8\times10^{-15}$, $f$ $10^{-15}$; two ranks value for value |
+| O3b | fronts 30 and 29; $T$ $8.4\times10^{-14}$, $1.2\times10^{-13}$ |
+| O4 | first mush/liquid cells 34/74 and 66/147; exits 2608.6368 and 2610.1672 K; MK $4.3\times10^{-14}$, IG $5.0\times10^{-5}$ in $\chi$ (tolerances $10^{-9}$ and $10^{-4}$) |
+| O4u | $2.4\times10^{-14}$, $9.5\times10^{-15}$, $8.3\times10^{-14}$ (tolerance $2\times10^{-12}$) |
+| O5 | fronts 26, then 42; per cell $4.5\times10^{-14}$ from a fresh run |
+| O6 | first order value for value; MUSCL $T$ $2.2\times10^{-15}$, $f$ $3.3\times10^{-16}$ (tolerances $10^{-13}$ and $10^{-14}$); two ranks value for value |
 
 Notes on the legs:
 

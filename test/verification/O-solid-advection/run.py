@@ -35,7 +35,7 @@ liquid); chi is the inflow's between T_nuc and T_m, 1 below, 0 above. It is ICE'
       of 1.7e7 m/s, until the cap of a near-empty cell's dispersion at 1 m^2/s^2: IG at nx = 120 and 240, AG at 120,
       first order, 40 nx + 1 iterations each. Both runs fill every cell and agree per cell in rho and T to 2e-12, ten
       times the largest twin floor of the scaled runs (20 nx against 40 nx + 1: IG 5.2e-15 and 3.9e-16, AG 1.8e-13);
-      measured 2.1e-14, 6.9e-15 and 1.3e-13. Without the cap the unscaled IG run at nx = 120 ends at rho 6.4e247 and
+      measured 2.4e-14, 9.5e-15 and 8.3e-14. Without the cap the unscaled IG run at nx = 120 ends at rho 6.4e247 and
       the other two stop on an invalid state.
   O5  a steady run with the gas at 300 K, then a restart in place with the gas at 1000 K: the front moves back to
       the 1000 K run's cell (no lock), per cell equal to a fresh 1000 K run.
@@ -45,8 +45,8 @@ liquid); chi is the inflow's between T_nuc and T_m, 1 below, 0 above. It is ICE'
       the two-block run equals the one-block run value for value: the connection hands each block its partner's
       cells, a zero slope keeps the cell lengths out of the faces, and a cell's residual sums the same two fluxes. With
       MUSCL the connection face is reconstructed with compute_bound's lengths, which differ from the interior's in the
-      last bits (the pre-existing dl_g2 ~ dl_g1 of the ledger), so they agree to 1e-13 in T (relative) and 1e-14 in f
-      and chi (measured 4.8e-15 and 1.0e-15). The MPI run equals the serial two-block run value for value.
+      last bits (the ghost lengths dl_g2 ~ dl_g1 of the boundary stencil), so they agree to 1e-13 in T (relative) and
+      1e-14 in f and chi (measured 2.2e-15 and 3.3e-16). The MPI run equals the serial two-block run value for value.
 
 Every steady run is compared with a twin at 40 nx + 1 iterations - an odd gap, not a multiple of 3, so a cycle of
 period 2 or 3 shows - in T, f and chi, cell by cell, to 1e-12 (else it is not a fixed point).
