@@ -124,11 +124,11 @@ ice_add_verification(HeatMatrix        E-heat-matrix       "verification;sources
 
 # Every evaporation model against the d-squared law it reduces to at zero slip, then
 # the coupled mass-and-temperature system against an independent integration
-# (docs/vv/verification.md).
+# (docs/vv/verification/phase-change.md).
 ice_add_verification(Evaporation       F-evaporation       "verification;sources;phase-change")
 
 # A cloud released into a frozen gas: transport and drag together, against the exact
-# rigid translation the two produce (docs/vv/verification.md).
+# rigid translation the two produce (docs/vv/verification/transport.md).
 ice_add_verification(CloudTranslation  G-cloud-translation "verification;sources;transport")
 
 # The same cloud in a gas that strains it, against the exact affine solution, and its

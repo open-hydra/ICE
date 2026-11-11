@@ -3,7 +3,7 @@
 Three one-dimensional Riemann problems for the anisotropic Gaussian (AG) closure,
 compared against their analytical wave patterns. They are the only cases in the suite
 in which the AG system carries genuine waves: the [crossing jets](crossing-jets.md) are
-free streaming, and the [code-verification](verification.md) cases use the monokinetic
+free streaming, and the [code-verification](verification/index.md) cases use the monokinetic
 closure, which carries no waves at all. What they exercise is the hyperbolic core — the Rusanov
 flux, the MUSCL reconstruction with the MC limiter, and the AG eigenstructure — on
 solutions with shocks, contacts and rarefactions.
@@ -47,7 +47,7 @@ Two states colliding head-on along the diagonal. The compression throws a shock 
 way, with a contact left between them.
 
 <figure>
-  {% include "vv/images/berthon-scs.svg" %}
+  --8<-- "docs/vv/images/berthon-scs.svg"
 </figure>
 
 Both shocks sit at the right place and are captured in two to three cells. The visible
@@ -62,7 +62,7 @@ The Gaussian counterpart of a Sod problem: a fourfold pressure ratio expanding t
 right, with unequal shear on the two sides.
 
 <figure>
-  {% include "vv/images/berthon-rcs.svg" %}
+  --8<-- "docs/vv/images/berthon-rcs.svg"
 </figure>
 
 ## RCR — two rarefactions
@@ -71,7 +71,7 @@ Two states flying apart, which opens a fan on each side of the contact. $P_{22}$
 the plateau structure that the shear $P_{12}$ produces across the contact.
 
 <figure>
-  {% include "vv/images/berthon-rcr.svg" %}
+  --8<-- "docs/vv/images/berthon-rcr.svg"
 </figure>
 
 ## What is measured

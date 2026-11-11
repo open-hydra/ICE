@@ -48,7 +48,7 @@ This is the regression case `test/Doisneau/IG-chimera`. Its `ATLAS/` folder hold
 input used for the donor search.
 
 <figure>
-  {% include "vv/images/chimera-overset.svg" %}
+  --8<-- "docs/vv/images/chimera-overset.svg"
 </figure>
 
 | Check | Result |
@@ -84,3 +84,12 @@ much.
     is not exactly the flux the scheme conserves, so it varies with $x$ even on the single
     block (right panel above). It is used here only to compare runs of the same closure,
     where that effect is common to both.
+
+## Running it
+
+```bash
+ctest --test-dir build -R DoisneauChimera --output-on-failure
+```
+
+The case compares its fields against a stored reference. The figure comes from
+`test/Doisneau/plot_vv.py`, after the run.

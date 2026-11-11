@@ -13,7 +13,7 @@ ls bin/ICE
 
 The cases under `test/` are complete: mesh, initial condition, boundary table,
 `input.ini` and a `verify.py` that checks the result. The crossing-jets case with the
-isotropic Gaussian closure is a good first one — it takes about a minute on one thread.
+isotropic Gaussian closure is a good first one: it takes a few minutes on one thread.
 
 ```bash
 cd test/Doisneau/IG
@@ -47,7 +47,7 @@ exists.
    Inflow                         20
    Extrapolation                  300
 
-ICE  | Iter =       10 | Global iter =       10 | Density residual = 0.144622E-01
+ICE  | Iter =       10 | Global iter =       10 | Density residual = 0.234038E-01
 ```
 
 The first line says how the step is taken (local, so steady state) and how the phases
@@ -76,7 +76,7 @@ variables of every family, cell-centred. Open it in Tecplot, or switch `sol-form
 
 `OUTPUT/part-residual-history.dat` has one row per `res-diter` iterations, with the
 iteration number, the time and the five residual norms (with several families, five more
-per family follow: see [Using ICE](../user/using.md#input-and-output-formats)).
+per family follow: see [Using ICE](../user/using.md#the-residual-history)).
 
 ## Next steps
 

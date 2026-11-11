@@ -7,8 +7,8 @@ takes a few minutes, mostly in the vortex.
 
     cd test/verification && python3 plot_vv.py [figure ...]
 
-Writes transparent SVGs into docs/vv/images/ and prints the numbers quoted in
-docs/vv/verification.md. With no arguments it draws all of them.
+Writes transparent SVGs into docs/vv/images/ and prints the numbers quoted in the
+pages under docs/vv/verification/. With no arguments it draws all of them.
 """
 import cmath
 import importlib.util

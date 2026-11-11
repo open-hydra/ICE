@@ -79,18 +79,17 @@ $$
 a = \sqrt{3P/\rho_p}.
 $$
 
-A near-empty cell, at or below the empty-cell density ($10^{-6}$ kg/m³), keeps its dispersion $P/\rho_p$ at or below
-$\theta_{cap} = 1$ m²/s²: the conversion to the primitives caps $P$ at $\rho_p\theta_{cap}$, which removes
-$\tfrac32(P - \rho_p\theta_{cap})$ of energy and leaves the temperature, formed from the conservative variables,
-as it is; without it a cell that holds $10^{-20}$ kg/m³ at the inlet's $P = 10^{-6}$ Pa carries a signal speed of
-$1.7\times10^{7}$ m/s. With the cap the dispersion no longer carries the stream into the cells it does not
-reach, and such a cell keeps its initial content, as an MK cell always has: Doisneau's crossing jets start from
-$10^{-20}$ kg/m³ at $10^{-20}$ K everywhere, and after 5000 iterations AG holds 116 cells below 1 K at
-$6$ to $8\times10^{-22}$ kg/m³ (MK 4174 cells below 1 K, as before; IG none), where without the cap the dispersion had carried
-300 K mass into every cell; no cell reaches the density floor. The temperature residual, which counts every cell,
-then stalls as MK's does (AG 0.35 at 5000 iterations against $2\times10^{-11}$ without the cap, MK 0.46); the stop
-criterion, on the density, is unaffected. An isothermal case whose empty cells start cold thus keeps them cold where
-nothing arrives: to get an isothermal field, start the empty cells at the gas temperature.
+A near-empty cell, at or below the empty-cell density ($10^{-6}$ kg/m³), keeps its
+dispersion $P/\rho_p$ at or below $\theta_{cap} = 1$ m²/s². The conversion to the
+primitives caps $P$ at $\rho_p\theta_{cap}$, removing $\tfrac32(P - \rho_p\theta_{cap})$
+of energy and leaving the temperature as it is. Without the cap, a cell holding
+$10^{-20}$ kg/m³ with the inlet's $P = 10^{-6}$ Pa would carry a signal speed of
+$1.7\times10^{7}$ m/s, and spread its mass into cells the stream never reaches.
+
+With the cap, such a cell keeps its initial content, as an MK cell always has. In
+particular, empty cells that start cold stay cold where nothing arrives, and their
+temperature residual levels off (the stop criterion, on the density, is unaffected).
+To get an isothermal field, start the empty cells at the gas temperature.
 
 ### AG — anisotropic Gaussian
 

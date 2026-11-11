@@ -89,7 +89,7 @@ The verification cases own no data either: each `run.py` writes its own mesh, in
 condition, boundary conditions and `input.ini` into a scratch `work/` directory, runs
 the solver there and compares against a closed form or an independently integrated
 reference. What each one verifies is described in
-[Code Verification](../vv/verification.md). Set `ICE_KEEP_WORK=1` to keep the generated
+[Code Verification](../vv/verification/index.md). Set `ICE_KEEP_WORK=1` to keep the generated
 cases for inspection after a pass.
 
 ## Running the tests
@@ -134,14 +134,20 @@ the MPI build and fail with a clear message if not.
 
 ### Bounds-checked build
 
-A `DEBUG` configure compiles ICE, ORION and FiNeR with array bounds checking (`-check bound` with ifx,
-`-fcheck=bound` with gfortran) and registers one more test, `Bounds` (label `debug`, `test/fast/bounds`):
-five iterations of `NoExchange/MK`, `Doisneau/MK`, `Doisneau/IG-split4`, `Doisneau/IG-chimera` and `Axis/AG`
-on two threads, `Doisneau/IG-split4` on two thread groups, and two boxes `make_box.py` generates with the
-drivers of cases N and M (N4's solidifying mush; a P2T drop on both sides of its ZGR boiling temperature, whose
-probes must show the surface at the boiling temperature in one half and below the mean temperature in the
-other). A run passes when it exits 0, reaches its fifth iteration, prints no subscript or runtime error, and
-the line ` -  Compiled with --> <options>`, which every build prints in its banner, lists the bounds flag (the
+A `DEBUG` configure compiles ICE, ORION and FiNeR with array bounds checking
+(`-check bound` with ifx, `-fcheck=bound` with gfortran) and registers one more test,
+`Bounds` (label `debug`, `test/fast/bounds`). It runs five iterations of:
+
+- `NoExchange/MK`, `Doisneau/MK`, `Doisneau/IG-split4`, `Doisneau/IG-chimera` and
+  `Axis/AG`, on two threads;
+- `Doisneau/IG-split4` on two thread groups;
+- two boxes that `make_box.py` writes with the drivers of cases N and M: N4's solidifying
+  mush, and a P2T drop on both sides of its ZGR boiling temperature, whose probes must show
+  the surface at the boiling temperature in one half and below the mean temperature in
+  the other.
+
+A run passes when it exits 0, reaches its fifth iteration, prints no subscript or runtime
+error, and its banner line ` -  Compiled with --> <options>` lists the bounds flag (the
 pattern `ICE_BOUNDS_FLAG`, by default `check[ =]bound`, which matches both spellings).
 
 ```bash
@@ -150,15 +156,19 @@ cmake --build build-debug --parallel 4
 ctest --test-dir build-debug -L debug
 ```
 
-In `build-debug/` run only `-L debug`. Most tests run the source tree's `bin/ICE` (through `ICE.sh` or their
-driver), not this build, but `Equiv3DStage`, `Equiv3DThreads`, `Equiv3DGroups`, `Equiv3DThreadsSD`,
-`Equiv3DGroupsSD` and `FamilyHalo3D` take the build's own binary: a plain `ctest` there, or the pre-push hook,
-which takes the first `build-*/` when there is no `build/`, runs them on the checked binary, and the
-thread-group ones meet ifx's false report below (`Equiv3DGroups` measured: exit 152 at the same call). The run
-on two thread groups goes with gfortran and is skipped with ifx (`ICE_BOUNDS_GROUPED=1` runs it, `0` skips it):
-ifx 2023.1 stops it at the first step with a `severe (408)` on `blk(b)` in the array-section arguments of the
-call in `compute_residual_grouped`, a false positive: a guard `if (b < 1) error stop` placed just before that
-call never fires and the report moves to the call's new line, and gfortran's checked build runs the case clean.
+In `build-debug/`, run only `-L debug`:
+
+- most tests run the source tree's `bin/ICE`, not this build; but `Equiv3DStage`,
+  `Equiv3DThreads`, `Equiv3DGroups`, `Equiv3DThreadsSD`, `Equiv3DGroupsSD` and
+  `FamilyHalo3D` take the build's own binary. A plain `ctest` there — or the pre-push hook,
+  which takes the first `build-*/` when there is no `build/` — runs them on the checked
+  binary, where the thread-group ones meet the ifx false report below;
+- the run on two thread groups goes with gfortran and is skipped with ifx
+  (`ICE_BOUNDS_GROUPED=1` runs it, `0` skips it). ifx 2023.1 stops it at the first step
+  with a `severe (408)` on `blk(b)` in the array-section arguments of the call in
+  `compute_residual_grouped`. It is a false positive: a guard placed just before the call
+  never fires, the report moves with the call, and gfortran's checked build runs the case
+  clean.
 
 ## The pre-push hook
 

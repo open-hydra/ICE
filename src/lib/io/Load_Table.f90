@@ -3,8 +3,8 @@
 !> Tmin, and the optional Psat, Lv, Mv and Cpv columns serve the evaporation models, the
 !> Emissivity column the radiative exchange, the Conductivity and Viscosity columns the conduction
 !> inside the drop (liquid-conduction = P2T; Sigma is recognised and not used). The header, node, column, Psat, vapour and positive-column checks return a
-!> code, so the unit test can assert them; Load_Table turns a failed code, or what the row
-!> scan finds, into a refusal.
+!> code, so the unit test can assert them; Load_Table turns a failed code into a refusal. ORION's
+!> Tecplot reader reads the file and refuses what it cannot read.
 module ICE_Load_Table
   use, intrinsic :: iso_fortran_env, only: R8 => real64
   use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
@@ -15,7 +15,7 @@ module ICE_Load_Table
   public :: validate_psat_column, psat_reason, validate_vapour_columns, vapour_reason
   public :: validate_positive_column, column_reason
 
-  integer, parameter :: ntok_max = 32, tok_len = 64, nzone_max = 64
+  integer, parameter :: ntok_max = 32, tok_len = 64
 
   !> Codes of the header, node and column checks; table_reason gives the text.
   integer, parameter, public :: TAB_OK = 0, TAB_NO_TEMPERATURE = 1, TAB_NO_CP = 2, TAB_NO_DENSITY = 3, &
@@ -49,7 +49,7 @@ contains
   !  Cpv columns are read for a material that evaporates, the Emissivity column for every material.
   subroutine Load_Table()
     use Lib_ORION_data,     only: orion_data
-    use Lib_Tecplot,        only: tec_read_points_multivars
+    use Lib_Tecplot,        only: tec_read_structured_multiblock
     use ICE_Config_Types_m, only: obj_condensed
     use ICE_Global_m,       only: ICE_phase_prefix, nmat
     use ICE_Mod_MPI,        only: mpi_is_root
@@ -62,9 +62,7 @@ contains
     character(len=tok_len)  :: tokens(ntok_max)
     integer                 :: ntok, icp, irho, ih, ips, code, err, Ni, Tmin, m
     integer                 :: ilv, imv, icpv, isig, imu, ikl, ieps
-    integer                 :: nzone, nsize, ndata, ntrail, badline
-    integer                 :: nannounced(nzone_max), nrows(nzone_max)
-    logical                 :: exists, relative, found
+    logical                 :: exists, relative
     character(len=32)       :: expected
     real(R8), allocatable   :: T(:), cp(:), rho(:), h(:)
 
@@ -78,49 +76,50 @@ contains
       return
     endif
 
-    ! Header: the quoted names of the first VARIABLES line
-    call read_variables_line(tablefile, tokens, ntok, found)
-    if (.not. found) call refuse(tablefile, 'no VARIABLES line')
+    ! The file, read by ORION's Tecplot reader (tec_read_structured_multiblock), which refuses what it cannot read
+    ! and says why: POINT or BLOCK packing, a zone of n rows a line of nodes 0..n-1, the Temperature its coordinate
+    ! and the other columns at the nodes
+    err = tec_read_structured_multiblock(orion=orion, filename=trim(tablefile))
+    if (err /= 0) call refuse(tablefile, 'not a Tecplot table ORION can read (its message above says why)')
+
+    ! The columns, by the names ORION read
+    ntok = size(orion%varnames)
+    if (ntok > ntok_max) call refuse(tablefile, trim(itoa(ntok))//' columns, at most '//trim(itoa(ntok_max)))
+    tokens(1:ntok) = orion%varnames
     call classify_table_tokens(tokens(1:ntok), icp, irho, ih, ips, relative, code, ilv, imv, icpv, isig, imu, &
                                ikl, ieps)
     if (code /= TAB_OK) call refuse(tablefile, table_reason(code))
 
-    ! Rows: ORION reads them, after a scan that guards what ORION cannot see
-    call scan_rows(tablefile, ntok, nzone, nsize, ndata, nannounced, nrows, ntrail, badline)
-    if (ntrail > 0) call refuse(tablefile, 'text after the last data row (remove it)')
-    if (nzone /= nmat .or. nsize /= nmat .or. ndata /= nmat) then
+    ! One zone per material, each one line of rows (J= or K= above 1 gives more coordinates) with the columns at its
+    ! rows, every zone on the same temperatures
+    if (size(orion%block) /= nmat) then
       if (nmat == 1) then
         expected = 'one zone expected'
       else
         expected = trim(itoa(nmat))//' zones expected'
       endif
-      call refuse(tablefile, trim(expected)//' (one per material), found '//trim(itoa(nzone))//' ZONE lines, '// &
-                  trim(itoa(nsize))//' I= lines and '//trim(itoa(ndata))//' blocks of rows')
+      call refuse(tablefile, trim(expected)//' (one per material), found '//trim(itoa(size(orion%block))))
     endif
-    if (badline > 0) call refuse(tablefile, 'unreadable rows: line '//trim(itoa(badline))//' does not hold '// &
-                                 trim(itoa(ntok))//' numbers')
+    if (.not. orion%tec%node) call refuse(tablefile, 'columns at the cells (VARLOCATION CELLCENTERED): the values '// &
+                                          'of a table are at its rows')
     do m = 1, nmat
-      if (nannounced(m) /= nrows(m)) call refuse(tablefile, trim(zone_label(m))//'the zone announces '// &
-                                                 trim(itoa(nannounced(m)))//' rows but holds '//trim(itoa(nrows(m))))
+      if (size(orion%block(m)%mesh, 1) /= 1 .or. orion%block(m)%Nj /= 0 .or. orion%block(m)%Nk /= 0) &
+        call refuse(tablefile, trim(zone_label(m))//'the zone is not one line of rows (J= or K= above 1 in its header)')
     enddo
-    err = tec_read_points_multivars(orion, ntok-1, trim(tablefile))
-    if (err /= 0) call refuse(tablefile, 'unreadable rows')
-    Ni = orion%block(1)%Ni
+    Ni = orion%block(1)%Ni + 1
     do m = 1, nmat
-      if (orion%block(m)%Ni /= nrows(m)) call refuse(tablefile, trim(zone_label(m))//'the zone announces '// &
-                                                     trim(itoa(orion%block(m)%Ni))//' rows but holds '//trim(itoa(nrows(m))))
-      if (orion%block(m)%Ni /= Ni .or. nint(orion%block(m)%mesh(1,1,1,1)) /= nint(orion%block(1)%mesh(1,1,1,1))) &
-        call refuse(tablefile, trim(zone_label(m))//'spans '//trim(itoa(orion%block(m)%Ni))//' rows from T = '// &
-                    trim(itoa(nint(orion%block(m)%mesh(1,1,1,1))))//', zone 1 '//trim(itoa(Ni))//' from T = '// &
-                    trim(itoa(nint(orion%block(1)%mesh(1,1,1,1))))//' (every zone covers the same temperatures)')
+      if (orion%block(m)%Ni + 1 /= Ni .or. nint(orion%block(m)%mesh(1,0,0,0)) /= nint(orion%block(1)%mesh(1,0,0,0))) &
+        call refuse(tablefile, trim(zone_label(m))//'spans '//trim(itoa(orion%block(m)%Ni + 1))//' rows from T = '// &
+                    trim(itoa(nint(orion%block(m)%mesh(1,0,0,0))))//', zone 1 '//trim(itoa(Ni))//' from T = '// &
+                    trim(itoa(nint(orion%block(1)%mesh(1,0,0,0))))//' (every zone covers the same temperatures)')
     enddo
 
     allocate(T(Ni), cp(Ni), rho(Ni), h(Ni))
     do m = 1, nmat
-      T   = orion%block(m)%mesh(1,1:Ni,1,1)
-      cp  = orion%block(m)%vars(icp,1:Ni,1,1)
-      rho = orion%block(m)%vars(irho,1:Ni,1,1)
-      h   = orion%block(m)%vars(ih,1:Ni,1,1)
+      T   = orion%block(m)%mesh(1,0:Ni-1,0,0)
+      cp  = orion%block(m)%vars(icp,0:Ni-1,0,0)
+      rho = orion%block(m)%vars(irho,0:Ni-1,0,0)
+      h   = orion%block(m)%vars(ih,0:Ni-1,0,0)
 
       code = check_table_nodes(T)
       if (code /= TAB_OK) call refuse(tablefile, trim(zone_label(m))//table_reason(code))
@@ -151,7 +150,7 @@ contains
         write(*,'(A,I0,A)') '   material ', m, ': density '//trim(range_text(rho))//', cp '//trim(range_text(cp))// &
           ', enthalpy '//trim(obj_condensed(m)%h_datum)//' (hOff = '//trim(rtoa(obj_condensed(m)%h_off))//' J/kg)'
       endif
-      if (ips > 0) call load_psat(orion%block(m)%vars(ips,1:Ni,1,1), m)
+      if (ips > 0) call load_psat(orion%block(m)%vars(ips,0:Ni-1,0,0), m)
       call load_vapour(m)
       call load_emissivity(m)
       call load_liquid(m)
@@ -204,10 +203,10 @@ contains
         return
       endif
       lv = 0._R8; mv = 0._R8; cv = 0._R8; ps = 0._R8
-      if (ilv > 0)  lv = orion%block(m)%vars(ilv,1:Ni,1,1)
-      if (imv > 0)  mv = orion%block(m)%vars(imv,1:Ni,1,1)
-      if (icpv > 0) cv = orion%block(m)%vars(icpv,1:Ni,1,1)
-      if (ips > 0)  ps = orion%block(m)%vars(ips,1:Ni,1,1)
+      if (ilv > 0)  lv = orion%block(m)%vars(ilv,0:Ni-1,0,0)
+      if (imv > 0)  mv = orion%block(m)%vars(imv,0:Ni-1,0,0)
+      if (icpv > 0) cv = orion%block(m)%vars(icpv,0:Ni-1,0,0)
+      if (ips > 0)  ps = orion%block(m)%vars(ips,0:Ni-1,0,0)
       call check_vapour_key(m, 'latent-heat',          obj_condensed(m)%lv_al, lv, 'Lv')
       call check_vapour_key(m, 'vapour-molar-mass',    obj_condensed(m)%Mv,    mv, 'Mv')
       call check_vapour_key(m, 'vapour-specific-heat', obj_condensed(m)%cpv,   cv, 'Cpv')
@@ -253,7 +252,7 @@ contains
       real(R8) :: ep(Ni)
       integer  :: ecode, ncut
       if (ieps == 0) return
-      ep = orion%block(m)%vars(ieps,1:Ni,1,1)
+      ep = orion%block(m)%vars(ieps,0:Ni-1,0,0)
       ecode = validate_positive_column(ep)
       if (ecode == COL_ABSENT) return
       if (ecode /= COL_OK) call refuse(tablefile, trim(zone_label(m))//'Emissivity column: '//column_reason(ecode))
@@ -291,7 +290,7 @@ contains
       real(R8) :: col(Ni)
       integer  :: ccode
       if (icol == 0) return
-      col = orion%block(m)%vars(icol,1:Ni,1,1)
+      col = orion%block(m)%vars(icol,0:Ni-1,0,0)
       if (obj_condensed(m)%liqSelect /= 1) then
         if (any(col /= 0._R8) .and. mpi_is_root) &
           write(*,'(A)') '   '//name//' column not used: this material does not run liquid-conduction=P2T'
@@ -635,113 +634,6 @@ contains
     case default;              txt = 'unknown table error'
     end select
   end function table_reason
-
-
-  !> The quoted names of the first line that contains VARIABLES.
-  subroutine read_variables_line(file, tokens, ntok, found)
-    character(len=*),       intent(in)  :: file
-    character(len=tok_len), intent(out) :: tokens(ntok_max)
-    integer,                intent(out) :: ntok
-    logical,                intent(out) :: found
-    character(len=4096) :: line
-    integer :: unit, ios, i, j, k
-
-    ntok = 0; found = .false.; tokens = ''
-    open(newunit=unit, file=trim(file), status='old', action='read', iostat=ios)
-    if (ios /= 0) return
-    do
-      read(unit, '(A)', iostat=ios) line
-      if (ios /= 0) exit
-      if (index(line, 'VARIABLES') == 0) cycle
-      found = .true.
-      k = 1
-      do while (ntok < ntok_max .and. k < len(line))
-        i = index(line(k:), '"')
-        if (i == 0) exit
-        i = k + i - 1
-        j = index(line(i+1:), '"')
-        if (j == 0) exit
-        j = i + j
-        ntok = ntok + 1
-        tokens(ntok) = line(i+1:j-1)
-        k = j + 1
-      enddo
-      exit
-    enddo
-    close(unit)
-  end subroutine read_variables_line
-
-
-  !> What ORION's point reader does not check, line by line: the ZONE lines (its zone count), the
-  !  lines holding I= (it gives each one a block), the rows each of them announces and each block
-  !  of rows holds, every data row holding ntok numbers (ORION keeps only the last row's status),
-  !  and text after the last row.
-  subroutine scan_rows(file, ntok, nzone, nsize, ndata, nannounced, nrows, ntrail, badline)
-    character(len=*), intent(in)  :: file
-    integer,          intent(in)  :: ntok
-    integer,          intent(out) :: nzone, nsize, ndata, nannounced(nzone_max), nrows(nzone_max), ntrail, badline
-    character(len=4096) :: line
-    real(R8) :: x, v(ntok_max)
-    integer  :: unit, ios, rd, iline
-    logical  :: numeric, prev_numeric
-
-    nzone = 0; nsize = 0; ndata = 0; nannounced = -1; nrows = 0; ntrail = 0; badline = 0
-    prev_numeric = .false.; iline = 0
-    open(newunit=unit, file=trim(file), status='old', action='read', iostat=ios)
-    if (ios /= 0) return
-    do
-      read(unit, '(A)', iostat=ios) line
-      if (ios /= 0) exit
-      iline = iline + 1
-      if ((index(line, 'ZONE') > 0 .and. index(line, 'ZONETYPE') == 0) .or. index(line, 'Zone') > 0 .or. &
-          index(line, 'ZONE T') > 0) nzone = nzone + 1     ! ORION's own rule
-      if (index(line, 'I=') > 0) then
-        nsize = nsize + 1
-        if (nsize <= nzone_max) nannounced(nsize) = announced_rows(line)
-      endif
-      read(line, *, iostat=rd) x
-      numeric = (rd == 0 .and. index(line, 'DATA') == 0)
-      if (numeric) then
-        if (.not. prev_numeric) ndata = ndata + 1
-        if (ndata <= nzone_max) nrows(ndata) = nrows(ndata) + 1
-        ntrail = 0
-        if (badline == 0) then
-          read(line, *, iostat=rd) v(1:ntok)
-          if (rd /= 0 .or. index(line, '/') > 0) badline = iline
-        endif
-      else if (ndata > 0) then
-        ntrail = ntrail + 1
-      endif
-      prev_numeric = numeric
-    enddo
-    close(unit)
-  end subroutine scan_rows
-
-
-  !> The row count of a size line as ORION takes it: I= in one of its first two comma-separated fields.
-  pure function announced_rows(line) result(n)
-    character(len=*), intent(in) :: line
-    integer :: n, f, c, k, ios
-    character(len=len(line)) :: rest, field
-    n = -1
-    rest = line
-    do f = 1, 2
-      c = index(rest, ',')
-      if (c > 0) then
-        field = rest(:c-1)
-        rest  = rest(c+1:)
-      else
-        field = rest
-        rest  = ''
-      endif
-      k = index(field, 'I=')
-      if (k > 0) then
-        read(field(k+2:), *, iostat=ios) n
-        if (ios /= 0) n = -1
-        return
-      endif
-    enddo
-  end function announced_rows
 
 
   !> Every rank prints, as the BC reader does: a rank that stops first cannot swallow the reason.

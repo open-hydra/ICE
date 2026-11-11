@@ -54,11 +54,11 @@ both jets have reached the line, from $x = 0.305$ on, the merged jet carries 0.0
 2.00 kg/m³ in the cells of row 51.
 
 <figure>
-  {% include "vv/images/doisneau-fields.svg" %}
+  --8<-- "docs/vv/images/doisneau-fields.svg"
 </figure>
 
 <figure>
-  {% include "vv/images/doisneau-profiles.svg" %}
+  --8<-- "docs/vv/images/doisneau-profiles.svg"
 </figure>
 
 | Model | Peak density [kg/m³] | Behaviour at the crossing |
@@ -79,31 +79,42 @@ both jets have reached the line, from $x = 0.305$ on, the merged jet carries 0.0
   weaker than the exact bands.
 
 The three closures run without the [shock detector](../theory/numerics.md#shock-detector).
-For MK and AG this is a trade. Without it MK stays nearer its exact solution (an RMS distance
-of $5.6 \times 10^{-3}$ kg/m³ against $1.4 \times 10^{-2}$ with the detector; at $x = 0.145$,
-upstream of where the jets meet, row 51 holds $8.4 \times 10^{-4}$ kg/m³ against 0.069), and
-AG nearer free streaming ($2.6 \times 10^{-2}$ against $2.8 \times 10^{-2}$; the crossing,
-0.2 kg/m³ in the exact solution, holds 0.06 on average against 0.04). But neither converges: MK's residual
-stalls at $1.5 \times 10^{-5}$, and AG's residual cycles between $4 \times 10^{-5}$ and
-$9 \times 10^{-5}$. AG also gathers mass in two bands just above and
-below the crossing, at $0.035 \le |y| \le 0.075$ from $x = 0.175$ to $0.275$: up to
-0.234 kg/m³ inside a single jet, where the exact solution is 0.1, and up to 0.16 just beyond
-the top and bottom corners of the crossing, outside both jets, where it is empty. With the
-detector the field's maximum is 0.115, on each jet just upstream of the crossing (exact 0.1).
-Without it AG also clips its pressure tensor at the floor in 22 nearly empty cells ($1$ to
-$3 \times 10^{-3}$ kg/m³, where the exact solution is empty): 16 between the jets next to the
-inlet face, 6 outside the jets above and below the crossing, at $|y| \approx 0.12$. Both tests
-therefore run their 5000 iterations; with the detector, MK reaches the default residual
-threshold at iteration 2493 and AG at iteration 6907. IG's residual falls without it, to
-$2.6 \times 10^{-7}$ at 5000 iterations (between $2 \times 10^{-7}$ and $2 \times 10^{-6}$ over the
-last 1000), and its chimera and multi-block versions match it to round-off
-([Chimera Overset](chimera.md), [Multi-block and MPI](multiblock-mpi.md)). All three runs are
-their own mirror image to round-off, as the problem is (about $y = 0$ for IG and AG, $y = 0.005$ for MK):
-$2 \times 10^{-16}$ for MK, $6 \times 10^{-14}$ for IG and $2 \times 10^{-13}$ for AG, relative to the peak density.
-The domain starts empty ($10^{-20}$ kg/m³ at $10^{-20}$ K): the cells no jet reaches keep that content, 4174 MK
-cells and, since the cap of a near-empty cell's dispersion
-([governing equations](../theory/governing-equations.md)), 116 AG cells below 1 K at about $10^{-22}$ kg/m³. AG's
-temperature residual, which counts them, stalls at 0.35; the regression compares density and number density.
+For MK and AG this is a trade-off:
 
-The cases are also part of the regression suite (`Doisneau/MK`, `Doisneau/IG`,
-`Doisneau/AG`), which checks the density and number-density fields against a stored reference.
+- **Without the detector** both stay nearer their exact solution. MK's RMS distance is
+  $5.6 \times 10^{-3}$ kg/m³ against $1.4 \times 10^{-2}$ with it (at $x = 0.145$, upstream of
+  where the jets meet, row 51 holds $8.4 \times 10^{-4}$ kg/m³ against 0.069). AG is nearer free
+  streaming: $2.6 \times 10^{-2}$ against $2.8 \times 10^{-2}$, and the crossing, 0.2 kg/m³ in
+  the exact solution, holds 0.06 on average against 0.04.
+- **But neither converges.** MK's residual stalls at $1.5 \times 10^{-5}$, and AG's cycles
+  between $4 \times 10^{-5}$ and $9 \times 10^{-5}$. With the detector, MK reaches the default
+  residual threshold at iteration 2493 and AG at 6907; without it, both run their 5000
+  iterations.
+- **AG without the detector gathers mass in two bands** just above and below the crossing,
+  at $0.035 \le |y| \le 0.075$ from $x = 0.175$ to $0.275$: up to 0.234 kg/m³ inside a single
+  jet, where the exact solution is 0.1, and up to 0.16 just outside both jets, where it is
+  empty (with the detector, the field's maximum is 0.115). It also clips its pressure tensor
+  at the floor in 22 nearly empty cells.
+
+IG's residual falls without the detector, to $2.6 \times 10^{-7}$ at 5000 iterations, and its
+chimera and multi-block versions match it to round-off ([Chimera Overset](chimera.md),
+[Multi-block and MPI](multiblock-mpi.md)).
+
+All three runs are their own mirror image to round-off, as the problem is (about $y = 0$ for
+IG and AG, $y = 0.005$ for MK): $2 \times 10^{-16}$ for MK, $6 \times 10^{-14}$ for IG and
+$2 \times 10^{-13}$ for AG, relative to the peak density.
+
+The domain starts empty ($10^{-20}$ kg/m³ at $10^{-20}$ K), and the cells no jet reaches keep
+that content: 4174 MK cells, and 116 AG cells below 1 K at about $10^{-22}$ kg/m³
+([governing equations](../theory/governing-equations.md)). AG's temperature residual, which
+counts them, stalls at 0.35; the regression compares the density and the number density.
+
+## Running them
+
+```bash
+ctest --test-dir build -R "DoisneauMK|DoisneauIG|DoisneauAG" --output-on-failure
+cd test/Doisneau && python3 plot_vv.py     # the figures, from the outputs of the runs
+```
+
+The cases (`test/Doisneau/MK`, `IG`, `AG`) are also regression cases: they check the density
+and number-density fields against a stored reference.

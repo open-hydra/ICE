@@ -1,8 +1,8 @@
 # Installation
 
-ICE builds into a static library `libICEL.a` and two executables: `bin/ICE`, the
-solver, and `bin/DocGen`, which regenerates the
-[parameter reference](../user/registry.md) from the input registry in the source.
+ICE builds a static library, `libICEL.a`, and two executables: `bin/ICE`, the solver,
+and `bin/DocGen`, which regenerates the [parameter reference](../user/registry.md)
+from the source.
 
 ## Prerequisites
 
@@ -10,132 +10,142 @@ solver, and `bin/DocGen`, which regenerates the
 |---|---|
 | **CMake** | 3.23 or newer |
 | **Fortran compiler** | GNU `gfortran` or Intel oneAPI `ifx` |
-| **C / C++ compiler** | Required by ORION, and by TecIO if enabled |
+| **C / C++ compiler** | For ORION, and for TecIO if enabled |
 | **MPI** | Optional, for distributed-memory runs |
 | **OpenMP** | Optional, for shared-memory runs |
 
-Both parallel modes are off by default and can be combined.
+Both parallel modes are off by default and can be combined. The OpenMP build needs
+Linux: on macOS, build without it.
 
-### Submodules
-
-ICE bundles two dependencies as Git submodules. `install.sh` initialises them, and so
-does CMake if they are missing.
-
-| Path | Repository | Purpose |
-|------|------------|---------|
-| `lib/ORION` | `github.com/MarcoGrossi92/ORION` | Mesh and solution I/O (Tecplot, VTK, optional TecIO) |
-| `lib/third_party/FiNeR` | `github.com/szaghi/FiNeR` | INI file parser |
+## Get the code
 
 ```bash
-git clone https://github.com/open-hydra/ICE.git
+git clone --recurse-submodules https://github.com/open-hydra/ICE.git
 cd ICE
-git submodule update --init
 ```
 
-FiNeR's own five dependencies (PENF, FACE, FLAP, BeFoR64, StringiFor) are not submodules, so
-a recursive clone does not fetch them. The CMake configure clones them from
-`github.com/szaghi/` into `lib/third_party/FiNeR/src/third_party/`, which FiNeR's
-`.gitignore` excludes, so the submodule stays clean. A bare `cmake -B build` does the same, and it needs network access
-the first time. The same applies to a FiNeR tree given with `--include-finer`.
+ICE uses two libraries:
 
-## Building with `install.sh`
+| Library | Purpose | Where it comes from |
+|---------|---------|---------------------|
+| [ORION](https://github.com/MarcoGrossi92/ORION) | Mesh and solution I/O (Tecplot, VTK, optional TecIO) | The newest 2.x release from 2.2.0, cloned into `lib/ORION` by the first configure |
+| [FiNeR](https://github.com/szaghi/FiNeR) | INI file parser | The submodule `lib/FiNeR` (v2.3.0) |
+
+The first configure needs network access: besides ORION, it clones FiNeR's five
+dependencies (PENF, FACE, FLAP, BeFoR64, StringiFor) into
+`lib/FiNeR/src/third_party/`. The ORION release it picks is recorded in `deps.lock`,
+so later configures work offline. `lib/ORION` and `deps.lock` are not tracked by git.
+[Versioning](../development/versioning.md) explains how ICE chooses the releases.
+
+## Build with `install.sh`
 
 ```bash
-# GNU build with OpenMP
+# GNU compilers, OpenMP
 ./install.sh build --compilers=gnu --use-openmp
 
-# Intel build with MPI and binary Tecplot support
+# Intel compilers, MPI and binary Tecplot files
 ./install.sh build --compilers=intel --use-mpi --use-tecio
 ```
 
-`build` configures from scratch — it removes `build/` first — compiles, and writes a
-`CMakePresets.json` recording what it used.
+`build` starts from scratch (it removes `build/`), compiles, and records the settings
+in `CMakePresets.json`.
 
 | Option | Effect |
 |---|---|
-| `--compilers=gnu` | `gfortran` / `gcc` / `g++` |
-| `--compilers=intel` | `ifx` / `icx` / `icpx` |
-| `--use-openmp` | Thread parallelism |
-| `--use-mpi` | Rank parallelism; the compiler wrappers are found by CMake |
-| `--use-tecio` | Binary Tecplot support in ORION |
-| `--include-orion=PATH` | Use an existing ORION tree instead of the submodule |
-| `--include-finer=PATH` | The same for FiNeR |
+| `--compilers=gnu` | `gfortran`, `gcc`, `g++` |
+| `--compilers=intel` | `ifx`, `icx`, `icpx` |
+| `--use-openmp` | OpenMP threads |
+| `--use-mpi` | MPI ranks; CMake finds the compiler wrappers |
+| `--use-tecio` | Binary Tecplot files (`.szplt`); TecIO is built on the first configure, which takes a few minutes |
+| `--include-orion=PATH` | Build this ORION clone instead of the release |
+| `--include-finer=PATH` | Build this FiNeR clone instead of the submodule |
+| `--update-deps` | Pick the newest ORION release again |
 
-Two further commands:
+Two more commands:
 
 ```bash
-./install.sh compile          # rebuild from the recorded preset, after editing sources
-./install.sh update           # sync the submodules to their recorded commits
-./install.sh update --remote  # ... or to the newest remote commit
+./install.sh compile   # rebuild with the recorded settings, after editing the sources
+./install.sh update    # put lib/FiNeR back at the commit ICE records
 ```
 
-`compile` is the one to use during development: it skips the configure step.
+During development, use `compile`: it skips the configure step.
 
-## Building with CMake directly
+## Build with CMake
 
 ```bash
 cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_Fortran_COMPILER=gfortran \
-    -DUSE_OPENMP=ON \
-    -DUSE_MPI=OFF \
-    -DUSE_TECIO=OFF
+    -DUSE_OPENMP=ON
 cmake --build build --parallel
 ```
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `USE_OPENMP` | `OFF` | OpenMP |
-| `USE_MPI` | `OFF` | MPI; also defines `USE_MPI` for the preprocessor |
-| `USE_TECIO` | `OFF` | Binary Tecplot (`.szplt`) through ORION's TecIO; without it the set-up refuses `tecplot binary` |
-| `ORION_PATH` | `lib/ORION/` | ORION source tree |
-| `FINER_PATH` | `lib/third_party/FiNeR/` | FiNeR source tree |
+| `USE_OPENMP` | `OFF` | OpenMP threads |
+| `USE_MPI` | `OFF` | MPI ranks |
+| `USE_TECIO` | `OFF` | Binary Tecplot files; without it, `tecplot binary` is refused when a run starts |
+| `ICE_BIN_DIR` | `bin/` | Where the executables go: give each build folder its own, or they overwrite each other's `bin/ICE` |
+| `FETCHCONTENT_SOURCE_DIR_ORION` | unset | An ORION clone to build instead of the release |
+| `FETCHCONTENT_SOURCE_DIR_FINER` | unset | A FiNeR clone to build instead of the submodule |
+| `SEMVER_UPDATE` | `OFF` | `ALL` picks the newest ORION release again, once |
+| `ICE_PIN_CHECK` | `FATAL_ERROR` | `WARNING` accepts a library release that ICE does not require |
+| `ICE_FINER_DEPS` | `FREE` | `BACKUP` takes FiNeR's dependencies at fixed releases instead of their default branches |
 
-Both executables land in `bin/` whatever the build directory, so two build directories
-— one serial, one MPI — will overwrite each other's `bin/ICE`. Keep them apart if you
-need both at once.
+The compiler flags come from `cmake/SetFortranFlags.cmake`, which checks that the
+compiler accepts each flag before using it.
 
-Compiler flags come from `cmake/SetFortranFlags.cmake`, which probes the compiler for
-each flag rather than assuming it.
+### External clones
 
-## Building the test suite
+A clone given with `FETCHCONTENT_SOURCE_DIR_ORION` or `FETCHCONTENT_SOURCE_DIR_FINER`
+is built as it is, uncommitted changes included. It must be a release ICE accepts,
+or the configure stops: ORION 2.2.0 or a later 2.x, and FiNeR v2.3.0. A FiNeR clone
+must already hold its dependencies in `src/third_party` (`fobis fetch --no-build`).
+To build another release on purpose, such as an ORION branch under test, add
+`-DICE_PIN_CHECK=WARNING`.
 
-`enable_testing()` and the cases are added automatically when ICE is the top-level
-project, so any of the builds above gives a working `ctest`:
+## Run the tests
+
+When ICE is the top-level project, every build also registers the test suite:
 
 ```bash
 ctest --test-dir build -j 5 --output-on-failure
 ```
 
-The MPI-specific cases register only when `USE_MPI=ON`. See
-[Testing](../development/testing.md).
+The MPI cases are registered only with `USE_MPI=ON`. See [Testing](../development/testing.md).
 
-## Using ICE as a library
+## Use ICE as a library
 
-The library target is `ICEL`, aliased `ICEL::ICEL`. ICE does not install an exported
-CMake package, so an external project consumes it by adding the source tree:
+The library target is `ICEL`, also called `ICEL::ICEL`. Add the source tree to your
+project:
 
 ```cmake
 add_subdirectory(path/to/ICE)
 target_link_libraries(myapp PRIVATE ICEL::ICEL)
 ```
 
-Everything ICE's top-level `CMakeLists.txt` does is guarded on being the top-level
-project, so as a subdirectory it builds only the library — no solver executable and no
-tests — and the parent project must already define the `ORION` and `FiNeR::FiNeR`
-targets it links against. This is how the Hydra suite embeds it.
+Inside another project, ICE builds the library only: no executables and no tests.
+The parent project provides the `ORION` and `FiNeR::FiNeR` targets, as Hydra does.
+If the parent selects ORION with `cmake/SemVerDeps.cmake`, ICE checks that the release
+satisfies its own requirement.
 
 ## Troubleshooting
 
-**`undefined reference` to C++ symbols when linking with TecIO.** TecIO is a static C++
-library and the executables are linked by the Fortran driver, which does not pull in the
-C++ runtime by itself. With `USE_TECIO=ON` ICE enables C++ in its own project and CMake
-adds the runtime to the link, so a standalone build needs no flag. A project that embeds
-ICE (see above) must enable C++ itself.
+**`undefined reference` to C++ symbols when linking with TecIO.** TecIO is a C++
+library linked into Fortran executables. A standalone build with `USE_TECIO=ON`
+handles this by itself; a project that embeds ICE must enable C++ itself.
 
-**`cannot find -ltecio::tecio`.** The ORION submodule is older than the ICE revision
-that expects it. `./install.sh update --remote` and rebuild.
+**`lib/FiNeR is checked out at ..., but this ICE commit records ...`.** The submodule
+moved, usually after a `git checkout` of another branch. Run `./install.sh update`
+and configure again.
+
+**`lib/ORION ... is on a branch or has changes`.** The configure moves `lib/ORION` to
+another release only if you have not touched it. Commit or stash your changes, or
+build the folder as it is with `-DFETCHCONTENT_SOURCE_DIR_ORION=lib/ORION`.
+
+**A clone from before ORION became a release.** Delete the folder `lib/third_party`
+(FiNeR is now in `lib/FiNeR`) and run `./install.sh build` again.
 
 ## Next steps
 
-* **[Quick Start](quick-start.md)** — run a shipped case and check it.
+* **[Quick Start](quick-start.md)** — run a shipped case and check its result.

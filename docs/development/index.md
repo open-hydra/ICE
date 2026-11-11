@@ -32,6 +32,14 @@ Information for contributors and developers working on the ICE codebase.
 
     [:octicons-arrow-right-24: Contributing](contributing.md)
 
+-   :material-tag:{ .lg .middle } __Versioning__
+
+    ---
+
+    Releases, and how ICE requires ORION and FiNeR
+
+    [:octicons-arrow-right-24: Versioning](versioning.md)
+
 -   :material-speedometer:{ .lg .middle } __Performance Notes__
 
     ---
