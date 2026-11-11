@@ -11,12 +11,17 @@ module ICE_Lib_Limiters
   !> Concrete "limiter" procedure pointing to one of the function realizations
   procedure(limiter_if), pointer, public :: limiter
 
-  !> Abstract interface relative to the "limiter" procedure
+  !> Abstract interface relative to the "limiter" procedure: the limited slope phi(r)*x of a cell from its slopes x and y
+  !> across its two faces along a grid line, r = y/x. For r > 0, phi is bounded by cx and by cy*r, so that the limited
+  !> slope is at most cx*|x| and cy*|y| (up to the 1d-30 added to x): Lib_Reconstruction passes the bounds that keep the
+  !> value of the cell at both its faces between its value and the neighbour's, on a line of cells of any lengths. On a
+  !> line of equal cells they are 2 and 2, which no limiter exceeds: the slope is the limiter's own. The bound is a
+  !> comparison on r > 0, not min/max over a NaN, so a NaN ratio passes through as it did without the bounds.
   abstract interface
-  pure function limiter_if(x,y) result(result)
+  pure function limiter_if(x,y,cx,cy) result(result)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
-    real(kind=R8), intent(in) :: x, y
+    real(kind=R8), intent(in) :: x, y, cx, cy
     real(kind=R8) :: ru
     real(kind=R8) :: phi
     real(kind=R8) :: result
@@ -84,8 +89,9 @@ contains
   !> Harten's sufficient condition in incremental form, over every slope ratio r (backward over forward slope, as
   !> Lib_Reconstruction passes them) and both signs of the speed, nu = 1/(1 + A/2 - Pmin/2) for a > 0 and
   !> 1/(1 + Pmax/2 - B/2) for a < 0, with A, B the largest and smallest phi(r)/r and Pmax, Pmin those of phi(r) of
-  !> the formulas below (plan-bucket/records/pre-existing-defects/d7_limiter_bounds.py). Literal constants, so that
-  !> cfl = 0.5 with van Leer is not above its bound by a rounding. First order: 1 (not checked).
+  !> the formulas below, on a line of equal cells. On a line of cells of any lengths the bounds of Lib_Reconstruction keep
+  !> every limiter but van Albada and OSPRE TVD up to 1/2. Literal constants, so that cfl = 0.5 with van Leer is not above
+  !> its bound by a rounding. First order: 1 (not checked).
   pure function step_bound(limiter_word) result(nu)
     implicit none
     character(len=*), intent(in) :: limiter_word
@@ -106,11 +112,11 @@ contains
 
   end function step_bound
 
-  !> First order limiter
-  pure function limiter_IORD(x,y) result(result)
+  !> First order limiter: a zero slope, within any bounds
+  pure function limiter_IORD(x,y,cx,cy) result(result)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
-    real(kind=R8), intent(in) :: x, y
+    real(kind=R8), intent(in) :: x, y, cx, cy
     real(kind=R8) :: ru
     real(kind=R8) :: phi
     real(kind=R8) :: result
@@ -119,11 +125,12 @@ contains
 
   end function limiter_IORD
 
-  !> Minmod flux limiter
-  pure function limiter_MINMOD(x,y) result(result)
+  !> Minmod flux limiter: its slope is at most |x| and |y|, within any bounds of Lib_Reconstruction (cx and cy are at
+  !> least 1), so it does not take them
+  pure function limiter_MINMOD(x,y,cx,cy) result(result)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
-    real(kind=R8), intent(in) :: x, y
+    real(kind=R8), intent(in) :: x, y, cx, cy
     real(kind=R8) :: ru
     real(kind=R8) :: phi
     real(kind=R8) :: result
@@ -135,136 +142,154 @@ contains
   end function limiter_MINMOD
 
   !> Van Albada flux limiter
-  pure function limiter_VANALBADA(x,y) result(result)
+  pure function limiter_VANALBADA(x,y,cx,cy) result(result)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
-    real(kind=R8), intent(in) :: x, y
+    real(kind=R8), intent(in) :: x, y, cx, cy
     real(kind=R8) :: ru
     real(kind=R8) :: phi
     real(kind=R8) :: result
     
     ru = y/(x+1d-30)
     phi = (ru*ru+ru)/(ru*ru+1d0)
+    ! The bounds, for r > 0 only: this phi is not zero for r < 0, where the face value can leave the two cells
+    if (ru > 0d0) phi = min(phi, cx, cy*ru)
     result = phi*x
 
   end function limiter_VANALBADA
 
   !> Van Leer flux limiter
-  pure function limiter_VANLEER(x,y) result(result)
+  pure function limiter_VANLEER(x,y,cx,cy) result(result)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
-    real(kind=R8), intent(in) :: x, y
+    real(kind=R8), intent(in) :: x, y, cx, cy
     real(kind=R8) :: ru
     real(kind=R8) :: phi
     real(kind=R8) :: result
     
     ru = y/(x+1d-30)
     phi = (ru+abs(ru))/(1d0+abs(ru))
+    ! The bounds, for r > 0: for r <= 0 phi is already zero
+    if (ru > 0d0) phi = min(phi, cx, cy*ru)
     result = phi*x
 
   end function limiter_VANLEER
 
   !> Ospre flux limiter
-  pure function limiter_OSPRE(x,y) result(result)
+  pure function limiter_OSPRE(x,y,cx,cy) result(result)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
-    real(kind=R8), intent(in) :: x, y
+    real(kind=R8), intent(in) :: x, y, cx, cy
     real(kind=R8) :: ru
     real(kind=R8) :: phi
     real(kind=R8) :: result
     
     ru = y/(x+1d-30)
     phi = (1.5d0*(ru*ru+ru))/(ru*ru+ru+1d0)
+    ! The bounds, for r > 0 only: this phi is not zero for r < 0, where the face value can leave the two cells
+    if (ru > 0d0) phi = min(phi, cx, cy*ru)
     result = phi*x
 
   end function limiter_OSPRE
 
   !> Umist flux limiter
-  pure function limiter_UMIST(x,y) result(result)
+  pure function limiter_UMIST(x,y,cx,cy) result(result)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
-    real(kind=R8), intent(in) :: x, y
+    real(kind=R8), intent(in) :: x, y, cx, cy
     real(kind=R8) :: ru
     real(kind=R8) :: phi
     real(kind=R8) :: result
     
     ru = y/(x+1d-30)
     phi = maxval([0d0,minval([2d0*ru,(0.25d0+0.75d0*ru),(0.75d0+0.25d0*ru),2d0])])
+    ! The bounds, for r > 0: for r <= 0 phi is already zero
+    if (ru > 0d0) phi = min(phi, cx, cy*ru)
     result = phi*x
 
   end function limiter_UMIST
   
   !> Osher flux limiter
-  pure function limiter_OSHER(x,y) result(result)
+  pure function limiter_OSHER(x,y,cx,cy) result(result)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
-    real(kind=R8), intent(in) :: x, y
+    real(kind=R8), intent(in) :: x, y, cx, cy
     real(kind=R8) :: ru
     real(kind=R8) :: phi
     real(kind=R8) :: result
     
     ru = y/(x+1d-30)
     phi = maxval([0d0,minval([ru,1.5d0])])
+    ! The bounds, for r > 0: for r <= 0 phi is already zero
+    if (ru > 0d0) phi = min(phi, cx, cy*ru)
     result = phi*x
 
   end function limiter_OSHER
 
   !> Sweby flux limiter
-  pure function limiter_SWEBY(x,y) result(result)
+  pure function limiter_SWEBY(x,y,cx,cy) result(result)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
-    real(kind=R8), intent(in) :: x, y
+    real(kind=R8), intent(in) :: x, y, cx, cy
     real(kind=R8) :: ru
     real(kind=R8) :: phi
     real(kind=R8) :: result
     
     ru = y/(x+1d-30)
     phi = maxval([0d0,minval([1.5d0*ru,1d0]),minval([ru,1.5d0])])
+    ! The bounds, for r > 0: for r <= 0 phi is already zero
+    if (ru > 0d0) phi = min(phi, cx, cy*ru)
     result = phi*x
 
   end function limiter_SWEBY
 
   !> Monotonized central flux limiter
-  pure function limiter_MC(x,y) result(result)
+  pure function limiter_MC(x,y,cx,cy) result(result)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
-    real(kind=R8), intent(in) :: x, y
+    real(kind=R8), intent(in) :: x, y, cx, cy
     real(kind=R8) :: ru
     real(kind=R8) :: phi
     real(kind=R8) :: result
     
     ru = y/(x+1d-30)
     phi = maxval([0d0,minval([2d0*ru,0.5d0*(1d0+ru),2d0])])
+    ! The bounds, for r > 0: for r <= 0 phi is already zero
+    if (ru > 0d0) phi = min(phi, cx, cy*ru)
     result = phi*x
 
   end function limiter_MC
 
   !> Koren flux limiter
-  pure function limiter_KOREN(x,y) result(result)
+  pure function limiter_KOREN(x,y,cx,cy) result(result)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
-    real(kind=R8), intent(in) :: x, y
+    real(kind=R8), intent(in) :: x, y, cx, cy
     real(kind=R8) :: ru
     real(kind=R8) :: phi
     real(kind=R8) :: result
     
     ru = y/(x+1d-30)
     phi = maxval([0d0,minval([2d0*ru,minval([(1d0+2d0*ru)/3d0,2d0])])])
+    ! The bounds, for r > 0: for r <= 0 phi is already zero
+    if (ru > 0d0) phi = min(phi, cx, cy*ru)
     result = phi*x
 
   end function limiter_KOREN
 
   !> Superbee flux limiter
-  pure function limiter_SUPERBEE(x,y) result(result)
+  pure function limiter_SUPERBEE(x,y,cx,cy) result(result)
     use, intrinsic :: iso_fortran_env, only : I4 => int32, R8 => real64
     implicit none
-    real(kind=R8), intent(in) :: x, y
+    real(kind=R8), intent(in) :: x, y, cx, cy
     real(kind=R8) :: ru
     real(kind=R8) :: phi
     real(kind=R8) :: result
     
     ru = y/(x+1d-30)
     phi = maxval([0d0,min(2d0*ru,1d0),min(ru,2d0)])
+    ! The bounds, for r > 0: for r <= 0 phi is already zero
+    if (ru > 0d0) phi = min(phi, cx, cy*ru)
     result = phi*x
 
   end function limiter_SUPERBEE

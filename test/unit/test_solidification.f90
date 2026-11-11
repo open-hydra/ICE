@@ -441,8 +441,8 @@ contains
     enddo
     call state_reconstruction(c(1:8,1), c(1:8,2), c(1:8,3), c(1:8,4), 1._R8, 1._R8, 1._R8, 0.5_R8, 0.5_R8, &
                               fl(1:8), fr(1:8), 1._R8, mat, .true.)
-    xl = tl(2) + limiter(tl(3) - tl(2), tl(2) - tl(1))*0.5_R8
-    xr = tl(3) - limiter(tl(4) - tl(3), tl(3) - tl(2))*0.5_R8
+    xl = tl(2) + limiter(tl(3) - tl(2), tl(2) - tl(1), 2._R8, 2._R8)*0.5_R8
+    xr = tl(3) - limiter(tl(4) - tl(3), tl(3) - tl(2), 2._R8, 2._R8)*0.5_R8
     el = abs(cl*fl(5) + solid_de(fl(5), fl(7), cl, cs, hf, Tm) - cl*xl)
     er = abs(cl*fr(5) + solid_de(fr(5), fr(7), cl, cs, hf, Tm) - cl*xr)
     ok = el <= etol .and. er <= etol .and. min(tl(2), tl(3)) <= xl .and. xl <= max(tl(2), tl(3)) &

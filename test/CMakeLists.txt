@@ -402,6 +402,10 @@ ice_add_unit_test(DropRowsUnit unit/test_drop_rows.f90 "fast;unit;implementation
 # left finite
 ice_add_unit_test(NearEmptyCapUnit unit/test_near_empty_cap.f90 "fast;unit;implementation")
 
+# The bounds of the MUSCL slopes: on a line of cells of any lengths a cell's value at each of its faces lies between the
+# cell and the neighbour across the face; equal cells keep the limiter's own slope bit for bit, linear data are exact
+ice_add_unit_test(MusclBoundsUnit unit/test_muscl_bounds.f90 "fast;unit;implementation")
+
 # Rank count must not change the answer either. Needs an MPI build, so it is
 # registered only when there is one.
 if(USE_MPI)

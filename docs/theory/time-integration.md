@@ -66,8 +66,8 @@ For the linearised MUSCL scheme with upwind fluxes (the van Leer, van Albada and
 in smooth flow), the rule is stable up to $\mathrm{CFL} = 1$ with RK2 (Heun) and 1.17 with
 RK3 (1.256 with first-order fluxes): these are the von Neumann limits of the linearised
 scheme. Explicit Euler is stable with first-order fluxes only, up to 1. With MUSCL, its
-limited scheme stays TVD only up to the limiter's step bound, 0.5 for van Leer
-([Limiters](numerics.md#limiters)): above it ICE warns and goes on (with `irs = true`, an
+limited scheme stays TVD only up to the limiter's step bound, 0.5 for van Leer on a uniform mesh, and 1/2 on cells
+of different lengths ([Limiters](numerics.md#limiters)): above it ICE warns and goes on (with `irs = true`, an
 info line instead). Keep a margin below these limits where limiters and shocks act.
 
 The directions the mesh does not resolve add nothing. Across them a cell has boundary faces

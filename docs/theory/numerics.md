@@ -57,6 +57,25 @@ $$
 
 where $s$ are the one-sided slopes on the non-uniform mesh, $\phi$ the limiter and $\beta$ the shock-detector weight described below.
 
+The limited slopes are bounded so that the value of a cell at each of its faces lies between the value of the cell and
+that of the neighbour across that face, on a line of cells of any lengths: the change over half the cell is at most the
+jump to each neighbour (Berger, Aftosmis and Murman, AIAA Paper 2005-0490, eq. 19). With $\phi = \psi(r)\,x$ and
+$r = y/x$ (see [Limiters](#limiters)), the limiter takes, for $r > 0$,
+
+$$
+\psi \le \frac{\Delta l_x}{\delta}, \qquad \psi \le r\,\frac{\Delta l_y}{\delta},
+$$
+
+where $\Delta l_x$ and $\Delta l_y$ are the distances between the cell centres across which the slopes $x$ and $y$ are
+taken, and $\delta$ is half the length of the cell. A few consequences:
+
+- On a line of equal cells the bounds are $\psi \le 2$ and $\psi \le 2r$, the edges of Sweby's TVD region, which no
+  limiter of the table exceeds: the slope is the limiter's own, bit for bit.
+- For data linear along the line $r = 1$, where no bound acts.
+- The two faces of a cell take the same slope.
+- Next to an inlet whose state sits on the face, that state is half a cell away, and the bound there is $\psi \le r$.
+- Minmod never reaches the bounds. Van Albada and OSPRE are not zero at $r < 0$, where the bounds do not apply.
+
 A side whose three cells include an empty one (a density at or below $10^{-6}$ kg/m³) is
 first order: $\mathbf{P}_L$ is then $\mathbf{P}_i$, and $\mathbf{P}_R$ is $\mathbf{P}_{i+1}$.
 Each side looks at its own three cells — $i-1$, $i$, $i+1$ for $\mathbf{P}_L$ and $i$, $i+1$,
@@ -92,7 +111,9 @@ reconstruction TVD for 1-D scalar advection on a uniform mesh. It follows from H
 sufficient condition in incremental form, over every $r$ and both signs of the speed:
 $\nu_{\max} = 1/(1 + A/2 - \psi_{\min}/2)$ for $a > 0$ and $1/(1 + \psi_{\max}/2 - B/2)$ for
 $a < 0$, with $A$ and $B$ the largest and smallest $\psi(r)/r$. It bounds `cfl` because `cfl`
-bounds the sum of the direction limits ([time step](time-integration.md#the-time-step)).
+bounds the sum of the direction limits ([time step](time-integration.md#the-time-step)). On a mesh whose cells change
+length along a line, the bounds of the reconstruction keep every limiter but van Albada and OSPRE TVD up to
+$\nu = 1/2$ (Berger, Aftosmis and Murman, eq. 17).
 
 - Van Albada's $\psi$ is not clipped at $r < 0$ (it goes down to $(1 - \sqrt{2})/2$), so its
   bound is below the 0.624 of $r > 0$ alone.
