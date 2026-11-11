@@ -37,6 +37,8 @@ change an input or a build.
 
 ### Fixed
 
+- MUSCL face values stay between the two cells of the face on cells of different lengths (as in MOSE): before, a
+  longer cell could overshoot its neighbour.
 - Probes accept the pressure names of the solution files, and as many names as the key holds.
 - A build without TecIO refuses `tecplot binary` at set-up, not at the first read or write.
 - Warnings: forward Euler with MUSCL above its limiter's CFL bound, and a ZGR step that removes over half a cell's

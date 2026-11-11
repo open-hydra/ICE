@@ -30,6 +30,7 @@ contains
 
     integer(I4) :: i
     real(R8)    :: slope0, slope1, slope2, slopel, sloper, limval
+    real(R8)    :: cxl, cyl, cxr, cyr
     logical     :: prim_status_l, prim_status_r, first_l, first_r
 
     if (solid) then
@@ -38,6 +39,7 @@ contains
     endif
 
     limval = beta
+    call slope_bounds(dl0, dl1, dl2, dll, dlr, cxl, cyl, cxr, cyr)
 
     ! Piecewise Linear Reconstruction. Each side reads its own three cells, the left state prev, local and next, the
     ! right state local, next and next2, and is first order when one of them is empty: the two sides of a face then
@@ -53,12 +55,12 @@ contains
         slope1   = (next(i)-local(i)) / dl1
         if (.not. first_l) then
           slope0   = (local(i)-prev(i)) / dl0
-          slopel   = limiter(slope1, slope0) * limval
+          slopel   = limiter(slope1, slope0, cxl, cyl) * limval
           priml(i) = local(i) + slopel*dll
         endif
         if (.not. first_r) then
           slope2   = (next2(i)-next(i)) / dl2
-          sloper   = limiter(slope2, slope1) * limval
+          sloper   = limiter(slope2, slope1, cxr, cyr) * limval
           primr(i) =  next(i) - sloper*dlr
         endif
       enddo
@@ -74,6 +76,27 @@ contains
     end do
 
   end subroutine state_reconstruction
+
+
+  !> The bounds of the limited slopes of a face, so that the value of each of its two cells at both the cell's faces lies
+  !> between the value of the cell and that of the neighbour across that face, on a line of cells of any lengths: the
+  !> change over half a cell is at most each jump (Berger, Aftosmis and Murman, AIAA 2005-0490, eq. 19).
+  pure subroutine slope_bounds(dl0, dl1, dl2, dll, dlr, cxl, cyl, cxr, cyr)
+    real(R8), intent(in)  :: dl0, dl1, dl2, dll, dlr
+    real(R8), intent(out) :: cxl, cyl, cxr, cyr
+
+    if (dll > 0._R8) then
+      cxl = dl1/dll ;  cyl = dl0/dll
+    else
+      cxl = 2._R8   ;  cyl = 2._R8
+    endif
+    if (dlr > 0._R8) then
+      cxr = dl2/dlr ;  cyr = dl1/dlr
+    else
+      cxr = 2._R8   ;  cyr = 2._R8
+    endif
+
+  end subroutine slope_bounds
 
 
   !> A solidifying family: the limiter sees T_liq = e/c_l, continuous through the recalescence, so T_liq has no jump at
@@ -96,6 +119,7 @@ contains
 
     integer(I4) :: i
     real(R8)    :: slope0, slope1, slope2, slopel, sloper, limval
+    real(R8)    :: cxl, cyl, cxr, cyr
     real(R8)    :: q0(size(prev)), q1(size(prev)), q2(size(prev)), q3(size(prev))
     logical     :: prim_status_l, prim_status_r, first_l, first_r
 
@@ -112,17 +136,18 @@ contains
     prim_status_l = first_l
     prim_status_r = first_r
     limval = beta
+    call slope_bounds(dl0, dl1, dl2, dll, dlr, cxl, cyl, cxr, cyr)
     do while (.not. prim_status_l .or. .not. prim_status_r)
       do i = 1, size(prev)
         slope1   = (q2(i)-q1(i)) / dl1
         if (.not. first_l) then
           slope0   = (q1(i)-q0(i)) / dl0
-          slopel   = limiter(slope1, slope0) * limval
+          slopel   = limiter(slope1, slope0, cxl, cyl) * limval
           priml(i) = q1(i) + slopel*dll
         endif
         if (.not. first_r) then
           slope2   = (q3(i)-q2(i)) / dl2
-          sloper   = limiter(slope2, slope1) * limval
+          sloper   = limiter(slope2, slope1, cxr, cyr) * limval
           primr(i) = q2(i) - sloper*dlr
         endif
       enddo

@@ -120,10 +120,10 @@ The slopes take case F's tolerance, $10^{-6}$.
 
 | Leg | Phase file | What it checks | Measured |
 |---|---|---|---|
-| L3 | `A 2`, face-1 inlets in ATLAS's order (the records of family 1, radius 10 µm, then family 2, 20 µm) | $n_1/n_2 = (r_2/r_1)^3 = 8$ in the cells the inlet fills | $6.8\times10^{-15}$ |
-| L3b | L3 on two mesh blocks (mesh block, then family, then faces), radii 10/20 and 20/10 µm | 8 in block 1, 1/8 in block 2 | $6.9\times10^{-15}$, $5.1\times10^{-15}$ |
+| L3 | `A 2`, face-1 inlets in ATLAS's order (the records of family 1, radius 10 µm, then family 2, 20 µm) | $n_1/n_2 = (r_2/r_1)^3 = 8$ in the cells the inlet fills; each family's $n = \rho_p/(\rho_{mat}\tfrac43\pi r^3)$ | ratio exact; $n$ to $8.9\times10^{-16}$ |
+| L3b | L3 on two mesh blocks (mesh block, then family, then faces), radii 10/20 and 20/10 µm | 8 in block 1, 1/8 in block 2 | ratio exact and $2.2\times10^{-16}$; $n$ to $1.1\times10^{-15}$ |
 | L3c, L3d | Controls: equal radii; one record per face on two blocks | Ratio 1 | exact |
-| L4 | `A 1` / `B 1`, zones $\rho$ = 2000 and 1000, one record per face | Each family's inlet $n$ uses its own table density: $n_1/n_2 = 1/2$ | $4.6\times10^{-15}$ |
+| L4 | `A 1` / `B 1`, zones $\rho$ = 2000 and 1000, one record per face | Each family's inlet $n$ uses its own table density: $n_1/n_2 = 1/2$ | ratio exact; $n$ to $8.9\times10^{-16}$ |
 | L4c | `A 2`, one zone | Control: ratio 1 | exact |
 
 L3 and L4 compare ratios that are exact in binary ($r_2 = 2r_1$, $\rho_A = 2\rho_B$), through a
@@ -146,15 +146,17 @@ kg m⁻³. Field 1 is written as ATLAS writes it, $krho_i/(1-\sum_j krho_j)$, an
 
 | Leg | Setup | What it checks | Measured |
 |---|---|---|---|
-| L6 | as above | Family $i$ enters at $krho_i/(1-\sum_j krho_j)$ of the gas density, the mixture rule: 0.2/0.7 and 0.1/0.7 in cell 1, $\rho_{p1}/\rho_{p2} = 2$ in every cell | cell 1 $7.3\times10^{-13}$; ratio exact |
-| L6c | `A 1`, `krho` = 0.2 | Control: one family, 0.25 in cell 1, where the two rules agree | $7.3\times10^{-13}$ |
-| L6g | `A 1`, `krho` = 0.2 (field 1 0.25), $G = \rho_g U$ = 12 kg s⁻¹ m⁻² | The family takes field 1 times $(\rho_g U + G)$ through the face: 0.5 of the gas density in cell 1 (0.25 without the $G$ term) | $7.3\times10^{-13}$ |
+| L6 | as above | Family $i$ enters at $krho_i/(1-\sum_j krho_j)$ of the gas density, the mixture rule: 0.2/0.7 and 0.1/0.7 in cell 1, $\rho_{p1}/\rho_{p2} = 2$ in every cell | cell 1 $3.2\times10^{-9}$; ratio exact |
+| L6c | `A 1`, `krho` = 0.2 | Control: one family, 0.25 in cell 1, where the two rules agree | $3.2\times10^{-9}$ |
+| L6g | `A 1`, `krho` = 0.2 (field 1 0.25), $G = \rho_g U$ = 12 kg s⁻¹ m⁻² | The family takes field 1 times $(\rho_g U + G)$ through the face: 0.5 of the gas density in cell 1 (0.25 without the $G$ term) | $3.2\times10^{-9}$ |
 | L6z | L6g in a gas at rest | No normal speed: $G$ left out, not divided by zero; every density finite and `part-field.tec` bit for bit that of $G = 0$ | identical |
 | L6r | L6 with `krho` = 0.6 and 0.5, and with 0.2 and −0.1; L6's records without their 10th field $G$ | A negative field 1 (a sum of 1.1 makes it negative), or a `401` line without $G$ (a file of an ATLAS before the mixture rule over the dispersed phases), stops the setup with the `401` inlet message | refused |
 
 - **The ratio** is exact for the same reason as L3's. The content keeps every cell above the
   empty-cell density, $10^{-6}$ kg m⁻³, below which the reconstruction is first order (a switch
   that is not scale-free), and starts in the inlet's ratio, so $10^{-12}$ bounds it too.
+- **At the end time** cell 1 is still settling: its value is $3.2\times10^{-9}$ off; at four times the end time
+  it is $1.9\times10^{-15}$ off.
 - **Cell 1** is judged at $10^{-3}$ relative. A family loaded as if alone,
   $krho_i/(1-krho_i)$, misses there by 12.5 % and 22.2 %. L6g is judged on the same bound,
   which the $G$ term left out misses by 50 %.
