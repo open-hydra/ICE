@@ -26,7 +26,7 @@ ENDIF()
 # - ORION. 
 # Required by a range of releases with semver_dependency of cmake/SemVerDeps.cmake. 
 # Standalone, the release is checked out in lib/ORION, out of the build folder, and kept in deps.lock (both git ignored); -DSEMVER_UPDATE=ALL selects the newest one again.
-set(ICE_ORION_VERSION 2.1)
+set(ICE_ORION_VERSION 2.2)
 set(ICE_ORION_URL https://github.com/MarcoGrossi92/ORION.git)
 # - FiNeR.
 # Directly pinned at one release (bump the gitlink and the tag together).

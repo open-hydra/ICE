@@ -11,7 +11,7 @@ change raises `Y`, anything else `Z`.
 
 | Library | Requirement | How |
 |---|---|---|
-| ORION | `ICE_ORION_VERSION 2.1`: 2.1.0 and later, up to 3.0.0 excluded | `semver_dependency` of `cmake/SemVerDeps.cmake` |
+| ORION | `ICE_ORION_VERSION 2.2`: 2.2.0 and later, up to 3.0.0 excluded | `semver_dependency` of `cmake/SemVerDeps.cmake` |
 | FiNeR | `ICE_FINER_TAG v2.3.0` | the submodule `lib/FiNeR`, checked against its `VERSION` file |
 
 `cmake/SemVerDeps.cmake` is FLINT's file, copied unmodified: update it from FLINT, never here.
@@ -19,9 +19,9 @@ A requirement accepts the releases from its own up to the next change of its lef
 number (`2.1` accepts 2.1.0 to 3.0.0 excluded, `0.3` accepts 0.3.x only). Only `vX.Y.Z` tags are
 releases; a tag such as `v2.2.0-rc1` is never selected.
 
-ICE requires the oldest release that has everything it uses. ORION `2.1`: ORION 2.0.0 removed
-`tec_read_points_multivars`, and the property table is now read with
-`tec_read_structured_multiblock`, whose Tecplot reader 2.1.0 fixed.
+ICE requires the oldest release that has everything it uses. ORION `2.2`: the property table is
+read with `tec_read_structured_multiblock`, whose Tecplot reader 2.1.0 fixed and 2.2.0 made
+refuse data that a zone header does not announce.
 
 FiNeR's own dependencies are fetched as FiNeR's author does (`fobis fetch`: their default
 branches, `ICE_FINER_DEPS=FREE`). If an upstream change breaks ICE, `ICE_FINER_DEPS=BACKUP`
@@ -46,7 +46,7 @@ Hydra builds ICE with its own ORION and FiNeR. When hydra selects ORION with Sem
 requirement is checked against that release, so:
 
 - a new **major** ORION in ICE's requirement is a major (before 1.0.0, minor) release of ICE;
-- a later **minor** ORION (from `2.1` to `2.2`) is a minor (before 1.0.0, patch) release;
+- a later **minor** ORION (from `2.2` to `2.3`) is a minor (before 1.0.0, patch) release;
 - another FiNeR release is a major (before 1.0.0, minor) release of ICE.
 
 ## Making a release

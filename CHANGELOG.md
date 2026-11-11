@@ -26,7 +26,7 @@ change an input or a build.
   temperature, ...): the run stops naming what is missing, instead of using aluminium's values.
 - A negative density after the update, floored silently before, is now counted and warned.
 - Near-empty IG/AG cells have their dispersion capped, so an empty domain fills without diverging.
-- **Breaking.** ORION 2.1 or a later 2.x is required, in place of the submodule `lib/ORION`. The configure checks it
+- **Breaking.** ORION 2.2 or a later 2.x is required, in place of the submodule `lib/ORION`. The configure checks it
   out in `lib/ORION`. Results are unchanged.
 - **Breaking.** `ORION_PATH` and `FINER_PATH` are removed: use `FETCHCONTENT_SOURCE_DIR_ORION` and
   `FETCHCONTENT_SOURCE_DIR_FINER` (`install.sh --include-*` as before). `install.sh update --remote` is removed.

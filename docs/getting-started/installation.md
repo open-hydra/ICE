@@ -28,7 +28,7 @@ ICE uses two libraries:
 
 | Library | Purpose | Where it comes from |
 |---------|---------|---------------------|
-| [ORION](https://github.com/MarcoGrossi92/ORION) | Mesh and solution I/O (Tecplot, VTK, optional TecIO) | The newest 2.x release from 2.1.0, cloned into `lib/ORION` by the first configure |
+| [ORION](https://github.com/MarcoGrossi92/ORION) | Mesh and solution I/O (Tecplot, VTK, optional TecIO) | The newest 2.x release from 2.2.0, cloned into `lib/ORION` by the first configure |
 | [FiNeR](https://github.com/szaghi/FiNeR) | INI file parser | The submodule `lib/FiNeR` (v2.3.0) |
 
 The first configure needs network access: besides ORION, it clones FiNeR's five
@@ -99,7 +99,7 @@ compiler accepts each flag before using it.
 
 A clone given with `FETCHCONTENT_SOURCE_DIR_ORION` or `FETCHCONTENT_SOURCE_DIR_FINER`
 is built as it is, uncommitted changes included. It must be a release ICE accepts,
-or the configure stops: ORION 2.1.0 or a later 2.x, and FiNeR v2.3.0. A FiNeR clone
+or the configure stops: ORION 2.2.0 or a later 2.x, and FiNeR v2.3.0. A FiNeR clone
 must already hold its dependencies in `src/third_party` (`fobis fetch --no-build`).
 To build another release on purpose, such as an ORION branch under test, add
 `-DICE_PIN_CHECK=WARNING`.
