@@ -127,6 +127,7 @@ nav:
       - Drag and Heat: vv/verification/exchange.md
       - Evaporation and Boiling: vv/verification/phase-change.md
       - Solidification: vv/verification/solidification.md
+      - Combustion: vv/verification/combustion.md
       - Material Properties: vv/verification/materials.md
       - Transport: vv/verification/transport.md
     - Closures and Waves:

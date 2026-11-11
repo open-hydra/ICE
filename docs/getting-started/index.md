@@ -68,11 +68,11 @@ binary and VTK forms). Without one, ICE transports the cloud with no exchange at
 | Evaporation | Mass transfer to the gas. Five models, with an optional non-equilibrium interface and a Stefan-blowing correction. |
 | Inside the drop | A uniform temperature or a parabolic profile, and an optional boiling branch above the boiling point. |
 | Solidification | Freezing and melting of the material, with its latent heat. |
+| Combustion | Drops that burn at their boiling temperature down to an inert residue, the heat of reaction going to the gas. |
 
 The material properties are constants, or tables against temperature in
 `INPUT/part-properties.dat`. Several materials can be carried, each with its own
-models. The correlations are given in [Particle Physics](../theory/physics.md);
-combustion is not implemented.
+models. The correlations are given in [Particle Physics](../theory/physics.md).
 
 ## Numerical methods
 

@@ -208,6 +208,7 @@ contains
   subroutine leg_flash(ok)
     use ICE_Config_Types_m, only: condensed_phase_t
     use ICE_Mod_Sources,    only: compute_source_
+    real(R8) :: heat   ! the heat to the gas, 0 without combustion
     logical, intent(inout) :: ok
     type(condensed_phase_t) :: mat
     real(R8) :: dtd(3), cond(6), gas(5), s(6), tau, ts, f7, f8, m, ref, worst
@@ -221,7 +222,7 @@ contains
     do k = 1, 3
       cond = [1._R8, 0._R8, 0._R8, 0._R8, 600._R8 + dtd(k), 1._R8/m]
       tau = 0._R8
-      call compute_source_(cond, tau, gas, RG, GAM, KG, MUG, s, mat, 6, ts)
+      call compute_source_(cond, tau, gas, RG, GAM, KG, MUG, s, mat, 6, heat, ts)
       atb = atb .and. ts == 600._R8
       f8  = s(1)/cond(6)
       f7  = (s(5) - CL*cond(5)*s(1))/(cond(1)*CL)
@@ -305,6 +306,7 @@ contains
     use ICE_Config_Types_m,  only: condensed_phase_t
     use ICE_Mod_Sources,     only: compute_source_, cell_surface
     use ICE_Lib_Evaporation, only: zgrBoiling
+    real(R8) :: heat   ! the heat to the gas, 0 without combustion
     logical, intent(inout) :: ok
     type(condensed_phase_t) :: zgr, clamp
     real(R8) :: cond(6), gas(5), s(6), sc(6), tau, ts, m, rho_mat, rp, re, ma, pr, nu, tsc, tb, md, qd
@@ -315,12 +317,12 @@ contains
     gas = [RHOG, 0._R8, 0._R8, 0._R8, 600._R8]
     cond = [1._R8, 0._R8, 0._R8, 0._R8, 450._R8*(1._R8 - 1.e-12_R8), 1._R8/m]
     tau = 0._R8
-    call compute_source_(cond, tau, gas, RG, GAM, KG, MUG, s, zgr, 6, ts)
-    call compute_source_(cond, tau, gas, RG, GAM, KG, MUG, sc, clamp, 6)
+    call compute_source_(cond, tau, gas, RG, GAM, KG, MUG, s, zgr, 6, heat, ts)
+    call compute_source_(cond, tau, gas, RG, GAM, KG, MUG, sc, clamp, 6, heat)
     write(*,'(A,ES22.14,A,ES22.14)') '   Z7: T = T_B (1 - 1e-12): S1 ZGR ', s(1), ' clamp ', sc(1)
     call check(all(s == sc), 'Z7 below T_B: the clamp''s sources bit for bit', ok)
     cond(5) = 450._R8
-    call compute_source_(cond, tau, gas, RG, GAM, KG, MUG, s, zgr, 6, ts)
+    call compute_source_(cond, tau, gas, RG, GAM, KG, MUG, s, zgr, 6, heat, ts)
     call cell_surface(cond, gas, RG, GAM, KG, MUG, zgr, 6, rho_mat, rp, re, ma, pr, nu, tsc, tb, boil)
     call zgrBoiling(450._R8, tb, 2._R8*rp, KG, GAM*RG/(GAM - 1._R8), nu, 600._R8, LV, md, qd)
     write(*,'(A,ES22.14,A,ES22.14,A,F18.12)') '   Z7: T = T_B: S1 ', s(1), ' n mdot ', md*cond(6), ' T_B ', tb

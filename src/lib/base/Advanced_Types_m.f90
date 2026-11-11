@@ -48,6 +48,9 @@ module ICE_Advanced_Types_m
     real(R8), dimension(:,:,:),     allocatable :: dt, tau, beta
     real(R8), dimension(:,:,:,:),   allocatable :: prim, prim_old
     real(R8), dimension(:,:,:,:),   allocatable :: source, residual
+    ! The heat the gas receives that source does not carry [W/m^3], the heat of reaction of a burning material
+    ! (combustion = direct), else 0: a two-way coupled gas takes -source plus heat
+    real(R8), dimension(:,:,:),     allocatable :: heat
     ! First ghost cells that hold an injected state (ghost_record, codes 401-403), which the
     ! reconstructions place at the boundary face; over prim's cells, never set on an interior one
     logical,  dimension(:,:,:),     allocatable :: inj

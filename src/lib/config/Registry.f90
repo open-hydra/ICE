@@ -138,7 +138,8 @@ contains
     this%params(n)%type_id     = TYPE_REAL
     this%params(n)%value%r    => var
     if (present(per_material)) this%params(n)%per_material = per_material
-    read(default,*) var
+    ! No default: the target keeps the value it holds until the INI sets the key
+    if (len_trim(default) > 0) read(default,*) var
   end subroutine add_real
 
   subroutine add_logical(this, section, name, var, default, desc, allowed, required)
@@ -319,6 +320,7 @@ contains
       case(TYPE_REAL)
         if (.not. associated(reg%params(i)%value%r)) cycle
         if (reg%params(i)%multi) cycle   ! each value is checked by Setup_Materials
+        if (.not. reg%params(i)%is_set .and. len_trim(reg%params(i)%default_str) == 0) cycle   ! no default, not given
         if (set_by_alias(i)) cycle   ! checked under the name given; Setup_Materials refuses both names
         val = reg%params(i)%value%r
         call validate_numeric(reg%params(i)%name, val, reg%params(i)%allowed, out)

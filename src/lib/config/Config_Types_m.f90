@@ -15,6 +15,7 @@ module ICE_Config_Types_m
     character(len=llen) :: description
     ! USER-DEFINED INPUTS
     character(len=llen) :: phase ! ATLAS name of the condensed phase this solver reads ('' = keep prefix)
+    character(len=llen) :: gas_phase ! ATLAS name of the gas phase ('' = INPUT/phase.txt), read by combustion = direct
     logical   :: newrun          ! Restart flag (true = new run)
     real(R8)  :: res_threshold   ! Min residual to stop execution
     real(R8)  :: time_threshold  ! Max physical time to stop execution
@@ -138,6 +139,7 @@ module ICE_Config_Types_m
     integer  :: liqSelect = 0  ! Liquid conduction as the Lib_Evaporation selector
     character(len=llen) :: boiling       ! Surface above the boiling temperature: 'clamp' or 'ZGR'
     integer  :: boilSelect = 0 ! Boiling branch as the Lib_Evaporation selector
+    character(len=llen) :: combustion    ! Combustion model of every material: '' (not given), 'none' or 'direct'
     ! Per-family (only model type differs across families)
     character(len=llen), allocatable :: model(:)
   end type time_scheme_t
@@ -244,6 +246,10 @@ module ICE_Config_Types_m
     real(R8) :: hFus  = 0._R8        ! Heat of fusion              [J/kg]
     real(R8) :: Tnuc  = 0._R8        ! Nucleation temperature      [K]
     real(R8) :: cpSol = 0._R8        ! Solid specific heat         [J/(kg K)]
+    ! Direct combustion (combustion = direct): the drop burns at boiling-temperature down to the residue's diameter
+    integer  :: combSelect = 0
+    real(R8) :: qComb = 0._R8        ! Heat of reaction per unit burnt mass, released in the gas [J/kg]
+    real(R8) :: dRes  = 0._R8        ! Diameter of the inert residue, where the burning stops [m]
     ! Packed form of the above, built by Setup_Materials and handed to Lib_Evaporation
     real(R8) :: ep(nep) = 0._R8
     ! Table-based properties rho(T) and cs(T) (optional, loaded by Load_Table)

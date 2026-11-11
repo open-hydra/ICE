@@ -60,6 +60,18 @@ contains
                  'token overrides it; ignored when evaporation is none', &
                  'clamp, ZGR', .false.)
 
+    call reg%add(section, 'combustion', obj_time_scheme%combustion, '', &
+                 'Combustion model of every material: direct burns the drops at boiling-temperature down to d-res, '// &
+                 'releasing q-comb in the gas (one material and one gas species); a phase-file token overrides it; '// &
+                 'absent = the tokens alone decide', &
+                 'none, direct', .false.)
+    call reg%add(section, 'q-comb', ini_condensed%qComb, '', &
+                 'Heat of reaction per unit burnt mass [J/kg] of combustion = direct, released in the gas; a phase-file '// &
+                 'token overrides it; absent = the token, else 0 (pure vaporisation)', '>= 0', .false.)
+    call reg%add(section, 'd-res', ini_condensed%dRes, '', &
+                 'Diameter of the inert residue [m] of combustion = direct, where the burning stops; a phase-file '// &
+                 'token overrides it; required, here or as the token, by a burning material', '> 0', .false.)
+
     ! Condensed-material properties ----------------------
     call reg%add(section, 'density', ini_condensed%rho_al, '2700.0', &
                  'Condensed-material density [kg/m^3], used when no property table is given; with a table '// &

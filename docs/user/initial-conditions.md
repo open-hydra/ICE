@@ -20,7 +20,7 @@ The families follow one another, and each brings the variables of its closure:
 A family of a [solidifying](../theory/physics.md#solidification) material has two more
 variables after `n_p`: `f_p`, the frozen fraction, and `chi_p`, the nucleated fraction.
 They may be left out of the file for every solidifying family at once: ICE then takes
-a particle at or below `T-nuc` as solid, and above it as liquid, as IGLOO does.
+a particle at or below `T-nuc` as solid, and above it as liquid.
 
 !!! warning "Order, not names"
     ICE writes the names with the family number appended (`rho_p1`, `u_p1`, …, then
@@ -121,7 +121,7 @@ I=5000, F=POINT
 | `Cpv` | J/(kg K) | no | the vapour specific heat, against temperature |
 | `Emissivity` | – | no | the emissivity, against temperature |
 | `Conductivity`, `Viscosity` | W/(m K), Pa s | no | the liquid conductivity and viscosity of a `P2T` material |
-| `Sigma` | N/m | no | recognised (IGLOO reads it) and not used |
+| `Sigma` | N/m | no | recognised and not used |
 
 Other columns are ignored. `Enthalpy` is relative ($c_p T$ for a constant $c_p$);
 `Enthalpy_abs` is absolute, and its offset is kept as the material's datum. When $c_p$
@@ -171,7 +171,6 @@ ICE refuses the table, with the reason, when:
 - **`Lv`, `Mv`, `Cpv`** are not finite, negative, zero on some rows only, given without
   `Psat`, an `Mv` that varies, or an `Lv` whose Clausius-Clapeyron slope at the boiling
   temperature is not within a factor 2 of the `Psat` column's. An `Lv` column without
-  `Mv` needs `vapour-molar-mass`, which the slope uses. IGLOO applies the same vapour
-  checks, with the same messages;
+  `Mv` needs `vapour-molar-mass`, which the slope uses;
 - **`Emissivity`, `Conductivity`, `Viscosity`** are zero on some rows only, or not
   positive.

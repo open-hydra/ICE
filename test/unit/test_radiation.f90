@@ -59,6 +59,7 @@ contains
   subroutine legs(ok)
     use ICE_Config_Types_m, only: condensed_phase_t
     use ICE_Mod_Sources,    only: compute_source_
+    real(R8) :: heat   ! the heat to the gas, 0 without combustion
     logical, intent(inout) :: ok
     real(R8), parameter :: SIGMA = 5.670374419e-8_R8, PI = acos(-1._R8)
     real(R8), parameter :: D = 30.e-6_R8, RHO_P = 1._R8, TP = 2400._R8, TG = 600._R8
@@ -79,10 +80,10 @@ contains
     tab%emiss_tab = [(real(i, R8)/3000._R8, i = 1, 3000)]
     tab%use_emiss = .true.
     t8 = 0._R8; t0 = 0._R8; tf = 0._R8; tt = 0._R8
-    call compute_source_(cond, t8, gas, RG, GAM, KG, MU, s8, grey,  6)
-    call compute_source_(cond, t0, gas, RG, GAM, KG, MU, s0, off,   6)
-    call compute_source_(cond, tf, gas, RG, GAM, KG, MU, sf, fresh, 6)
-    call compute_source_(cond, tt, gas, RG, GAM, KG, MU, st, tab,   6)
+    call compute_source_(cond, t8, gas, RG, GAM, KG, MU, s8, grey,  6, heat)
+    call compute_source_(cond, t0, gas, RG, GAM, KG, MU, s0, off,   6, heat)
+    call compute_source_(cond, tf, gas, RG, GAM, KG, MU, sf, fresh, 6, heat)
+    call compute_source_(cond, tt, gas, RG, GAM, KG, MU, st, tab,   6, heat)
 
     q   = 0.8_R8*SIGMA*PI*D*D*n*(TG*TG*TG*TG - TP*TP*TP*TP)
     rel = abs(s8(5) - q)/abs(q)

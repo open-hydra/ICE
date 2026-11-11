@@ -23,6 +23,10 @@ contains
                  '',          'ATLAS name of the condensed phase to read: INPUT/<phase>-{bc.txt,ic,'// &
                  'properties.dat}. Absent = keep the prefix in force (standalone default part-)', &
                  '',           .false.)
+    call reg%add(section, 'gas-phase',      obj_sim_param%gas_phase,       &
+                 '',          'ATLAS name of the gas phase: combustion = direct reads INPUT/<gas-phase>-phase.txt '// &
+                 '(INPUT/phase.txt when absent) and requires it to declare one species', &
+                 '',           .false.)
     call reg%add(section, 'newrun',         obj_sim_param%newrun,          &
                  'true',      'Start a new simulation (false = restart)',   &
                  'true, false', .false.)

@@ -8,6 +8,7 @@ module ICE_Lib_Evaporation
     public :: psat_CC, invTboil_at
     public :: log1pS, expm1S, chiETC
     public :: boilingTemperatureCC, alphaBoil, zgrBoiling, heatFedRate
+    public :: burnRate
 
     !> Vapour properties, packed contiguously by Assign_Setup and indexed by the
     !  parameters below.
@@ -297,6 +298,22 @@ contains
         mdot = -2._R8 * pi * dp * kg / cpg * log(1._R8 + BT)  ! Nu=2 stagnant film (Godsave/Spalding)
 
     end subroutine d2law
+
+
+    !> The mass a burning drop loses [kg/s], >= 0: the d2-law of a vaporising drop whose vapour burns in the gas
+    !  (Gallier and Godfroy 2009 eqs. 4-5, unit Lewis number), pi d (kg/cpg) Nu ln(1 + B) with
+    !  B = (cpg (Tg - Tp) + Q)/Lv; Nu is the heat law's, so Ranz-Marshall gives their eq. 4. 0 when B <= 0.
+    pure function burnRate(Tg, kg, cpg, Tp, dp, Nu, Lv, Q) result(mdot)
+        implicit none
+        real(R8), intent(in) :: Tg, kg, cpg, Tp, dp, Nu, Lv, Q
+        real(R8) :: mdot, B
+
+        mdot = 0._R8
+        B = (cpg*(Tg - Tp) + Q)/Lv
+        if (.not. B > 0._R8) return
+        mdot = pi*dp*kg/cpg*Nu*log1pS(B)
+
+    end function burnRate
 
 
     !===================================================================!

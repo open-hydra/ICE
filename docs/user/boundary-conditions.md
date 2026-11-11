@@ -136,7 +136,7 @@ $$
 k_i\,(\rho_g u_{g,n} + G)
 $$
 
-along the normal, as IGLOO does. With the direction given as angles, the gas part
+along the normal. With the direction given as angles, the gas part
 carries the cosine between the direction and the normal, and $G$ does not. $G$ only
 counts where it is positive and the injection moves into the domain. A `401` line without the tenth value comes from an
 older ATLAS: regenerate the file with ATLAS BCB. A negative $k$, or a $G$ that is
