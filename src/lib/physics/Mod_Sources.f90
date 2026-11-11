@@ -56,7 +56,8 @@ contains
                               grid%blk(b)%gas_phase%k(i,j,k),            &
                               grid%blk(b)%gas_phase%mu(i,j,k),           &
                               grid%blk(b)%cond_phase(p)%source(:,i,j,k), &
-                              obj_condensed(mat_of(p)), nbase(p)         )
+                              obj_condensed(mat_of(p)), nbase(p),        &
+                              gas_heat=grid%blk(b)%cond_phase(p)%heat(i,j,k))
         if (nf > 0) grid%blk(b)%cond_phase(p)%source(frozen(1:nf,p),i,j,k) = 0._R8
         if (zgr) stiff = max(stiff, step_mass_fraction(grid%blk(b)%cond_phase(p), i, j, k))
   
@@ -108,7 +109,8 @@ contains
                                 grid%blk(b)%gas_phase%k(i,j,k),            &
                                 grid%blk(b)%gas_phase%mu(i,j,k),           &
                                 grid%blk(b)%cond_phase(p)%source(:,i,j,k), &
-                                obj_condensed(mat_of(p)), nbase(p)         )
+                                obj_condensed(mat_of(p)), nbase(p),        &
+                                gas_heat=grid%blk(b)%cond_phase(p)%heat(i,j,k))
           if (nf > 0) grid%blk(b)%cond_phase(p)%source(frozen(1:nf,p),i,j,k) = 0._R8
           if (zgr) stiff = max(stiff, step_mass_fraction(grid%blk(b)%cond_phase(p), i, j, k))
       enddo ; enddo ; enddo
@@ -210,12 +212,15 @@ contains
   end subroutine cell_surface
 
 
-  subroutine compute_source_ (cond_prim, cond_tau, gas_prim, gas_R, gas_gam, gas_k, gas_mu, source, mat, nb, Ts_out)
+  !> The source of one cell. gas_heat is the heat the gas receives that the source does not carry [W/m^3]: the heat of
+  !> reaction of a burning material (combustion = direct), 0 otherwise; the gas takes -source plus gas_heat.
+  subroutine compute_source_ (cond_prim, cond_tau, gas_prim, gas_R, gas_gam, gas_k, gas_mu, source, mat, nb, gas_heat, &
+                              Ts_out)
     use ICE_Parameters_m, only: pi, sigma_SB, I4
     use ICE_Config_Types_m, only: condensed_phase_t, obj_time_scheme
     use ICE_Lib_Model
     use ICE_Lib_Drag
-    use ICE_Lib_Evaporation, only: evaporation, blowingFactor, zgrBoiling, nep, iLv, icpv
+    use ICE_Lib_Evaporation, only: evaporation, blowingFactor, zgrBoiling, burnRate, nep, iLv, icpv
     use ICE_Lib_Properties, only: mat_psat, mat_lv, mat_cpv, mat_emiss, mat_e, mat_cp_const, mat_kl
     implicit none
     real(kind=R8), dimension(:), intent(in)    :: cond_prim, gas_prim
@@ -224,12 +229,13 @@ contains
     real(kind=R8), dimension(:), intent(inout) :: source
     type(condensed_phase_t),     intent(in)    :: mat
     integer(kind=I4),            intent(in)    :: nb
+    real(kind=R8),               intent(out)   :: gas_heat
     real(kind=R8), optional,     intent(out)   :: Ts_out
 
     integer(kind=I4) :: n, ng
     real(kind=R8)    :: Rp, Re, Ma, Pr, Tr, Ts, TB
     real(kind=R8)    :: Cd, Nu
-    real(kind=R8)    :: rho_mat, mdot, Qconv, Qevap, carry, cpg
+    real(kind=R8)    :: rho_mat, mdot, Qconv, Qevap, carry, cpg, Lv, Qburn
     logical          :: override_Qdot, boiling
     real(kind=R8)    :: force(6)
     real(kind=R8)    :: ep(nep)
@@ -313,6 +319,26 @@ contains
       endif
       force(5) = force(5) - force(1)*((ep(iLv) - mat_lv(mat, cond_prim(n-1))) + carry)
     endif
+
+    !> Direct combustion: a drop at or above boiling-temperature and larger than the residue burns while its rate is
+    !  positive. Every heat it receives feeds the vapour, so the closure's latent sink cancels it and the drop keeps
+    !  its temperature; the vapour leaves with the drop's energy and its heat of reaction goes to the gas. Otherwise
+    !  the drop exchanges as an inert one. The temperature is compared within 1e-10 of boiling-temperature, so that
+    !  the round-off of the energy does not switch a drop held there off.
+    Qburn = 0._R8
+    if (mat%combSelect == 1) then
+      if (cond_prim(n-1) >= mat%Tboil*(1._R8 - 1.e-10_R8) .and. 2._R8*Rp > mat%dRes) then
+        cpg  = gas_gam*gas_R/(gas_gam - 1._R8)
+        Lv   = mat_lv(mat, cond_prim(n-1))
+        mdot = burnRate(gas_prim(ng), gas_k, cpg, cond_prim(n-1), 2._R8*Rp, Nu, Lv, mat%qComb)
+        if (mdot > 0._R8) then
+          force(1) = mdot*cond_prim(n)
+          force(5) = force(1)*Lv
+          Qburn    = force(1)*mat%qComb
+        endif
+      endif
+    endif
+    gas_heat = Qburn
 
     !> Particles relaxation time (infinite without drag, so every relaxation term vanishes exactly)
     if (Cd == 0._R8) then

@@ -32,6 +32,7 @@ work and for the full list.
 | [Drag and Heat](verification/exchange.md) | A, B, D, E, J | The drag and heat sources, every drag and Nusselt correlation, the time scheme's order, the step at the relaxation time |
 | [Evaporation and Boiling](verification/phase-change.md) | F, M | Every evaporation model, the latent sink, the boiling clamp, the temperature inside the drop, the boiling branch |
 | [Solidification](verification/solidification.md) | N, O | Supercooling, nucleation, the plateau, melting; a freezing front in a steady stream |
+| [Combustion](verification/combustion.md) | P | Drops burning on the $d^2$ law down to their residue, ignition, the heat to the gas |
 | [Material Properties](verification/materials.md) | K, L | The property table, and several materials side by side |
 | [Transport](verification/transport.md) | C, G, H, I | Transport alone and with drag, a straining gas, a vortex; the order of the space scheme |
 
@@ -64,7 +65,7 @@ Read together, the pages cover:
 - every closure;
 - all three source terms (drag, heat, mass) and every one of their correlations: twelve drag
   laws, seven Nusselt laws and five evaporation models;
-- the drop's internal temperature, boiling and solidification;
+- the drop's internal temperature, boiling, solidification and direct combustion;
 - the transport operator and its order of accuracy, and the time integrator and its order;
 - every way a block can talk to another one.
 
@@ -78,6 +79,8 @@ Read together, the pages cover:
 - **Implicit residual smoothing** has no case at all.
 - **Evaporation** is verified only at zero slip, where the Sherwood and Nusselt corrections are
   inactive: the convective branch of each model is not verified.
+- **Combustion in a coupled gas**: ICE fills the `heat` field a two-way coupled gas adds to its
+  energy, and the unit test checks it, but no case here runs a gas that receives it.
 
 ## Running them
 

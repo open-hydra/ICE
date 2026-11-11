@@ -9,6 +9,7 @@ Required column says otherwise, and omitting one selects the default.
 | Parameter | Default | Allowed | Required | Description |
 |-----------|---------|---------|----------|-------------|
 | `phase` |  |  |  no | ATLAS name of the condensed phase to read: INPUT/<phase>-{bc.txt,ic,properties.dat}. Absent = keep the prefix in force (standalone default part-) |
+| `gas-phase` |  |  |  no | ATLAS name of the gas phase: combustion = direct reads INPUT/<gas-phase>-phase.txt (INPUT/phase.txt when absent) and requires it to declare one species |
 | `newrun` | true | true, false |  no | Start a new simulation (false = restart) |
 | `res-threshold` | 1e-10 | >= 0 |  no | Residual convergence threshold, relative to the first non-zero density residual, steady runs only (0 = never stop on it) |
 | `time-threshold` | 1e30 | > 0 |  no | Maximum simulation time |
@@ -82,6 +83,9 @@ Required column says otherwise, and omitting one selects the default.
 | `evaporation-blowing` | none | LK, none |  no | Stefan-blowing reduction of the convective heat; LK applies Miller-Harstad-Bellan f2. Ignored under ASM and TC, which carry their own gas-side heat |
 | `liquid-conduction` | ITC | ITC, P2T |  no | Heat conduction inside the drop: ITC infinite conductivity, P2T the parabolic temperature profile (needs k-liq and mu-liq on the material line, or the Conductivity and Viscosity columns of the property table); the default of every material, a phase-file token overrides it; ignored when evaporation is none |
 | `boiling` | clamp | clamp, ZGR |  no | The surface above the boiling temperature at the gas pressure: clamp holds the vapour fraction below 1, ZGR the Zuo-Gomes-Rutland boiling branch; the default of every material, a phase-file token overrides it; ignored when evaporation is none |
+| `combustion` |  | none, direct |  no | Combustion model of every material: direct burns the drops at boiling-temperature down to d-res, releasing q-comb in the gas (one material and one gas species); a phase-file token overrides it; absent = the tokens alone decide |
+| `q-comb` |  | >= 0 |  no | Heat of reaction per unit burnt mass [J/kg] of combustion = direct, released in the gas; a phase-file token overrides it; absent = the token, else 0 (pure vaporisation) |
+| `d-res` |  | > 0 |  no | Diameter of the inert residue [m] of combustion = direct, where the burning stops; a phase-file token overrides it; required, here or as the token, by a burning material |
 | `density` | 2700.0 | > 0 |  no | Condensed-material density [kg/m^3], used when no property table is given; with a table it may be left out, and if given it must equal the table's constant density; one value per material |
 | `specific-heat` | 1598.0 | > 0 |  no | Condensed-material specific heat [J/(kg K)], used when no property table is given; with a table it may be left out, and if given it must equal the table's constant cp; one value per material |
 | `latent-heat` | 1.08e7 | >= 0 |  no | Latent heat of vaporisation [J/kg]; the evaporation models use it both as the energy sink and as the anchor of the Clausius-Clapeyron saturation curve, which a Psat column in the property table replaces; 0 for a material whose property table carries the Lv column: the table then owns it; required for an evaporating material unless its property table carries the Lv column; one value per material |

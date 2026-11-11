@@ -19,6 +19,8 @@ change an input or a build.
 - The documentation is built with Zensical (strict in CI), with a new home page, and its pages were rewritten to
   read more easily; the Overview moved into Getting Started.
 - The Code Verification page is split into five topic pages, and the V&V section is grouped by subject.
+- `combustion = direct` (Gallier and Godfroy 2009), in `[ICE-Physics]` or as tokens: drops burn at
+  `boiling-temperature` down to `d-res`, `q-comb` going to the gas; one gas species and one material.
 
 ### Changed
 

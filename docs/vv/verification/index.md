@@ -16,7 +16,7 @@ and a failure means that a model or a scheme is wrong.
 
 The problems are of two kinds:
 
-- **A uniform cloud** (A, B, D to F, J, K, M, N): nothing varies in space, so the exact answer
+- **A uniform cloud** (A, B, D to F, J, K, M, N, P): nothing varies in space, so the exact answer
   is the same in every cell and the mesh only exercises the flux loops. These cases measure
   the source terms.
 - **A cloud carried by a flow** (C, G to I, O): a localized cloud crosses a frozen gas field,
@@ -47,6 +47,7 @@ Sorted by letter; each page groups its cases by what they check.
 | M | `DropHeating` | The temperature inside the drop (`P2T`), the boiling branch (`ZGR`) | [Evaporation and Boiling](phase-change.md#m-drop-heating-and-boiling) |
 | N | `SolidCooling` | Supercooling, nucleation, the plateau, the solid, melting | [Solidification](solidification.md#n-a-closed-cell) |
 | O | `SolidAdvection` | The nucleation front and the plateau in a steady stream | [Solidification](solidification.md#o-a-steady-stream) |
+| P | `DirectCombustion` | Drops burning on the $d^2$ law down to their residue, ignition | [Combustion](combustion.md#p-a-closed-cell) |
 
 The letters are the directory names under `test/verification/`, given in the order the cases
 were written.
@@ -58,7 +59,7 @@ ctest --test-dir build -L verification --output-on-failure   # these and the oth
 ctest --test-dir build -R DropHeating -V                     # one case, with live output
 ```
 
-- A, B, C, J, K, L, M, N and O also carry the `fast` label, so the pre-push hook runs them.
+- A, B, C, J, K, L, M, N, O and P also carry the `fast` label, so the pre-push hook runs them.
 - The rest are in the default tier only: D, E and F because each correlation is a separate
   run of the solver, and G, H and I because each refinement level is. I, in two dimensions, is
   the longest.

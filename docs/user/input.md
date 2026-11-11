@@ -111,13 +111,13 @@ that also exist in `[ICE-Physics]` override it for that material.
 | `liquid-conduction` | `ITC` (uniform drop temperature) or `P2T` (parabolic profile, with `k-liq` [W/(m K)] and `mu-liq` [Pa s], or the `Conductivity` and `Viscosity` columns) |
 | `boiling` | `clamp` or `ZGR`, the behaviour above the boiling temperature |
 | `solidification = on` | The material freezes and melts, with `T-melt`, `h-fus`, `T-nuc` and `cp-solid` |
-| `combustion` | Only `none` is accepted |
+| `combustion = direct`, `q-comb`, `d-res` | The drop burns at `boiling-temperature` down to the residue `d-res` [m], releasing `q-comb` [J/kg] in the gas ([Combustion](#combustion)) |
 
 The physics of each is in [Particle Physics](../theory/physics.md):
 [conduction inside the drop](../theory/physics.md#conduction-inside-the-drop),
-[boiling](../theory/physics.md#boiling-above-the-boiling-temperature) and
-[solidification](../theory/physics.md#solidification). IGLOO's other numeric keys
-(`K-burn`, …) are read and ignored. At setup, ICE prints the models of each material.
+[boiling](../theory/physics.md#boiling-above-the-boiling-temperature),
+[solidification](../theory/physics.md#solidification) and
+[direct combustion](../theory/physics.md#direct-combustion). At setup, ICE prints the models of each material.
 
 The setup stops on:
 
@@ -125,7 +125,10 @@ The setup stops on:
 - solidification without a positive `h-fus` and `cp-solid`, with `T-nuc` at or above
   `T-melt`, together with evaporation, or with a `Density` column that varies;
 - in a coupled run: `P2T` or `ZGR` on a material that does not evaporate, and `P2T`
-  without a positive `k-liq` and `mu-liq` (or their columns).
+  without a positive `k-liq` and `mu-liq` (or their columns);
+- `combustion = direct` with more than one material, a gas phase file that does not declare
+  one species, evaporation or solidification, no positive `d-res`, or no `latent-heat` and
+  `boiling-temperature`.
 
 `evaporation-blowing` has no token: it applies to every material.
 
@@ -170,6 +173,30 @@ vapour-specific-heat  = 0
 boiling-temperature   = 373.15
 lewis-number          = 1
 vapour-mass-fraction  = 0
+```
+
+### Combustion
+
+`combustion = direct` burns the drops of the one material at `boiling-temperature`
+([Particle Physics](../theory/physics.md#direct-combustion)). `combustion`, `q-comb` and
+`d-res` have no default: given in `[ICE-Physics]`, they hold unless a token on the material
+line overrides them.
+
+```ini
+[ICE-Physics]
+combustion          = direct
+q-comb              = 9.53e6
+d-res               = 6e-5
+latent-heat         = 10.8e6
+boiling-temperature = 2791
+```
+
+The gas phase file must declare one species: `INPUT/phase.txt`, or
+`INPUT/<gas-phase>-phase.txt` with `gas-phase` in `[ICE-Parameters]`. Written by hand:
+
+```
+ideal-gas phase
+GAS 30.14
 ```
 
 ## Grid levels

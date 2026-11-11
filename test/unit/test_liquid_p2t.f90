@@ -132,6 +132,7 @@ contains
   subroutine sources(mat, cond, gas, s, ts, name, ok, Rp, Re, Nu)
     use ICE_Config_Types_m, only: condensed_phase_t
     use ICE_Mod_Sources,    only: compute_source_, cell_surface
+    real(R8) :: heat   ! the heat to the gas, 0 without combustion
     type(condensed_phase_t), intent(in)    :: mat
     real(R8),                intent(in)    :: cond(6), gas(5)
     real(R8),                intent(out)   :: s(6), ts
@@ -141,7 +142,7 @@ contains
     real(R8) :: tau, rho_mat, rp_, re_, ma_, pr_, nu_, tsc, tb_
     logical  :: boil_
     tau = 0._R8
-    call compute_source_(cond, tau, gas, RG, GAM, KG, MUG, s, mat, 6, ts)
+    call compute_source_(cond, tau, gas, RG, GAM, KG, MUG, s, mat, 6, heat, ts)
     call cell_surface(cond, gas, RG, GAM, KG, MUG, mat, 6, rho_mat, rp_, re_, ma_, pr_, nu_, tsc, tb_, boil_)
     call check(tsc == ts .or. (ieee_is_nan(tsc) .and. ieee_is_nan(ts)), &
                name//": cell_surface's Ts is the source's, bit for bit", ok)
@@ -581,6 +582,7 @@ contains
   subroutine sources_quiet(mat, cond, gas, s, ts, ok)
     use ICE_Config_Types_m, only: condensed_phase_t
     use ICE_Mod_Sources,    only: compute_source_, cell_surface
+    real(R8) :: heat   ! the heat to the gas, 0 without combustion
     type(condensed_phase_t), intent(in)    :: mat
     real(R8),                intent(in)    :: cond(6), gas(5)
     real(R8),                intent(out)   :: s(6), ts
@@ -588,7 +590,7 @@ contains
     real(R8) :: tau, rho_mat, rp_, re_, ma_, pr_, nu_, tsc, tb_
     logical  :: boil_
     tau = 0._R8
-    call compute_source_(cond, tau, gas, RG, GAM, KG, MUG, s, mat, 6, ts)
+    call compute_source_(cond, tau, gas, RG, GAM, KG, MUG, s, mat, 6, heat, ts)
     call cell_surface(cond, gas, RG, GAM, KG, MUG, mat, 6, rho_mat, rp_, re_, ma_, pr_, nu_, tsc, tb_, boil_)
     if (.not. (tsc == ts .or. (ieee_is_nan(tsc) .and. ieee_is_nan(ts)))) then
       write(*,'(A)') "   FAIL L6: cell_surface's Ts is not the source's"

@@ -84,6 +84,7 @@ contains
     use ICE_Config_Types_m,  only: condensed_phase_t
     use ICE_Lib_Evaporation, only: assign_evaporation
     use ICE_Mod_Sources,     only: compute_source_
+    real(R8) :: heat   ! the heat to the gas, 0 without combustion
     character(len=*), intent(in)    :: name, model
     logical,          intent(inout) :: ok
     real(R8), parameter :: Tp = 337.5_R8, TG = 800._R8, RG = 287.05_R8, GAM = 1.4_R8, KG = 0.026_R8, MU = 1.8e-5_R8
@@ -114,8 +115,8 @@ contains
     cond = [RHO_P, 0._R8, 0._R8, 0._R8, Tp, RHO_P/(RHO_L*4._R8/3._R8*PI*(0.5_R8*D0)**3)]
     gas  = [101325._R8/(RG*TG), 0._R8, 0._R8, 0._R8, TG]
     ta = 0._R8; tb = 0._R8
-    call compute_source_(cond, ta, gas, RG, GAM, KG, MU, sa, tab, 6)
-    call compute_source_(cond, tb, gas, RG, GAM, KG, MU, sb, ref, 6)
+    call compute_source_(cond, ta, gas, RG, GAM, KG, MU, sa, tab, 6, heat)
+    call compute_source_(cond, tb, gas, RG, GAM, KG, MU, sb, ref, 6, heat)
 
     write(*,'(A,2ES24.16)') '   '//name//': mass slot   (table, reference) ', sa(1), sb(1)
     write(*,'(A,2ES24.16)') '   '//name//': energy slot (table, reference) ', sa(5), sb(5)

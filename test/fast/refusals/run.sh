@@ -285,8 +285,8 @@ refuse Doisneau/MK "materials: a vector of the wrong length" \
        "latent-heat carries 2 values for 1 material(s)"
 refuse Doisneau/MK "tokens: an unknown evaporation model" "tokens evaporation=LEB" \
        "Wrong evaporation model input ---> LEB;Choose one of the following"
-refuse Doisneau/MK "tokens: combustion is not modelled" "tokens combustion=Beckstead" \
-       "Wrong combustion input ---> Beckstead;- none"
+refuse Doisneau/MK "tokens: Beckstead combustion is not modelled" "tokens combustion=Beckstead" \
+       "Wrong combustion input ---> Beckstead;- none;- direct"
 # Solidification, from the tokens as IGLOO reads them; "valid" is the solid-box material's line
 valid='solidification=on h-fus=1.07e6 cp-solid=600'
 accept Doisneau/MK "solidification: read and reported" "tokens '$valid' && sed -i 's/^iter-threshold .*/iter-threshold = 20/' input.ini" \

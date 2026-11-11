@@ -77,8 +77,7 @@ per unit volume, which is the familiar $h A \Delta T$ with $h = Nu\,k_g/d_p$ sum
 | `Kavanau-Drake` | $\dfrac{N}{1 + 3.42\,Ma\,N/(Re\,Pr)}$, $N = 2+0.459\,Re^{0.55}Pr^{0.33}$ | rarefaction-dependent |
 | `NoHeat` | $0$ | 0 (no convective exchange) |
 
-The `JAXA` names and their constants are IGLOO's, so a case that runs both solvers can name one law for both. In a
-coupled run the word `Chang` is refused with a pointer to `JAXA3`; the constant 0.654 and the exponent $Pr^{1/2}$ of
+In a coupled run the word `Chang` is refused with a pointer to `JAXA3`; the constant 0.654 and the exponent $Pr^{1/2}$ of
 `JAXA4` are NASA SP-8039 Table II's last row (Shimada 2006 eq. 50 prints $Pr^{1/3}$).
 
 ## Radiation
@@ -127,8 +126,7 @@ given (one atmosphere by default), $L_v$ the latent-heat. ICE evaluates it ancho
 boiling point of the same line there, $1/T_{boil,1} = 1/T_{boil} + \ln(p_B/p_{atm})\,\mathcal{R}/(L_v M_v)$. The surface mole fraction is
 $X_s = p_{sat}/p$, clamped to $1 - 10^{-12}$ once $p_{sat}$ reaches the local gas pressure — the
 boiling regime. The cap keeps $B_M$ finite, about $10^{12}\,M_v/M_g$, so every model returns a finite
-rate while the droplet boils (IGLOO clamps at the same value). Converting to a mass fraction $Y_s$ against the gas
-molar mass gives the Spalding mass-transfer number
+rate while the droplet boils. Converting to a mass fraction $Y_s$ against the gas molar mass gives the Spalding mass-transfer number
 
 $$
 B_M = \frac{Y_s - Y_\infty}{1 - Y_s},
@@ -281,7 +279,7 @@ within 0.7 %); at 5e-5 s it is 0.57 and the mean temperature undershoots to 382 
 
 ## Solidification
 
-A material with `solidification = on` on its line of the phase file freezes and melts, as IGLOO's model 6 does: a
+A material with `solidification = on` on its line of the phase file freezes and melts: a
 molten droplet supercools, recalesces, freezes on a plateau at the melting point and cools as a solid, and a solid or
 a partly frozen droplet heated past the melting point melts there. The families of that material carry two more
 variables after $n_p$, the frozen fraction $f$ and the nucleated fraction $\chi$, both carried with the mass.
@@ -295,8 +293,7 @@ e(T, f) = c_l\,T - f\,L(T), \qquad L(T) = h_{fus} - (c_l - c_s)(T_m - T),
 $$
 
 with $c_l$ the material's constant specific heat (the liquid's), $c_s$ = `cp-solid`, $h_{fus}$ = `h-fus` and
-$T_m$ = `T-melt`: a fraction $f$ of solid and $1 - f$ of liquid at one temperature. On the liquid ($f = 0$), the
-plateau ($T = T_m$) and the solid ($f = 1$) it is IGLOO's enthalpy without its datum. With a `Cp` column that varies,
+$T_m$ = `T-melt`: a fraction $f$ of solid and $1 - f$ of liquid at one temperature. With a `Cp` column that varies,
 $c_l T$ becomes the table's liquid energy $e_l(T)$ and $L(T) = h_{fus} - \big(e_l(T_m) - e_l(T)\big) + c_s(T_m - T)$;
 $T_\ell = e_l^{-1}(e)$, and below every $c_l(T_m - T_\ell)$ reads $e_l(T_m) - e_l(T_\ell)$.
 
@@ -360,7 +357,7 @@ inlet's pseudo-pressure ($P = 10^{-6}$) is far below that bound unless its bulk 
 
 ### Inputs
 
-All on the material's line of the phase file, as IGLOO reads them:
+All on the material's line of the phase file:
 
 | Token | Meaning | Default |
 |---|---|---|
@@ -375,3 +372,74 @@ The liquid's specific heat and the density are the material's; the specific heat
 stops the run, as does a material that also evaporates. The setup prints each solidifying material's values.
 For alumina the NIST-JANAF tables give $T_m$ = 2327 K, $h_{fus}$ = 1.09 MJ/kg, a liquid specific heat of
 1.89 kJ/(kg K) and a solid one of 1.36 kJ/(kg K) at the melting point; the default `T-nuc` is a nominal supercooling.
+
+## Direct combustion
+
+A material with `combustion = direct` on its line of the phase file burns as the drops of Gallier and Godfroy
+(J. Propuls. Power 25(2), 2009, section II.A): a simple, diffusion-limited burning that holds for any drop whose
+vapour burns in the gas around it, not only aluminium. The drop vaporises at its saturation temperature, the vapour
+burns at once, and its heat of reaction goes to the gas.
+
+### The burning drop
+
+A drop burns while its temperature is at least $T_{sat}$ = `boiling-temperature` and its diameter is larger than
+the residue's, $d_{res}$ = `d-res`. It loses mass at the $d^2$ law of a vaporising drop, with the heat of reaction in
+the transfer number (unit Lewis number):
+
+$$
+\dot m = \pi d_p\,\frac{k_g}{c_{p,g}}\,Nu\,\ln(1 + B), \qquad
+B = \frac{c_{p,g}\,(T_g - T_p) + Q}{L_v},
+$$
+
+with $Q$ = `q-comb`, $L_v$ = `latent-heat` (or the `Lv` column) and $Nu$ the `heat-transfer` law's. With
+`heat-transfer = Ranz-Marshall`, $Nu = 2 + 0.6\,Re^{1/2}Pr^{1/3}$, this is their eq. 4: the convective correction
+that makes the burning respond to the slip.
+
+Every heat the drop receives feeds its vaporisation, $\dot Q = \dot m L_v$, so its temperature does not change while
+it burns. The vapour leaves with the drop's energy and kinetic energy, and the gas receives, per unit volume,
+
+$$
+n\,\dot m\,\big(e_p(T_p) + \tfrac12|\mathbf u_p|^2 + Q\big),
+$$
+
+the drag work aside. The first two terms are the opposite of the drop's source, as for evaporation. $n\,\dot m\,Q$
+is not part of it: ICE stores it per cell in the family's `heat` field, which a two-way coupled gas adds to its
+energy.
+
+The number density does not change, so the drop shrinks along $d^2 = d_0^2 - K t$ with
+$K = 8 k_g \ln(1 + B)/(c_{p,g}\,\rho_m)$ at $Nu = 2$, and burns out in $d_0^2/K$ without a residue, their eq. 10.
+
+### Before and after
+
+Below $T_{sat}$ a drop is inert: drag, convection and radiation heat it as any other drop, and it ignites when it
+reaches $T_{sat}$. At $d_{res}$ the burning stops, and what remains is an inert residue of that diameter, the
+alumina of an aluminium drop. A gas so cold that $B \le 0$ does not keep a drop burning either.
+
+The switches act at the end of a stage. A drop that ignites holds the temperature it reached in that stage, up to
+$\Delta t\,\mathrm{d}T/\mathrm{d}t$ above $T_{sat}$, and a residue is up to $K\Delta t/(2 d_{res})$ smaller than
+$d_{res}$. The temperature is compared within $10^{-10}$ of $T_{sat}$, so that round-off does not switch off a drop
+held there.
+
+### Why one species and one material
+
+The vapour that burns is taken to be the gas itself, as in the paper: ICE adds the burnt mass to the gas without
+saying which species it is. So the model needs a gas of one species and a single condensed material. The setup reads
+the gas phase file ATLAS writes, `INPUT/phase.txt`, or `INPUT/<gas-phase>-phase.txt` with `gas-phase` in
+`[ICE-Parameters]`, and stops unless it declares one species (a `real-fluid` phase is one). Several families of the
+one material are allowed.
+
+### Inputs
+
+| Input | Meaning | Default |
+|---|---|---|
+| `combustion` | `direct` or `none` | `none` |
+| `q-comb` | heat of reaction $Q$ per unit burnt mass [J/kg] | 0, pure vaporisation |
+| `d-res` | diameter of the inert residue [m] | required, > 0 |
+| `boiling-temperature` | $T_{sat}$, the burning temperature [K] | required |
+| `latent-heat` | $L_v$ [J/kg], or the `Lv` column | required |
+
+`combustion`, `q-comb` and `d-res` go in `[ICE-Physics]`, on the material's line of the phase file, or both: a token
+overrides the key. The keys have no default, so an absent key leaves the decision to the tokens.
+
+The setup stops when the material also evaporates or solidifies. ICE reads the model only in a coupled run. For
+aluminium, Gallier and Godfroy take $Q$ = 9.53 MJ/kg, $L_v$ = 10.8 MJ/kg and $T_{sat}$ = 2791 K.

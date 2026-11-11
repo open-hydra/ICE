@@ -114,6 +114,10 @@ set_tests_properties(SolidAdvection PROPERTIES RESOURCE_LOCK O-solid-advection-w
 # against ICE's own time scheme on the same ODEs, typed in the driver; the surface temperature through the probe
 ice_add_verification(DropHeating       M-drop-heating      "fast;verification;sources;phase-change")
 
+# combustion = direct (Gallier and Godfroy 2009): drops burning at their boiling temperature in a closed cell on the
+# D^2 law down to the residue, the residue's heating, an ignition from below, the IG and AG closures, and the refusals
+ice_add_verification(DirectCombustion  P-direct-combustion "fast;verification;sources;phase-change")
+
 # Eulerian transport against free advection, with a grid-refinement study
 ice_add_verification(SineAdvection     C-advection-sine    "fast;verification;transport")
 
@@ -378,6 +382,10 @@ ice_add_unit_test(SolidificationUnit unit/test_solidification.f90 "fast;unit;imp
 # The vapour columns through the cell source: compute_source_ with Lv and Cpv tabulated and their
 # scalars poisoned, against the scalars set to the tables' values, for d2-law, CEM, ASM and TC
 ice_add_unit_test(VapourSourcesUnit unit/test_vapour_sources.f90 "fast;unit;implementation")
+
+# combustion = direct through the cell source, on Gallier and Godfroy's aluminium: the burn rate of their eq. 4, the
+# temperature kept, the heat of reaction to the gas, and the inert source below T_sat, at the residue and at B <= 0
+ice_add_unit_test(CombustionUnit unit/test_combustion.f90 "fast;unit;implementation")
 
 # liquid-conduction = P2T through the cell source: the surface balance against closed forms at Re 0 and typed gas-side
 # models at Re 20, the vapour leaving at the surface temperature, the drag's temperature ratio, the tables, an empty

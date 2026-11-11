@@ -13,9 +13,9 @@ module ICE_Setup_Materials
   !> The phase-file keys, the set IGLOO reads and ATLAS writes
   character(len=17), parameter :: word_keys(6) = [character(len=17) :: 'evaporation', 'liquid-conduction', &
                                   'interface', 'boiling', 'combustion', 'solidification']
-  character(len=9),  parameter :: real_keys(14) = [character(len=9) :: 'alpha-e', 'k-liq', 'mu-liq', 'K-burn', &
+  character(len=9),  parameter :: real_keys(15) = [character(len=9) :: 'alpha-e', 'k-liq', 'mu-liq', 'K-burn', &
                                   'n-burn', 'X-eff', 'beta-part', 'xi-cap', 'T-ign', 'q-comb', 'T-melt', 'h-fus', &
-                                  'T-nuc', 'cp-solid']
+                                  'T-nuc', 'cp-solid', 'd-res']
 
   !> The [ICE-Physics] keys that may carry one value per material, and their range
   character(len=23), parameter :: vector_keys(11) = [character(len=23) :: 'density', 'specific-heat', &
@@ -93,6 +93,7 @@ contains
       obj_condensed(m)%boilWord   = obj_time_scheme%boiling
       obj_condensed(m)%liqSelect  = obj_time_scheme%liqSelect
       obj_condensed(m)%boilSelect = obj_time_scheme%boilSelect
+      if (trim(obj_time_scheme%combustion) == 'direct') obj_condensed(m)%combSelect = 1
       if (m <= size(rest)) call apply_tokens(m, rest(m))
       if (obj_condensed(m)%intfSelect == 1 .and. obj_condensed(m)%evapSelect == 1) &
         call refuse(material_label(m)//': interface = LK needs a gas-side evaporation model '// &
@@ -102,8 +103,13 @@ contains
         obj_condensed(m)%evapSelect = 0
         obj_condensed(m)%liqSelect  = 0
         obj_condensed(m)%boilSelect = 0
+        obj_condensed(m)%combSelect = 0
       endif
     enddo
+
+    ! Direct combustion burns the one material there is, before its property table is read
+    if (nmat > 1 .and. any(obj_condensed(:)%combSelect == 1)) call refuse('combustion = direct needs one material: '// &
+      'INPUT/'//trim(ICE_phase_prefix)//'phase.txt declares '//trim(itoa(nmat)))
 
     ! A solidifying family carries the frozen and nucleated fractions after its closure's slots
     do p = 1, ngroups
@@ -156,6 +162,9 @@ contains
       end associate
     enddo
 
+    ! Direct combustion: the vapour is the gas itself, so one gas species and one material
+    if (any(obj_condensed(:)%combSelect == 1)) call check_combustion()
+
     ! A solidifying material keeps a constant density (its cp may vary: the liquid's energy is the table's)
     do m = 1, nmat
       if (.not. obj_condensed(m)%solid) cycle
@@ -180,6 +189,71 @@ contains
     endif
 
   contains
+
+    !> The refusals of combustion = direct, and its values printed: a burning material is alone, does not evaporate or
+    !> solidify, gives its latent heat, its burning temperature and a residue, and the gas phase has one species.
+    subroutine check_combustion()
+      character(len=:), allocatable :: gfile
+      integer :: ns
+      character(len=16) :: a, b, c
+      associate (mat => obj_condensed(1))
+        if (mat%evapSelect > 0) call refuse(material_label(1)//': combustion = direct is exclusive with evaporation '// &
+                                            '(the burning drop vaporises by its own rate)')
+        if (mat%solid) call refuse(material_label(1)//': combustion = direct is exclusive with solidification')
+        if (.not. mat%dRes > 0._R8) call refuse(material_label(1)//': combustion = direct requires d-res > 0, the '// &
+                                                'diameter of the inert residue [m], in '//physics()//' or as a token')
+        if (mat%qComb < 0._R8) call refuse(material_label(1)//': combustion = direct requires q-comb >= 0')
+        if (.not. (physics_set('latent-heat') .or. mat%use_lv)) call refuse(material_label(1)// &
+          ': combustion = direct requires latent-heat: give it in '//physics()//' or as the Lv column of the property table')
+        if (.not. mat%lv_al > 0._R8) &
+          call refuse(material_label(1)//': latent-heat = 0 needs an Lv column in the property table')
+        if (.not. (physics_set('boiling-temperature') .or. physics_set('Tboil'))) call refuse(material_label(1)// &
+          ': combustion = direct requires boiling-temperature (alias Tboil) in '//physics()//', the burning temperature')
+        gfile = 'INPUT/phase.txt'
+        if (len_trim(obj_sim_param%gas_phase) > 0) gfile = 'INPUT/'//trim(obj_sim_param%gas_phase)//'-phase.txt'
+        ns = gas_species(gfile)
+        if (ns /= 1) call refuse('combustion = direct needs one gas species: '//gfile//' declares '//trim(itoa(ns))// &
+                                 ' (the vapour that burns is taken as the gas itself)')
+        if (mpi_is_root) then
+          write(a,'(ES12.5)') mat%qComb; write(b,'(ES12.5)') mat%dRes; write(c,'(ES12.5)') mat%Tboil
+          write(*,'(A)') '   '//trim(mat%name)//': combustion = direct, q-comb '//trim(adjustl(a))//' J/kg, d-res '// &
+            trim(adjustl(b))//' m, burning at '//trim(adjustl(c))//' K'
+        endif
+      end associate
+    end subroutine check_combustion
+
+
+    !> The number of species of a gas phase file written by ATLAS: the lines after "ideal-gas phase", or 1 for a
+    !> "real-fluid phase"; refuses a missing file and any other type.
+    integer function gas_species(file) result(ns)
+      character(len=*), intent(in) :: file
+      character(len=1024) :: line
+      integer :: unit, ios
+      logical :: exists
+      inquire(file=file, exist=exists)
+      if (.not. exists) call refuse('combustion = direct reads the gas phase file '//file//', which is missing: '// &
+        'name the gas phase with gas-phase in ['//trim(codename)//'-Parameters]')
+      open(newunit=unit, file=file, status='old', action='read', iostat=ios)
+      if (ios /= 0) call refuse('cannot open '//file)
+      read(unit, '(A)', iostat=ios) line
+      if (ios /= 0) line = ''
+      if (index(line, 'real-fluid') > 0) then
+        ns = 1
+      elseif (index(line, 'ideal-gas') > 0) then
+        ns = 0
+        do
+          read(unit, '(A)', iostat=ios) line
+          if (ios /= 0) exit
+          if (len_trim(line) > 0) ns = ns + 1
+        enddo
+      else
+        close(unit)
+        call refuse(file//' is not a gas phase file: its first line is "'//trim(line)// &
+                    '", not "ideal-gas phase" or "real-fluid phase"')
+      endif
+      close(unit)
+    end function gas_species
+
 
     !> The [ICE-Physics] section's name, as the INI spells it.
     function physics() result(txt)
@@ -262,7 +336,11 @@ contains
           call assign_boiling(trim(value), obj_condensed(m)%boilSelect)
           obj_condensed(m)%boilWord = value
         case ('combustion')
-          if (value /= 'none') call refuse_word(key, value, ['none'])
+          select case (trim(value))
+          case ('none');   obj_condensed(m)%combSelect = 0
+          case ('direct'); obj_condensed(m)%combSelect = 1
+          case default;    call refuse_word(key, value, ['none  ', 'direct'])
+          end select
         case ('solidification')
           select case (trim(value))
           case ('on');  obj_condensed(m)%solidSelect = 1
@@ -286,6 +364,8 @@ contains
           case ('h-fus');    obj_condensed(m)%hFus  = x
           case ('T-nuc');    obj_condensed(m)%Tnuc  = x
           case ('cp-solid'); obj_condensed(m)%cpSol = x
+          case ('q-comb');   obj_condensed(m)%qComb = x
+          case ('d-res');    obj_condensed(m)%dRes  = x
           end select
         end select
       enddo
