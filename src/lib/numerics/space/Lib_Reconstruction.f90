@@ -80,12 +80,7 @@ contains
 
   !> The bounds of the limited slopes of a face, so that the value of each of its two cells at both the cell's faces lies
   !> between the value of the cell and that of the neighbour across that face, on a line of cells of any lengths: the
-  !> change over half a cell is at most each jump (Berger, Aftosmis and Murman, AIAA 2005-0490, eq. 19; ported from
-  !> MOSE). The left cell (local) is dll from the face, dl0 from prev and dl1 from next, so |slopel|*dll <= |next - local|
-  !> and <= |local - prev| take phi <= dl1/dll and phi <= r*dl0/dll; the right cell the same with dlr, dl2 and dl1. Both
-  !> faces of a cell take the same slope, its half lengths being equal. On a line of equal cells the bounds are 2 exactly
-  !> (dl1 = 0.5*(L + L) and dll = 0.5*L), and the slope is the limiter's own. A side whose cell value sits on the face
-  !> (dll or dlr = 0: an injection ghost) uses no slope, and keeps the bounds of equal cells instead of dividing by zero.
+  !> change over half a cell is at most each jump (Berger, Aftosmis and Murman, AIAA 2005-0490, eq. 19).
   pure subroutine slope_bounds(dl0, dl1, dl2, dll, dlr, cxl, cyl, cxr, cyr)
     real(R8), intent(in)  :: dl0, dl1, dl2, dll, dlr
     real(R8), intent(out) :: cxl, cyl, cxr, cyr
