@@ -47,10 +47,15 @@ module ICE_Advanced_Types_m
   type :: ICE_cond_phase_type
     real(R8), dimension(:,:,:),     allocatable :: dt, tau, beta
     real(R8), dimension(:,:,:,:),   allocatable :: prim, prim_old
+    ! source: the rates of the stage being integrated; after a step of a two-way coupled run, the step's own, the
+    ! stages' weighted as the update weighs them, which is what the phase exchanged and what the gas takes
     real(R8), dimension(:,:,:,:),   allocatable :: source, residual
     ! The heat the gas receives that source does not carry [W/m^3], the heat of reaction of a burning material
-    ! (combustion = direct), else 0: a two-way coupled gas takes -source plus heat
+    ! (combustion = direct), else 0: a two-way coupled gas takes -source plus heat, both the step's
     real(R8), dimension(:,:,:),     allocatable :: heat
+    ! The running weighted sums of source and heat over the stages of a two-way coupled multi-stage step
+    real(R8), dimension(:,:,:,:),   allocatable :: source_step
+    real(R8), dimension(:,:,:),     allocatable :: heat_step
     ! First ghost cells that hold an injected state (ghost_record, codes 401-403), which the
     ! reconstructions place at the boundary face; over prim's cells, never set on an interior one
     logical,  dimension(:,:,:),     allocatable :: inj

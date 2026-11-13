@@ -387,6 +387,10 @@ ice_add_unit_test(VapourSourcesUnit unit/test_vapour_sources.f90 "fast;unit;impl
 # temperature kept, the heat of reaction to the gas, and the inert source below T_sat, at the residue and at B <= 0
 ice_add_unit_test(CombustionUnit unit/test_combustion.f90 "fast;unit;implementation")
 
+# the step's source of a two-way coupled run: the stages' sources weighted as RK_stage weighs their residuals, for
+# euler, RK2 and RK3, against the change of a cell whose residual is its source alone
+ice_add_unit_test(RKStepSourceUnit unit/test_rk_step_source.f90 "fast;unit;implementation")
+
 # liquid-conduction = P2T through the cell source: the surface balance against closed forms at Re 0 and typed gas-side
 # models at Re 20, the vapour leaving at the surface temperature, the drag's temperature ratio, the tables, an empty
 # cell, no bracket
