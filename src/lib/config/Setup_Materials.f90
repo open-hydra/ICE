@@ -30,7 +30,7 @@ module ICE_Setup_Materials
 contains
 
   subroutine Setup_Materials()
-    use ICE_Global_m,        only: ngroups, nmat, mat_of, ICE_phase_prefix, ncond, nbase, solid_of
+    use ICE_Global_m,        only: ngroups, nmat, mat_of, ICE_phase_prefix, ICE_gas_by_coupler, ncond, nbase, solid_of
     use ICE_Config_Types_m,  only: obj_condensed, ini_condensed, obj_sim_param, obj_time_scheme
     use ICE_Load_Table,      only: Load_Table
     use ICE_Lib_Evaporation, only: Ru, Patm, iMv, iLv, icpv, iLe, iYinf, iLvMvOverRu, iinvTboil, ialphaE, invTboil_at
@@ -208,11 +208,16 @@ contains
           call refuse(material_label(m)//': latent-heat = 0 needs an Lv column in the property table')
         if (.not. (physics_set('boiling-temperature') .or. physics_set('Tboil'))) call refuse(material_label(m)// &
           ': combustion = direct requires boiling-temperature (alias Tboil) in '//physics()//', the burning temperature')
-        gfile = 'INPUT/phase.txt'
-        if (len_trim(obj_sim_param%gas_phase) > 0) gfile = 'INPUT/'//trim(obj_sim_param%gas_phase)//'-phase.txt'
-        ns = gas_species(gfile)
-        if (ns /= 1) call refuse('combustion = direct needs one gas species: '//gfile//' declares '//trim(itoa(ns))// &
-                                 ' (the vapour that burns is taken as the gas itself)')
+        if (ICE_gas_by_coupler) then
+          if (len_trim(obj_sim_param%gas_phase) > 0) call refuse('gas-phase = '//trim(obj_sim_param%gas_phase)// &
+            ' is read by ICE running alone; the coupler of this run owns the gas phase: remove the key')
+        else
+          gfile = 'INPUT/phase.txt'
+          if (len_trim(obj_sim_param%gas_phase) > 0) gfile = 'INPUT/'//trim(obj_sim_param%gas_phase)//'-phase.txt'
+          ns = gas_species(gfile)
+          if (ns /= 1) call refuse('combustion = direct needs one gas species: '//gfile//' declares '//trim(itoa(ns))// &
+                                   ' (the vapour that burns is taken as the gas itself)')
+        endif
         if (mpi_is_root) then
           write(a,'(ES12.5)') mat%qComb; write(b,'(ES12.5)') mat%dRes; write(c,'(ES12.5)') mat%Tboil
           write(*,'(A)') '   '//trim(mat%name)//': combustion = direct, q-comb '//trim(adjustl(a))//' J/kg, d-res '// &

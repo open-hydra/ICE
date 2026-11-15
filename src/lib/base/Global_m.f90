@@ -3,6 +3,7 @@ module ICE_Global_m
   implicit none
 
   character(len=clen) :: ICE_phase_prefix = 'part-'
+  logical :: ICE_gas_by_coupler = .false.   ! a coupler owns the gas phase and the species a burnt mass becomes
 
   integer :: ndir     ! Number of spatial dimensions (set by setup_metrics)
   integer :: gc=2     ! Ghost cells per face
