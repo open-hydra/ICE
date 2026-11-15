@@ -2,8 +2,9 @@
 
 Their aluminium (Tables 1 and 2): rho_p 2000 kg/m^3, c_p 1177 J/(kg K), Q 9.53e6 J/kg, L_v 10.8e6 J/kg, T_sat 2791 K,
 D_inj 120 um, D_res 60 um; a gas of mu 9.1e-5 Pa s, Pr 0.4, gamma 1.16, cp 2000 J/(kg K) at 3450 K and 8.71 MPa,
-whose one species is the vapour that burns (INPUT/phase.txt). Phase line "A 1 combustion=direct q-comb=9.53e6
-d-res=6e-5"; latent-heat and boiling-temperature (the burning temperature) in [ICE-Physics]. Eight uniform cells move
+whose one species is the vapour that burns (INPUT/phase.txt). Phase line "A 1 combustion=direct", its constants the
+row "A combustion direct q-comb=9.53e6 d-stop=6e-5" of INPUT/part-models.txt; latent-heat and boiling-temperature (the
+burning temperature) in [ICE-Physics]. Eight uniform cells move
 with the gas (drag = NoDrag), heat-transfer = Stokes (Nu = 2 exactly), emissivity 0, so every cell is one drop at rest
 in the gas: m = rho pi D^3/6, k = mu cp/Pr, B = (cp (T_g - T_sat) + Q)/L_v, and
 
@@ -16,10 +17,20 @@ in the gas: m = rho pi D^3/6, k = mu cp/Pr, B = (cp (T_g - T_sat) + Q)/L_v, and
   P2  the residue: D = D_res at t_res + tau and t_res + 3 tau, T on its relaxation
   P3  a drop at 2000 K: heats to T_sat, then burns: T and D at t_ign + t_res/2
   P4  P1's midpoint with the IG and AG closures (P = 1e-6)
-  P5  gas-phase = gas reads INPUT/gas-phase.txt; the refusals: two gas species, no gas phase file, two materials,
-      evaporation, no d-res, no boiling-temperature
-  P6  the [ICE-Physics] keys combustion, q-comb and d-res: alone on a bare "A 1" line they burn as P1; a d-res token
-      overrides the key; a combustion=none token switches it off; d-res = 0 is refused
+  P5  gas-phase = gas reads INPUT/gas-phase.txt; the refusals: two gas species, no gas phase file,
+      evaporation, the former key d-res, d-stop beside d-burnout, no burning temperature; the models file: a
+      constant left on the material line, the cap word on the line, a cap row, a row of an unknown kind, of another
+      model than the line's, with a key the model does not read, for no material of the phase file, a second row
+  P6  the [ICE-Physics] keys combustion, q-comb and d-stop: alone on a bare "A 1" line they burn as P1; a d-stop
+      of the models file (a row under the model -) overrides the key; a combustion=none token switches it off;
+      T-burn of the models file overrides boiling-temperature
+  P7  no residue (no d-stop): the drop follows the law until it is removed, then the cell is empty and no density
+      was floored; removed at d-burnout = 3e-5 when the models file gives it, else when a step would burn it whole
+  P8  the latent heat from the Lv column of the property table, L_v(T) = L_v + 1000 (T - T_sat) J/kg, with no
+      latent-heat key: a drop at T_sat burns as P1 (the column is read at the burning temperature); a drop at
+      T_sat + 100 K keeps its temperature and burns with B = (cp (T_g - T_p) + Q)/L_v(T_sat), the model's latent heat
+      at T_sat while the closure's sink is cancelled at the drop's own; the refusals: latent-heat beside the
+      column, neither of the two
 
 Tolerances (time-scheme RK2, dt-max = 1e-5 binding). Burning has no event: D to 1e-6 relative. The residue switch
 happens at the end of a stage, so D lies up to 1.2 K dt/(2 D_res) below D_res, and T is late by up to dt on its
@@ -52,7 +63,8 @@ ALPHA = 1.0e-4
 RHO_P = ALPHA * RHO_M
 NDENS = RHO_P / (RHO_M * math.pi / 6.0 * D0 ** 3)
 DT = 1.0e-5
-PHASE = 'A 1 combustion=direct q-comb=9.53e6 d-res=6e-5'
+PHASE = 'A 1 combustion=direct'
+MODELS = ('A combustion direct q-comb=9.53e6 d-stop=6e-5',)
 PHYSICS = {'latent-heat': LV, 'boiling-temperature': TSAT}
 LAYOUT = {'MK': 6, 'IG': 7, 'AG': 12}
 PSEUDO = 1.0e-6
@@ -66,8 +78,8 @@ def tau_of(d):
     return RHO_M * math.pi / 6.0 * d ** 3 * CP / (math.pi * d * KG * NU)
 
 
-def closed_cell(label, T0, t_end, closure='MK', phase=(PHASE,), physics=None, gas_file='phase.txt',
-                gas_lines=('GAS 30.14',), parameters=None, families=1):
+def closed_cell(label, T0, t_end, closure='MK', phase=(PHASE,), models=MODELS, physics=None, gas_file='phase.txt',
+                gas_lines=('GAS 30.14',), parameters=None, families=1, lv=None, without=()):
     case = Case(WORK / label.lower(), nx=8, Lx=1.0)
     P = dict(IG=[PSEUDO], AG=[PSEUDO, 0.0, 0.0, PSEUDO, 0.0, PSEUDO]).get(closure, [])
     names, fields = [], []
@@ -80,8 +92,15 @@ def closed_cell(label, T0, t_end, closure='MK', phase=(PHASE,), physics=None, ga
         (case.dir / 'INPUT' / gas_file).write_text('\n'.join(('ideal-gas phase',) + tuple(gas_lines)) + '\n')
     case.boundaries('extrapolation')
     case.phase(*phase)
+    if models:
+        (case.dir / 'INPUT' / 'part-models.txt').write_text(
+            '# <material> <kind> <model> key=value ...\n' + '\n'.join(models) + '\n')
+    if lv is not None:
+        case.properties(1000, 4000, CP, RHO_M, lv=lv)
     phys = dict(PHYSICS)
     phys.update(physics or {})
+    for key in without:
+        del phys[key]
     case.ini(t_end=t_end, rk='RK2', drag='NoDrag', heat='Stokes', rho_al=RHO_M, cs=CP, dt_max=DT,
              physics=phys, closures=(closure,) * families)
     if parameters:
@@ -194,13 +213,22 @@ def p5(rep):
                   'P5 gas-phase = gas: INPUT/gas-phase.txt read, the drop burns as P1')
     refusal(rep, 'two-species', 'needs one gas species', gas_lines=('O2 32.0', 'N2 28.0'))
     refusal(rep, 'no-gas-file', 'which is missing', gas_file=None)
-    refusal(rep, 'two-materials', 'needs one material', phase=(PHASE, 'B 1'), families=2,
-            physics={'emissivity': '0 0', 'density': '%g %g' % (RHO_M, RHO_M), 'specific-heat': '%g %g' % (CP, CP),
-                     'latent-heat': '%g %g' % (LV, LV), 'boiling-temperature': '%g %g' % (TSAT, TSAT)})
     refusal(rep, 'evaporation', 'exclusive with evaporation', phase=(PHASE + ' evaporation=d2-law',),
             physics={'vapour-molar-mass': 26.98, 'vapour-specific-heat': 0, 'lewis-number': 1,
                      'vapour-mass-fraction': 0})
-    refusal(rep, 'no-d-res', 'requires d-res > 0', phase=('A 1 combustion=direct q-comb=9.53e6',))
+    refusal(rep, 'old-key', 'd-res is now d-stop', models=('A combustion direct q-comb=9.53e6 d-res=6e-5',))
+    refusal(rep, 'two-ends', 'd-stop beside d-burnout', models=(MODELS[0] + ' d-burnout=3e-5',))
+    refusal(rep, 'old-line', 'the constants of the burning models are rows of INPUT/part-models.txt',
+            phase=(PHASE + ' q-comb=9.53e6 d-stop=6e-5',), models=())
+    refusal(rep, 'cap-word', 'names the oxide cap of a burning drop', phase=(PHASE + ' cap=constant',))
+    refusal(rep, 'cap-row', 'a cap row gives the oxide cap', models=MODELS + ('A cap constant xi-cap=0.2',))
+    refusal(rep, 'unknown-kind', 'unknown kind "breakup"', models=MODELS + ('A breakup TAB Comega=8',))
+    refusal(rep, 'other-model', 'the material burns with combustion=direct',
+            models=('A combustion Beckstead K-burn=1e-6',))
+    refusal(rep, 'key-not-read', 'K-burn is not a constant of combustion=direct', models=(MODELS[0] + ' K-burn=1e-6',))
+    refusal(rep, 'no-material', 'its first word is no material of the phase file',
+            models=MODELS + ('B combustion direct q-comb=1',))
+    refusal(rep, 'two-rows', 'a second combustion row', models=MODELS + ('A combustion direct d-burnout=0',))
     case = closed_cell('P5-no-tboil', TSAT, 10 * DT)
     ini = (case.dir / 'input.ini').read_text()
     (case.dir / 'input.ini').write_text('\n'.join(s for s in ini.splitlines() if not s.startswith('boiling-temperature')))
@@ -209,21 +237,25 @@ def p5(rep):
         rep.check(False, 'P5 no-boiling-temperature: the run was not refused')
     except RuntimeError:
         log = (case.dir / 'log').read_text(errors='replace')
-        rep.check('requires boiling-temperature' in log,
-                  'P5 no-boiling-temperature: refused, naming "requires boiling-temperature"')
+        rep.check('requires its burning temperature' in log,
+                  'P5 no-boiling-temperature: refused, naming "requires its burning temperature"')
 
 
-INI_KEYS = {'combustion': 'direct', 'q-comb': Q, 'd-res': DRES}
+INI_KEYS = {'combustion': 'direct', 'q-comb': Q, 'd-stop': DRES}
 
 
 def p6(rep):
     t_end = 0.5 * T_RES
-    for label, phase, extra, burns in (('keys alone', 'A 1', {}, True),
-                                       ('a d-res token over d-res = 1e-4', 'A 1 d-res=6e-5', {'d-res': 1.0e-4}, True),
-                                       ('a combustion=none token', 'A 1 combustion=none', {}, False)):
+    for label, phase, rows, extra, burns in (
+            ('keys alone', 'A 1', (), {}, True),
+            ('a d-stop of the models file over d-stop = 1e-4', 'A 1', ('A combustion - d-stop=6e-5',), {'d-stop': 1.0e-4}, True),
+            ('T-burn of the models file over boiling-temperature', 'A 1', ('A combustion - T-burn=%r' % TSAT,),
+             {'boiling-temperature': TSAT - 500.0}, True),
+            ('a combustion=none token', 'A 1 combustion=none', (), {}, False)):
         phys = dict(INI_KEYS)
         phys.update(extra)
-        case = closed_cell('P6-%s' % label.replace(' ', '-').replace('=', ''), TSAT, t_end, phase=(phase,), physics=phys)
+        case = closed_cell('P6-%s' % label.replace(' ', '-').replace('=', ''), TSAT, t_end, phase=(phase,), models=rows,
+                           physics=phys)
         sol = attempt(rep, 'P6 %s' % label, case)
         if sol is None:
             continue
@@ -236,9 +268,53 @@ def p6(rep):
         else:
             rep.check(abs(D - D0) <= 1.0e-12 * D0 and T[0] > TSAT + 1.0,
                       'P6 %s: inert, D unchanged and the drop heating (T %.3f K)' % (label, T[0]))
-    phys = dict(INI_KEYS)
-    phys['d-res'] = 0.0
-    refusal(rep, 'ini-d-res-0', 'd-res must be > 0', leg='P6', phase=('A 1',), physics=phys)
+
+
+def p7(rep):
+    for label, token, d_b in (('removed at d-burnout', ' d-burnout=3e-5', 3.0e-5), ('no d-burnout', '', 0.0)):
+        rows = ('A combustion direct q-comb=9.53e6' + token,)
+        t_b = (D0 ** 2 - d_b ** 2) / K
+        tag = 'P7-' + label.replace(' ', '-')
+        case = closed_cell(tag + '-before', TSAT, 0.9 * t_b, models=rows)
+        sol = attempt(rep, 'P7 %s, before' % label, case)
+        if sol is not None:
+            D_ref = math.sqrt(D0 ** 2 - K * sol['time'])
+            check_cell(rep, 'P7 %s: at 0.9 of its time the drop is on the law' % label, sol, 'MK', D_ref, TSAT,
+                       1.0e-6 * D_ref, 1.0e-9)
+        case = closed_cell(tag + '-after', TSAT, t_b + 20 * DT, models=rows)
+        sol = attempt(rep, 'P7 %s, after' % label, case)
+        if sol is None:
+            continue
+        rho, u, T, n, _ = state(sol, 'MK')
+        log = (case.dir / 'log').read_text(errors='replace')
+        print('       t = %.6e s (the law reaches %s at %.6e s): largest bulk density %.3e kg/m^3'
+              % (sol['time'], 'd-burnout' if d_b > 0.0 else 'zero', t_b, max(rho)))
+        rep.check(max(rho) <= 1.0e-20, 'P7 %s: every cell is empty 20 steps after the law\'s time' % label)
+        rep.check('negative density' not in log and 'negative densities' not in log, 'P7 %s: no density was floored' % label)
+
+
+def lv_column(T):
+    return LV + 1000.0 * (T - TSAT)
+
+
+def p8(rep):
+    t_end = 0.5 * T_RES
+    case = closed_cell('P8-column', TSAT, t_end, lv=lv_column, without=('latent-heat',))
+    sol = attempt(rep, 'P8 the Lv column', case)
+    if sol is not None:
+        D_ref = math.sqrt(D0 ** 2 - K * sol['time'])
+        check_cell(rep, 'P8 the Lv column, a drop at T_sat: burns as P1', sol, 'MK', D_ref, TSAT, 1.0e-6 * D_ref, 1.0e-6)
+    T0 = TSAT + 100.0
+    B_hot = (CPG * (TG - T0) + Q) / LV
+    K_hot = 8.0 * KG * math.log(1.0 + B_hot) / (CPG * RHO_M)
+    case = closed_cell('P8-column-hot', T0, t_end, lv=lv_column, without=('latent-heat',))
+    sol = attempt(rep, 'P8 the Lv column, a drop above T_sat', case)
+    if sol is not None:
+        D_ref = math.sqrt(D0 ** 2 - K_hot * sol['time'])
+        check_cell(rep, 'P8 the Lv column, a drop at T_sat + 100 K: L_v(T_sat) in B, its temperature kept', sol, 'MK',
+                   D_ref, T0, 1.0e-6 * D_ref, 1.0e-6)
+    refusal(rep, 'column-and-key', 'is set and the table gives the Lv column', leg='P8', lv=lv_column)
+    refusal(rep, 'neither', 'requires its latent heat', leg='P8', without=('latent-heat',))
 
 
 def selected(leg):
@@ -268,6 +344,12 @@ def main():
     if selected('P6'):
         print('   P6  the [ICE-Physics] keys')
         p6(rep)
+    if selected('P7'):
+        print('   P7  no residue: the drop burns out')
+        p7(rep)
+    if selected('P8'):
+        print('   P8  the latent heat from the Lv column')
+        p8(rep)
     rep.close(WORK)
 
 

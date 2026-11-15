@@ -61,16 +61,22 @@ contains
                  'clamp, ZGR', .false.)
 
     call reg%add(section, 'combustion', obj_time_scheme%combustion, '', &
-                 'Combustion model of every material: direct burns the drops at boiling-temperature down to d-res, '// &
-                 'releasing q-comb in the gas (one material and one gas species); a phase-file token overrides it; '// &
-                 'absent = the tokens alone decide', &
-                 'none, direct', .false.)
+                 'Combustion model of every material: direct burns the drops at their burning temperature, Beckstead '// &
+                 'on the d^n law from T-ign; down to the residue d-stop, or with none until they are removed '// &
+                 '(d-burnout); a phase-file token overrides it; absent = the tokens alone decide', &
+                 'none, direct, Beckstead', .false.)
     call reg%add(section, 'q-comb', ini_condensed%qComb, '', &
-                 'Heat of reaction per unit burnt mass [J/kg] of combustion = direct, released in the gas; a phase-file '// &
-                 'token overrides it; absent = the token, else 0 (pure vaporisation)', '>= 0', .false.)
-    call reg%add(section, 'd-res', ini_condensed%dRes, '', &
-                 'Diameter of the inert residue [m] of combustion = direct, where the burning stops; a phase-file '// &
-                 'token overrides it; required, here or as the token, by a burning material', '> 0', .false.)
+                 'Heat of reaction per unit burnt mass [J/kg] of combustion = direct, released in the gas; the '// &
+                 'material''s row of the models file overrides it; absent = the row''s, else 0 (pure vaporisation)', &
+                 '>= 0', .false.)
+    call reg%add(section, 'd-stop', ini_condensed%dRes, '', &
+                 'Diameter of the inert residue [m] a burning drop leaves: below it the drop no longer burns and '// &
+                 'stays; the material''s row of the models file overrides it; absent or 0 = no residue, the drop '// &
+                 'burns out', '>= 0', .false.)
+    call reg%add(section, 'd-burnout', ini_condensed%dBurn, '', &
+                 'Diameter [m] at which the burning drops of a cell, without residue, are removed and handed whole '// &
+                 'to the gas; the material''s row of the models file overrides it; absent or 0 = a drop mass of '// &
+                 '1e-20 kg', '>= 0', .false.)
 
     ! Condensed-material properties ----------------------
     call reg%add(section, 'density', ini_condensed%rho_al, '2700.0', &
@@ -85,7 +91,8 @@ contains
                  'Latent heat of vaporisation [J/kg]; the evaporation models use it '// &
                  'both as the energy sink and as the anchor of the Clausius-Clapeyron saturation curve, '// &
                  'which a Psat column in the property table replaces; 0 for a material whose property table '// &
-                 'carries the Lv column: the table then owns it; required for an evaporating material unless its '// &
+                 'carries the Lv column: the table then owns it; required for an evaporating material, and for one '// &
+                 'that burns with combustion = direct (its latent heat, taken at the burning temperature), unless its '// &
                  'property table carries the Lv column'//'; one value per material', &
                  '>= 0', .false., per_material=.true.)
     call reg%add(section, 'emissivity', ini_condensed%emiss, '0.0', &

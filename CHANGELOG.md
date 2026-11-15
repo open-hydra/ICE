@@ -19,11 +19,26 @@ change an input or a build.
 - The documentation is built with Zensical (strict in CI), with a new home page, and its pages were rewritten to
   read more easily; the Overview moved into Getting Started.
 - The Code Verification page is split into five topic pages, and the V&V section is grouped by subject.
-- `combustion = direct` (Gallier and Godfroy 2009), in `[ICE-Physics]` or as tokens: drops burn at
-  `boiling-temperature` down to `d-res`, `q-comb` going to the gas; one gas species and one material.
+- `combustion = direct` (Gallier and Godfroy 2009), in `[ICE-Physics]` or as the material's token: drops burn at
+  `T-burn` (else `boiling-temperature`) down to `d-stop`, `q-comb` going to the gas; one gas species. Each burning
+  material is checked on its own. Its latent heat is the `Lv` column of the property table at the burning
+  temperature, else `latent-heat`.
+- `combustion = Beckstead`, the d^n law (`K-burn`, `n-burn`, `X-eff`, `beta-part`, `T-ign`), as IGLOO's.
+- The constants of a burning model are rows of `INPUT/<prefix>models.txt` (written by ATLAS GPB), one per material
+  and kind: `<material> combustion <model> key=value ...`; a row overrides the `[ICE-Physics]` key.
+- A burning material without `d-stop` burns out: in a run with a gas, the drops of a cell at or below `d-burnout`
+  (else a drop mass of 1e-20 kg), or whose step burns what is left, give their mass, momentum and energy to the
+  step's source and leave the cell empty.
+- `ICE_gas_by_coupler` (`ICE_Global_m`): a coupler that owns the gas phase sets it, and `gas-phase` is then refused.
 
 ### Changed
 
+- **Breaking.** `d-res` is renamed `d-stop`. A models-file row with `d-res` stops naming `d-stop`; in
+  `[ICE-Physics]` it is a key ICE does not know, which stops the run.
+- **Breaking.** The constants of the burning models leave the material line for the models file: a constant on the
+  line stops and names the file, and the line's real keys are `alpha-e`, `k-liq`, `mu-liq`, `T-melt`, `h-fus`,
+  `T-nuc` and `cp-solid`. An oxide cap (`cap=` on the line, a cap row, a material of 0 groups) stops: ICE does
+  not carry it.
 - **Breaking.** An evaporating material must give its vapour data (latent heat, vapour molar mass and cp, boiling
   temperature, ...): the run stops naming what is missing, instead of using aluminium's values.
 - A negative density after the update, floored silently before, is now counted and warned.

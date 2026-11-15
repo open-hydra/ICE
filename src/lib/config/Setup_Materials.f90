@@ -2,7 +2,8 @@
 !> "<name> <groups> [key=value ...]"; the families map onto them in that order, as ATLAS
 !> orders the populations. Each material starts from the [ICE-Physics] values (one value
 !> per material for the property keys), its tokens then override the model keys, as in
-!> IGLOO, and the property table gives one zone per material.
+!> IGLOO, the rows of INPUT/<prefix>models.txt that name it give the constants of its burning
+!> model, and the property table gives one zone per material.
 module ICE_Setup_Materials
   use, intrinsic :: iso_fortran_env, only: R8 => real64
   use ICE_Finite_m, only: Not_Finite
@@ -10,12 +11,11 @@ module ICE_Setup_Materials
   private
   public :: Setup_Materials
 
-  !> The phase-file keys, the set IGLOO reads and ATLAS writes
+  !> The phase-file keys, the set IGLOO reads and ATLAS writes on the material line
   character(len=17), parameter :: word_keys(6) = [character(len=17) :: 'evaporation', 'liquid-conduction', &
                                   'interface', 'boiling', 'combustion', 'solidification']
-  character(len=9),  parameter :: real_keys(15) = [character(len=9) :: 'alpha-e', 'k-liq', 'mu-liq', 'K-burn', &
-                                  'n-burn', 'X-eff', 'beta-part', 'xi-cap', 'T-ign', 'q-comb', 'T-melt', 'h-fus', &
-                                  'T-nuc', 'cp-solid', 'd-res']
+  character(len=9),  parameter :: real_keys(7) = [character(len=9) :: 'alpha-e', 'k-liq', 'mu-liq', 'T-melt', &
+                                  'h-fus', 'T-nuc', 'cp-solid']
 
   !> The [ICE-Physics] keys that may carry one value per material, and their range
   character(len=23), parameter :: vector_keys(11) = [character(len=23) :: 'density', 'specific-heat', &
@@ -30,7 +30,7 @@ module ICE_Setup_Materials
 contains
 
   subroutine Setup_Materials()
-    use ICE_Global_m,        only: ngroups, nmat, mat_of, ICE_phase_prefix, ncond, nbase, solid_of
+    use ICE_Global_m,        only: ngroups, nmat, mat_of, ICE_phase_prefix, ICE_gas_by_coupler, ncond, nbase, solid_of
     use ICE_Config_Types_m,  only: obj_condensed, ini_condensed, obj_sim_param, obj_time_scheme
     use ICE_Load_Table,      only: Load_Table
     use ICE_Lib_Evaporation, only: Ru, Patm, iMv, iLv, icpv, iLe, iYinf, iLvMvOverRu, iinvTboil, ialphaE, invTboil_at
@@ -39,13 +39,16 @@ contains
     use ICE_Parameters_m,    only: codename
     implicit none
     character(len=64),   allocatable :: names(:)
-    character(len=1024), allocatable :: rest(:)
+    character(len=1024), allocatable :: rest(:), rows(:)
     integer,             allocatable :: groups(:)
+    logical,             allocatable :: row_used(:)
     integer :: m, p, q
     logical :: coupled
     character(len=12) :: given
 
     call read_phase_file(names, groups, rest)
+    call read_models_file(rows)
+    allocate(row_used(size(rows))); row_used = .false.
     nmat = max(size(names), 1)
     if (allocated(obj_condensed)) deallocate(obj_condensed)
     allocate(obj_condensed(nmat))
@@ -94,7 +97,9 @@ contains
       obj_condensed(m)%liqSelect  = obj_time_scheme%liqSelect
       obj_condensed(m)%boilSelect = obj_time_scheme%boilSelect
       if (trim(obj_time_scheme%combustion) == 'direct') obj_condensed(m)%combSelect = 1
+      if (trim(obj_time_scheme%combustion) == 'Beckstead') obj_condensed(m)%combSelect = 2
       if (m <= size(rest)) call apply_tokens(m, rest(m))
+      call apply_model_rows(m)
       if (obj_condensed(m)%intfSelect == 1 .and. obj_condensed(m)%evapSelect == 1) &
         call refuse(material_label(m)//': interface = LK needs a gas-side evaporation model '// &
                     '(CEM, CEM-B, ASM or TC), not d2-law')
@@ -107,9 +112,11 @@ contains
       endif
     enddo
 
-    ! Direct combustion burns the one material there is, before its property table is read
-    if (nmat > 1 .and. any(obj_condensed(:)%combSelect == 1)) call refuse('combustion = direct needs one material: '// &
-      'INPUT/'//trim(ICE_phase_prefix)//'phase.txt declares '//trim(itoa(nmat)))
+    ! Every row of the models file names a material of the phase file
+    do q = 1, size(rows)
+      if (.not. row_used(q)) call refuse(models_file()//', row "'//trim(rows(q))// &
+                                         '": its first word is no material of the phase file')
+    enddo
 
     ! A solidifying family carries the frozen and nucleated fractions after its closure's slots
     do p = 1, ngroups
@@ -162,8 +169,10 @@ contains
       end associate
     enddo
 
-    ! Direct combustion: the vapour is the gas itself, so one gas species and one material
-    if (any(obj_condensed(:)%combSelect == 1)) call check_combustion()
+    ! Each burning material is checked on its own; its vapour is the gas itself, so one gas species
+    do m = 1, nmat
+      if (obj_condensed(m)%combSelect > 0) call check_combustion(m)
+    enddo
 
     ! A solidifying material keeps a constant density (its cp may vary: the liquid's energy is the table's)
     do m = 1, nmat
@@ -190,34 +199,75 @@ contains
 
   contains
 
-    !> The refusals of combustion = direct, and its values printed: a burning material is alone, does not evaporate or
-    !> solidify, gives its latent heat, its burning temperature and a residue, and the gas phase has one species.
-    subroutine check_combustion()
-      character(len=:), allocatable :: gfile
+    !> The refusals of the burning material m, and its values printed: it does not evaporate or solidify; it leaves a
+    !> residue (d-stop) or burns out (d-burnout); direct needs its latent heat and burning temperature, Beckstead its
+    !> law; ICE alone has one gas species.
+    subroutine check_combustion(m)
+      integer, intent(in) :: m
+      character(len=:), allocatable :: gfile, word
       integer :: ns
       character(len=16) :: a, b, c
-      associate (mat => obj_condensed(1))
-        if (mat%evapSelect > 0) call refuse(material_label(1)//': combustion = direct is exclusive with evaporation '// &
-                                            '(the burning drop vaporises by its own rate)')
-        if (mat%solid) call refuse(material_label(1)//': combustion = direct is exclusive with solidification')
-        if (.not. mat%dRes > 0._R8) call refuse(material_label(1)//': combustion = direct requires d-res > 0, the '// &
-                                                'diameter of the inert residue [m], in '//physics()//' or as a token')
-        if (mat%qComb < 0._R8) call refuse(material_label(1)//': combustion = direct requires q-comb >= 0')
-        if (.not. (physics_set('latent-heat') .or. mat%use_lv)) call refuse(material_label(1)// &
-          ': combustion = direct requires latent-heat: give it in '//physics()//' or as the Lv column of the property table')
-        if (.not. mat%lv_al > 0._R8) &
-          call refuse(material_label(1)//': latent-heat = 0 needs an Lv column in the property table')
-        if (.not. (physics_set('boiling-temperature') .or. physics_set('Tboil'))) call refuse(material_label(1)// &
-          ': combustion = direct requires boiling-temperature (alias Tboil) in '//physics()//', the burning temperature')
-        gfile = 'INPUT/phase.txt'
-        if (len_trim(obj_sim_param%gas_phase) > 0) gfile = 'INPUT/'//trim(obj_sim_param%gas_phase)//'-phase.txt'
-        ns = gas_species(gfile)
-        if (ns /= 1) call refuse('combustion = direct needs one gas species: '//gfile//' declares '//trim(itoa(ns))// &
-                                 ' (the vapour that burns is taken as the gas itself)')
+      associate (mat => obj_condensed(m))
+        word = 'direct'
+        if (mat%combSelect == 2) word = 'Beckstead'
+        if (mat%evapSelect > 0) call refuse(material_label(m)//': combustion = '//word//' is exclusive with '// &
+                                            'evaporation (the burning drop vaporises by its own rate)')
+        if (mat%solid) call refuse(material_label(m)//': combustion = '//word//' is exclusive with solidification')
+        if (mat%dRes < 0._R8) call refuse(material_label(m)//': d-stop, the diameter of the inert residue [m], must be >= 0')
+        if (mat%dBurn < 0._R8) call refuse(material_label(m)//': d-burnout, the diameter of removal [m], must be >= 0')
+        if (mat%dRes > 0._R8 .and. mat%dBurn > 0._R8) call refuse(material_label(m)//': d-stop beside d-burnout: '// &
+          'a drop that stops at its residue is never removed; give one')
+        if (mat%qComb < 0._R8) call refuse(material_label(m)//': combustion = '//word//' requires q-comb >= 0')
+        if (mat%combSelect == 1) then
+          if (.not. (mat%use_lv .or. physics_set('latent-heat'))) call refuse(material_label(m)// &
+            ': combustion = direct requires its latent heat: the Lv column of the property table, or latent-heat in '// &
+            physics())
+          if (.not. mat%lv_al > 0._R8) call refuse(material_label(m)//': combustion = direct requires a latent heat > 0')
+          if (.not. (mat%tburn_set .or. physics_set('boiling-temperature') .or. physics_set('Tboil'))) &
+            call refuse(material_label(m)//': combustion = direct requires its burning temperature: T-burn in its '// &
+                        'row of the models file, or boiling-temperature (alias Tboil) in '//physics())
+          if (.not. mat%Tboil > 0._R8) &
+            call refuse(material_label(m)//': combustion = direct requires a burning temperature > 0')
+        else
+          if (.not. mat%Kburn > 0._R8) call refuse(material_label(m)//': combustion = Beckstead requires K-burn > 0')
+          if (.not. (mat%nBurn > 0._R8 .and. mat%nBurn < 3._R8)) &
+            call refuse(material_label(m)//': combustion = Beckstead requires 0 < n-burn < 3')
+          if (.not. (mat%Xeff > 0._R8 .and. mat%Xeff <= 1._R8)) &
+            call refuse(material_label(m)//': combustion = Beckstead requires 0 < X-eff <= 1')
+          if (.not. (mat%betaPart >= 0._R8 .and. mat%betaPart <= 1._R8)) &
+            call refuse(material_label(m)//': combustion = Beckstead requires 0 <= beta-part <= 1')
+        endif
+        if (ICE_gas_by_coupler) then
+          if (len_trim(obj_sim_param%gas_phase) > 0) call refuse('gas-phase = '//trim(obj_sim_param%gas_phase)// &
+            ' is read by ICE running alone; the coupler of this run owns the gas phase: remove the key')
+        else
+          gfile = 'INPUT/phase.txt'
+          if (len_trim(obj_sim_param%gas_phase) > 0) gfile = 'INPUT/'//trim(obj_sim_param%gas_phase)//'-phase.txt'
+          ns = gas_species(gfile)
+          if (ns /= 1) call refuse('combustion = '//word//' needs one gas species: '//gfile//' declares '// &
+                                   trim(itoa(ns))//' (the vapour that burns is taken as the gas itself)')
+        endif
         if (mpi_is_root) then
-          write(a,'(ES12.5)') mat%qComb; write(b,'(ES12.5)') mat%dRes; write(c,'(ES12.5)') mat%Tboil
-          write(*,'(A)') '   '//trim(mat%name)//': combustion = direct, q-comb '//trim(adjustl(a))//' J/kg, d-res '// &
-            trim(adjustl(b))//' m, burning at '//trim(adjustl(c))//' K'
+          write(a,'(ES12.5)') mat%qComb; write(b,'(ES12.5)') mat%dRes
+          if (mat%combSelect == 1) then
+            write(c,'(ES12.5)') mat%Tboil
+            write(*,'(A)') '   '//trim(mat%name)//': combustion = direct, q-comb '//trim(adjustl(a))//' J/kg, d-stop '// &
+              trim(adjustl(b))//' m, burning at '//trim(adjustl(c))//' K'
+          else
+            write(c,'(ES12.5)') mat%Tign
+            write(*,'(A)') '   '//trim(mat%name)//': combustion = Beckstead, q-comb '//trim(adjustl(a))// &
+              ' J/kg, d-stop '//trim(adjustl(b))//' m, burning from '//trim(adjustl(c))//' K'
+          endif
+          if (.not. mat%dRes > 0._R8) then
+            write(b,'(ES12.5)') mat%dBurn
+            if (mat%dBurn > 0._R8) then
+              write(*,'(A)') '   '//trim(mat%name)//': no residue: the drops of a cell are removed at d-burnout '// &
+                trim(adjustl(b))//' m, or when a step would burn them whole'
+            else
+              write(*,'(A)') '   '//trim(mat%name)//': no residue: the drops of a cell are removed at a drop mass of '// &
+                '1e-20 kg, or when a step would burn them whole'
+            endif
+          endif
         endif
       end associate
     end subroutine check_combustion
@@ -294,6 +344,8 @@ contains
         call next_field(line, 1, f1, k1)
         call next_field(line, k1, f2, k2)
         read(f2, *, iostat=ios) q
+        if (len_trim(f1) > 0 .and. ios == 0 .and. q == 0) call refuse(trim(file)//': material '//trim(f1)// &
+          ' has 0 groups: it is the product of an oxide cap, which ICE does not carry (IGLOO does)')
         if (len_trim(f1) == 0 .or. ios /= 0 .or. q < 1) &
           call refuse(trim(file)//': "'//trim(line)//'" is not a material line, "<name> <groups> [key=value ...]"')
         n = n + 1
@@ -339,7 +391,8 @@ contains
           select case (trim(value))
           case ('none');   obj_condensed(m)%combSelect = 0
           case ('direct'); obj_condensed(m)%combSelect = 1
-          case default;    call refuse_word(key, value, ['none  ', 'direct'])
+          case ('Beckstead'); obj_condensed(m)%combSelect = 2
+          case default;    call refuse_word(key, value, ['none     ', 'direct   ', 'Beckstead'])
           end select
         case ('solidification')
           select case (trim(value))
@@ -347,6 +400,14 @@ contains
           case ('off'); obj_condensed(m)%solidSelect = 0
           case default; call refuse_word(key, value, ['on ', 'off'])
           end select
+        case ('cap')
+          call refuse(material_label(m)//': cap='//trim(value)//' names the oxide cap of a burning drop, which ICE '// &
+                      'does not carry (IGLOO does): remove it')
+        case ('K-burn', 'n-burn', 'X-eff', 'beta-part', 'T-ign', 'T-burn', 'q-comb', 'd-stop', 'd-burnout', 'd-res', &
+              'xi-law', 'xi-cap', 'xi-ox0', 'product', 'residue', 'd-residue')
+          call refuse(material_label(m)//': '//trim(key)//'='//trim(value)//' on the material line: the constants of '// &
+                      'the burning models are rows of '//models_file()//', "<material> combustion <model> key=value '// &
+                      '..." (ATLAS GPB writes it; the line keeps combustion=<model>)')
         case default
           if (.not. any(real_keys == key)) &
             call refuse(material_label(m)//': unknown key "'//trim(key)//'"; the keys are '//key_list())
@@ -364,12 +425,120 @@ contains
           case ('h-fus');    obj_condensed(m)%hFus  = x
           case ('T-nuc');    obj_condensed(m)%Tnuc  = x
           case ('cp-solid'); obj_condensed(m)%cpSol = x
-          case ('q-comb');   obj_condensed(m)%qComb = x
-          case ('d-res');    obj_condensed(m)%dRes  = x
           end select
         end select
       enddo
     end subroutine apply_tokens
+
+
+    !> The name of the models file, as the messages spell it.
+    function models_file() result(txt)
+      character(len=:), allocatable :: txt
+      txt = 'INPUT/'//trim(ICE_phase_prefix)//'models.txt'
+    end function models_file
+
+
+    !> The rows of the models file, "<material> <kind> <model> key=value ...": the constants of the burning models,
+    !> one row per material and kind, written by ATLAS GPB; a line that starts with # is a comment. No file, no rows.
+    subroutine read_models_file(rows)
+      character(len=1024), allocatable, intent(out) :: rows(:)
+      character(len=1024) :: line
+      integer :: unit, ios
+      logical :: exists
+
+      allocate(rows(0))
+      inquire(file=models_file(), exist=exists)
+      if (.not. exists) return
+      open(newunit=unit, file=models_file(), status='old', action='read', iostat=ios)
+      if (ios /= 0) call refuse('cannot open '//models_file())
+      do
+        read(unit, '(A)', iostat=ios) line
+        if (ios /= 0) exit
+        line = adjustl(line)
+        if (len_trim(line) == 0 .or. line(1:1) == '#') cycle
+        rows = [character(len=1024) :: rows, line]
+      enddo
+      close(unit)
+    end subroutine read_models_file
+
+
+    !> The rows of the models file that name material m, dispatched on their kind. combustion: the constants of the
+    !> material's burning model, which the row names ('-' stands for the model its line or [ICE-Physics] names);
+    !> cap: the oxide cap of a burning drop, which ICE does not carry. An unknown kind, a second row of a kind,
+    !> another model than the material's, a key the model does not read and a value that is not a finite real number
+    !> are refused.
+    subroutine apply_model_rows(m)
+      integer, intent(in) :: m
+      character(len=256) :: f1, kind, model, tok, key, value
+      character(len=:), allocatable :: where, word, reads
+      real(R8) :: x
+      integer  :: r, k, kn, e, ios
+      logical  :: seen
+
+      seen = .false.
+      do r = 1, size(rows)
+        call next_field(rows(r), 1, f1, k)
+        if (trim(f1) /= trim(obj_condensed(m)%name)) cycle
+        row_used(r) = .true.
+        where = models_file()//', row "'//trim(rows(r))//'"'
+        word = ''; reads = ' '
+        call next_field(rows(r), k, kind, kn); k = kn
+        call next_field(rows(r), k, model, kn); k = kn
+        if (len_trim(model) == 0) call refuse(where//': a row holds "<material> <kind> <model> key=value ..."')
+        select case (trim(kind))
+        case ('combustion')
+          select case (obj_condensed(m)%combSelect)
+          case (1)
+            word = 'direct';    reads = ' T-burn q-comb d-stop d-burnout '
+          case (2)
+            word = 'Beckstead'; reads = ' K-burn n-burn X-eff beta-part T-ign q-comb d-stop d-burnout '
+          case default
+            call refuse(where//': the material names no burning model (no combustion= on its line, none in '// &
+                        physics()//')')
+          end select
+          if (trim(model) /= '-' .and. trim(model) /= word) &
+            call refuse(where//': the material burns with combustion='//word)
+        case ('cap')
+          call refuse(where//': a cap row gives the oxide cap of a burning drop, which ICE does not carry (IGLOO does)')
+        case default
+          call refuse(where//': unknown kind "'//trim(kind)//'"; ICE reads the kind combustion')
+        end select
+        if (seen) call refuse(where//': a second combustion row for this material')
+        seen = .true.
+        do
+          call next_field(rows(r), k, tok, kn); k = kn
+          if (len_trim(tok) == 0) exit
+          e = index(tok, '=')
+          if (e < 2) call refuse(where//': "'//trim(tok)//'" is not a key=value token')
+          key   = tok(:e-1)
+          value = tok(e+1:)
+          if (trim(key) == 'd-res') call refuse(where//': d-res is now d-stop, the diameter of the residue a burning '// &
+                                                'drop leaves: rename the key')
+          if (index(reads, ' '//trim(key)//' ') == 0) call refuse(where//': '//trim(key)//' is not a constant of '// &
+            'combustion='//word//' (it reads'//reads(:len(reads)-1)//')')
+          read(value, *, iostat=ios) x
+          if (ios /= 0 .or. index(value, ',') > 0) &
+            call refuse(where//': '//trim(key)//'='//trim(value)//' is not a real number')
+          if (Not_Finite(x)) call refuse(where//': '//trim(key)//'='//trim(value)//' is not finite')
+          select case (trim(key))
+          case ('q-comb');    obj_condensed(m)%qComb    = x
+          case ('d-stop');    obj_condensed(m)%dRes     = x
+          case ('d-burnout'); obj_condensed(m)%dBurn    = x
+          case ('K-burn');    obj_condensed(m)%Kburn    = x
+          case ('n-burn');    obj_condensed(m)%nBurn    = x
+          case ('X-eff');     obj_condensed(m)%Xeff     = x
+          case ('beta-part'); obj_condensed(m)%betaPart = x
+          case ('T-ign');     obj_condensed(m)%Tign     = x
+          case ('T-burn')
+            ! 0 = not given: the boiling temperature of [ICE-Physics] is then the burning temperature
+            if (x /= 0._R8) then
+              obj_condensed(m)%Tboil     = x
+              obj_condensed(m)%tburn_set = .true.
+            endif
+          end select
+        enddo
+      enddo
+    end subroutine apply_model_rows
 
 
     !> The resolved solidification inputs of material m and IGLOO's refusals, before an uncoupled run drops evaporation.

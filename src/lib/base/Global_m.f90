@@ -3,12 +3,14 @@ module ICE_Global_m
   implicit none
 
   character(len=clen) :: ICE_phase_prefix = 'part-'
+  logical :: ICE_gas_by_coupler = .false.   ! a coupler owns the gas phase and the species a burnt mass becomes
 
   integer :: ndir     ! Number of spatial dimensions (set by setup_metrics)
   integer :: gc=2     ! Ghost cells per face
   integer :: nres=5   ! Number of tracked residuals (rho, u, v, w, T)
   real(R8), parameter :: rho_empty = 1e-6_R8   ! Bulk density below which a cell counts as empty
   real(R8), parameter :: theta_cap = 1._R8     ! Largest dispersion P/rho [m2/s2] of a cell at or below rho_empty (IG, AG)
+  real(R8), parameter :: m_burnout = 1.e-20_R8 ! Drop mass [kg] at which a burning drop without residue is removed (IGLOO's mBurnAbs)
   integer :: tiles_per_thread = 4   ! Flux tiles per thread (ICE_TILES_PER_THREAD): the dynamic schedule of the tile loops balances unequal planes with them
 
   ! Condensed-phase topology (set by Assign_Setup after reading input.ini)

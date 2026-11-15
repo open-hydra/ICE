@@ -1,11 +1,11 @@
 # Combustion
 
 One case on drops that burn with `combustion = direct`: P, a closed cell where the drops burn alone, on the $d^2$
-law, down to their residue. A unit test checks the cell source against the paper's burn rate with slip.
+law, down to their residue, or out. A unit test checks the cell source against the paper's burn rate with slip.
 
 | Case | ctest | What it pins down | Reference |
 |---|---|---|---|
-| [P](#p-a-closed-cell) | `DirectCombustion` | The $d^2$ law at the burning temperature, the residue, ignition from below, the refusals | Closed form |
+| [P](#p-a-closed-cell) | `DirectCombustion` | The $d^2$ law at the burning temperature, the residue, the burn-out, ignition from below, the refusals | Closed form |
 | [Unit](#the-cell-source) | `CombustionUnit` | The burn rate with slip, the heat to the gas, the inert source | Gallier and Godfroy's eq. 4 |
 
 ## The material
@@ -20,7 +20,8 @@ Gallier and Godfroy's aluminium (J. Propuls. Power 25(2), 2009, Tables 1 and 2):
 | Burning temperature $T_{sat}$ | 2791 K |
 | Gas | 3450 K, 8.71 MPa; $\mu$ = 9.1×10⁻⁵ Pa s, $Pr$ = 0.4, $\gamma$ = 1.16, $c_{p,g}$ = 2000 J/(kg K); one species |
 
-The phase line is `A 1 combustion=direct q-comb=9.53e6 d-res=6e-5`. With $Nu = 2$ and
+The phase line is `A 1 combustion=direct`, its row of the models file `A combustion direct q-comb=9.53e6
+d-stop=6e-5`. With $Nu = 2$ and
 $B = (c_{p,g}(T_g - T_{sat}) + Q)/L_v$ = 1.004444, every regime is a closed form:
 
 - burning, $T_p = T_{sat}$ and $d^2 = d_0^2 - K t$ with $K = 8 k_g \ln(1 + B)/(c_{p,g}\rho_m)$ = 6.328×10⁻⁷ m²/s,
@@ -41,8 +42,10 @@ declares one species. The closed form is taken at the solution's own time.
 | P2 | P1 past $t_{res}$ | At $t_{res} + \tau_{res}$ and $+ 3\tau_{res}$: $d = d_{res}$, $T_p$ on the residue's relaxation | $d$ 0.023 % below $d_{res}$ (bound 0.1 %); $T_p$ 0.29 and 0.010 K (bounds 1.9 and 0.25 K) |
 | P3 | A drop at 2000 K | Ignition at 4.896 ms, then $d$ and $T_p$ at $t_{ign} + t_{res}/2$ | $T_p$ 0.44 K above $T_{sat}$ (bound 1.3 K); $d$ $1.6\times10^{-4}$ relative (bound $4.2\times10^{-4}$) |
 | P4 | P1's midpoint with IG and AG | The same numbers | $7.7\times10^{-9}$, as P1 |
-| P5 | `gas-phase = gas`, and six inputs that must stop | `INPUT/gas-phase.txt` is read; the refusals name their cause | the drop burns as P1; all six refused |
-| P6 | The `[ICE-Physics]` keys on a bare `A 1` line; a `d-res` token over the key; a `combustion=none` token | The keys alone burn as P1, the token wins, `none` leaves the drop inert; `d-res = 0` is refused | $7.7\times10^{-9}$, as P1; the drop inert and heating |
+| P5 | `gas-phase = gas`, and fourteen inputs that must stop | `INPUT/gas-phase.txt` is read; the refusals name their cause | the drop burns as P1; all fourteen refused |
+| P6 | The `[ICE-Physics]` keys on a bare `A 1` line; a `d-stop` of the models file over the key; `T-burn` of the models file over `boiling-temperature`; a `combustion=none` token | The keys alone burn as P1, the rows win, `none` leaves the drop inert | $7.7\times10^{-9}$, as P1; the drop inert and heating |
+| P7 | No `d-stop`: with `d-burnout=3e-5`, and with no `d-burnout` | At 0.9 of the law's time the drop is on the law; 20 steps after it every cell is empty, and no density was floored | $d$ within $4.7\times10^{-11}$ m; bulk density $10^{-25}$ kg/m³, the empty state |
+| P8 | The latent heat from the `Lv` column, $L_v(T) = L_v + 1000\,(T - T_{sat})$ J/kg, no `latent-heat` key: a drop at $T_{sat}$, a drop at $T_{sat}$ + 100 K; `latent-heat` beside the column; neither | The first burns as P1; the second keeps its temperature and burns with $L_v(T_{sat})$ in $B$; the last two are refused | $7.7\times10^{-9}$ and $7.3\times10^{-9}$ relative; $T$ within $3.6\times10^{-12}$ K; both refused |
 
 In every leg the eight cells agree to $10^{-10}$, and the velocity and the number density do not move.
 
@@ -51,8 +54,15 @@ Notes on the legs:
 - **P2 and P3.** The switches act at the end of a stage, which sets their bounds: the residue can end up to
   $1.2\,K\Delta t/(2 d_{res})$ below $d_{res}$, and an ignited drop holds the temperature it reached in that stage,
   up to $\Delta t\,\mathrm{d}T/\mathrm{d}t$ above $T_{sat}$.
-- **P5.** The six refusals: two gas species, no gas phase file, two materials, evaporation on the burning
-  material, no `d-res`, and no `boiling-temperature`.
+- **P5.** The fourteen refusals: two gas species, no gas phase file, evaporation on the burning material, the former
+  key `d-res`, `d-stop` beside `d-burnout`, no burning temperature, and the eight of the models file: a constant left
+  on the material line, the cap word on the line, a cap row, a row of an unknown kind, of another model than the
+  line's, with a key the model does not read, for no material of the phase file, a second row for one material.
+- **P7.** Without the removal the first run ends with $2.5\times10^{-3}$ kg/m³ of drops below the removal size, and
+  the second with a density that was floored.
+- **P8.** With the model's latent heat read at the drop's temperature instead of the burning temperature, the second
+  drop ends $1.95\times10^{-3}$ off the oracle (its $B$ takes $L_v$ + 10⁵ J/kg). On the code before the column was
+  read for `direct`, both drops stop at "requires its latent heat" and the key beside the column is not refused.
 
 ## The cell source
 

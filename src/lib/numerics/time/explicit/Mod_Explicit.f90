@@ -160,6 +160,12 @@ contains
       !> A two-way coupled gas takes the step's rates, not the last stage's
       if (obj_sim_param%twcoupled .and. nrk > 1) call hand_step_source(grid, p)
 
+      !> A burning family without a residue: the drops of a cell that are gone leave together
+      if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) then
+        if (obj_condensed(mat_of(p))%combSelect > 0 .and. .not. obj_condensed(mat_of(p))%dRes > 0._R8) &
+          call burnout_switch(grid, p)
+      end if
+
     end do
 
     !> res-threshold ends steady runs only, on the finest level: the density change of a
