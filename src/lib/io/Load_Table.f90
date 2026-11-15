@@ -190,7 +190,8 @@ contains
 
 
     !> The Lv, Mv and Cpv columns, as Psat, serve a material that evaporates (all three zero: absent);
-    !  the scalars become Lv(298.15 K), the column's Mv and Cpv(boiling-temperature).
+    !  the scalars become Lv(298.15 K), the column's Mv and Cpv(boiling-temperature). A material that burns with
+    !  combustion = direct takes the Lv column alone (load_direct_lv).
     subroutine load_vapour(m)
       use ICE_Input_Registry, only: param_is_set
       integer, intent(in) :: m
@@ -198,6 +199,10 @@ contains
       integer  :: vcode
       character(len=:), allocatable :: line
       if (ilv == 0 .and. imv == 0 .and. icpv == 0) return
+      if (obj_condensed(m)%evapSelect == 0 .and. obj_condensed(m)%combSelect == 1) then
+        call load_direct_lv(m)
+        return
+      endif
       if (obj_condensed(m)%evapSelect == 0) then
         if (mpi_is_root) write(*,'(A)') '   Lv, Mv, Cpv columns not used: this material does not evaporate'
         return
@@ -244,6 +249,30 @@ contains
       end associate
       if (mpi_is_root) write(*,'(A)') '   vapour data from the table: '//line(3:)
     end subroutine load_vapour
+
+
+    !> The Lv column of a material that burns with combustion = direct: its latent heat, which the model takes at
+    !  the burning temperature. Malformed is refused, all zero is absent, beside latent-heat set non-zero is refused.
+    subroutine load_direct_lv(m)
+      integer, intent(in) :: m
+      real(R8) :: lv(Ni)
+      integer  :: lcode
+      if (imv > 0 .or. icpv > 0) then
+        if (mpi_is_root) write(*,'(A)') '   Mv, Cpv columns not used: combustion = direct reads the Lv column alone'
+      endif
+      if (ilv == 0) return
+      lv = orion%block(m)%vars(ilv,0:Ni-1,0,0)
+      lcode = validate_positive_column(lv)
+      if (lcode == COL_ABSENT) return
+      if (lcode /= COL_OK) call refuse(tablefile, trim(zone_label(m))//'Lv column: '//column_reason(lcode))
+      call check_vapour_key(m, 'latent-heat', obj_condensed(m)%lv_al, lv, 'Lv')
+      associate (mat => obj_condensed(m))
+        allocate(mat%lv_tab(Tmin:Tmin+Ni-1), source=lv)
+        mat%use_lv = .true.
+        mat%lv_al  = mat_lv(mat, 298.15_R8)
+      end associate
+      if (mpi_is_root) write(*,'(A)') '   latent heat of combustion = direct from the table (Lv column)'
+    end subroutine load_direct_lv
 
 
     !> The Emissivity column, for every material: malformed is refused, all zero is absent, above 1 is cut to 1.

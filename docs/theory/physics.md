@@ -392,7 +392,8 @@ $$
 B = \frac{c_{p,g}\,(T_g - T_p) + Q}{L_v},
 $$
 
-with $Q$ = `q-comb`, $L_v$ = `latent-heat` and $Nu$ the `heat-transfer` law's. With
+with $Q$ = `q-comb`, $L_v$ the material's latent heat at the burning temperature (the `Lv` column of its property
+table, else `latent-heat`) and $Nu$ the `heat-transfer` law's. With
 `heat-transfer = Ranz-Marshall`, $Nu = 2 + 0.6\,Re^{1/2}Pr^{1/3}$, this is their eq. 4: the convective correction
 that makes the burning respond to the slip.
 
@@ -464,7 +465,7 @@ gives the burnt mass the species of its reaction.
 | `d-stop` | diameter of the inert residue [m] | 0: no residue, the drop burns out |
 | `d-burnout` | diameter at which the drops of a cell, without residue, are removed [m] | 0: a drop mass of $10^{-20}$ kg |
 | `T-burn`, else `boiling-temperature` | `direct`: $T_{sat}$, the burning temperature [K] | required |
-| `latent-heat` | `direct`: $L_v$ [J/kg], a constant (the table's `Lv` column is read for evaporation only) | required |
+| the `Lv` column, else `latent-heat` | `direct`: $L_v$ [J/kg], the material's latent heat, taken at the burning temperature | required |
 | `K-burn`, `n-burn`, `X-eff` | `Beckstead`: the law's coefficient [m$^n$/s], its exponent, the oxidiser fraction | required, 1.8, 1 |
 | `T-ign`, `beta-part` | `Beckstead`: the ignition temperature [K], the share of $Q$ the drop keeps | 2350, 0 |
 

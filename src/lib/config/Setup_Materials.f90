@@ -219,8 +219,9 @@ contains
           'a drop that stops at its residue is never removed; give one')
         if (mat%qComb < 0._R8) call refuse(material_label(m)//': combustion = '//word//' requires q-comb >= 0')
         if (mat%combSelect == 1) then
-          if (.not. physics_set('latent-heat')) call refuse(material_label(m)// &
-            ': combustion = direct requires its latent heat: latent-heat in '//physics())
+          if (.not. (mat%use_lv .or. physics_set('latent-heat'))) call refuse(material_label(m)// &
+            ': combustion = direct requires its latent heat: the Lv column of the property table, or latent-heat in '// &
+            physics())
           if (.not. mat%lv_al > 0._R8) call refuse(material_label(m)//': combustion = direct requires a latent heat > 0')
           if (.not. (mat%tburn_set .or. physics_set('boiling-temperature') .or. physics_set('Tboil'))) &
             call refuse(material_label(m)//': combustion = direct requires its burning temperature: T-burn in its '// &

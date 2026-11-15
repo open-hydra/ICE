@@ -379,11 +379,13 @@ contains
     if (mat%combSelect == 1) then
       if (cond_prim(n-1) >= mat%Tboil*(1._R8 - 1.e-10_R8) .and. 2._R8*Rp > mat%dRes) then
         cpg  = gas_gam*gas_R/(gas_gam - 1._R8)
-        Lv   = mat_lv(mat, cond_prim(n-1))
+        !> the model's latent heat is the material's at the burning temperature; the closure's sink, the material's
+        !  at the drop's temperature, is cancelled as it is
+        Lv   = mat_lv(mat, mat%Tboil)
         mdot = burnRate(gas_prim(ng), gas_k, cpg, cond_prim(n-1), 2._R8*Rp, Nu, Lv, mat%qComb)
         if (mdot > 0._R8) then
           force(1) = mdot*cond_prim(n)
-          force(5) = force(1)*Lv
+          force(5) = force(1)*mat_lv(mat, cond_prim(n-1))
           Qburn    = force(1)*mat%qComb
         endif
       endif

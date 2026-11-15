@@ -91,7 +91,8 @@ contains
                  'Latent heat of vaporisation [J/kg]; the evaporation models use it '// &
                  'both as the energy sink and as the anchor of the Clausius-Clapeyron saturation curve, '// &
                  'which a Psat column in the property table replaces; 0 for a material whose property table '// &
-                 'carries the Lv column: the table then owns it; required for an evaporating material unless its '// &
+                 'carries the Lv column: the table then owns it; required for an evaporating material, and for one '// &
+                 'that burns with combustion = direct (its latent heat, taken at the burning temperature), unless its '// &
                  'property table carries the Lv column'//'; one value per material', &
                  '>= 0', .false., per_material=.true.)
     call reg%add(section, 'emissivity', ini_condensed%emiss, '0.0', &

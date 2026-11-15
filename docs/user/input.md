@@ -206,7 +206,9 @@ second row for one material, and on a row for no material of the phase file.
 `combustion`, `q-comb`, `d-stop` and `d-burnout` have no default: given in `[ICE-Physics]`, they
 hold for every material unless its line (the word) or its row (the constants) overrides them. The
 burning temperature of `direct` is `T-burn` of its row, else `boiling-temperature`; its latent heat
-is `latent-heat` (an `Lv` column of the property table serves an evaporating material only).
+is the `Lv` column of the material's property table, read at the burning temperature, else
+`latent-heat`. The table owns the property: with the column, leave `latent-heat` out or give 0 for
+that material (a value beside the column is refused).
 
 With `d-stop` the burning stops at that diameter and the residue stays. Without it the drops burn
 out: the drops of a cell are removed, and what they still hold goes to the gas with the source of

@@ -26,6 +26,11 @@ in the gas: m = rho pi D^3/6, k = mu cp/Pr, B = (cp (T_g - T_sat) + Q)/L_v, and
       T-burn of the models file overrides boiling-temperature
   P7  no residue (no d-stop): the drop follows the law until it is removed, then the cell is empty and no density
       was floored; removed at d-burnout = 3e-5 when the models file gives it, else when a step would burn it whole
+  P8  the latent heat from the Lv column of the property table, L_v(T) = L_v + 1000 (T - T_sat) J/kg, with no
+      latent-heat key: a drop at T_sat burns as P1 (the column is read at the burning temperature); a drop at
+      T_sat + 100 K keeps its temperature and burns with B = (cp (T_g - T_p) + Q)/L_v(T_sat), the model's latent heat
+      at T_sat while the closure's sink is cancelled at the drop's own; the refusals: latent-heat beside the
+      column, neither of the two
 
 Tolerances (time-scheme RK2, dt-max = 1e-5 binding). Burning has no event: D to 1e-6 relative. The residue switch
 happens at the end of a stage, so D lies up to 1.2 K dt/(2 D_res) below D_res, and T is late by up to dt on its
@@ -74,7 +79,7 @@ def tau_of(d):
 
 
 def closed_cell(label, T0, t_end, closure='MK', phase=(PHASE,), models=MODELS, physics=None, gas_file='phase.txt',
-                gas_lines=('GAS 30.14',), parameters=None, families=1):
+                gas_lines=('GAS 30.14',), parameters=None, families=1, lv=None, without=()):
     case = Case(WORK / label.lower(), nx=8, Lx=1.0)
     P = dict(IG=[PSEUDO], AG=[PSEUDO, 0.0, 0.0, PSEUDO, 0.0, PSEUDO]).get(closure, [])
     names, fields = [], []
@@ -90,8 +95,12 @@ def closed_cell(label, T0, t_end, closure='MK', phase=(PHASE,), models=MODELS, p
     if models:
         (case.dir / 'INPUT' / 'part-models.txt').write_text(
             '# <material> <kind> <model> key=value ...\n' + '\n'.join(models) + '\n')
+    if lv is not None:
+        case.properties(1000, 4000, CP, RHO_M, lv=lv)
     phys = dict(PHYSICS)
     phys.update(physics or {})
+    for key in without:
+        del phys[key]
     case.ini(t_end=t_end, rk='RK2', drag='NoDrag', heat='Stokes', rho_al=RHO_M, cs=CP, dt_max=DT,
              physics=phys, closures=(closure,) * families)
     if parameters:
@@ -284,6 +293,30 @@ def p7(rep):
         rep.check('negative density' not in log and 'negative densities' not in log, 'P7 %s: no density was floored' % label)
 
 
+def lv_column(T):
+    return LV + 1000.0 * (T - TSAT)
+
+
+def p8(rep):
+    t_end = 0.5 * T_RES
+    case = closed_cell('P8-column', TSAT, t_end, lv=lv_column, without=('latent-heat',))
+    sol = attempt(rep, 'P8 the Lv column', case)
+    if sol is not None:
+        D_ref = math.sqrt(D0 ** 2 - K * sol['time'])
+        check_cell(rep, 'P8 the Lv column, a drop at T_sat: burns as P1', sol, 'MK', D_ref, TSAT, 1.0e-6 * D_ref, 1.0e-6)
+    T0 = TSAT + 100.0
+    B_hot = (CPG * (TG - T0) + Q) / LV
+    K_hot = 8.0 * KG * math.log(1.0 + B_hot) / (CPG * RHO_M)
+    case = closed_cell('P8-column-hot', T0, t_end, lv=lv_column, without=('latent-heat',))
+    sol = attempt(rep, 'P8 the Lv column, a drop above T_sat', case)
+    if sol is not None:
+        D_ref = math.sqrt(D0 ** 2 - K_hot * sol['time'])
+        check_cell(rep, 'P8 the Lv column, a drop at T_sat + 100 K: L_v(T_sat) in B, its temperature kept', sol, 'MK',
+                   D_ref, T0, 1.0e-6 * D_ref, 1.0e-6)
+    refusal(rep, 'column-and-key', 'is set and the table gives the Lv column', leg='P8', lv=lv_column)
+    refusal(rep, 'neither', 'requires its latent heat', leg='P8', without=('latent-heat',))
+
+
 def selected(leg):
     legs = os.environ.get('ICE_COMB_LEGS')
     return legs is None or leg in legs.split(',')
@@ -314,6 +347,9 @@ def main():
     if selected('P7'):
         print('   P7  no residue: the drop burns out')
         p7(rep)
+    if selected('P8'):
+        print('   P8  the latent heat from the Lv column')
+        p8(rep)
     rep.close(WORK)
 
 

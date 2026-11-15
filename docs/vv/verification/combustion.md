@@ -45,6 +45,7 @@ declares one species. The closed form is taken at the solution's own time.
 | P5 | `gas-phase = gas`, and fourteen inputs that must stop | `INPUT/gas-phase.txt` is read; the refusals name their cause | the drop burns as P1; all fourteen refused |
 | P6 | The `[ICE-Physics]` keys on a bare `A 1` line; a `d-stop` of the models file over the key; `T-burn` of the models file over `boiling-temperature`; a `combustion=none` token | The keys alone burn as P1, the rows win, `none` leaves the drop inert | $7.7\times10^{-9}$, as P1; the drop inert and heating |
 | P7 | No `d-stop`: with `d-burnout=3e-5`, and with no `d-burnout` | At 0.9 of the law's time the drop is on the law; 20 steps after it every cell is empty, and no density was floored | $d$ within $4.7\times10^{-11}$ m; bulk density $10^{-25}$ kg/m³, the empty state |
+| P8 | The latent heat from the `Lv` column, $L_v(T) = L_v + 1000\,(T - T_{sat})$ J/kg, no `latent-heat` key: a drop at $T_{sat}$, a drop at $T_{sat}$ + 100 K; `latent-heat` beside the column; neither | The first burns as P1; the second keeps its temperature and burns with $L_v(T_{sat})$ in $B$; the last two are refused | $7.7\times10^{-9}$ and $7.3\times10^{-9}$ relative; $T$ within $3.6\times10^{-12}$ K; both refused |
 
 In every leg the eight cells agree to $10^{-10}$, and the velocity and the number density do not move.
 
@@ -59,6 +60,9 @@ Notes on the legs:
   line's, with a key the model does not read, for no material of the phase file, a second row for one material.
 - **P7.** Without the removal the first run ends with $2.5\times10^{-3}$ kg/m³ of drops below the removal size, and
   the second with a density that was floored.
+- **P8.** With the model's latent heat read at the drop's temperature instead of the burning temperature, the second
+  drop ends $1.95\times10^{-3}$ off the oracle (its $B$ takes $L_v$ + 10⁵ J/kg). On the code before the column was
+  read for `direct`, both drops stop at "requires its latent heat" and the key beside the column is not refused.
 
 ## The cell source
 
