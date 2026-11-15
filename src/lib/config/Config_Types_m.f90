@@ -249,7 +249,15 @@ module ICE_Config_Types_m
     ! Direct combustion (combustion = direct): the drop burns at boiling-temperature down to the residue's diameter
     integer  :: combSelect = 0
     real(R8) :: qComb = 0._R8        ! Heat of reaction per unit burnt mass, released in the gas [J/kg]
-    real(R8) :: dRes  = 0._R8        ! Diameter of the inert residue, where the burning stops [m]
+    real(R8) :: dRes  = 0._R8        ! d-stop: diameter of the inert residue, where the burning stops [m]; 0 = the drop burns out
+    real(R8) :: dBurn = 0._R8        ! d-burnout: a burning drop this small is removed, handed whole to the gas [m]; 0 = built-in
+    logical  :: tburn_set = .false.  ! direct's burning temperature was given (T-burn of the models file)
+    ! Beckstead's d^n law (combustion = Beckstead): burning at and above T-ign, beta-part of q-comb kept by the drop
+    real(R8) :: Kburn = 0._R8        ! Burn-rate coefficient at X-eff = 1 [m^n-burn/s]
+    real(R8) :: nBurn = 1.8_R8       ! Diameter exponent [-]
+    real(R8) :: Xeff  = 1._R8        ! Effective oxidiser mole fraction [-]
+    real(R8) :: betaPart = 0._R8     ! Share of the heat of reaction kept by the drop [-]
+    real(R8) :: Tign  = 2350._R8     ! Ignition temperature [K]
     ! Packed form of the above, built by Setup_Materials and handed to Lib_Evaporation
     real(R8) :: ep(nep) = 0._R8
     ! Table-based properties rho(T) and cs(T) (optional, loaded by Load_Table)

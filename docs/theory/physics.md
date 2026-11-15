@@ -382,8 +382,9 @@ burns at once, and its heat of reaction goes to the gas.
 
 ### The burning drop
 
-A drop burns while its temperature is at least $T_{sat}$ = `boiling-temperature` and its diameter is larger than
-the residue's, $d_{res}$ = `d-res`. It loses mass at the $d^2$ law of a vaporising drop, with the heat of reaction in
+A drop burns while its temperature is at least $T_{sat}$ (`T-burn` of the material's row of the models file, else
+`boiling-temperature`) and its diameter is larger than the residue's, $d_{res}$ = `d-stop`.
+It loses mass at the $d^2$ law of a vaporising drop, with the heat of reaction in
 the transfer number (unit Lewis number):
 
 $$
@@ -391,7 +392,7 @@ $$
 B = \frac{c_{p,g}\,(T_g - T_p) + Q}{L_v},
 $$
 
-with $Q$ = `q-comb`, $L_v$ = `latent-heat` (or the `Lv` column) and $Nu$ the `heat-transfer` law's. With
+with $Q$ = `q-comb`, $L_v$ = `latent-heat` and $Nu$ the `heat-transfer` law's. With
 `heat-transfer = Ranz-Marshall`, $Nu = 2 + 0.6\,Re^{1/2}Pr^{1/3}$, this is their eq. 4: the convective correction
 that makes the burning respond to the slip.
 
@@ -403,8 +404,9 @@ n\,\dot m\,\big(e_p(T_p) + \tfrac12|\mathbf u_p|^2 + Q\big),
 $$
 
 the drag work aside. The first two terms are the opposite of the drop's source, as for evaporation. $n\,\dot m\,Q$
-is not part of it: ICE stores it per cell in the family's `heat` field, which a two-way coupled gas adds to its
-energy.
+is not part of it: ICE stores it per cell in the family's `heat` field, which a gas of one species coupled to ICE
+adds to its energy. A coupler that knows the species the burnt mass becomes (hydra-MI2, from the reaction ATLAS
+records) leaves the field alone: there the heat of reaction is the difference of the formation enthalpies.
 
 The number density does not change, so the drop shrinks along $d^2 = d_0^2 - K t$ with
 $K = 8 k_g \ln(1 + B)/(c_{p,g}\,\rho_m)$ at $Nu = 2$, and burns out in $d_0^2/K$ without a residue, their eq. 10.
@@ -420,26 +422,57 @@ $\Delta t\,\mathrm{d}T/\mathrm{d}t$ above $T_{sat}$, and a residue is up to $K\D
 $d_{res}$. The temperature is compared within $10^{-10}$ of $T_{sat}$, so that round-off does not switch off a drop
 held there.
 
-### Why one species and one material
+### Without a residue
 
-The vapour that burns is taken to be the gas itself, as in the paper: ICE adds the burnt mass to the gas without
-saying which species it is. So the model needs a gas of one species and a single condensed material. The setup reads
-the gas phase file ATLAS writes, `INPUT/phase.txt`, or `INPUT/<gas-phase>-phase.txt` with `gas-phase` in
-`[ICE-Parameters]`, and stops unless it declares one species (a `real-fluid` phase is one). Several families of the
-one material are allowed.
+A material that gives no `d-stop` burns out. The number density has no sink in the equations, so the last of the
+drops of a cell leave together: after the last stage of a step, a cell whose drops are at or below the removal size
+(`d-burnout`, a diameter; without it a drop mass of $10^{-20}$ kg), or where the step burnt as much as is left, is
+emptied, and the mass, the momentum and the energy it held are added to the stored source of that step, which a
+coupled gas receives. Nothing is lost and no density is floored. `d-stop` beside `d-burnout` is refused: a drop that
+stops at its residue is never removed.
+
+### The other model: Beckstead's $d^n$ law
+
+A material with `combustion = Beckstead` burns on the law of Beckstead (2005), as IGLOO's parcels do: at and above
+`T-ign`,
+
+$$
+d^n = d_0^n - K X_{eff}\,t, \qquad \dot m = \rho_m\,\frac{\pi K X_{eff}}{2 n}\,d^{\,3-n},
+$$
+
+with $K$ = `K-burn`, $n$ = `n-burn` (between 0 and 3) and $X_{eff}$ = `X-eff`. The law has no latent sink: the drop
+exchanges heat with the gas as an inert drop does and keeps the share `beta-part` of the heat of reaction `q-comb`,
+which heats it. The burn ends as that of `direct` does: at the residue `d-stop`, or with the removal above. ICE does
+not carry the oxide cap IGLOO's law can grow on the drop: `xi-cap` other than 0, `xi-law`, `xi-ox0`, `product`,
+`residue` and `d-residue` are refused, and so is a line of 0 groups, the cap's product.
+
+### Which species, how many materials
+
+Each material burns on its own model, named on its line of the phase file. ICE running alone takes the vapour that
+burns to be the gas itself, as in the paper, and adds the burnt mass to the gas without saying which species it is:
+the setup reads the gas phase file ATLAS writes, `INPUT/phase.txt`, or `INPUT/<gas-phase>-phase.txt` with
+`gas-phase` in `[ICE-Parameters]`, and stops unless it declares one species (a `real-fluid` phase is one). A coupler
+that owns the gas phase (hydra-MI2) says so before the setup: ICE then reads no gas phase file, and the coupler
+gives the burnt mass the species of its reaction.
 
 ### Inputs
 
 | Input | Meaning | Default |
 |---|---|---|
-| `combustion` | `direct` or `none` | `none` |
-| `q-comb` | heat of reaction $Q$ per unit burnt mass [J/kg] | 0, pure vaporisation |
-| `d-res` | diameter of the inert residue [m] | required, > 0 |
-| `boiling-temperature` | $T_{sat}$, the burning temperature [K] | required |
-| `latent-heat` | $L_v$ [J/kg], or the `Lv` column | required |
+| `combustion` | `direct`, `Beckstead` or `none` | `none` |
+| `q-comb` | heat of reaction $Q$ per unit burnt mass [J/kg] | 0 |
+| `d-stop` | diameter of the inert residue [m] | 0: no residue, the drop burns out |
+| `d-burnout` | diameter at which the drops of a cell, without residue, are removed [m] | 0: a drop mass of $10^{-20}$ kg |
+| `T-burn`, else `boiling-temperature` | `direct`: $T_{sat}$, the burning temperature [K] | required |
+| `latent-heat` | `direct`: $L_v$ [J/kg], a constant (the table's `Lv` column is read for evaporation only) | required |
+| `K-burn`, `n-burn`, `X-eff` | `Beckstead`: the law's coefficient [m$^n$/s], its exponent, the oxidiser fraction | required, 1.8, 1 |
+| `T-ign`, `beta-part` | `Beckstead`: the ignition temperature [K], the share of $Q$ the drop keeps | 2350, 0 |
 
-`combustion`, `q-comb` and `d-res` go in `[ICE-Physics]`, on the material's line of the phase file, or both: a token
-overrides the key. The keys have no default, so an absent key leaves the decision to the tokens.
+`combustion` goes in `[ICE-Physics]`, on the material's line of the phase file, or both: the token overrides the key.
+The constants of the two models are a row of the models file beside the phase file, `<material> combustion <model>
+key=value ...`; `q-comb`, `d-stop` and `d-burnout` go in `[ICE-Physics]` as well, and the row overrides the key;
+`T-burn` overrides `boiling-temperature`. The keys have no default, so an absent key leaves the decision to the line
+and the row.
 
 The setup stops when the material also evaporates or solidifies. ICE reads the model only in a coupled run. For
 aluminium, Gallier and Godfroy take $Q$ = 9.53 MJ/kg, $L_v$ = 10.8 MJ/kg and $T_{sat}$ = 2791 K.

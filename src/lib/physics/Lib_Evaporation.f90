@@ -8,7 +8,7 @@ module ICE_Lib_Evaporation
     public :: psat_CC, invTboil_at
     public :: log1pS, expm1S, chiETC
     public :: boilingTemperatureCC, alphaBoil, zgrBoiling, heatFedRate
-    public :: burnRate
+    public :: burnRate, becksteadRate
 
     !> Vapour properties, packed contiguously by Assign_Setup and indexed by the
     !  parameters below.
@@ -314,6 +314,20 @@ contains
         mdot = pi*dp*kg/cpg*Nu*log1pS(B)
 
     end function burnRate
+
+
+    !> The mass a burning drop loses [kg/s], >= 0, on Beckstead's d^n law: d^n = d0^n - K X t, so
+    !  rho pi K X/(2 n) d^(3-n) (Beckstead 2005; IGLOO's becksteadRate). 0 for a vanished drop.
+    pure function becksteadRate(dp, rhop, Kb, n, Xe) result(mdot)
+        implicit none
+        real(R8), intent(in) :: dp, rhop, Kb, n, Xe
+        real(R8) :: mdot
+
+        mdot = 0._R8
+        if (.not. dp > 0._R8) return
+        mdot = rhop*pi*Kb*Xe/(2._R8*n)*dp**(3._R8 - n)
+
+    end function becksteadRate
 
 
     !===================================================================!
