@@ -104,6 +104,7 @@ contains
           call timer_source_begin()
           call timer_region_begin(TR_SOURCE)
           call compute_source(grid, p)
+          if (obj_sim_param%twcoupled .and. nrk > 1) call add_stage_source(grid, p, srk)
           call timer_region_end(TR_SOURCE)
           call timer_source_end()
         end if
@@ -155,6 +156,9 @@ contains
         call timer_flux_end()
 
       end do
+
+      !> A two-way coupled gas takes the step's rates, not the last stage's
+      if (obj_sim_param%twcoupled .and. nrk > 1) call hand_step_source(grid, p)
 
     end do
 
@@ -217,6 +221,54 @@ contains
     integer, intent(in) :: iter, every
     due = (every > 0) .and. (mod(iter, every) == 0)
   end function due
+
+
+  !> Adds the source and heat of stage srk of family p to the step's running sums, weighted as the update weighs
+  !> the stage's residual (RK_accumulate).
+  subroutine add_stage_source(grid, p, srk)
+    use ICE_Advanced_Types_m, only: ICE_domain_type
+    use ICE_Global_m,         only: nrk
+    use ICE_Lib_RK,           only: RK_accumulate
+    use ICE_Mod_MPI,          only: is_local_block
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4),      intent(in)    :: p, srk
+    integer(kind=I4) :: b
+
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      if (.not. allocated(grid%blk(b)%cond_phase(p)%source_step)) then
+        allocate(grid%blk(b)%cond_phase(p)%source_step, mold=grid%blk(b)%cond_phase(p)%source)
+        allocate(grid%blk(b)%cond_phase(p)%heat_step,   mold=grid%blk(b)%cond_phase(p)%heat)
+        grid%blk(b)%cond_phase(p)%source_step = 0._R8
+        grid%blk(b)%cond_phase(p)%heat_step   = 0._R8
+      end if
+      grid%blk(b)%cond_phase(p)%source_step = RK_accumulate(srk, nrk, grid%blk(b)%cond_phase(p)%source_step, &
+                                                            grid%blk(b)%cond_phase(p)%source)
+      grid%blk(b)%cond_phase(p)%heat_step   = RK_accumulate(srk, nrk, grid%blk(b)%cond_phase(p)%heat_step,   &
+                                                            grid%blk(b)%cond_phase(p)%heat)
+    end do
+
+  end subroutine add_stage_source
+
+
+  !> After the last stage: source and heat of family p become the step's, what the update integrated and so what
+  !> the phase exchanged with the gas over the step.
+  subroutine hand_step_source(grid, p)
+    use ICE_Advanced_Types_m, only: ICE_domain_type
+    use ICE_Mod_MPI,          only: is_local_block
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4),      intent(in)    :: p
+    integer(kind=I4) :: b
+
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      grid%blk(b)%cond_phase(p)%source = grid%blk(b)%cond_phase(p)%source_step
+      grid%blk(b)%cond_phase(p)%heat   = grid%blk(b)%cond_phase(p)%heat_step
+    end do
+
+  end subroutine hand_step_source
 
 
 end module ICE_Mod_Explicit
