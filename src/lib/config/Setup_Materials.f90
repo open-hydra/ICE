@@ -107,10 +107,6 @@ contains
       endif
     enddo
 
-    ! Direct combustion burns the one material there is, before its property table is read
-    if (nmat > 1 .and. any(obj_condensed(:)%combSelect == 1)) call refuse('combustion = direct needs one material: '// &
-      'INPUT/'//trim(ICE_phase_prefix)//'phase.txt declares '//trim(itoa(nmat)))
-
     ! A solidifying family carries the frozen and nucleated fractions after its closure's slots
     do p = 1, ngroups
       solid_of(p) = obj_condensed(mat_of(p))%solid
@@ -162,8 +158,10 @@ contains
       end associate
     enddo
 
-    ! Direct combustion: the vapour is the gas itself, so one gas species and one material
-    if (any(obj_condensed(:)%combSelect == 1)) call check_combustion()
+    ! Each burning material is checked on its own; its vapour is the gas itself, so one gas species
+    do m = 1, nmat
+      if (obj_condensed(m)%combSelect > 0) call check_combustion(m)
+    enddo
 
     ! A solidifying material keeps a constant density (its cp may vary: the liquid's energy is the table's)
     do m = 1, nmat
@@ -190,24 +188,25 @@ contains
 
   contains
 
-    !> The refusals of combustion = direct, and its values printed: a burning material is alone, does not evaporate or
-    !> solidify, gives its latent heat, its burning temperature and a residue, and the gas phase has one species.
-    subroutine check_combustion()
+    !> The refusals of the burning material m, and its values printed: it does not evaporate or solidify, gives its
+    !> latent heat, its burning temperature and a residue, and the gas phase has one species.
+    subroutine check_combustion(m)
+      integer, intent(in) :: m
       character(len=:), allocatable :: gfile
       integer :: ns
       character(len=16) :: a, b, c
-      associate (mat => obj_condensed(1))
-        if (mat%evapSelect > 0) call refuse(material_label(1)//': combustion = direct is exclusive with evaporation '// &
+      associate (mat => obj_condensed(m))
+        if (mat%evapSelect > 0) call refuse(material_label(m)//': combustion = direct is exclusive with evaporation '// &
                                             '(the burning drop vaporises by its own rate)')
-        if (mat%solid) call refuse(material_label(1)//': combustion = direct is exclusive with solidification')
-        if (.not. mat%dRes > 0._R8) call refuse(material_label(1)//': combustion = direct requires d-res > 0, the '// &
+        if (mat%solid) call refuse(material_label(m)//': combustion = direct is exclusive with solidification')
+        if (.not. mat%dRes > 0._R8) call refuse(material_label(m)//': combustion = direct requires d-res > 0, the '// &
                                                 'diameter of the inert residue [m], in '//physics()//' or as a token')
-        if (mat%qComb < 0._R8) call refuse(material_label(1)//': combustion = direct requires q-comb >= 0')
-        if (.not. (physics_set('latent-heat') .or. mat%use_lv)) call refuse(material_label(1)// &
+        if (mat%qComb < 0._R8) call refuse(material_label(m)//': combustion = direct requires q-comb >= 0')
+        if (.not. (physics_set('latent-heat') .or. mat%use_lv)) call refuse(material_label(m)// &
           ': combustion = direct requires latent-heat: give it in '//physics()//' or as the Lv column of the property table')
         if (.not. mat%lv_al > 0._R8) &
-          call refuse(material_label(1)//': latent-heat = 0 needs an Lv column in the property table')
-        if (.not. (physics_set('boiling-temperature') .or. physics_set('Tboil'))) call refuse(material_label(1)// &
+          call refuse(material_label(m)//': latent-heat = 0 needs an Lv column in the property table')
+        if (.not. (physics_set('boiling-temperature') .or. physics_set('Tboil'))) call refuse(material_label(m)// &
           ': combustion = direct requires boiling-temperature (alias Tboil) in '//physics()//', the burning temperature')
         gfile = 'INPUT/phase.txt'
         if (len_trim(obj_sim_param%gas_phase) > 0) gfile = 'INPUT/'//trim(obj_sim_param%gas_phase)//'-phase.txt'

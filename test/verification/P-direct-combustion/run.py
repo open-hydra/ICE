@@ -16,7 +16,7 @@ in the gas: m = rho pi D^3/6, k = mu cp/Pr, B = (cp (T_g - T_sat) + Q)/L_v, and
   P2  the residue: D = D_res at t_res + tau and t_res + 3 tau, T on its relaxation
   P3  a drop at 2000 K: heats to T_sat, then burns: T and D at t_ign + t_res/2
   P4  P1's midpoint with the IG and AG closures (P = 1e-6)
-  P5  gas-phase = gas reads INPUT/gas-phase.txt; the refusals: two gas species, no gas phase file, two materials,
+  P5  gas-phase = gas reads INPUT/gas-phase.txt; the refusals: two gas species, no gas phase file,
       evaporation, no d-res, no boiling-temperature
   P6  the [ICE-Physics] keys combustion, q-comb and d-res: alone on a bare "A 1" line they burn as P1; a d-res token
       overrides the key; a combustion=none token switches it off; d-res = 0 is refused
@@ -194,9 +194,6 @@ def p5(rep):
                   'P5 gas-phase = gas: INPUT/gas-phase.txt read, the drop burns as P1')
     refusal(rep, 'two-species', 'needs one gas species', gas_lines=('O2 32.0', 'N2 28.0'))
     refusal(rep, 'no-gas-file', 'which is missing', gas_file=None)
-    refusal(rep, 'two-materials', 'needs one material', phase=(PHASE, 'B 1'), families=2,
-            physics={'emissivity': '0 0', 'density': '%g %g' % (RHO_M, RHO_M), 'specific-heat': '%g %g' % (CP, CP),
-                     'latent-heat': '%g %g' % (LV, LV), 'boiling-temperature': '%g %g' % (TSAT, TSAT)})
     refusal(rep, 'evaporation', 'exclusive with evaporation', phase=(PHASE + ' evaporation=d2-law',),
             physics={'vapour-molar-mass': 26.98, 'vapour-specific-heat': 0, 'lewis-number': 1,
                      'vapour-mass-fraction': 0})
