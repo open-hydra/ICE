@@ -104,6 +104,7 @@ contains
           call timer_source_begin()
           call timer_region_begin(TR_SOURCE)
           call compute_source(grid, p)
+          call smoke_accumulate(grid, p, srk)
           if (obj_sim_param%twcoupled .and. nrk > 1) call add_stage_source(grid, p, srk)
           call timer_region_end(TR_SOURCE)
           call timer_source_end()
@@ -167,6 +168,9 @@ contains
       end if
 
     end do
+
+    !> The smoke the burning families made in this step is born in its families, after every family's step
+    if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) call smoke_birth(grid)
 
     !> res-threshold ends steady runs only, on the finest level: the density change of a
     !  time step says nothing of convergence, and a transient whose density happens to be

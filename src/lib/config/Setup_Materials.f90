@@ -413,7 +413,7 @@ contains
         case ('cap')
           call refuse(material_label(m)//': cap='//trim(value)//' names the oxide cap of a burning drop, which ICE '// &
                       'does not carry (IGLOO does): remove it')
-        case ('K-burn', 'n-burn', 'X-eff', 'beta-part', 'T-ign', 'T-burn', 'q-comb', 'd-stop', 'd-burnout', 'd-res', &
+        case ('K-burn', 'n-burn', 'X-eff', 'beta-part', 'T-ign', 'T-burn', 'q-comb', 'd-stop', 'd-burnout', 'd-res', 'd-smoke', &
               'xi-law', 'xi-cap', 'xi-ox0', 'product', 'residue', 'd-residue')
           call refuse(material_label(m)//': '//trim(key)//'='//trim(value)//' on the material line: the constants of '// &
                       'the burning models are rows of '//models_file()//', "<material> combustion <model> key=value '// &
@@ -499,9 +499,9 @@ contains
         case ('combustion')
           select case (obj_condensed(m)%combSelect)
           case (COMB_DIRECT)
-            word = 'direct';    reads = ' T-burn q-comb d-stop d-burnout '
+            word = 'direct';    reads = ' T-burn q-comb d-stop d-burnout d-smoke '
           case (COMB_BECKSTEAD)
-            word = 'Beckstead'; reads = ' K-burn n-burn X-eff beta-part T-ign q-comb d-stop d-burnout '
+            word = 'Beckstead'; reads = ' K-burn n-burn X-eff beta-part T-ign q-comb d-stop d-burnout d-smoke '
           case default
             call refuse(where//': the material names no burning model (no combustion= on its line, none in '// &
                         physics()//')')
@@ -534,6 +534,9 @@ contains
           case ('q-comb');    obj_condensed(m)%qComb    = x; obj_condensed(m)%qcomb_set = .true.
           case ('d-stop');    obj_condensed(m)%dRes     = x
           case ('d-burnout'); obj_condensed(m)%dBurn    = x
+          case ('d-smoke')
+            if (.not. x > 0._R8) call refuse(where//': d-smoke='//trim(value)//' is not a diameter (> 0)')
+            obj_condensed(m)%dSmoke = x
           case ('K-burn');    obj_condensed(m)%Kburn    = x
           case ('n-burn');    obj_condensed(m)%nBurn    = x
           case ('X-eff');     obj_condensed(m)%Xeff     = x

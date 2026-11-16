@@ -255,6 +255,11 @@ module ICE_Config_Types_m
     logical  :: qcomb_set = .false.  ! q-comb was given in the row (0 included)
     real(R8) :: dRes  = 0._R8        ! d-stop: diameter of the inert residue, where the burning stops [m]; 0 = the drop burns out
     real(R8) :: dBurn = 0._R8        ! d-burnout: a burning drop this small is removed, handed whole to the gas [m]; 0 = built-in
+    ! The smoke of a burning material: the family its condensed product is born in (a coupler sets it from its products
+    ! file; 0 = no smoke), the kg of smoke per kg burnt, and the diameter each smoke drop is born with (d-smoke)
+    integer  :: smokeFam = 0
+    real(R8) :: nuSmoke  = 0._R8     ! [-]
+    real(R8) :: dSmoke   = 0._R8     ! [m]
     logical  :: tburn_set = .false.  ! direct's burning temperature was given (T-burn of the models file)
     ! Beckstead's d^n law (combustion = Beckstead): burning at and above T-ign, beta-part of q-comb kept by the drop
     real(R8) :: Kburn = 0._R8        ! Burn-rate coefficient at X-eff = 1 [m^n-burn/s]
