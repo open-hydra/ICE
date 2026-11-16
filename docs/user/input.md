@@ -113,7 +113,7 @@ that also exist in `[ICE-Physics]` override it for that material.
 | `solidification = on` | The material freezes and melts, with `T-melt`, `h-fus`, `T-nuc` and `cp-solid` |
 | `combustion = direct` | The drop burns on the d^2 law at its burning temperature; its constants are a row of the models file ([Combustion](#combustion)) |
 | `combustion = Beckstead` | The drop burns on the d^n law from its ignition temperature; its constants are a row of the models file |
-| `K-burn`, `n-burn`, `X-eff`, `beta-part`, `T-ign`, `T-burn`, `q-comb`, `d-stop`, `d-burnout` | The constants of the burning models: refused on the line, their place is the models file |
+| `K-burn`, `n-burn`, `X-eff`, `beta-part`, `T-ign`, `T-burn`, `q-comb`, `d-stop`, `d-burnout`, `d-smoke` | The constants of the burning models: refused on the line, their place is the models file |
 | `cap` | The oxide cap of a burning drop, which ICE does not carry: refused, and so is a `cap` row of the models file |
 
 The physics of each is in [Particle Physics](../theory/physics.md):
@@ -130,9 +130,11 @@ The setup stops on:
 - in a coupled run: `P2T` or `ZGR` on a material that does not evaporate, and `P2T`
   without a positive `k-liq` and `mu-liq` (or their columns);
 - a burning material that also evaporates or solidifies, that gives `d-stop` beside `d-burnout`,
-  the former key `d-res`, or a key of the oxide cap; `combustion = direct` without its latent
-  heat and its burning temperature; `combustion = Beckstead` without `K-burn`; with ICE running
-  alone, a gas phase file that does not declare one species.
+  the former key `d-res`, or a key of the oxide cap, or whose row of the models file has no
+  `q-comb`; `combustion = direct` without its latent heat and its burning temperature, or without
+  `T-burn` when `boiling-pressure` is not one atmosphere; `combustion = Beckstead` without `K-burn`;
+  `q-comb`, `d-stop` or `d-burnout` in `[ICE-Physics]`; with ICE running alone, a gas phase file
+  that does not declare one species.
 
 `evaporation-blowing` has no token: it applies to every material.
 
@@ -197,33 +199,49 @@ A combustion direct q-comb=9.53e6 d-stop=6e-5 T-burn=2791
 
 A row is `<material> combustion <model> key=value ...`, the keys in any order; `-` in place of the
 model stands for the one the line or `[ICE-Physics]` names; a line that starts with `#` is a comment.
-`direct` reads `T-burn` [K], `q-comb` [J/kg], `d-stop` [m] and `d-burnout` [m]; `Beckstead` reads
-`K-burn`, `n-burn`, `X-eff`, `beta-part`, `T-ign` [K], `q-comb`, `d-stop` and `d-burnout`. The setup
+`direct` reads `T-burn` [K], `q-comb` [J/kg], `d-stop` [m], `d-burnout` [m] and `d-smoke` [m];
+`Beckstead` reads `K-burn`, `n-burn`, `X-eff`, `beta-part`, `T-ign` [K], `q-comb`, `d-stop`,
+`d-burnout` and `d-smoke`. The setup
 stops on one of these constants left on the material line, on a row of another kind (`cap`, the oxide
 cap, is IGLOO's), of another model than the material's, with a key its model does not read, on a
 second row for one material, and on a row for no material of the phase file.
 
-`combustion`, `q-comb`, `d-stop` and `d-burnout` have no default: given in `[ICE-Physics]`, they
-hold for every material unless its line (the word) or its row (the constants) overrides them. The
-burning temperature of `direct` is `T-burn` of its row, else `boiling-temperature`; its latent heat
+`combustion` has no default: given in `[ICE-Physics]`, it holds for every material whose line
+names no other word. The constants are the row's alone: `q-comb`, `d-stop` and `d-burnout` in
+`[ICE-Physics]` stop the run and name the models file. The row of every burning material gives
+`q-comb`, the heat of reaction per kg burnt (`q-comb=0` written is allowed). The burning
+temperature of `direct` is `T-burn` of its row, else `boiling-temperature`, which then stands for
+the boiling temperature at one atmosphere: with `boiling-pressure` at another value, the row must
+give `T-burn`. Its latent heat
 is the `Lv` column of the material's property table, read at the burning temperature, else
 `latent-heat`. The table owns the property: with the column, leave `latent-heat` out or give 0 for
 that material (a value beside the column is refused).
 
 With `d-stop` the burning stops at that diameter and the residue stays. Without it the drops burn
-out: the drops of a cell are removed, and what they still hold goes to the gas with the source of
-that step, when they are at or below `d-burnout` (absent: a drop mass of 1e-20 kg) or when the
-step burnt as much as is left. To compare a material with its run in IGLOO, give `d-burnout` in both
+out: while they burn, the drops of a cell are removed when they are at or below `d-burnout`
+(absent: a drop mass of 1e-20 kg) or when the step burnt as much as is left, and what they still
+hold is kept as an amount that a coupler hands to its gas
+([Particle Physics](../theory/physics.md#without-a-residue)). A drop that does not burn is not
+removed, whatever its size. To compare a material with its run in IGLOO, give `d-burnout` in both
 decks, at about 0.1 of the injected diameter: the removal then hands a thousandth of the
 drop's mass.
+
+`d-smoke` (> 0) is the diameter the drops of the material's smoke are born with. The smoke is the
+condensed oxide of the burnt metal, born in another ICE family: a coupler that knows the reaction
+(hydra-MI2) names that family and the kg of smoke per kg burnt. ICE running alone makes no smoke
+([Particle Physics](../theory/physics.md#the-smoke)).
+
+The model of every material in `[ICE-Physics]`, its constants in a row under `-`:
 
 ```ini
 [ICE-Physics]
 combustion          = direct
-q-comb              = 9.53e6
-d-stop              = 6e-5
 latent-heat         = 10.8e6
 boiling-temperature = 2791
+```
+
+```
+A combustion - q-comb=9.53e6 d-stop=6e-5
 ```
 
 The gas phase file must declare one species: `INPUT/phase.txt`, or

@@ -246,7 +246,7 @@ contains
         if (.not. known) then
           if (nbad == 0) write(*,'(A)') '  [ERROR] input.ini has keys ICE does not know:'
           nbad = nbad + 1
-          write(*,'(A)') '    ['//trim(sections(s))//'] '//trim(pairs(1))
+          write(*,'(A)') '    ['//trim(sections(s))//'] '//trim(pairs(1))//retired(sections(s), pairs(1))
         end if
       end do
     end do
@@ -258,6 +258,19 @@ contains
     end if
 
   contains
+
+    !> What a key ICE no longer reads in a section has become, '' for any other key.
+    function retired(section, key) result(hint)
+      character(len=*), intent(in)  :: section, key
+      character(len=:), allocatable :: hint
+      hint = ''
+      if (trim(section) /= trim(codename)//'-Physics') return
+      select case (trim(key))
+      case ('q-comb', 'd-stop', 'd-burnout')
+        hint = ': a constant of the burning model, in the material''s row of the models file ('// &
+               '<material> combustion <model> '//trim(key)//'=...)'
+      end select
+    end function retired
 
     !> A section the registry holds keys of.
     logical function registered(name)

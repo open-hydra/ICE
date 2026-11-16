@@ -5,7 +5,7 @@ module ICE_Mod_Sources
 
   implicit none
   private
-  public :: compute_source, burnout_switch
+  public :: compute_source, burnout_switch, smoke_accumulate, smoke_birth
   !> compute_source_ for the unit test; cell_surface for the unit test and the probes
   public :: compute_source_, cell_surface
 
@@ -57,7 +57,8 @@ contains
                               grid%blk(b)%gas_phase%mu(i,j,k),           &
                               grid%blk(b)%cond_phase(p)%source(:,i,j,k), &
                               obj_condensed(mat_of(p)), nbase(p),        &
-                              gas_heat=grid%blk(b)%cond_phase(p)%heat(i,j,k))
+                              gas_heat=grid%blk(b)%cond_phase(p)%heat(i,j,k), &
+                              burnt=grid%blk(b)%cond_phase(p)%burn(i,j,k))
         if (nf > 0) grid%blk(b)%cond_phase(p)%source(frozen(1:nf,p),i,j,k) = 0._R8
         if (zgr) stiff = max(stiff, step_mass_fraction(grid%blk(b)%cond_phase(p), i, j, k))
   
@@ -110,7 +111,8 @@ contains
                                 grid%blk(b)%gas_phase%mu(i,j,k),           &
                                 grid%blk(b)%cond_phase(p)%source(:,i,j,k), &
                                 obj_condensed(mat_of(p)), nbase(p),        &
-                                gas_heat=grid%blk(b)%cond_phase(p)%heat(i,j,k))
+                                gas_heat=grid%blk(b)%cond_phase(p)%heat(i,j,k), &
+                                burnt=grid%blk(b)%cond_phase(p)%burn(i,j,k))
           if (nf > 0) grid%blk(b)%cond_phase(p)%source(frozen(1:nf,p),i,j,k) = 0._R8
           if (zgr) stiff = max(stiff, step_mass_fraction(grid%blk(b)%cond_phase(p), i, j, k))
       enddo ; enddo ; enddo
@@ -213,28 +215,32 @@ contains
 
 
   !> The burn-out of family p, after its last stage. Its drops burn without a residue (d-stop 0): in a cell where they
-  !> are at or below the removal size (d-burnout, else a drop mass of m_burnout), or where the mass the step took is
-  !> all that is left, every drop goes at once. The cell is emptied and what it held, over the step, is added to the
-  !> stored source: a coupled gas receives the remnant's mass, momentum and energy with the source of this step.
+  !> burn (direct at its burning temperature, Beckstead from T-ign) and are at or below the removal size (d-burnout,
+  !> else a drop mass of m_burnout), or where the mass the step took is all that is left, every drop goes at once.
+  !> The cell is emptied and what it held is added to the amount the family hands over (gone: mass, momentum,
+  !> energy), which a coupler delivers to its gas whole, over its own steps, and then clears.
   subroutine burnout_switch (grid, p)
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Parameters_m,   only: pi
-    use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Config_Types_m, only: obj_condensed, COMB_DIRECT
     use ICE_Lib_Model,      only: prim_2_cons, cons_2_prim
     use ICE_Lib_Properties, only: mat_rho
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
     integer(kind=I4) :: b, i, j, k, n
-    real(kind=R8)    :: mb, dt, held(ncond(p)), zero(ncond(p)), empty(ncond(p))
+    real(kind=R8)    :: mb, dt, held(ncond(p)), zero(ncond(p)), empty(ncond(p)), Ton, sm(6)
     logical          :: gone
 
     n    = nbase(p)
     zero = 0._R8
     associate (mat => obj_condensed(mat_of(p)))
     empty = cons_2_prim(zero, mat)
-    !$OMP PARALLEL PRIVATE(b, i, j, k, mb, dt, held, gone)
+    ! the temperature from which the drops burn: as the burning branches of compute_source_ test it
+    Ton = mat%Tign
+    if (mat%combSelect == COMB_DIRECT) Ton = mat%Tboil*(1._R8 - 1.e-10_R8)
+    !$OMP PARALLEL PRIVATE(b, i, j, k, mb, dt, held, gone, sm)
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
       !$OMP DO COLLAPSE(3) schedule(runtime)
@@ -243,6 +249,8 @@ contains
       do i = 1, grid%blk(b)%dim(1)
         associate (q => grid%blk(b)%cond_phase(p)%prim(:,i,j,k), s => grid%blk(b)%cond_phase(p)%source(:,i,j,k))
           if (.not. (q(1) > empty(1) .and. q(n) > 0._R8)) cycle
+          ! a drop that does not burn is not removed: it stays an inert drop, whatever its size
+          if (q(n-1) < Ton) cycle
           dt = grid%blk(b)%cond_phase(p)%dt(i,j,k)
           mb = m_burnout
           if (mat%dBurn > 0._R8) mb = pi/6._R8*mat_rho(mat, q(n-1))*mat%dBurn**3
@@ -250,7 +258,15 @@ contains
           if (s(1) < 0._R8) gone = gone .or. q(1) <= -s(1)*dt
           if (.not. (gone .and. dt > 0._R8)) cycle
           held = prim_2_cons(q, mat)
-          s(1:ncond(p)) = s(1:ncond(p)) - held/dt
+          ! the remnant's metal burns at once: its smoke is born with its velocity, at its temperature
+          sm = 0._R8
+          if (mat%smokeFam > 0) then
+            sm = smoke_of(held(1), q(2:4), q(n-1), mat)
+            grid%blk(b)%cond_phase(p)%born(:,i,j,k) = grid%blk(b)%cond_phase(p)%born(:,i,j,k) + sm
+          endif
+          grid%blk(b)%cond_phase(p)%gone(1,i,j,k)   = grid%blk(b)%cond_phase(p)%gone(1,i,j,k)   + held(1)
+          grid%blk(b)%cond_phase(p)%gone(2:4,i,j,k) = grid%blk(b)%cond_phase(p)%gone(2:4,i,j,k) + held(2:4) - sm(2:4)
+          grid%blk(b)%cond_phase(p)%gone(5,i,j,k)   = grid%blk(b)%cond_phase(p)%gone(5,i,j,k)   + held(n-1) - sm(5)
           q = empty
         end associate
       enddo ; enddo ; enddo
@@ -262,12 +278,122 @@ contains
   end subroutine burnout_switch
 
 
+  !> The smoke of a mass dm [kg/m^3] (or a rate [kg/(m^3 s)]) of a burning material, born with velocity u at
+  !> temperature T: mass, momentum (3), energy (the smoke material's in ICE's datum, with the kinetic part), number
+  !> (each drop at d-smoke).
+  pure function smoke_of(dm, u, T, mat) result(sm)
+    use ICE_Parameters_m,   only: pi
+    use ICE_Config_Types_m, only: condensed_phase_t, obj_condensed
+    use ICE_Global_m,       only: mat_of
+    use ICE_Lib_Properties, only: mat_rho, mat_e, mat_cp_const
+    real(kind=R8),           intent(in) :: dm, u(3), T
+    type(condensed_phase_t), intent(in) :: mat
+    real(kind=R8) :: sm(6), ms, es
+    associate (smat => obj_condensed(mat_of(mat%smokeFam)))
+      ms = mat%nuSmoke*dm
+      if (smat%cs_varies) then
+        es = mat_e(smat, T)
+      else
+        es = mat_cp_const(smat)*T
+      endif
+      sm(1)   = ms
+      sm(2:4) = ms*u
+      sm(5)   = ms*(es + 0.5_R8*dot_product(u, u))
+      sm(6)   = ms/(pi/6._R8*mat_rho(smat, T)*mat%dSmoke**3)
+    end associate
+  end function smoke_of
+
+
+  !> After the source of family p in stage srk (of the nrk the scheme takes): the smoke its drops make, as rates (birth, the coupler takes them
+  !> out of the gas's share) and accumulated with the stage weights of the scheme (born; RK_stage on an accumulator
+  !> from 0: forward Euler dt r1, RK2 dt (r1 + r2)/2, RK3 dt (r1/6 + r2/6 + 2 r3/3), the weights the state of p
+  !> receives its burning with).
+  subroutine smoke_accumulate (grid, p, srk)
+    use ICE_Global_m
+    use ICE_Advanced_Types_m
+    use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Lib_RK,         only: RK_stage
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4),      intent(in)    :: p, srk
+    integer(kind=I4) :: b, i, j, k, n
+    real(kind=R8)    :: r(6), zero6(6)
+
+    if (obj_condensed(mat_of(p))%smokeFam == 0) return
+    n = nbase(p); zero6 = 0._R8
+    associate (mat => obj_condensed(mat_of(p)))
+    !$OMP PARALLEL PRIVATE(b, i, j, k, r)
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      !$OMP DO COLLAPSE(3) schedule(runtime)
+      do k = 1, grid%blk(b)%dim(3)
+      do j = 1, grid%blk(b)%dim(2)
+      do i = 1, grid%blk(b)%dim(1)
+        r = 0._R8
+        if (grid%blk(b)%cond_phase(p)%burn(i,j,k) > 0._R8) &
+          r = smoke_of(grid%blk(b)%cond_phase(p)%burn(i,j,k), grid%blk(b)%cond_phase(p)%prim(2:4,i,j,k), &
+                       grid%blk(b)%cond_phase(p)%prim(n-1,i,j,k), mat)
+        grid%blk(b)%cond_phase(p)%birth(:,i,j,k) = r(1:5)
+        grid%blk(b)%cond_phase(p)%born(:,i,j,k)  = RK_stage(srk, nrk, grid%blk(b)%cond_phase(p)%born(:,i,j,k), zero6, &
+                                                            grid%blk(b)%cond_phase(p)%dt(i,j,k)*r)
+      enddo ; enddo ; enddo
+      !$OMP END DO nowait
+    enddo
+    !$OMP END PARALLEL
+    end associate
+
+  end subroutine smoke_accumulate
+
+
+  !> After every family's step: the smoke the burning families made is born in its families (mass, momentum, energy and
+  !> number added to the conservative state, cell by cell), and the accumulators are cleared.
+  subroutine smoke_birth (grid)
+    use ICE_Global_m
+    use ICE_Advanced_Types_m
+    use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Lib_Model,      only: prim_2_cons, cons_2_prim
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4) :: b, i, j, k, p, ps, ns
+    real(kind=R8), allocatable :: c(:)
+
+    do p = 1, ngroups
+      ps = obj_condensed(mat_of(p))%smokeFam
+      if (ps == 0) cycle
+      ns = nbase(ps)
+      associate (smat => obj_condensed(mat_of(ps)))
+      !$OMP PARALLEL PRIVATE(b, i, j, k, c)
+      allocate(c(ncond(ps)))
+      do b = 1, grid%nb
+        if (.not. is_local_block(b)) cycle
+        !$OMP DO COLLAPSE(3) schedule(runtime)
+        do k = 1, grid%blk(b)%dim(3)
+        do j = 1, grid%blk(b)%dim(2)
+        do i = 1, grid%blk(b)%dim(1)
+          if (all(grid%blk(b)%cond_phase(p)%born(:,i,j,k) == 0._R8)) cycle
+          c = prim_2_cons(grid%blk(b)%cond_phase(ps)%prim(:,i,j,k), smat)
+          c(1:4)  = c(1:4)  + grid%blk(b)%cond_phase(p)%born(1:4,i,j,k)
+          c(ns-1) = c(ns-1) + grid%blk(b)%cond_phase(p)%born(5,i,j,k)
+          c(ns)   = c(ns)   + grid%blk(b)%cond_phase(p)%born(6,i,j,k)
+          grid%blk(b)%cond_phase(ps)%prim(:,i,j,k) = cons_2_prim(c, smat)
+          grid%blk(b)%cond_phase(p)%born(:,i,j,k)  = 0._R8
+        enddo ; enddo ; enddo
+        !$OMP END DO nowait
+      enddo
+      deallocate(c)
+      !$OMP END PARALLEL
+      end associate
+    enddo
+
+  end subroutine smoke_birth
+
+
   !> The source of one cell. gas_heat is the heat the gas receives that the source does not carry [W/m^3]: the heat of
   !> reaction of a burning material (combustion = direct), 0 otherwise; the gas takes -source plus gas_heat.
   subroutine compute_source_ (cond_prim, cond_tau, gas_prim, gas_R, gas_gam, gas_k, gas_mu, source, mat, nb, gas_heat, &
-                              Ts_out)
+                              Ts_out, burnt)
     use ICE_Parameters_m, only: pi, sigma_SB, I4
-    use ICE_Config_Types_m, only: condensed_phase_t, obj_time_scheme
+    use ICE_Config_Types_m, only: condensed_phase_t, obj_time_scheme, COMB_DIRECT, COMB_BECKSTEAD
     use ICE_Lib_Model
     use ICE_Lib_Drag
     use ICE_Lib_Evaporation, only: evaporation, blowingFactor, zgrBoiling, burnRate, becksteadRate, nep, iLv, icpv
@@ -281,11 +407,12 @@ contains
     integer(kind=I4),            intent(in)    :: nb
     real(kind=R8),               intent(out)   :: gas_heat
     real(kind=R8), optional,     intent(out)   :: Ts_out
+    real(kind=R8), optional,     intent(out)   :: burnt   !> the mass the drops burn per unit volume and time [kg/(m^3 s)]
 
     integer(kind=I4) :: n, ng
     real(kind=R8)    :: Rp, Re, Ma, Pr, Tr, Ts, TB
     real(kind=R8)    :: Cd, Nu
-    real(kind=R8)    :: rho_mat, mdot, Qconv, Qevap, carry, cpg, Lv, Qburn
+    real(kind=R8)    :: rho_mat, mdot, Qconv, Qevap, carry, cpg, Lv, Qburn, burnt_
     logical          :: override_Qdot, boiling
     real(kind=R8)    :: force(6)
     real(kind=R8)    :: ep(nep)
@@ -375,8 +502,8 @@ contains
     !  its temperature; the vapour leaves with the drop's energy and its heat of reaction goes to the gas. Otherwise
     !  the drop exchanges as an inert one. The temperature is compared within 1e-10 of boiling-temperature, so that
     !  the round-off of the energy does not switch a drop held there off.
-    Qburn = 0._R8
-    if (mat%combSelect == 1) then
+    Qburn = 0._R8; burnt_ = 0._R8
+    if (mat%combSelect == COMB_DIRECT) then
       if (cond_prim(n-1) >= mat%Tboil*(1._R8 - 1.e-10_R8) .and. 2._R8*Rp > mat%dRes) then
         cpg  = gas_gam*gas_R/(gas_gam - 1._R8)
         !> the model's latent heat is the material's at the burning temperature; the closure's sink, the material's
@@ -387,9 +514,10 @@ contains
           force(1) = mdot*cond_prim(n)
           force(5) = force(1)*mat_lv(mat, cond_prim(n-1))
           Qburn    = force(1)*mat%qComb
+          burnt_   = force(1)
         endif
       endif
-    elseif (mat%combSelect == 2) then
+    elseif (mat%combSelect == COMB_BECKSTEAD) then
       !> Beckstead: a drop at or above T-ign and larger than the residue burns on the d^n law. The law has no latent
       !  sink, so the closure's is cancelled; beta-part of the heat of reaction heats the drop, and the gas, which
       !  receives the whole of it, pays that share through the drop's energy.
@@ -398,9 +526,11 @@ contains
         force(1) = mdot*cond_prim(n)
         force(5) = force(5) + force(1)*(mat_lv(mat, cond_prim(n-1)) + mat%betaPart*mat%qComb)
         Qburn    = force(1)*mat%qComb
+        burnt_   = force(1)
       endif
     endif
     gas_heat = Qburn
+    if (present(burnt)) burnt = burnt_
 
     !> Particles relaxation time (infinite without drag, so every relaxation term vanishes exactly)
     if (Cd == 0._R8) then

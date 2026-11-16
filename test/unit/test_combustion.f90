@@ -12,6 +12,7 @@
 !> Prints every assertion and exits non-zero if any failed.
 program test_combustion
   use, intrinsic :: iso_fortran_env, only: R8 => real64
+  use ICE_Config_Types_m, only: COMB_DIRECT
   implicit none
   real(R8), parameter :: PI = acos(-1._R8)
   real(R8), parameter :: RHO_M = 2000._R8, CP_P = 1177._R8, Q = 9.53e6_R8, LV = 10.8e6_R8, TSAT = 2791._R8
@@ -63,7 +64,7 @@ contains
   end subroutine setup_model
 
 
-  !> Gallier's aluminium, burning (comb = 1) or not.
+  !> Gallier's aluminium, burning (comb = COMB_DIRECT) or not (0).
   subroutine material(mat, comb, emiss)
     use ICE_Config_Types_m, only: condensed_phase_t
     type(condensed_phase_t), intent(out) :: mat
@@ -107,7 +108,7 @@ contains
     write(*,'(A,F8.3,A,F8.5,A,ES12.5,A)') '   Re ', Re, ', B ', B, ', eq. 4: ', ref, ' kg/(m^3 s)'
 
     do e = 1, 2
-      call material(mat, 1, merge(0._R8, 0.5_R8, e == 1))
+      call material(mat, COMB_DIRECT, merge(0._R8, 0.5_R8, e == 1))
       tau = 0._R8
       call compute_source_(c, tau, gas, RG, GAM, KG, MU, s, mat, 6, gas_heat=heat)
       w = -s(1)
@@ -141,7 +142,7 @@ contains
 
     call material(none, 0, 0._R8)
     do leg = 1, 3
-      call material(burn, 1, 0._R8)
+      call material(burn, COMB_DIRECT, 0._R8)
       gas = [PG/(RG*TG), SLIP, 0._R8, 0._R8, TG]
       select case (leg)
       case (1); c = drops(D0, 2700._R8)

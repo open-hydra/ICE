@@ -62,21 +62,9 @@ contains
 
     call reg%add(section, 'combustion', obj_time_scheme%combustion, '', &
                  'Combustion model of every material: direct burns the drops at their burning temperature, Beckstead '// &
-                 'on the d^n law from T-ign; down to the residue d-stop, or with none until they are removed '// &
-                 '(d-burnout); a phase-file token overrides it; absent = the tokens alone decide', &
+                 'on the d^n law from T-ign; its constants (q-comb, d-stop, d-burnout, ...) are the material''s row '// &
+                 'of the models file; a phase-file token overrides it; absent = the tokens alone decide', &
                  'none, direct, Beckstead', .false.)
-    call reg%add(section, 'q-comb', ini_condensed%qComb, '', &
-                 'Heat of reaction per unit burnt mass [J/kg] of combustion = direct, released in the gas; the '// &
-                 'material''s row of the models file overrides it; absent = the row''s, else 0 (pure vaporisation)', &
-                 '>= 0', .false.)
-    call reg%add(section, 'd-stop', ini_condensed%dRes, '', &
-                 'Diameter of the inert residue [m] a burning drop leaves: below it the drop no longer burns and '// &
-                 'stays; the material''s row of the models file overrides it; absent or 0 = no residue, the drop '// &
-                 'burns out', '>= 0', .false.)
-    call reg%add(section, 'd-burnout', ini_condensed%dBurn, '', &
-                 'Diameter [m] at which the burning drops of a cell, without residue, are removed and handed whole '// &
-                 'to the gas; the material''s row of the models file overrides it; absent or 0 = a drop mass of '// &
-                 '1e-20 kg', '>= 0', .false.)
 
     ! Condensed-material properties ----------------------
     call reg%add(section, 'density', ini_condensed%rho_al, '2700.0', &

@@ -5,7 +5,7 @@ law, down to their residue, or out. A unit test checks the cell source against t
 
 | Case | ctest | What it pins down | Reference |
 |---|---|---|---|
-| [P](#p-a-closed-cell) | `DirectCombustion` | The $d^2$ law at the burning temperature, the residue, the burn-out, ignition from below, the refusals | Closed form |
+| [P](#p-a-closed-cell) | `DirectCombustion` | The $d^2$ law at the burning temperature, the residue, the burn-out, ignition from below, the refusals, a cold drop kept | Closed form |
 | [Unit](#the-cell-source) | `CombustionUnit` | The burn rate with slip, the heat to the gas, the inert source | Gallier and Godfroy's eq. 4 |
 
 ## The material
@@ -43,9 +43,10 @@ declares one species. The closed form is taken at the solution's own time.
 | P3 | A drop at 2000 K | Ignition at 4.896 ms, then $d$ and $T_p$ at $t_{ign} + t_{res}/2$ | $T_p$ 0.44 K above $T_{sat}$ (bound 1.3 K); $d$ $1.6\times10^{-4}$ relative (bound $4.2\times10^{-4}$) |
 | P4 | P1's midpoint with IG and AG | The same numbers | $7.7\times10^{-9}$, as P1 |
 | P5 | `gas-phase = gas`, and fourteen inputs that must stop | `INPUT/gas-phase.txt` is read; the refusals name their cause | the drop burns as P1; all fourteen refused |
-| P6 | The `[ICE-Physics]` keys on a bare `A 1` line; a `d-stop` of the models file over the key; `T-burn` of the models file over `boiling-temperature`; a `combustion=none` token | The keys alone burn as P1, the rows win, `none` leaves the drop inert | $7.7\times10^{-9}$, as P1; the drop inert and heating |
+| P6 | The `[ICE-Physics]` word `combustion` on a bare `A 1` line, the constants in a row under the model `-`; `T-burn` of that row over `boiling-temperature`; a `combustion=none` token | The word with the row burns as P1, `T-burn` wins, `none` leaves the drop inert | $7.7\times10^{-9}$, as P1; the drop inert and heating |
 | P7 | No `d-stop`: with `d-burnout=3e-5`, and with no `d-burnout` | At 0.9 of the law's time the drop is on the law; 20 steps after it every cell is empty, and no density was floored | $d$ within $4.7\times10^{-11}$ m; bulk density $10^{-25}$ kg/m³, the empty state |
 | P8 | The latent heat from the `Lv` column, $L_v(T) = L_v + 1000\,(T - T_{sat})$ J/kg, no `latent-heat` key: a drop at $T_{sat}$, a drop at $T_{sat}$ + 100 K; `latent-heat` beside the column; neither | The first burns as P1; the second keeps its temperature and burns with $L_v(T_{sat})$ in $B$; the last two are refused | $7.7\times10^{-9}$ and $7.3\times10^{-9}$ relative; $T$ within $3.6\times10^{-12}$ K; both refused |
+| P9 | `q-comb`, `d-stop`, `d-burnout` in `[ICE-Physics]`; a row without `q-comb`; `q-comb=0` written; `boiling-pressure` = 2×10⁵ Pa without and with `T-burn`; a drop at 2000 K under `d-burnout=2e-4`, at half its ignition time | The five refused by name; `q-comb=0` burns with $B = c_{p,g}(T_g - T_{sat})/L_v$ = 0.122037; with `T-burn` the drop burns as P1; the cold drop keeps its mass and heats inertly | all five refused; $7.3\times10^{-12}$ and $2.3\times10^{-9}$ relative, $T$ within $10^{-11}$ K; bulk density kept exactly, $T$ 0.17 mK off (bound 0.47 K) |
 
 In every leg the eight cells agree to $10^{-10}$, and the velocity and the number density do not move.
 
@@ -63,6 +64,10 @@ Notes on the legs:
 - **P8.** With the model's latent heat read at the drop's temperature instead of the burning temperature, the second
   drop ends $1.95\times10^{-3}$ off the oracle (its $B$ takes $L_v$ + 10⁵ J/kg). On the code before the column was
   read for `direct`, both drops stop at "requires its latent heat" and the key beside the column is not refused.
+- **P9.** On the code before (ICE `main` at `f53c03d`): `q-comb` and `d-stop` in `[ICE-Physics]` are read and the
+  run goes on; `d-burnout` there stops for another cause (beside the row's `d-stop`); a row without `q-comb` and
+  `boiling-pressure` 2×10⁵ Pa without `T-burn` are not refused; the cold drop is removed, its cell ends empty. Six of
+  P9's ten checks fail there; the four that pass are those of the two burning legs, whose inputs that code reads too.
 
 ## The cell source
 

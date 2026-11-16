@@ -50,7 +50,7 @@ contains
   subroutine Load_Table()
     use Lib_ORION_data,     only: orion_data
     use Lib_Tecplot,        only: tec_read_structured_multiblock
-    use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Config_Types_m, only: obj_condensed, COMB_DIRECT
     use ICE_Global_m,       only: ICE_phase_prefix, nmat
     use ICE_Mod_MPI,        only: mpi_is_root
     use ICE_Lib_Evaporation, only: Patm, Ru
@@ -199,7 +199,7 @@ contains
       integer  :: vcode
       character(len=:), allocatable :: line
       if (ilv == 0 .and. imv == 0 .and. icpv == 0) return
-      if (obj_condensed(m)%evapSelect == 0 .and. obj_condensed(m)%combSelect == 1) then
+      if (obj_condensed(m)%evapSelect == 0 .and. obj_condensed(m)%combSelect == COMB_DIRECT) then
         call load_direct_lv(m)
         return
       endif

@@ -53,6 +53,15 @@ module ICE_Advanced_Types_m
     ! The heat the gas receives that source does not carry [W/m^3], the heat of reaction of a burning material
     ! (combustion = direct), else 0: a two-way coupled gas takes -source plus heat, both the step's
     real(R8), dimension(:,:,:),     allocatable :: heat
+    ! What the burn-out switch removed and a coupler has not yet delivered to its gas, per unit volume: mass,
+    ! momentum (3), energy; added to at each removal, cleared by the coupler
+    real(R8), dimension(:,:,:,:),   allocatable :: gone
+    ! A burning family that makes a smoke: the mass it burns per unit volume and time (burn, the last stage's), the
+    ! smoke's birth rates (birth: mass, momentum (3), energy; the last stage's, which a coupler takes out of what the
+    ! gas receives) and the amounts born over the stages of the step (born: mass, momentum (3), energy, number),
+    ! added to the smoke family after every family's step
+    real(R8), dimension(:,:,:),     allocatable :: burn
+    real(R8), dimension(:,:,:,:),   allocatable :: birth, born
     ! The running weighted sums of source and heat over the stages of a two-way coupled multi-stage step
     real(R8), dimension(:,:,:,:),   allocatable :: source_step
     real(R8), dimension(:,:,:),     allocatable :: heat_step

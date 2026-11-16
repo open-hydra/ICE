@@ -443,7 +443,7 @@ contains
             endif
             write(*,'(A)') " - Boiling --> "//trim(obj_condensed(m)%boilWord)
           endif
-          if (obj_condensed(m)%combSelect == 1) &
+          if (obj_condensed(m)%combSelect == COMB_DIRECT) &
             write(*,'(A,ES12.5,A,ES12.5,A,F0.2,A)') " - Comb    --> direct, q-comb ", obj_condensed(m)%qComb, &
               " J/kg, d-stop ", obj_condensed(m)%dRes, " m, at ", obj_condensed(m)%Tboil, " K"
         enddo
