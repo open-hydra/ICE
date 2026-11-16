@@ -30,7 +30,7 @@ in the gas: m = rho pi D^3/6, k = mu cp/Pr, B = (cp (T_g - T_sat) + Q)/L_v, and
       T_sat + 100 K keeps its temperature and burns with B = (cp (T_g - T_p) + Q)/L_v(T_sat), the model's latent heat
       at T_sat while the closure's sink is cancelled at the drop's own; the refusals: latent-heat beside the
       column, neither of the two
-  P9  the readers' fixes: the former [ICE-Physics] keys q-comb, d-stop and d-burnout refused by name; a row without
+  P9  the burning row's rules: q-comb, d-stop and d-burnout in [ICE-Physics] refused by name; a row without
       q-comb refused; q-comb=0 written burns with B = cp (T_g - T_sat)/L_v; boiling-temperature at another
       boiling-pressure and no T-burn refused, with T-burn in the row it burns as P1; a cold drop at or below
       d-burnout is not removed: it heats inertly as P3's
@@ -391,7 +391,7 @@ def main():
         print('   P8  the latent heat from the Lv column')
         p8(rep)
     if selected('P9'):
-        print('   P9  the readers\' fixes and the cold drop')
+        print('   P9  the burning row\'s rules and the cold drop')
         p9(rep)
     rep.close(WORK)
 
