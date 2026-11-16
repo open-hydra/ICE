@@ -383,7 +383,8 @@ burns at once, and its heat of reaction goes to the gas.
 ### The burning drop
 
 A drop burns while its temperature is at least $T_{sat}$ (`T-burn` of the material's row of the models file, else
-`boiling-temperature`) and its diameter is larger than the residue's, $d_{res}$ = `d-stop`.
+`boiling-temperature`, the boiling temperature at one atmosphere, at which the paper burns its drops: with another
+`boiling-pressure`, `T-burn` is required) and its diameter is larger than the residue's, $d_{res}$ = `d-stop`.
 It loses mass at the $d^2$ law of a vaporising drop, with the heat of reaction in
 the transfer number (unit Lewis number):
 
@@ -426,11 +427,13 @@ held there.
 ### Without a residue
 
 A material that gives no `d-stop` burns out. The number density has no sink in the equations, so the last of the
-drops of a cell leave together: after the last stage of a step, a cell whose drops are at or below the removal size
-(`d-burnout`, a diameter; without it a drop mass of $10^{-20}$ kg), or where the step burnt as much as is left, is
-emptied, and the mass, the momentum and the energy it held are added to the stored source of that step, which a
-coupled gas receives. Nothing is lost and no density is floored. `d-stop` beside `d-burnout` is refused: a drop that
-stops at its residue is never removed.
+drops of a cell leave together: after the last stage of a step, a cell whose drops burn (`direct` from $T_{sat}$, within
+$10^{-10}$ of it; `Beckstead` from `T-ign`) and are at or below the removal size (`d-burnout`, a diameter; without it
+a drop mass of $10^{-20}$ kg), or where the step burnt as much as is left, is emptied. What it held is
+not a rate of that step: its mass, momentum and energy per unit volume are added to the family's `gone`, an amount
+that a coupler delivers to its gas whole, over its own steps, and then clears. Nothing is lost and no density is
+floored. A drop that does not burn is never removed, whatever its size: it stays, an inert drop. `d-stop` beside
+`d-burnout` is refused: a drop that stops at its residue is never removed.
 
 ### The other model: Beckstead's $d^n$ law
 
@@ -447,6 +450,37 @@ which heats it. The burn ends as that of `direct` does: at the residue `d-stop`,
 not carry the oxide cap IGLOO's law can grow on the drop: `xi-cap` other than 0, `xi-law`, `xi-ox0`, `product`,
 `residue` and `d-residue` are refused, and so is a line of 0 groups, the cap's product.
 
+### The smoke
+
+The burnt metal can make a condensed oxide, a material of another ICE family: the smoke. ICE running alone makes
+none. A coupler that knows the reaction (hydra-MI2, from the products file ATLAS writes) sets, for a burning
+material, the family its smoke is born in and $\nu_s$, the kg of smoke per kg burnt; `d-smoke` of the material's row
+is the diameter $d_s$ each smoke drop is born with. Drops that burn $\dot m_b$ per unit volume and time give the
+smoke family, per unit volume and time,
+
+$$
+\dot M = \nu_s\,\dot m_b, \qquad \dot M\,\mathbf u_p, \qquad
+\dot M\big(e_s(T_p) + \tfrac12|\mathbf u_p|^2\big), \qquad
+\dot N = \frac{\dot M}{\tfrac{\pi}{6}\,\rho_s(T_p)\,d_s^3},
+$$
+
+its mass, momentum, energy and number: the smoke is born with the burning drops' velocity $\mathbf u_p$ and
+temperature $T_p$, with $e_s$ the smoke material's energy (its table, else its constant $c_p$ times $T_p$) and
+$\rho_s$ its density.
+
+ICE integrates its families one after the other, each through all its stages, so the smoke's source is split from
+them. In each stage of the burning family the rates above are taken at the stage's state and accumulated with the
+stage weights of the scheme: $\Delta t\,r_1$ (Euler), $\Delta t\,(r_1 + r_2)/2$ (RK2), $\Delta t\,(r_1/6 + r_2/6 +
+2r_3/3)$ (RK3), the weights the burning family's state receives its burning with. After every family has taken its
+step, the accumulated amounts are added to the conservative state of the smoke family, cell by cell, and cleared.
+Per cell and step the smoke family gains $\nu_s$ times the mass burnt, with that mass's momentum and the birth
+energy. The rates of the last stage stay in the burning family's `birth`, which a coupler takes out of what the gas
+receives.
+
+A removal without a residue (above) gives its smoke at once: the remnant's metal burns, its smoke is born with the
+remnant's velocity at its temperature, and `gone` keeps the remnant's mass, and its momentum and energy less the
+smoke's.
+
 ### Which species, how many materials
 
 Each material burns on its own model, named on its line of the phase file. ICE running alone takes the vapour that
@@ -461,9 +495,10 @@ gives the burnt mass the species of its reaction.
 | Input | Meaning | Default |
 |---|---|---|
 | `combustion` | `direct`, `Beckstead` or `none` | `none` |
-| `q-comb` | heat of reaction $Q$ per unit burnt mass [J/kg] | 0 |
+| `q-comb` | heat of reaction $Q$ per unit burnt mass [J/kg] | required (0 allowed) |
 | `d-stop` | diameter of the inert residue [m] | 0: no residue, the drop burns out |
 | `d-burnout` | diameter at which the drops of a cell, without residue, are removed [m] | 0: a drop mass of $10^{-20}$ kg |
+| `d-smoke` | diameter the smoke drops are born with [m], > 0 | none; used only when a coupler gives the material a smoke |
 | `T-burn`, else `boiling-temperature` | `direct`: $T_{sat}$, the burning temperature [K] | required |
 | the `Lv` column, else `latent-heat` | `direct`: $L_v$ [J/kg], the material's latent heat, taken at the burning temperature | required |
 | `K-burn`, `n-burn`, `X-eff` | `Beckstead`: the law's coefficient [m$^n$/s], its exponent, the oxidiser fraction | required, 1.8, 1 |
@@ -471,9 +506,9 @@ gives the burnt mass the species of its reaction.
 
 `combustion` goes in `[ICE-Physics]`, on the material's line of the phase file, or both: the token overrides the key.
 The constants of the two models are a row of the models file beside the phase file, `<material> combustion <model>
-key=value ...`; `q-comb`, `d-stop` and `d-burnout` go in `[ICE-Physics]` as well, and the row overrides the key;
-`T-burn` overrides `boiling-temperature`. The keys have no default, so an absent key leaves the decision to the line
-and the row.
+key=value ...`, and only there: `q-comb`, `d-stop` and `d-burnout` in `[ICE-Physics]` stop the run, naming the row.
+`T-burn` overrides `boiling-temperature`, and is required when `boiling-pressure` is not one atmosphere. An absent
+`combustion` key leaves the decision to the line.
 
 The setup stops when the material also evaporates or solidifies. ICE reads the model only in a coupled run. For
 aluminium, Gallier and Godfroy take $Q$ = 9.53 MJ/kg, $L_v$ = 10.8 MJ/kg and $T_{sat}$ = 2791 K.
