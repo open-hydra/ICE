@@ -6,6 +6,9 @@ module ICE_Config_Types_m
   implicit none
   private
 
+  !> The burning models of a material (condensed_phase_t%combSelect; 0 = none), numbered as IGLOO numbers them
+  integer, parameter, public :: COMB_BECKSTEAD = 1, COMB_DIRECT = 2
+
   !! ------------------------------------------------------
   !! Simulation Parameters --------------------------------
   !! ------------------------------------------------------
@@ -246,9 +249,10 @@ module ICE_Config_Types_m
     real(R8) :: hFus  = 0._R8        ! Heat of fusion              [J/kg]
     real(R8) :: Tnuc  = 0._R8        ! Nucleation temperature      [K]
     real(R8) :: cpSol = 0._R8        ! Solid specific heat         [J/(kg K)]
-    ! Direct combustion (combustion = direct): the drop burns at boiling-temperature down to the residue's diameter
+    ! Combustion: COMB_BECKSTEAD, COMB_DIRECT or 0; the constants from the material's row of the models file
     integer  :: combSelect = 0
-    real(R8) :: qComb = 0._R8        ! Heat of reaction per unit burnt mass, released in the gas [J/kg]
+    real(R8) :: qComb = 0._R8        ! The model's heat of reaction per unit burnt mass [J/kg]: direct's Q, Beckstead's base of beta-part
+    logical  :: qcomb_set = .false.  ! q-comb was given in the row (0 included)
     real(R8) :: dRes  = 0._R8        ! d-stop: diameter of the inert residue, where the burning stops [m]; 0 = the drop burns out
     real(R8) :: dBurn = 0._R8        ! d-burnout: a burning drop this small is removed, handed whole to the gas [m]; 0 = built-in
     logical  :: tburn_set = .false.  ! direct's burning temperature was given (T-burn of the models file)

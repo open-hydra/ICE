@@ -53,6 +53,9 @@ module ICE_Advanced_Types_m
     ! The heat the gas receives that source does not carry [W/m^3], the heat of reaction of a burning material
     ! (combustion = direct), else 0: a two-way coupled gas takes -source plus heat, both the step's
     real(R8), dimension(:,:,:),     allocatable :: heat
+    ! What the burn-out switch removed and a coupler has not yet delivered to its gas, per unit volume: mass,
+    ! momentum (3), energy; added to at each removal, cleared by the coupler
+    real(R8), dimension(:,:,:,:),   allocatable :: gone
     ! The running weighted sums of source and heat over the stages of a two-way coupled multi-stage step
     real(R8), dimension(:,:,:,:),   allocatable :: source_step
     real(R8), dimension(:,:,:),     allocatable :: heat_step

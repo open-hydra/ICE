@@ -213,27 +213,31 @@ contains
 
 
   !> The burn-out of family p, after its last stage. Its drops burn without a residue (d-stop 0): in a cell where they
-  !> are at or below the removal size (d-burnout, else a drop mass of m_burnout), or where the mass the step took is
-  !> all that is left, every drop goes at once. The cell is emptied and what it held, over the step, is added to the
-  !> stored source: a coupled gas receives the remnant's mass, momentum and energy with the source of this step.
+  !> burn (direct at its burning temperature, Beckstead from T-ign) and are at or below the removal size (d-burnout,
+  !> else a drop mass of m_burnout), or where the mass the step took is all that is left, every drop goes at once.
+  !> The cell is emptied and what it held is added to the amount the family hands over (gone: mass, momentum,
+  !> energy), which a coupler delivers to its gas whole, over its own steps, and then clears.
   subroutine burnout_switch (grid, p)
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Parameters_m,   only: pi
-    use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Config_Types_m, only: obj_condensed, COMB_DIRECT
     use ICE_Lib_Model,      only: prim_2_cons, cons_2_prim
     use ICE_Lib_Properties, only: mat_rho
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
     integer(kind=I4) :: b, i, j, k, n
-    real(kind=R8)    :: mb, dt, held(ncond(p)), zero(ncond(p)), empty(ncond(p))
+    real(kind=R8)    :: mb, dt, held(ncond(p)), zero(ncond(p)), empty(ncond(p)), Ton
     logical          :: gone
 
     n    = nbase(p)
     zero = 0._R8
     associate (mat => obj_condensed(mat_of(p)))
     empty = cons_2_prim(zero, mat)
+    ! the temperature from which the drops burn: as the burning branches of compute_source_ test it
+    Ton = mat%Tign
+    if (mat%combSelect == COMB_DIRECT) Ton = mat%Tboil*(1._R8 - 1.e-10_R8)
     !$OMP PARALLEL PRIVATE(b, i, j, k, mb, dt, held, gone)
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
@@ -243,6 +247,8 @@ contains
       do i = 1, grid%blk(b)%dim(1)
         associate (q => grid%blk(b)%cond_phase(p)%prim(:,i,j,k), s => grid%blk(b)%cond_phase(p)%source(:,i,j,k))
           if (.not. (q(1) > empty(1) .and. q(n) > 0._R8)) cycle
+          ! a drop that does not burn is not removed: it stays an inert drop, whatever its size
+          if (q(n-1) < Ton) cycle
           dt = grid%blk(b)%cond_phase(p)%dt(i,j,k)
           mb = m_burnout
           if (mat%dBurn > 0._R8) mb = pi/6._R8*mat_rho(mat, q(n-1))*mat%dBurn**3
@@ -250,7 +256,8 @@ contains
           if (s(1) < 0._R8) gone = gone .or. q(1) <= -s(1)*dt
           if (.not. (gone .and. dt > 0._R8)) cycle
           held = prim_2_cons(q, mat)
-          s(1:ncond(p)) = s(1:ncond(p)) - held/dt
+          grid%blk(b)%cond_phase(p)%gone(1:4,i,j,k) = grid%blk(b)%cond_phase(p)%gone(1:4,i,j,k) + held(1:4)
+          grid%blk(b)%cond_phase(p)%gone(5,i,j,k)   = grid%blk(b)%cond_phase(p)%gone(5,i,j,k)   + held(n-1)
           q = empty
         end associate
       enddo ; enddo ; enddo
@@ -267,7 +274,7 @@ contains
   subroutine compute_source_ (cond_prim, cond_tau, gas_prim, gas_R, gas_gam, gas_k, gas_mu, source, mat, nb, gas_heat, &
                               Ts_out)
     use ICE_Parameters_m, only: pi, sigma_SB, I4
-    use ICE_Config_Types_m, only: condensed_phase_t, obj_time_scheme
+    use ICE_Config_Types_m, only: condensed_phase_t, obj_time_scheme, COMB_DIRECT, COMB_BECKSTEAD
     use ICE_Lib_Model
     use ICE_Lib_Drag
     use ICE_Lib_Evaporation, only: evaporation, blowingFactor, zgrBoiling, burnRate, becksteadRate, nep, iLv, icpv
@@ -376,7 +383,7 @@ contains
     !  the drop exchanges as an inert one. The temperature is compared within 1e-10 of boiling-temperature, so that
     !  the round-off of the energy does not switch a drop held there off.
     Qburn = 0._R8
-    if (mat%combSelect == 1) then
+    if (mat%combSelect == COMB_DIRECT) then
       if (cond_prim(n-1) >= mat%Tboil*(1._R8 - 1.e-10_R8) .and. 2._R8*Rp > mat%dRes) then
         cpg  = gas_gam*gas_R/(gas_gam - 1._R8)
         !> the model's latent heat is the material's at the burning temperature; the closure's sink, the material's
@@ -389,7 +396,7 @@ contains
           Qburn    = force(1)*mat%qComb
         endif
       endif
-    elseif (mat%combSelect == 2) then
+    elseif (mat%combSelect == COMB_BECKSTEAD) then
       !> Beckstead: a drop at or above T-ign and larger than the residue burns on the d^n law. The law has no latent
       !  sink, so the closure's is cancelled; beta-part of the heat of reaction heats the drop, and the gas, which
       !  receives the whole of it, pays that share through the drop's energy.

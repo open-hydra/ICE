@@ -31,7 +31,8 @@ contains
 
   subroutine Setup_Materials()
     use ICE_Global_m,        only: ngroups, nmat, mat_of, ICE_phase_prefix, ICE_gas_by_coupler, ncond, nbase, solid_of
-    use ICE_Config_Types_m,  only: obj_condensed, ini_condensed, obj_sim_param, obj_time_scheme
+    use ICE_Config_Types_m,  only: obj_condensed, ini_condensed, obj_sim_param, obj_time_scheme, COMB_DIRECT, &
+                                   COMB_BECKSTEAD
     use ICE_Load_Table,      only: Load_Table
     use ICE_Lib_Evaporation, only: Ru, Patm, iMv, iLv, icpv, iLe, iYinf, iLvMvOverRu, iinvTboil, ialphaE, invTboil_at
     use ICE_Mod_MPI,         only: mpi_is_root
@@ -96,8 +97,8 @@ contains
       obj_condensed(m)%boilWord   = obj_time_scheme%boiling
       obj_condensed(m)%liqSelect  = obj_time_scheme%liqSelect
       obj_condensed(m)%boilSelect = obj_time_scheme%boilSelect
-      if (trim(obj_time_scheme%combustion) == 'direct') obj_condensed(m)%combSelect = 1
-      if (trim(obj_time_scheme%combustion) == 'Beckstead') obj_condensed(m)%combSelect = 2
+      if (trim(obj_time_scheme%combustion) == 'direct') obj_condensed(m)%combSelect = COMB_DIRECT
+      if (trim(obj_time_scheme%combustion) == 'Beckstead') obj_condensed(m)%combSelect = COMB_BECKSTEAD
       if (m <= size(rest)) call apply_tokens(m, rest(m))
       call apply_model_rows(m)
       if (obj_condensed(m)%intfSelect == 1 .and. obj_condensed(m)%evapSelect == 1) &
@@ -209,7 +210,7 @@ contains
       character(len=16) :: a, b, c
       associate (mat => obj_condensed(m))
         word = 'direct'
-        if (mat%combSelect == 2) word = 'Beckstead'
+        if (mat%combSelect == COMB_BECKSTEAD) word = 'Beckstead'
         if (mat%evapSelect > 0) call refuse(material_label(m)//': combustion = '//word//' is exclusive with '// &
                                             'evaporation (the burning drop vaporises by its own rate)')
         if (mat%solid) call refuse(material_label(m)//': combustion = '//word//' is exclusive with solidification')
@@ -217,8 +218,10 @@ contains
         if (mat%dBurn < 0._R8) call refuse(material_label(m)//': d-burnout, the diameter of removal [m], must be >= 0')
         if (mat%dRes > 0._R8 .and. mat%dBurn > 0._R8) call refuse(material_label(m)//': d-stop beside d-burnout: '// &
           'a drop that stops at its residue is never removed; give one')
+        if (.not. mat%qcomb_set) call refuse(material_label(m)//': combustion = '//word//' requires q-comb, the '// &
+          'heat of reaction per kg burnt, in its row of the models file (q-comb=0 written is allowed)')
         if (mat%qComb < 0._R8) call refuse(material_label(m)//': combustion = '//word//' requires q-comb >= 0')
-        if (mat%combSelect == 1) then
+        if (mat%combSelect == COMB_DIRECT) then
           if (.not. (mat%use_lv .or. physics_set('latent-heat'))) call refuse(material_label(m)// &
             ': combustion = direct requires its latent heat: the Lv column of the property table, or latent-heat in '// &
             physics())
@@ -226,6 +229,13 @@ contains
           if (.not. (mat%tburn_set .or. physics_set('boiling-temperature') .or. physics_set('Tboil'))) &
             call refuse(material_label(m)//': combustion = direct requires its burning temperature: T-burn in its '// &
                         'row of the models file, or boiling-temperature (alias Tboil) in '//physics())
+          ! the reference burns at the boiling temperature at one atmosphere (Gallier et al. 2009, p. 3)
+          if (.not. mat%tburn_set .and. mat%pBoil /= Patm) then
+            write(c,'(ES12.5)') mat%pBoil
+            call refuse(material_label(m)//': combustion = direct requires T-burn in its row of the models file: '// &
+                        'boiling-temperature is given at boiling-pressure '//trim(adjustl(c))//' Pa, and the '// &
+                        'burning temperature it stands for is the one at 101325 Pa')
+          endif
           if (.not. mat%Tboil > 0._R8) &
             call refuse(material_label(m)//': combustion = direct requires a burning temperature > 0')
         else
@@ -249,7 +259,7 @@ contains
         endif
         if (mpi_is_root) then
           write(a,'(ES12.5)') mat%qComb; write(b,'(ES12.5)') mat%dRes
-          if (mat%combSelect == 1) then
+          if (mat%combSelect == COMB_DIRECT) then
             write(c,'(ES12.5)') mat%Tboil
             write(*,'(A)') '   '//trim(mat%name)//': combustion = direct, q-comb '//trim(adjustl(a))//' J/kg, d-stop '// &
               trim(adjustl(b))//' m, burning at '//trim(adjustl(c))//' K'
@@ -390,8 +400,8 @@ contains
         case ('combustion')
           select case (trim(value))
           case ('none');   obj_condensed(m)%combSelect = 0
-          case ('direct'); obj_condensed(m)%combSelect = 1
-          case ('Beckstead'); obj_condensed(m)%combSelect = 2
+          case ('direct'); obj_condensed(m)%combSelect = COMB_DIRECT
+          case ('Beckstead'); obj_condensed(m)%combSelect = COMB_BECKSTEAD
           case default;    call refuse_word(key, value, ['none     ', 'direct   ', 'Beckstead'])
           end select
         case ('solidification')
@@ -488,9 +498,9 @@ contains
         select case (trim(kind))
         case ('combustion')
           select case (obj_condensed(m)%combSelect)
-          case (1)
+          case (COMB_DIRECT)
             word = 'direct';    reads = ' T-burn q-comb d-stop d-burnout '
-          case (2)
+          case (COMB_BECKSTEAD)
             word = 'Beckstead'; reads = ' K-burn n-burn X-eff beta-part T-ign q-comb d-stop d-burnout '
           case default
             call refuse(where//': the material names no burning model (no combustion= on its line, none in '// &
@@ -521,7 +531,7 @@ contains
             call refuse(where//': '//trim(key)//'='//trim(value)//' is not a real number')
           if (Not_Finite(x)) call refuse(where//': '//trim(key)//'='//trim(value)//' is not finite')
           select case (trim(key))
-          case ('q-comb');    obj_condensed(m)%qComb    = x
+          case ('q-comb');    obj_condensed(m)%qComb    = x; obj_condensed(m)%qcomb_set = .true.
           case ('d-stop');    obj_condensed(m)%dRes     = x
           case ('d-burnout'); obj_condensed(m)%dBurn    = x
           case ('K-burn');    obj_condensed(m)%Kburn    = x
