@@ -399,7 +399,7 @@ contains
         if (grid%blk(b)%cond_phase(p)%burn(i,j,k) > 0._R8) &
           r = smoke_of(grid%blk(b)%cond_phase(p)%burn(i,j,k), grid%blk(b)%cond_phase(p)%prim(2:4,i,j,k), &
                        grid%blk(b)%cond_phase(p)%prim(n-1,i,j,k), mat)
-        ! the step's birth rates, the stages' weighted as R26 weighs the gas's source (RK_accumulate)
+        ! the step's birth rates, the stages' weighted as a two-way coupled family's source is (RK_accumulate)
         grid%blk(b)%cond_phase(p)%born(:,i,j,k)  = RK_accumulate(srk, nrk, grid%blk(b)%cond_phase(p)%born(:,i,j,k), r)
         grid%blk(b)%cond_phase(p)%birth(:,i,j,k) = grid%blk(b)%cond_phase(p)%born(1:5,i,j,k)
       enddo ; enddo ; enddo

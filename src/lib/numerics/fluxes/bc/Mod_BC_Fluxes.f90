@@ -319,7 +319,7 @@ contains
   !> (tile_sweep), a flagged cell's faces at first order in the measure of the larger f of its two cells, a face whose
   !> flux leaves a flagged cell carried in the measure 1 - f by both its cells (a cell none of whose faces touches a
   !> flagged cell gets compute_flux's residual bit for bit; a flux is never added and taken off again, which would
-  !> leave its round-off in an empty cell; at f = 1 every face is the unsmoothed form's, bit for bit).
+  !> leave its round-off in an empty cell; at f = 1 every face is a full diversion's, bit for bit).
   subroutine divert_burnout (grid, p)
     use ICE_Global_m
     use ICE_Advanced_Types_m
@@ -499,7 +499,7 @@ contains
       end if
     end function part
 
-    !> 1 - f of a face's flux, exactly zero at f = 1 (the unsmoothed form's zero, not a signed one)
+    !> 1 - f of a face's flux, exactly zero at f = 1 (a full diversion's zero, not a signed one)
     pure function keep(f, Fin) result(Fk)
       real(kind=R8), intent(in) :: f, Fin(:)
       real(kind=R8) :: Fk(size(Fin))
