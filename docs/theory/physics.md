@@ -427,13 +427,23 @@ held there.
 ### Without a residue
 
 A material that gives no `d-stop` burns out. The number density has no sink in the equations, so the last of the
-drops of a cell leave together: after the last stage of a step, a cell whose drops burn (`direct` from $T_{sat}$, within
-$10^{-10}$ of it; `Beckstead` from `T-ign`) and are at or below the removal size (`d-burnout`, a diameter; without it
-a drop mass of $10^{-20}$ kg), or where the step burnt as much as is left, is emptied. What it held is
-not a rate of that step: its mass, momentum and energy per unit volume are added to the family's `gone`, an amount
-that a coupler delivers to its gas whole, over its own steps, and then clears. Nothing is lost and no density is
-floored. A drop that does not burn is never removed, whatever its size: it stays, an inert drop. `d-stop` beside
-`d-burnout` is refused: a drop that stops at its residue is never removed.
+drops of a cell leave together. In a time-accurate run, after the last stage of a step, a cell whose drops burn
+(`direct` from $T_{sat}$, within $10^{-10}$ of it; `Beckstead` from `T-ign`) and are at or below the removal size
+(`d-burnout`, a diameter; without it a drop mass of $10^{-20}$ kg), or where the step burnt as much as is left, is
+emptied: every primitive goes to the empty state but the velocity, which stays, since the flux upwinds at the mean
+of two cells' velocities and an emptied cell at rest would halve its inflow. What the cell held is not a rate of
+that step: its mass, momentum and energy per unit volume are added to the family's `gone`, an amount that a coupler
+delivers to its gas whole, over its own steps, and then clears. Nothing is lost and no density is floored. A drop
+that does not burn is never removed, whatever its size: it stays, an inert drop. `d-stop` beside `d-burnout` is
+refused: a drop that stops at its residue is never removed.
+
+A steady run has no step to remove at, and a removal at once has no fixed point: there the switch is a sink on the
+flux instead. Of what leaves a cell whose drops burn and are smaller than the removal size, the fraction $f$ burns at
+the cell's exit and is handed to the gas as every burn is (mass, number, momentum and energy alike); $f$ rises as a
+cubic in the diameter from 0 at `burnout_band(2)` times the removal size to 1 at `burnout_band(1)` times it
+(`burnout_band` = [0.90, 1], `Mod_BC_Fluxes.f90`; the setup prints it), so that no cell's outflow jumps at a
+threshold (`divert_burnout`). The flux of a face next to such a cell is blended toward its first-order
+value by $f$.
 
 ### The other model: Beckstead's $d^n$ law
 
@@ -469,17 +479,26 @@ temperature $T_p$, with $e_s$ the smoke material's energy (its table, else its c
 $\rho_s$ its density.
 
 ICE integrates its families one after the other, each through all its stages, so the smoke's source is split from
-them. In each stage of the burning family the rates above are taken at the stage's state and accumulated with the
-stage weights of the scheme: $\Delta t\,r_1$ (Euler), $\Delta t\,(r_1 + r_2)/2$ (RK2), $\Delta t\,(r_1/6 + r_2/6 +
-2r_3/3)$ (RK3), the weights the burning family's state receives its burning with. After every family has taken its
-step, the accumulated amounts are added to the conservative state of the smoke family, cell by cell, and cleared.
-Per cell and step the smoke family gains $\nu_s$ times the mass burnt, with that mass's momentum and the birth
-energy. The rates of the last stage stay in the burning family's `birth`, which a coupler takes out of what the gas
-receives.
+them. In each stage of the burning family, after its fluxes (so that a steady burn-out's sink, above, is in them),
+the rates above are taken at the stage's state and summed with the weights the burning family's state receives its
+burning with, the scheme's: $r_1$ (Euler), $(r_1 + r_2)/2$ (RK2), $r_1/6 + r_2/6 + 2r_3/3$ (RK3), as a two-way
+coupled family's source is (`RK_accumulate`). These are the step's birth rates; the burning family's `birth` holds
+those of mass, momentum and energy, which a coupler takes out of what the gas receives. After every family has taken
+its step they are born, with the smoke family's own closure, and cleared: in a time-accurate run (one step for every
+family) $\Delta t$ times them is added to the conservative state of the smoke family, cell by cell; in a steady run
+(each family its own local step) they are the smoke family's source in every stage of its next step (`srate`), so
+that its fixed point holds whatever either family's step. Per cell and step the smoke family gains $\nu_s$ times the
+mass burnt, with that mass's momentum and the birth energy.
 
-A removal without a residue (above) gives its smoke at once: the remnant's metal burns, its smoke is born with the
-remnant's velocity at its temperature, and `gone` keeps the remnant's mass, and its momentum and energy less the
-smoke's.
+A time-accurate removal without a residue (above) gives its smoke at once, as a rate over the step it ends: the
+remnant's metal burns, its smoke is born with the remnant's velocity at its temperature, and `gone` keeps the
+remnant's mass, and its momentum and energy less the smoke's. In a steady run what burns at a cell's exit is a burn
+like any other, and makes its smoke as one.
+
+A coupler can set a source of its own on a family (`ext`, per unit volume and time in the family's conservative
+variables: the smoke of another solver's burning particles). Like `srate` it is added to the residual of every stage
+over the family's own step, after the fluxes and the family's own source and before the update, so that a steady
+fixed point balances it whatever the step; neither is the family's `source`, so neither is handed to the gas.
 
 ### Which species, how many materials
 

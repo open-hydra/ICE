@@ -92,6 +92,18 @@ family and every MPI rank becomes the step for all of them, and the simulation c
 Every cell keeps its own $\Delta t_i$. Convergence to a steady
 state is faster, since a cell is no longer held back by the most restrictive cell in the domain, but the intermediate fields have no physical time.
 
+### Burning and empty cells
+
+Two bounds follow where the rule above does not see what changes a cell. In a steady coupled run a cell whose drops
+burn steps at most half its bulk density over its burn rate (`burn_dt_factor` = 0.5): the burn per unit mass grows
+without bound as the drops burn down, and nothing else bounds the step by it; a cell at or below $\rho_p = 10^{-6}$
+that still holds drops takes the `tau-factor` cap too. And the cells a family does not occupy, where a source fills
+them (a steady smoke's births, a coupler's source) or which a burning family empties into from its own cells, step
+no further than what fills them: in steady mode the family's smallest step over the cells it occupies and the cells
+the source fills, and their own width at the family's largest speed; in time-accurate mode the global step at most
+the source's step in the empty cells it fills. A family that no source fills and that does not burn keeps the steps
+above, bit for bit.
+
 ## Residual smoothing
 
 This technique applies an implicit residual smoothing pass after the residual is formed and before the state is updated. It is a Jacobi solve of
