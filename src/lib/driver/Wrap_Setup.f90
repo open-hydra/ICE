@@ -456,6 +456,11 @@ contains
             trim(obj_condensed(m)%name)//"): T-melt ", obj_condensed(m)%Tmelt, " K, T-nuc ", obj_condensed(m)%Tnuc, &
             " K, h-fus ", obj_condensed(m)%hFus, " J/kg, cp-solid ", obj_condensed(m)%cpSol, " J/(kg K)"
       enddo
+      ! the steady burn-out's band (Mod_BC_Fluxes.f90), where a steady family burns out
+      if (.not. obj_time_scheme%time_accurate .and. &
+          any(obj_condensed(1:nmat)%combSelect > 0 .and. .not. obj_condensed(1:nmat)%dRes > 0._R8)) &
+        write(*,'(A,2F7.3,A)') " - Burnout --> steady, burnout_band =", burnout_band, &
+          " x the removal size (d-burnout, else m_burnout's drop)"
 
     end subroutine print_simulation_info
 

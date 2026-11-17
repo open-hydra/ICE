@@ -56,12 +56,19 @@ module ICE_Advanced_Types_m
     ! What the burn-out switch removed and a coupler has not yet delivered to its gas, per unit volume: mass,
     ! momentum (3), energy; added to at each removal, cleared by the coupler
     real(R8), dimension(:,:,:,:),   allocatable :: gone
-    ! A burning family that makes a smoke: the mass it burns per unit volume and time (burn, the last stage's), the
-    ! smoke's birth rates (birth: mass, momentum (3), energy; the last stage's, which a coupler takes out of what the
-    ! gas receives) and the amounts born over the stages of the step (born: mass, momentum (3), energy, number),
-    ! added to the smoke family after every family's step
+    ! A burning family that makes a smoke: the mass it burns per unit volume and time (burn, the stage's), and the
+    ! smoke's birth rates over the stages, weighted as the update weighs them (RK_accumulate, as source): birth (mass,
+    ! momentum (3), energy), which a coupler takes out of what the gas receives, and born (the same and the number),
+    ! born in the smoke family after every family's step (dt times it, or its rate in a steady run)
     real(R8), dimension(:,:,:),     allocatable :: burn
     real(R8), dimension(:,:,:,:),   allocatable :: birth, born
+    ! A source a coupler sets on this family, per unit volume and time, in its conservative variables (the smoke of
+    ! another solver's burning particles): added to the residual of every stage over the family's own dt, as source
+    ! is, and not handed to the gas; allocated by the coupler only
+    real(R8), dimension(:,:,:,:),   allocatable :: ext
+    ! A smoke family in a steady run: the smoke the burning families made in their last step, per unit volume and time
+    ! (their born rates), in its conservative variables; added to the residual of every stage as ext is
+    real(R8), dimension(:,:,:,:),   allocatable :: srate
     ! The running weighted sums of source and heat over the stages of a two-way coupled multi-stage step
     real(R8), dimension(:,:,:,:),   allocatable :: source_step
     real(R8), dimension(:,:,:),     allocatable :: heat_step

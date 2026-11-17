@@ -4,7 +4,7 @@ module ICE_Mod_dt
 
   implicit none
   private
-  public :: compute_dt, set_dt_global
+  public :: compute_dt, set_dt_global, bound_empty_dt
 
 contains
 
@@ -112,6 +112,102 @@ contains
   end subroutine compute_dt    
   
   
+
+
+
+  !> The step of the cells a family does not occupy (bulk density at or below rho_empty) where a source fills them (a
+  !> smoke's births, srate; another solver's smoke, ext; in any cell) or where the family burns (empties: its drops burn
+  !> down to ICE's empty state and its flux fills the cells beyond). Their own state bounds nothing (velocity ~0, no
+  !> relaxation time), but the source fills them in the first stage of this step, at its own velocity, or the cells it
+  !> fills fill them, and the later stages and the reconstruction move that content with the cell's step.
+  !> Steady (each cell its own step): an empty cell steps no further than the family's smallest step over the cells it
+  !> occupies and over the empty cells the source fills (at the source's velocity: its momentum over its mass), nor
+  !> than its own width allows at the family's largest speed, each Cartesian component's largest magnitude over those
+  !> cells (sum_d sum_c umax_c |M(d,c)| bounds sum_d |u.M(d,:)| for each of their velocities: on a graded mesh an empty
+  !> cell can be narrower than every occupied one).
+  !> Time-accurate (one step, compute_dt's minimum over the cells, the occupied ones with it): the step no further than
+  !> the source's step in the empty cells it fills; the minimum over the ranks follows, with the step's own.
+  !> A family no source fills and that does not burn keeps compute_dt's steps, bit for bit. A steady run's bound takes
+  !> this rank's cells: a source on another rank fills this rank's cells through a connection face unbounded.
+  !> Outside parallel regions.
+  subroutine bound_empty_dt (p, cfl, grid, empties)
+    use ICE_Global_m,         only: rho_empty, ndir
+    use ICE_Advanced_Types_m, only: ICE_domain_type
+    use ICE_Config_Types_m,   only: obj_time_scheme
+    implicit none
+    integer(kind=I4),      intent(in)    :: p
+    real(kind=R8),         intent(in)    :: cfl
+    type(ICE_domain_type), intent(inout) :: grid
+    logical, optional,     intent(in)    :: empties
+    integer(kind=I4) :: b, i, j, k, d
+    real(kind=R8)    :: floor_dt, src_dt, dts, s(4), umax(3), rate
+    real(kind=R8), allocatable :: prim_s(:)
+    logical          :: filled, any_src
+
+    filled = .false.
+    if (present(empties)) filled = empties
+    any_src = .false.
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      any_src = any_src .or. allocated(grid%blk(b)%cond_phase(p)%srate) .or. allocated(grid%blk(b)%cond_phase(p)%ext)
+    enddo
+    if (.not. (filled .or. any_src)) return
+    floor_dt = huge(floor_dt)
+    src_dt   = huge(src_dt)
+    umax     = 0._R8
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      associate (cp => grid%blk(b)%cond_phase(p))
+      if (.not. allocated(prim_s)) allocate(prim_s(size(cp%prim, 1)))
+      do k = 1, grid%blk(b)%dim(3)
+      do j = 1, grid%blk(b)%dim(2)
+      do i = 1, grid%blk(b)%dim(1)
+        s = 0._R8
+        if (allocated(cp%srate)) s = s + cp%srate(1:4,i,j,k)
+        if (allocated(cp%ext))   s = s + cp%ext(1:4,i,j,k)
+        if (s(1) > 0._R8) filled = .true.
+        if (cp%prim(1,i,j,k) > rho_empty) then
+          floor_dt = min(floor_dt, cp%dt(i,j,k))
+          umax     = max(umax, abs(cp%prim(2:4,i,j,k)))
+          cycle
+        endif
+        if (.not. s(1) > 0._R8) cycle
+        prim_s = cp%prim(:,i,j,k)
+        prim_s(2:4) = s(2:4)/s(1)
+        umax = max(umax, abs(prim_s(2:4)))
+        dts = 1e+5
+        call compute_dt_(prim_s, grid%blk(b)%M(i,j,k)%c, dts)
+        src_dt = min(src_dt, dts*cfl)
+      enddo ; enddo ; enddo
+      end associate
+    enddo
+    if (.not. filled) return
+    if (obj_time_scheme%time_accurate) then
+      grid%dtglobal = min(grid%dtglobal, src_dt)
+      return
+    endif
+    floor_dt = min(floor_dt, src_dt)
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      associate (cp => grid%blk(b)%cond_phase(p))
+      do k = 1, grid%blk(b)%dim(3)
+      do j = 1, grid%blk(b)%dim(2)
+      do i = 1, grid%blk(b)%dim(1)
+        if (cp%prim(1,i,j,k) > rho_empty) cycle
+        rate = 0._R8
+        do d = 1, ndir
+          rate = rate + sum(umax*abs(grid%blk(b)%M(i,j,k)%c(d,1:3)))
+        enddo
+        dts = floor_dt
+        if (rate > 0._R8) dts = min(dts, cfl/rate)
+        cp%dt(i,j,k) = min(cp%dt(i,j,k), dts)
+      enddo ; enddo ; enddo
+      end associate
+    enddo
+
+  end subroutine bound_empty_dt
+
+
   !> The step of a cell, one rule over the directions the mesh resolves:
   !>   1/dt = sum_d ( |u . grad xi_d| + a_d |grad xi_d| ),  d = 1, ..., ndir,
   !> with grad xi_d the row d of the metric tensor, normal to the d faces with the modulus of the

@@ -6,7 +6,7 @@ module ICE_Lib_Residual
 
   implicit none
   private
-  public :: zero_residual, compute_residual
+  public :: zero_residual, compute_residual, add_external_source
 
 contains
 
@@ -154,6 +154,48 @@ contains
     residual = (residual/volume + source) * dt
 
   end subroutine compute_residual_
+
+
+  !> The sources set on family p from outside its own physics, per unit volume and time in its conservative variables:
+  !> a coupler's (cond_phase(p)%ext) and, in a steady run, the smoke ICE's burning families made (cond_phase(p)%srate);
+  !> each added to the residual of the stage over the family's own dt, as source is; the frozen slots stay zero. A block
+  !> with neither: nothing.
+  subroutine add_external_source(grid, p)
+    use ICE_Mod_Freeze, only: nfrozen, frozen
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4), intent(in)  :: p
+    integer(kind=I4) :: b, i, j, k, nf
+
+    nf = 0
+    if (allocated(nfrozen)) nf = nfrozen(p)
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      if (allocated(grid%blk(b)%cond_phase(p)%ext)) then
+        !$OMP PARALLEL DO COLLAPSE (3) schedule(runtime)
+        do k = 1, grid%blk(b)%dim(3)
+        do j = 1, grid%blk(b)%dim(2)
+        do i = 1, grid%blk(b)%dim(1)
+          grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) &
+            + grid%blk(b)%cond_phase(p)%ext(1:ncond(p),i,j,k) * grid%blk(b)%cond_phase(p)%dt(i,j,k)
+          if (nf > 0) grid%blk(b)%cond_phase(p)%residual(frozen(1:nf,p),i,j,k) = 0._R8
+        enddo ; enddo ; enddo
+        !$OMP END PARALLEL DO
+      endif
+      if (allocated(grid%blk(b)%cond_phase(p)%srate)) then
+        !$OMP PARALLEL DO COLLAPSE (3) schedule(runtime)
+        do k = 1, grid%blk(b)%dim(3)
+        do j = 1, grid%blk(b)%dim(2)
+        do i = 1, grid%blk(b)%dim(1)
+          grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) &
+            + grid%blk(b)%cond_phase(p)%srate(1:ncond(p),i,j,k) * grid%blk(b)%cond_phase(p)%dt(i,j,k)
+          if (nf > 0) grid%blk(b)%cond_phase(p)%residual(frozen(1:nf,p),i,j,k) = 0._R8
+        enddo ; enddo ; enddo
+        !$OMP END PARALLEL DO
+      endif
+    enddo
+
+  end subroutine add_external_source
 
 
 end module ICE_Lib_Residual

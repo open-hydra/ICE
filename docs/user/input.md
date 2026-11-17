@@ -218,11 +218,13 @@ is the `Lv` column of the material's property table, read at the burning tempera
 that material (a value beside the column is refused).
 
 With `d-stop` the burning stops at that diameter and the residue stays. Without it the drops burn
-out: while they burn, the drops of a cell are removed when they are at or below `d-burnout`
-(absent: a drop mass of 1e-20 kg) or when the step burnt as much as is left, and what they still
-hold is kept as an amount that a coupler hands to its gas
-([Particle Physics](../theory/physics.md#without-a-residue)). A drop that does not burn is not
-removed, whatever its size. To compare a material with its run in IGLOO, give `d-burnout` in both
+out. In a time-accurate run, while they burn, the drops of a cell are removed when they are at
+or below `d-burnout` (absent: a drop mass of 1e-20 kg) or when the step burnt as much as is left,
+and what they still hold is kept as an amount that a coupler hands to its gas
+([Particle Physics](../theory/physics.md#without-a-residue)). A steady run burns, at the exit of
+a cell whose drops burn, a fraction of what leaves it that rises from 0 at the removal size to all
+of it at 0.90 times it; the setup prints this band, `burnout_band`, for such a run. A drop that
+does not burn is not removed, whatever its size. To compare a material with its run in IGLOO, give `d-burnout` in both
 decks, at about 0.1 of the injected diameter: the removal then hands a thousandth of the
 drop's mass.
 
