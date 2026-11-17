@@ -50,6 +50,12 @@ contains
       call compute_dt(p, obj_time_scheme%cfl, obj_time_scheme%cfl_rampa_iter, &
                       obj_time_scheme%dt_max, obj_time_scheme%tau_factor, grid)
       !$omp end parallel
+      !> a steady run: a burning cell steps no further than its burn can take its mass
+      if (.not. obj_time_scheme%time_accurate .and. (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled)) &
+        call bound_burn_dt(grid, p, obj_time_scheme%tau_factor)
+      !> an empty cell a source fills, or a burning family empties, steps no further than what fills it
+      call bound_empty_dt(p, obj_time_scheme%cfl, grid, empties=obj_condensed(mat_of(p))%combSelect > 0 .and. &
+                          (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled))
     end do
     call timer_region_end(TR_DT)
 
@@ -104,8 +110,6 @@ contains
           call timer_source_begin()
           call timer_region_begin(TR_SOURCE)
           call compute_source(grid, p)
-          call smoke_accumulate(grid, p, srk)
-          if (obj_sim_param%twcoupled .and. nrk > 1) call add_stage_source(grid, p, srk)
           call timer_region_end(TR_SOURCE)
           call timer_source_end()
         end if
@@ -136,13 +140,25 @@ contains
         call timer_region_end(TR_BOUND)
         call timer_halo_end()
 
+        !> A steady burn-out keeps the boundary fluxes, from which it rebuilds the residuals it changes
+        if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) call divert_save(grid, p)
+
         call timer_flux_begin()
         call timer_region_begin(TR_FLUX)
         call compute_flux(grid, p)
         call timer_region_end(TR_FLUX)
 
+        !> A steady burn-out: f of what leaves a cell whose drops are near the removal size burns at its exit. Then
+        !> the smoke the stage's burn makes and the stage's source in the step's rates, both of the final source
+        if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) then
+          call divert_burnout(grid, p)
+          call smoke_accumulate(grid, p, srk)
+          if (obj_sim_param%twcoupled .and. nrk > 1) call add_stage_source(grid, p, srk)
+        end if
+
         call timer_region_begin(TR_RESID)
         call compute_residual(grid, p)
+        call add_external_source(grid, p)
         call timer_region_end(TR_RESID)
 
         if (obj_irs%enabled) then
@@ -161,8 +177,9 @@ contains
       !> A two-way coupled gas takes the step's rates, not the last stage's
       if (obj_sim_param%twcoupled .and. nrk > 1) call hand_step_source(grid, p)
 
-      !> A burning family without a residue: the drops of a cell that are gone leave together
-      if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) then
+      !> A burning family without a residue, time-accurate: the drops of a cell that are gone leave together. A steady
+      !> run burns f of what leaves such a cell at its exit (divert_burnout): a removal at once has no fixed point
+      if ((obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) .and. obj_time_scheme%time_accurate) then
         if (obj_condensed(mat_of(p))%combSelect > 0 .and. .not. obj_condensed(mat_of(p))%dRes > 0._R8) &
           call burnout_switch(grid, p)
       end if

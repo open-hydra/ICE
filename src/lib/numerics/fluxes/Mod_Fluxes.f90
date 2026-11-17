@@ -11,6 +11,8 @@ module ICE_Mod_Fluxes
   implicit none
   private
   public :: compute_beta, compute_flux, state_reconstruction, bad_recon
+  !> face_flux for divert_burnout, which evaluates a flagged cell's faces again
+  public :: face_flux
 
   !> The tile of one thread: the cells (i = 1..ni, j = j1..j2, k = k1..k2) of a block.
   !> Deep tiling cuts ranges of whole k-planes and keeps the k-faces below and above

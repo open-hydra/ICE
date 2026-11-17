@@ -5,7 +5,7 @@ module ICE_Mod_Sources
 
   implicit none
   private
-  public :: compute_source, burnout_switch, smoke_accumulate, smoke_birth
+  public :: compute_source, burnout_switch, smoke_accumulate, smoke_birth, bound_burn_dt
   !> compute_source_ for the unit test; cell_surface for the unit test and the probes
   public :: compute_source_, cell_surface
 
@@ -124,6 +124,66 @@ contains
   end subroutine compute_source_grouped
 
 
+  !> Steady runs, a burning family: no cell steps further than its burn can take its drops' mass. The burn per unit
+  !> mass grows without bound as the drops burn down (Beckstead 3 K X/(n d^n), direct as d^-2) and nothing else bounds
+  !> the step by it (the tau cap bounds the drag, and only above rho_empty): each cell's step at most burn_dt_factor
+  !> times its bulk density over its burn, the burn as compute_source_ evaluates it at the cell's state (the cell's tau
+  !> kept), in every cell, whatever its density; and a cell at or below rho_empty that holds drops, the burnt-down tail
+  !> whose relaxation time falls with the drops' size, takes compute_dt's tau cap too. A bound on the step moves no
+  !> fixed point. After compute_dt.
+  subroutine bound_burn_dt (grid, p, tau_factor)
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    use ICE_Global_m
+    use ICE_Advanced_Types_m
+    use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Lib_Model,      only: assign_all, cons_2_prim
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4),      intent(in)    :: p
+    real(kind=R8),         intent(in)    :: tau_factor
+    integer(kind=I4) :: b, i, j, k
+    real(kind=R8)    :: tl, gh, bt, s(ncond(p)), zero(ncond(p)), empty1
+
+    if (.not. obj_condensed(mat_of(p))%combSelect > 0) return
+    ! compute_source_ takes the closure's procedures: this family's, before its stages bind them
+    call assign_all(p)
+    ! ICE's empty state, which holds no drops
+    zero   = 0._R8
+    s      = cons_2_prim(zero, obj_condensed(mat_of(p)))
+    empty1 = s(1)
+    !$OMP PARALLEL PRIVATE(b, i, j, k, tl, gh, bt, s) SHARED(empty1)
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      !$OMP DO COLLAPSE(3) schedule(runtime)
+      do k = 1, grid%blk(b)%dim(3)
+      do j = 1, grid%blk(b)%dim(2)
+      do i = 1, grid%blk(b)%dim(1)
+        tl = grid%blk(b)%cond_phase(p)%tau(i,j,k)
+        s  = 0._R8
+        call compute_source_ (grid%blk(b)%cond_phase(p)%prim(:,i,j,k), tl,     &
+                              grid%blk(b)%gas_phase%prim(:,i,j,k),             &
+                              grid%blk(b)%gas_phase%R(i,j,k),                  &
+                              grid%blk(b)%gas_phase%gam(i,j,k),                &
+                              grid%blk(b)%gas_phase%k(i,j,k),                  &
+                              grid%blk(b)%gas_phase%mu(i,j,k),                 &
+                              s, obj_condensed(mat_of(p)), nbase(p), gas_heat=gh, burnt=bt)
+        if (bt > 0._R8) grid%blk(b)%cond_phase(p)%dt(i,j,k) = &
+          min(grid%blk(b)%cond_phase(p)%dt(i,j,k), burn_dt_factor*grid%blk(b)%cond_phase(p)%prim(1,i,j,k)/bt)
+        ! the drops of the burnt-down tail, at or below rho_empty, relax as fast as their size makes them: compute_dt's
+        ! tau cap there too, with the tau of this state, wherever the cell holds drops
+        if (grid%blk(b)%cond_phase(p)%prim(1,i,j,k) <= rho_empty .and.                                  &
+            grid%blk(b)%cond_phase(p)%prim(1,i,j,k) > empty1 .and.                                     &
+            grid%blk(b)%cond_phase(p)%prim(nbase(p),i,j,k) > 0._R8 .and. ieee_is_finite(tl) &
+            .and. tl > 0._R8 .and. tau_factor > 0._R8) &
+          grid%blk(b)%cond_phase(p)%dt(i,j,k) = min(grid%blk(b)%cond_phase(p)%dt(i,j,k), tau_factor*tl)
+      enddo ; enddo ; enddo
+      !$OMP END DO nowait
+    enddo
+    !$OMP END PARALLEL
+
+  end subroutine bound_burn_dt
+
+
   !> The fraction of a cell's bulk density its mass source removes in one step, dt |S_1|/rho_p (0 in an empty cell)
   pure function step_mass_fraction(phase, i, j, k) result(f)
     use ICE_Global_m,          only: rho_empty
@@ -217,8 +277,9 @@ contains
   !> The burn-out of family p, after its last stage. Its drops burn without a residue (d-stop 0): in a cell where they
   !> burn (direct at its burning temperature, Beckstead from T-ign) and are at or below the removal size (d-burnout,
   !> else a drop mass of m_burnout), or where the mass the step took is all that is left, every drop goes at once.
-  !> The cell is emptied and what it held is added to the amount the family hands over (gone: mass, momentum,
-  !> energy), which a coupler delivers to its gas whole, over its own steps, and then clears.
+  !> The cell is emptied (every primitive to ICE's empty state but its velocity, which stays) and what it held is added
+  !> to the amount the family hands over (gone: mass, momentum, energy), which a coupler delivers to its gas whole,
+  !> over its own steps, and then clears.
   subroutine burnout_switch (grid, p)
     use ICE_Global_m
     use ICE_Advanced_Types_m
@@ -258,16 +319,21 @@ contains
           if (s(1) < 0._R8) gone = gone .or. q(1) <= -s(1)*dt
           if (.not. (gone .and. dt > 0._R8)) cycle
           held = prim_2_cons(q, mat)
-          ! the remnant's metal burns at once: its smoke is born with its velocity, at its temperature
+          ! the remnant's metal burns at once: its smoke is born with its velocity, at its temperature, over this step
+          ! (born holds rates)
           sm = 0._R8
           if (mat%smokeFam > 0) then
             sm = smoke_of(held(1), q(2:4), q(n-1), mat)
-            grid%blk(b)%cond_phase(p)%born(:,i,j,k) = grid%blk(b)%cond_phase(p)%born(:,i,j,k) + sm
+            grid%blk(b)%cond_phase(p)%born(:,i,j,k) = grid%blk(b)%cond_phase(p)%born(:,i,j,k) + sm/dt
           endif
           grid%blk(b)%cond_phase(p)%gone(1,i,j,k)   = grid%blk(b)%cond_phase(p)%gone(1,i,j,k)   + held(1)
           grid%blk(b)%cond_phase(p)%gone(2:4,i,j,k) = grid%blk(b)%cond_phase(p)%gone(2:4,i,j,k) + held(2:4) - sm(2:4)
           grid%blk(b)%cond_phase(p)%gone(5,i,j,k)   = grid%blk(b)%cond_phase(p)%gone(5,i,j,k)   + held(n-1) - sm(5)
-          q = empty
+          ! the drops are gone: ICE's empty state but for the velocity, which stays, since the MK flux upwinds at the
+          ! mean of two cells' normal velocities and an emptied cell at rest halves its inflow; the temperature too goes
+          ! to the empty state, below T-ign, or the empty state's one large drop would burn
+          q(1)  = empty(1)
+          q(5:) = empty(5:)
         end associate
       enddo ; enddo ; enddo
       !$OMP END DO nowait
@@ -312,15 +378,15 @@ contains
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m, only: obj_condensed
-    use ICE_Lib_RK,         only: RK_stage
+    use ICE_Lib_RK,         only: RK_accumulate
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4),      intent(in)    :: p, srk
     integer(kind=I4) :: b, i, j, k, n
-    real(kind=R8)    :: r(6), zero6(6)
+    real(kind=R8)    :: r(6)
 
     if (obj_condensed(mat_of(p))%smokeFam == 0) return
-    n = nbase(p); zero6 = 0._R8
+    n = nbase(p)
     associate (mat => obj_condensed(mat_of(p)))
     !$OMP PARALLEL PRIVATE(b, i, j, k, r)
     do b = 1, grid%nb
@@ -333,9 +399,9 @@ contains
         if (grid%blk(b)%cond_phase(p)%burn(i,j,k) > 0._R8) &
           r = smoke_of(grid%blk(b)%cond_phase(p)%burn(i,j,k), grid%blk(b)%cond_phase(p)%prim(2:4,i,j,k), &
                        grid%blk(b)%cond_phase(p)%prim(n-1,i,j,k), mat)
-        grid%blk(b)%cond_phase(p)%birth(:,i,j,k) = r(1:5)
-        grid%blk(b)%cond_phase(p)%born(:,i,j,k)  = RK_stage(srk, nrk, grid%blk(b)%cond_phase(p)%born(:,i,j,k), zero6, &
-                                                            grid%blk(b)%cond_phase(p)%dt(i,j,k)*r)
+        ! the step's birth rates, the stages' weighted as R26 weighs the gas's source (RK_accumulate)
+        grid%blk(b)%cond_phase(p)%born(:,i,j,k)  = RK_accumulate(srk, nrk, grid%blk(b)%cond_phase(p)%born(:,i,j,k), r)
+        grid%blk(b)%cond_phase(p)%birth(:,i,j,k) = grid%blk(b)%cond_phase(p)%born(1:5,i,j,k)
       enddo ; enddo ; enddo
       !$OMP END DO nowait
     enddo
@@ -345,24 +411,47 @@ contains
   end subroutine smoke_accumulate
 
 
-  !> After every family's step: the smoke the burning families made is born in its families (mass, momentum, energy and
-  !> number added to the conservative state, cell by cell), and the accumulators are cleared.
+  !> After every family's step: the smoke the burning families made (born, the step's weighted birth rates), and the
+  !> accumulators cleared. A time-accurate run (one dt for every family): born in its family, dt times the rates of
+  !> mass, momentum, energy and number added to the conservative state cell by cell, with the smoke family's own
+  !> closure. A steady run (each family its own local dt): the rates themselves, the source of the smoke family in every
+  !> stage of its next step (srate, add_external_source), so that its fixed point holds whatever either family's dt.
   subroutine smoke_birth (grid)
     use ICE_Global_m
     use ICE_Advanced_Types_m
-    use ICE_Config_Types_m, only: obj_condensed
-    use ICE_Lib_Model,      only: prim_2_cons, cons_2_prim
+    use ICE_Config_Types_m, only: obj_condensed, obj_time_scheme
+    use ICE_Lib_Model,      only: prim_2_cons, cons_2_prim, assign_prim_2_cons, assign_cons_2_prim
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4) :: b, i, j, k, p, ps, ns
+    real(kind=R8)    :: dtp
     real(kind=R8), allocatable :: c(:)
+    logical :: steady
 
+    steady = .not. obj_time_scheme%time_accurate
+    ! a steady run: this step's rates replace the last step's
+    if (steady) then
+      do p = 1, ngroups
+        ps = obj_condensed(mat_of(p))%smokeFam
+        if (ps == 0) cycle
+        do b = 1, grid%nb
+          if (.not. is_local_block(b)) cycle
+          if (.not. allocated(grid%blk(b)%cond_phase(ps)%srate)) &
+            allocate(grid%blk(b)%cond_phase(ps)%srate(ncond(ps), grid%blk(b)%dim(1), grid%blk(b)%dim(2), &
+                                                      grid%blk(b)%dim(3)))
+          grid%blk(b)%cond_phase(ps)%srate = 0._R8
+        enddo
+      enddo
+    endif
     do p = 1, ngroups
       ps = obj_condensed(mat_of(p))%smokeFam
       if (ps == 0) cycle
       ns = nbase(ps)
+      ! the conversions of the smoke family's closure: the family loop left those of the last family it stepped
+      call assign_prim_2_cons(ps)
+      call assign_cons_2_prim(ps)
       associate (smat => obj_condensed(mat_of(ps)))
-      !$OMP PARALLEL PRIVATE(b, i, j, k, c)
+      !$OMP PARALLEL PRIVATE(b, i, j, k, c, dtp)
       allocate(c(ncond(ps)))
       do b = 1, grid%nb
         if (.not. is_local_block(b)) cycle
@@ -371,11 +460,21 @@ contains
         do j = 1, grid%blk(b)%dim(2)
         do i = 1, grid%blk(b)%dim(1)
           if (all(grid%blk(b)%cond_phase(p)%born(:,i,j,k) == 0._R8)) cycle
-          c = prim_2_cons(grid%blk(b)%cond_phase(ps)%prim(:,i,j,k), smat)
-          c(1:4)  = c(1:4)  + grid%blk(b)%cond_phase(p)%born(1:4,i,j,k)
-          c(ns-1) = c(ns-1) + grid%blk(b)%cond_phase(p)%born(5,i,j,k)
-          c(ns)   = c(ns)   + grid%blk(b)%cond_phase(p)%born(6,i,j,k)
-          grid%blk(b)%cond_phase(ps)%prim(:,i,j,k) = cons_2_prim(c, smat)
+          if (steady) then
+            grid%blk(b)%cond_phase(ps)%srate(1:4,i,j,k) = grid%blk(b)%cond_phase(ps)%srate(1:4,i,j,k) &
+                                                        + grid%blk(b)%cond_phase(p)%born(1:4,i,j,k)
+            grid%blk(b)%cond_phase(ps)%srate(ns-1,i,j,k) = grid%blk(b)%cond_phase(ps)%srate(ns-1,i,j,k) &
+                                                         + grid%blk(b)%cond_phase(p)%born(5,i,j,k)
+            grid%blk(b)%cond_phase(ps)%srate(ns,i,j,k) = grid%blk(b)%cond_phase(ps)%srate(ns,i,j,k) &
+                                                       + grid%blk(b)%cond_phase(p)%born(6,i,j,k)
+          else
+            dtp = grid%blk(b)%cond_phase(p)%dt(i,j,k)
+            c = prim_2_cons(grid%blk(b)%cond_phase(ps)%prim(:,i,j,k), smat)
+            c(1:4)  = c(1:4)  + dtp*grid%blk(b)%cond_phase(p)%born(1:4,i,j,k)
+            c(ns-1) = c(ns-1) + dtp*grid%blk(b)%cond_phase(p)%born(5,i,j,k)
+            c(ns)   = c(ns)   + dtp*grid%blk(b)%cond_phase(p)%born(6,i,j,k)
+            grid%blk(b)%cond_phase(ps)%prim(:,i,j,k) = cons_2_prim(c, smat)
+          endif
           grid%blk(b)%cond_phase(p)%born(:,i,j,k)  = 0._R8
         enddo ; enddo ; enddo
         !$OMP END DO nowait

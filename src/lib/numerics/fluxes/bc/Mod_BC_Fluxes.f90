@@ -8,7 +8,19 @@ module ICE_Mod_BC_Fluxes
 
   implicit none
   private
-  public :: compute_ghost, fill_second_ghost, compute_bound
+  public :: compute_ghost, fill_second_ghost, compute_bound, divert_save, divert_burnout
+
+  !> divert_save's residuals, per block (allocated on the first call)
+  type :: res_keep_t
+    real(kind=R8), allocatable :: a(:,:,:,:)
+  end type res_keep_t
+  type(res_keep_t), allocatable :: res_keep(:)
+
+  !> The steady burn-out's band, in multiples of the removal size (d-burnout, else m_burnout's drop): all of a
+  !> cell's outflow burns at its exit at or below burnout_band(1) times it, none at or above burnout_band(2) times
+  !> it. The one copy of its value: the setup prints it (Wrap_Setup), the gate p31 reads it from there
+  real(kind=R8), parameter, public :: burnout_band(2) = [0.90_R8, 1._R8]
+  real(kind=R8), parameter :: band_lo = burnout_band(1), band_hi = burnout_band(2)
 
 contains
 
@@ -258,6 +270,271 @@ contains
       end select
 
   end subroutine record_flux
+
+  !> Steady runs, a burning family without a residue (d-stop 0): the steady burn-out diverts this family (its stages
+  !> keep the residual after compute_bound for divert_burnout)
+  logical function diverts(p)
+    use ICE_Global_m,       only: mat_of
+    use ICE_Config_Types_m, only: obj_condensed, obj_time_scheme
+    implicit none
+    integer(kind=I4), intent(in) :: p
+    diverts = .not. obj_time_scheme%time_accurate .and. obj_condensed(mat_of(p))%combSelect > 0
+    if (diverts) diverts = .not. obj_condensed(mat_of(p))%dRes > 0._R8
+  end function diverts
+
+  !> The residual of a family the steady burn-out diverts, after compute_bound and before compute_flux: the boundary
+  !> fluxes, from which divert_burnout rebuilds the residual of the cells it changes. Outside parallel regions.
+  subroutine divert_save (grid, p)
+    use ICE_Global_m,         only: ncond
+    use ICE_Advanced_Types_m, only: ICE_domain_type
+    implicit none
+    type(ICE_domain_type), intent(in) :: grid
+    integer(kind=I4),      intent(in) :: p
+    integer(kind=I4) :: b
+
+    if (.not. diverts(p)) return
+    if (.not. allocated(res_keep)) allocate(res_keep(grid%nb))
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      res_keep(b)%a = grid%blk(b)%cond_phase(p)%residual(1:ncond(p), 1:grid%blk(b)%dim(1), 1:grid%blk(b)%dim(2), &
+                                                          1:grid%blk(b)%dim(3))
+    enddo
+  end subroutine divert_save
+
+  !> Steady runs, a burning family without a residue (d-stop 0): the steady form of burnout_switch, smoothed. A cell
+  !> that holds drops (above ICE's empty state, as the switch tests) which burn (direct at their burning temperature,
+  !> Beckstead from T-ign) and lie within the band of the removal size (d-burnout, else a drop mass of m_burnout) is
+  !> flagged with a fraction f (burnout_fraction: 1 at or below band_lo times it, 0 at or above band_hi times it):
+  !> f of what flows out of it through an interior face or a physical boundary face does not reach the cell beyond
+  !> (or leave the domain), it burns at the cell's exit, a sink of the cell in source and in burn, so the coupler
+  !> hands it to the gas as every burn and its smoke is born at the cell's velocity and temperature; 1 - f of the
+  !> face's flux reaches the cell beyond. The diverted outflow is the flux of the cell's own state on both sides of the
+  !> face (its own velocity: the MK flux upwinds at the mean of the two cells' velocities, and the cell beyond is
+  !> emptied by this), so at f = 1 the cell's content, and so its drop size, does not depend on the cell beyond, and a
+  !> cell fed only by cells at f = 1 holds nothing at the fixed point, as the switch leaves it. A flag that is only 0
+  !> or 1 cycled with MUSCL (a cell at the threshold flipped, and the faces around it followed); f moves the diverted
+  !> flux smoothly with the drops' size. A connection (101/201) or chimera (102) face carries its flux as it is: the
+  !> cell across it tests itself. After compute_flux, before compute_residual: the residual of each flagged cell and of
+  !> each cell next to one is rebuilt from the one divert_save kept, the interior faces in compute_flux's order
+  !> (tile_sweep), a flagged cell's faces at first order in the measure of the larger f of its two cells, a face whose
+  !> flux leaves a flagged cell carried in the measure 1 - f by both its cells (a cell none of whose faces touches a
+  !> flagged cell gets compute_flux's residual bit for bit; a flux is never added and taken off again, which would
+  !> leave its round-off in an empty cell; at f = 1 every face is the unsmoothed form's, bit for bit).
+  subroutine divert_burnout (grid, p)
+    use ICE_Global_m
+    use ICE_Advanced_Types_m
+    use ICE_Parameters_m,   only: pi
+    use ICE_Config_Types_m, only: obj_condensed, obj_time_scheme, COMB_DIRECT
+    use ICE_Lib_Model,      only: cons_2_prim
+    use ICE_Lib_Properties, only: mat_rho
+    use ICE_Mod_Fluxes,     only: face_flux
+    use ICE_Mod_Freeze,     only: nfrozen, frozen
+    use ICE_Lib_Riemann,    only: riemann
+    implicit none
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4),      intent(in)    :: p
+    integer(kind=I4) :: b, i, j, k, n, nc, ni, nj, nk, c, r, m, nf
+    real(kind=R8)    :: F(ncond(p)), Ton, mb, zero(ncond(p)), empty(ncond(p)), empty1
+    real(kind=R8), allocatable :: sink(:,:,:,:), frac(:,:,:)
+    logical,       allocatable :: flag(:,:,:), redo(:,:,:)
+
+    if (.not. diverts(p)) return
+    n  = nbase(p)
+    nc = ncond(p)
+    zero   = 0._R8
+    empty  = cons_2_prim(zero, obj_condensed(mat_of(p)))
+    empty1 = empty(1)
+    nf = 0
+    if (allocated(nfrozen)) nf = nfrozen(p)
+    Ton = obj_condensed(mat_of(p))%Tign
+    if (obj_condensed(mat_of(p))%combSelect == COMB_DIRECT) Ton = obj_condensed(mat_of(p))%Tboil*(1._R8 - 1.e-10_R8)
+
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      ni = grid%blk(b)%dim(1) ; nj = grid%blk(b)%dim(2) ; nk = grid%blk(b)%dim(3)
+      ! padded by a cell on each side, so that a face's two cells need no bounds test
+      allocate(flag(0:ni+1,0:nj+1,0:nk+1), frac(0:ni+1,0:nj+1,0:nk+1))
+      flag = .false.
+      frac = 0._R8
+      do k = 1, nk
+      do j = 1, nj
+      do i = 1, ni
+        associate (q => grid%blk(b)%cond_phase(p)%prim(:,i,j,k))
+          flag(i,j,k) = q(1) > empty1 .and. q(n) > 0._R8
+          if (flag(i,j,k)) flag(i,j,k) = q(n-1) >= Ton
+          if (flag(i,j,k)) then
+            mb = m_burnout
+            if (obj_condensed(mat_of(p))%dBurn > 0._R8) &
+              mb = pi/6._R8*mat_rho(obj_condensed(mat_of(p)), q(n-1))*obj_condensed(mat_of(p))%dBurn**3
+            frac(i,j,k) = burnout_fraction(q(1), mb*q(n))
+            flag(i,j,k) = frac(i,j,k) > 0._R8
+          end if
+        end associate
+      enddo ; enddo ; enddo
+      if (.not. any(flag)) then
+        deallocate(flag, frac)
+        cycle
+      end if
+      allocate(sink(nc,ni,nj,nk), redo(ni,nj,nk))
+      sink = 0._R8
+      redo = .false.
+      do k = 1, nk
+      do j = 1, nj
+      do i = 1, ni
+        if (.not. flag(i,j,k)) cycle
+        redo(max(i-1,1):min(i+1,ni), j, k) = .true.
+        redo(i, max(j-1,1):min(j+1,nj), k) = .true.
+        redo(i, j, max(k-1,1):min(k+1,nk)) = .true.
+        ! the cell's own outflow through each interior face, the face above (s = 1) and the face below (s = -1)
+        if (i < ni) call own_out(1, i,   j, k,  1, i, j, k)
+        if (i > 1)  call own_out(1, i-1, j, k, -1, i, j, k)
+        if (j < nj) call own_out(2, i, j,   k,  1, i, j, k)
+        if (j > 1)  call own_out(2, i, j-1, k, -1, i, j, k)
+        if (nk > 1) then
+          if (k < nk) call own_out(3, i, j, k,    1, i, j, k)
+          if (k > 1)  call own_out(3, i, j, k-1, -1, i, j, k)
+        end if
+      enddo ; enddo ; enddo
+      ! the residuals, rebuilt as tile_sweep builds them: each direction in the odd-then-even face order
+      do k = 1, nk
+      do j = 1, nj
+      do i = 1, ni
+        if (.not. redo(i,j,k)) cycle
+        associate (rs => grid%blk(b)%cond_phase(p)%residual(1:nc,i,j,k))
+          rs = res_keep(b)%a(:,i,j,k)
+          if (mod(i,2) == 1) then
+            if (i < ni) rs = rs - part(1, i,   j, k)
+            if (i > 1)  rs = rs + part(1, i-1, j, k)
+          else
+            rs = rs + part(1, i-1, j, k)
+            if (i < ni) rs = rs - part(1, i, j, k)
+          end if
+          if (mod(j,2) == 1) then
+            if (j < nj) rs = rs - part(2, i, j,   k)
+            if (j > 1)  rs = rs + part(2, i, j-1, k)
+          else
+            rs = rs + part(2, i, j-1, k)
+            if (j < nj) rs = rs - part(2, i, j, k)
+          end if
+          if (nk > 1) then
+            if (mod(k,2) == 1) then
+              if (k < nk) rs = rs - part(3, i, j, k)
+              if (k > 1)  rs = rs + part(3, i, j, k-1)
+            else
+              rs = rs + part(3, i, j, k-1)
+              if (k < nk) rs = rs - part(3, i, j, k)
+            end if
+          end if
+        end associate
+      enddo ; enddo ; enddo
+      ! the physical boundary faces of the flagged cells of this block: what leaves through them
+      do c = 1, grid%bcells(p)%n
+        r = grid%bcells(p)%rec(grid%bcells(p)%first(c))
+        if (grid%bc(r)%b /= b) cycle
+        if (.not. flag(grid%bc(r)%i, grid%bc(r)%j, grid%bc(r)%k)) cycle
+        do r = grid%bcells(p)%first(c), grid%bcells(p)%first(c+1) - 1
+          m = grid%bcells(p)%rec(r)
+          select case (grid%bc(m)%type)
+            case (101, 201, 102)
+              cycle
+            case (200)
+              if (trim(obj_time_scheme%model(p)) == 'MK') cycle
+          end select
+          call record_flux(grid, p, m, F)
+          if (F(1) < 0._R8) then
+            i = grid%bc(m)%i ; j = grid%bc(m)%j ; k = grid%bc(m)%k
+            F = frac(i,j,k)*F
+            grid%blk(b)%cond_phase(p)%residual(1:nc,i,j,k) = grid%blk(b)%cond_phase(p)%residual(1:nc,i,j,k) - F
+            sink(:,i,j,k) = sink(:,i,j,k) + F
+          end if
+        enddo
+      enddo
+      ! the sinks, per unit volume and time, in source and (the mass) in burn; the frozen slots exchange nothing
+      if (nf > 0) sink(frozen(1:nf,p),:,:,:) = 0._R8
+      do k = 1, nk
+      do j = 1, nj
+      do i = 1, ni
+        if (.not. flag(i,j,k)) cycle
+        grid%blk(b)%cond_phase(p)%source(1:nc,i,j,k) = grid%blk(b)%cond_phase(p)%source(1:nc,i,j,k) &
+                                                       + sink(:,i,j,k)/grid%blk(b)%vol(i,j,k)
+        grid%blk(b)%cond_phase(p)%burn(i,j,k) = grid%blk(b)%cond_phase(p)%burn(i,j,k) &
+                                                - sink(1,i,j,k)/grid%blk(b)%vol(i,j,k)
+      enddo ; enddo ; enddo
+      deallocate(flag, frac, sink, redo)
+    enddo
+
+  contains
+
+    !> The flux of the face of direction dd between cell (il,jl,kl) and its upper neighbour, as compute_flux evaluates
+    !> it, or at first order in the measure w, the larger f of its two cells (the reconstruction's stencil would reach
+    !> the cell beyond, which the diversion empties); 1 - f of it when it leaves a diverted cell (the lower cell when
+    !> it is positive, the upper one when negative)
+    function part(dd, il, jl, kl) result(Ff)
+      integer(kind=I4), intent(in) :: dd, il, jl, kl
+      real(kind=R8) :: Ff(nc), Fm(nc), w
+      integer(kind=I4) :: iu, ju, ku
+      iu = il ; ju = jl ; ku = kl
+      select case (dd)
+        case (1) ; iu = il + 1
+        case (2) ; ju = jl + 1
+        case default ; ku = kl + 1
+      end select
+      w = max(frac(il,jl,kl), frac(iu,ju,ku))
+      if (w > 0._R8) then
+        ! a face of a flagged cell: first order, its two cells' states (a reconstruction would reach the cell beyond),
+        ! blended with compute_flux's face below w = 1
+        Ff = riemann(grid%blk(b)%cond_phase(p)%prim(1:nc,il,jl,kl), grid%blk(b)%cond_phase(p)%prim(1:nc,iu,ju,ku), &
+                     grid%blk(b)%dir(dd)%f(il,jl,kl)%N, obj_condensed(mat_of(p)))*grid%blk(b)%dir(dd)%f(il,jl,kl)%A
+        if (w < 1._R8) then
+          call face_flux(grid%blk(b), b, p, nc, dd, il, jl, kl, Fm)
+          Ff = w*Ff + (1._R8 - w)*Fm
+        end if
+      else
+        call face_flux(grid%blk(b), b, p, nc, dd, il, jl, kl, Ff)
+      end if
+      if (Ff(1) > 0._R8 .and. frac(il,jl,kl) > 0._R8) then
+        Ff = keep(frac(il,jl,kl), Ff)
+      else if (Ff(1) < 0._R8 .and. frac(iu,ju,ku) > 0._R8) then
+        Ff = keep(frac(iu,ju,ku), Ff)
+      end if
+    end function part
+
+    !> 1 - f of a face's flux, exactly zero at f = 1 (the unsmoothed form's zero, not a signed one)
+    pure function keep(f, Fin) result(Fk)
+      real(kind=R8), intent(in) :: f, Fin(:)
+      real(kind=R8) :: Fk(size(Fin))
+      Fk = 0._R8
+      if (f < 1._R8) Fk = (1._R8 - f)*Fin
+    end function keep
+
+    !> The flagged cell (ic,jc,kc), on the lower side (s = 1) or the upper side (s = -1) of the face of direction dd
+    !> between cell (il,jl,kl) and its upper neighbour: f of the flux of its own state on both sides, to its sink when
+    !> it points out of the cell
+    subroutine own_out(dd, il, jl, kl, s, ic, jc, kc)
+      integer(kind=I4), intent(in) :: dd, il, jl, kl, s, ic, jc, kc
+      real(kind=R8) :: Fo(nc)
+      Fo = riemann(grid%blk(b)%cond_phase(p)%prim(1:nc,ic,jc,kc), grid%blk(b)%cond_phase(p)%prim(1:nc,ic,jc,kc), &
+                   grid%blk(b)%dir(dd)%f(il,jl,kl)%N, obj_condensed(mat_of(p)))*grid%blk(b)%dir(dd)%f(il,jl,kl)%A
+      if (s*Fo(1) > 0._R8) sink(:,ic,jc,kc) = sink(:,ic,jc,kc) - frac(ic,jc,kc)*s*Fo
+    end subroutine own_out
+
+  end subroutine divert_burnout
+
+
+  !> The fraction of a diverted cell's outflow that burns at its exit, from the drops' bulk density m against mb (the
+  !> drops' number times d-burnout's drop mass, else m_burnout): 1 at or below band_lo**3*mb, 0 at or above
+  !> band_hi**3*mb, a cubic step in the diameter ratio between (C1)
+  pure function burnout_fraction(m, mb) result(f)
+    real(kind=R8), intent(in) :: m, mb
+    real(kind=R8) :: f, t
+    f = 0._R8
+    if (m <= band_lo**3*mb) then
+      f = 1._R8
+    else if (m < band_hi**3*mb) then
+      t = (band_hi - (m/mb)**(1._R8/3._R8))/(band_hi - band_lo)
+      f = t*t*(3._R8 - 2._R8*t)
+    end if
+  end function burnout_fraction
 
 
 end module ICE_Mod_BC_Fluxes
