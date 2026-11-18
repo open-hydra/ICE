@@ -115,6 +115,7 @@ that also exist in `[ICE-Physics]` override it for that material.
 | `combustion = Beckstead` | The drop burns on the d^n law from its ignition temperature; its constants are a row of the models file |
 | `K-burn`, `n-burn`, `X-eff`, `beta-part`, `T-ign`, `T-burn`, `q-comb`, `d-stop`, `d-burnout`, `d-smoke` | The constants of the burning models: refused on the line, their place is the models file |
 | `cap` | The oxide cap of a burning drop, which ICE does not carry: refused, and so is a `cap` row of the models file |
+| `breakup` | The breakup model of a drop, which ICE does not have: ignored with a warning, and so is a `breakup` row of the models file |
 
 The physics of each is in [Particle Physics](../theory/physics.md):
 [conduction inside the drop](../theory/physics.md#conduction-inside-the-drop),
@@ -204,7 +205,9 @@ model stands for the one the line or `[ICE-Physics]` names; a line that starts w
 `d-burnout` and `d-smoke`. The setup
 stops on one of these constants left on the material line, on a row of another kind (`cap`, the oxide
 cap, is IGLOO's), of another model than the material's, with a key its model does not read, on a
-second row for one material, and on a row for no material of the phase file.
+second row for one material, and on a row for no material of the phase file. A row of the kind
+`breakup` is the exception: ICE has no breakup model (IGLOO has), so it ignores the row with a warning,
+its model and keys unread, as it ignores `breakup=` on the material line.
 
 `combustion` has no default: given in `[ICE-Physics]`, it holds for every material whose line
 names no other word. The constants are the row's alone: `q-comb`, `d-stop` and `d-burnout` in

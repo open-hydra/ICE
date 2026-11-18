@@ -367,7 +367,8 @@ contains
     end subroutine read_phase_file
 
 
-    !> Applies the key=value tokens of material m.
+    !> Applies the key=value tokens of material m. breakup=<model> is ignored with a warning: ICE has no breakup
+    !> model (IGLOO has).
     subroutine apply_tokens(m, tokens)
       use ICE_Lib_Evaporation, only: assign_evaporation, assign_interface, assign_liquid, assign_boiling
       integer,          intent(in) :: m
@@ -413,6 +414,9 @@ contains
         case ('cap')
           call refuse(material_label(m)//': cap='//trim(value)//' names the oxide cap of a burning drop, which ICE '// &
                       'does not carry (IGLOO does): remove it')
+        case ('breakup')
+          if (mpi_is_root) write(*,'(A)') ' [WARNING] [ICE::Setup_Materials] '//material_label(m)//': breakup='// &
+            trim(value)//' on the material line is ignored: ICE has no breakup model (IGLOO has)'
         case ('K-burn', 'n-burn', 'X-eff', 'beta-part', 'T-ign', 'T-burn', 'q-comb', 'd-stop', 'd-burnout', 'd-res', 'd-smoke', &
               'xi-law', 'xi-cap', 'xi-ox0', 'product', 'residue', 'd-residue')
           call refuse(material_label(m)//': '//trim(key)//'='//trim(value)//' on the material line: the constants of '// &
@@ -476,7 +480,8 @@ contains
     !> material's burning model, which the row names ('-' stands for the model its line or [ICE-Physics] names);
     !> cap: the oxide cap of a burning drop, which ICE does not carry. An unknown kind, a second row of a kind,
     !> another model than the material's, a key the model does not read and a value that is not a finite real number
-    !> are refused.
+    !> are refused. A row of the kind breakup is ignored with a warning, its model and keys unread: ICE has no
+    !> breakup model (IGLOO has, and reads them).
     subroutine apply_model_rows(m)
       integer, intent(in) :: m
       character(len=256) :: f1, kind, model, tok, key, value
@@ -493,6 +498,11 @@ contains
         where = models_file()//', row "'//trim(rows(r))//'"'
         word = ''; reads = ' '
         call next_field(rows(r), k, kind, kn); k = kn
+        if (trim(kind) == 'breakup') then
+          if (mpi_is_root) write(*,'(A)') ' [WARNING] [ICE::Setup_Materials] '//where// &
+            ': a breakup row is ignored: ICE has no breakup model (IGLOO has)'
+          cycle
+        endif
         call next_field(rows(r), k, model, kn); k = kn
         if (len_trim(model) == 0) call refuse(where//': a row holds "<material> <kind> <model> key=value ..."')
         select case (trim(kind))
