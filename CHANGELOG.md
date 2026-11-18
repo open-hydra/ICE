@@ -52,6 +52,8 @@ change an input or a build.
   line stops and names the file, and the line's real keys are `alpha-e`, `k-liq`, `mu-liq`, `T-melt`, `h-fus`,
   `T-nuc` and `cp-solid`. An oxide cap (`cap=` on the line, a cap row, a material of 0 groups) stops: ICE does
   not carry it.
+- A breakup model (`breakup=` on the material line, a `breakup` row of the models file) is ignored with a warning:
+  ICE has no breakup model (IGLOO has). It stopped the run before, as an unknown key or kind.
 - **Breaking.** `q-comb`, `d-stop` and `d-burnout` are no longer keys of `[ICE-Physics]`: there they stop the run,
   naming the models file. A burning material's row must give `q-comb`.
 - **Breaking.** `combustion = direct` without `T-burn` stops when `boiling-pressure` is not one atmosphere: the

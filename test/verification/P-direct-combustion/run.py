@@ -22,7 +22,9 @@ in the gas: m = rho pi D^3/6, k = mu cp/Pr, B = (cp (T_g - T_sat) + Q)/L_v, and
       constant left on the material line, the cap word on the line, a cap row, a row of an unknown kind, of another
       model than the line's, with a key the model does not read, for no material of the phase file, a second row
   P6  the [ICE-Physics] key combustion on a bare "A 1" line, the constants in a row under the model -: burns as P1;
-      a combustion=none token switches it off; T-burn of the models file overrides boiling-temperature
+      a combustion=none token switches it off; T-burn of the models file overrides boiling-temperature; the first
+      setup with breakup=TAB on the line, with a breakup row, with a malformed one: each ignored with one warning,
+      the drop burns as P1
   P7  no residue (no d-stop): the drop follows the law until it is removed, then the cell is empty and no density
       was floored; removed at d-burnout = 3e-5 when the models file gives it, else when a step would burn it whole
   P8  the latent heat from the Lv column of the property table, L_v(T) = L_v + 1000 (T - T_sat) J/kg, with no
@@ -225,7 +227,7 @@ def p5(rep):
             phase=(PHASE + ' q-comb=9.53e6 d-stop=6e-5',), models=())
     refusal(rep, 'cap-word', 'names the oxide cap of a burning drop', phase=(PHASE + ' cap=constant',))
     refusal(rep, 'cap-row', 'a cap row gives the oxide cap', models=MODELS + ('A cap constant xi-cap=0.2',))
-    refusal(rep, 'unknown-kind', 'unknown kind "breakup"', models=MODELS + ('A breakup TAB Comega=8',))
+    refusal(rep, 'unknown-kind', 'unknown kind "Foo"', models=MODELS + ('A Foo TAB Comega=8',))
     refusal(rep, 'other-model', 'the material burns with combustion=direct',
             models=('A combustion Beckstead K-burn=1e-6',))
     refusal(rep, 'key-not-read', 'K-burn is not a constant of combustion=direct', models=(MODELS[0] + ' K-burn=1e-6',))
@@ -246,15 +248,20 @@ def p5(rep):
 
 INI_KEYS = {'combustion': 'direct'}
 ROW_DASH = 'A combustion - q-comb=9.53e6 d-stop=6e-5'
+WARN_WORD = 'on the material line is ignored: ICE has no breakup model'
+WARN_ROW = 'a breakup row is ignored: ICE has no breakup model'
 
 
 def p6(rep):
     t_end = 0.5 * T_RES
-    for label, phase, rows, extra, burns in (
-            ('the section word, the row under -', 'A 1', (ROW_DASH,), {}, True),
+    for label, phase, rows, extra, burns, warn in (
+            ('the section word, the row under -', 'A 1', (ROW_DASH,), {}, True, None),
             ('T-burn of the models file over boiling-temperature', 'A 1', (ROW_DASH + ' T-burn=%r' % TSAT,),
-             {'boiling-temperature': TSAT - 500.0}, True),
-            ('a combustion=none token', 'A 1 combustion=none', (), {}, False)):
+             {'boiling-temperature': TSAT - 500.0}, True, None),
+            ('a combustion=none token', 'A 1 combustion=none', (), {}, False, None),
+            ('a breakup word', 'A 1 breakup=TAB', (ROW_DASH,), {}, True, WARN_WORD),
+            ('a breakup row', 'A 1', (ROW_DASH, 'A breakup TAB Comega=8'), {}, True, WARN_ROW),
+            ('a malformed breakup row', 'A 1', (ROW_DASH, 'A breakup'), {}, True, WARN_ROW)):
         phys = dict(INI_KEYS)
         phys.update(extra)
         case = closed_cell('P6-%s' % label.replace(' ', '-').replace('=', ''), TSAT, t_end, phase=(phase,), models=rows,
@@ -262,6 +269,9 @@ def p6(rep):
         sol = attempt(rep, 'P6 %s' % label, case)
         if sol is None:
             continue
+        if warn:
+            log = (case.dir / 'log').read_text(errors='replace')
+            rep.check(log.count(warn) == 1, 'P6 %s: ignored with one warning, "%s"' % (label, warn))
         rho, u, T, n, _ = state(sol, 'MK')
         D = diameter(rho[0], n[0])
         if burns:
@@ -382,7 +392,7 @@ def main():
         print('   P5  the gas phase file and the refusals')
         p5(rep)
     if selected('P6'):
-        print('   P6  the [ICE-Physics] word, the constants in a row')
+        print('   P6  the [ICE-Physics] word, the constants in a row, breakup ignored')
         p6(rep)
     if selected('P7'):
         print('   P7  no residue: the drop burns out')
