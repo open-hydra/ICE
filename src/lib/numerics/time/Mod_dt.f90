@@ -115,8 +115,8 @@ contains
 
 
 
-  !> The step of the cells a family does not occupy (bulk density at or below rho_empty) where a source fills them (the
-  !> births of a generation, srate; another solver's generated mass, ext; in any cell) or where the family burns
+  !> The step of the cells a family does not occupy (bulk density at or below rho_empty) where births fill them (the
+  !> births in force, births_gen and births_ext, in any cell) or where the family burns
   !> (empties: its drops burn down to ICE's empty state and its flux fills the cells beyond). Their own state bounds
   !> nothing (velocity ~0, no relaxation time), but the source fills them in the first stage of this step, at its own
   !> velocity, or the cells it fills fill them, and the later stages and the reconstruction move that content with the
@@ -150,7 +150,8 @@ contains
     any_src = .false.
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
-      any_src = any_src .or. allocated(grid%blk(b)%cond_phase(p)%srate) .or. allocated(grid%blk(b)%cond_phase(p)%ext)
+      any_src = any_src .or. allocated(grid%blk(b)%cond_phase(p)%births_gen) &
+                        .or. allocated(grid%blk(b)%cond_phase(p)%births_ext)
     enddo
     if (.not. (filled .or. any_src)) return
     floor_dt = huge(floor_dt)
@@ -164,8 +165,8 @@ contains
       do j = 1, grid%blk(b)%dim(2)
       do i = 1, grid%blk(b)%dim(1)
         s = 0._R8
-        if (allocated(cp%srate)) s = s + cp%srate(1:4,i,j,k)
-        if (allocated(cp%ext))   s = s + cp%ext(1:4,i,j,k)
+        if (allocated(cp%births_gen)) s = s + cp%births_gen(1:4,i,j,k)
+        if (allocated(cp%births_ext)) s = s + cp%births_ext(1:4,i,j,k)
         if (s(1) > 0._R8) filled = .true.
         if (cp%prim(1,i,j,k) > rho_empty) then
           floor_dt = min(floor_dt, cp%dt(i,j,k))

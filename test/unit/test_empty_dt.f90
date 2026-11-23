@@ -1,16 +1,16 @@
-!> Unit test of the step of the empty cells of a steady family a source fills (ICE_Mod_dt's bound_empty_dt): one
+!> Unit test of the step of the empty cells of a steady family that births fill (ICE_Mod_dt's bound_empty_dt): one
 !> block of 4 x 1 x 1 cells of 1 mm, family 1 (MK, 6 slots), cfl 0.4, the steps as compute_dt leaves them: cfl dx/|u|
 !> in an occupied cell, the dt-max ceiling (1e-4 s) in an empty one, whose velocity bounds nothing.
 !>   E1 no source: every step untouched, bit for bit
-!>   E2 a source (srate) at 800 m/s in empty cell 3: both empty cells step at most cfl dx/800 (to 4 ulp), the occupied
-!>      cells keep theirs, bit for bit
-!>   E3 the same source as ext: the same steps
+!>   E2 births of ICE's own (births_gen) at 800 m/s in empty cell 3: both empty cells step at most cfl dx/800 (to 4
+!>      ulp), the occupied cells keep theirs, bit for bit
+!>   E3 the same births set by a coupler (births_ext): the same steps
 !>   E4 no occupied cell (a generation family before its first births): every cell steps at the source's cfl dx/800
 !>   E5 a source in an occupied cell only: the empty cells, which the cells it fills fill, step at most the occupied
 !>      cells' smallest step, bit for bit
 !>   E6 the same, empty cell 4 ten times narrower (0.1 mm): it steps at most its own cfl dx/100 at the occupied cells'
 !>      speed (to 4 ulp), below their smallest step; empty cell 3 keeps that step, bit for bit
-!>   E7 time-accurate, the source as ext in empty cell 3, no occupied cell: the global step (dt-max, as compute_dt
+!>   E7 time-accurate, the births as births_ext in empty cell 3, no occupied cell: the global step (dt-max, as compute_dt
 !>      leaves it) lowered to the source's cfl dx/800 (to 4 ulp)
 !> Prints every assertion and exits non-zero if any failed.
 program test_empty_dt
@@ -57,22 +57,22 @@ program test_empty_dt
   call check(all(grid%blk(1)%cond_phase(1)%dt == dt0), 'E1 no source: every step untouched')
 
   ! E2: a source at 800 m/s in empty cell 3
-  allocate(grid%blk(1)%cond_phase(1)%srate(6,4,1,1))
-  grid%blk(1)%cond_phase(1)%srate = 0._R8
-  grid%blk(1)%cond_phase(1)%srate(:,3,1,1) = s
+  allocate(grid%blk(1)%cond_phase(1)%births_gen(6,4,1,1))
+  grid%blk(1)%cond_phase(1)%births_gen = 0._R8
+  grid%blk(1)%cond_phase(1)%births_gen(:,3,1,1) = s
   call bound_empty_dt(1, cfl, grid)
   call check(all(grid%blk(1)%cond_phase(1)%dt(1:2,1,1) == dt0(1:2,1,1)), 'E2 the occupied cells keep their steps')
   call check(near(grid%blk(1)%cond_phase(1)%dt(3:4,1,1), src), 'E2 the empty cells step at most cfl dx/800')
 
-  ! E3: the same source as ext
-  deallocate(grid%blk(1)%cond_phase(1)%srate)
-  allocate(grid%blk(1)%cond_phase(1)%ext(6,4,1,1))
-  grid%blk(1)%cond_phase(1)%ext = 0._R8
-  grid%blk(1)%cond_phase(1)%ext(:,3,1,1) = s
+  ! E3: the same births set by a coupler
+  deallocate(grid%blk(1)%cond_phase(1)%births_gen)
+  allocate(grid%blk(1)%cond_phase(1)%births_ext(6,4,1,1))
+  grid%blk(1)%cond_phase(1)%births_ext = 0._R8
+  grid%blk(1)%cond_phase(1)%births_ext(:,3,1,1) = s
   call occupy(2)
   call bound_empty_dt(1, cfl, grid)
   call check(all(grid%blk(1)%cond_phase(1)%dt(1:2,1,1) == dt0(1:2,1,1)) .and. &
-             near(grid%blk(1)%cond_phase(1)%dt(3:4,1,1), src), 'E3 ext: the same steps')
+             near(grid%blk(1)%cond_phase(1)%dt(3:4,1,1), src), 'E3 births_ext: the same steps')
 
   ! E4: no occupied cell
   call occupy(0)
@@ -80,10 +80,10 @@ program test_empty_dt
   call check(near(grid%blk(1)%cond_phase(1)%dt(:,1,1), src), 'E4 no occupied cell: every cell at the source''s step')
 
   ! E5: a source in occupied cell 1 only
-  deallocate(grid%blk(1)%cond_phase(1)%ext)
-  allocate(grid%blk(1)%cond_phase(1)%srate(6,4,1,1))
-  grid%blk(1)%cond_phase(1)%srate = 0._R8
-  grid%blk(1)%cond_phase(1)%srate(:,1,1,1) = s
+  deallocate(grid%blk(1)%cond_phase(1)%births_ext)
+  allocate(grid%blk(1)%cond_phase(1)%births_gen(6,4,1,1))
+  grid%blk(1)%cond_phase(1)%births_gen = 0._R8
+  grid%blk(1)%cond_phase(1)%births_gen(:,1,1,1) = s
   call occupy(2)
   call bound_empty_dt(1, cfl, grid)
   call check(all(grid%blk(1)%cond_phase(1)%dt(:,1,1) == occ), &
@@ -98,11 +98,11 @@ program test_empty_dt
              'E6 a narrower empty cell steps at most its own width at the occupied cells'' speed')
   grid%blk(1)%M(4,1,1)%c(1,1) = 1._R8/dx
 
-  ! E7: time-accurate, the source as ext in empty cell 3, no occupied cell
-  deallocate(grid%blk(1)%cond_phase(1)%srate)
-  allocate(grid%blk(1)%cond_phase(1)%ext(6,4,1,1))
-  grid%blk(1)%cond_phase(1)%ext = 0._R8
-  grid%blk(1)%cond_phase(1)%ext(:,3,1,1) = s
+  ! E7: time-accurate, the births as births_ext in empty cell 3, no occupied cell
+  deallocate(grid%blk(1)%cond_phase(1)%births_gen)
+  allocate(grid%blk(1)%cond_phase(1)%births_ext(6,4,1,1))
+  grid%blk(1)%cond_phase(1)%births_ext = 0._R8
+  grid%blk(1)%cond_phase(1)%births_ext(:,3,1,1) = s
   call occupy(0)
   obj_time_scheme%time_accurate = .true.
   grid%dtglobal = dtmax

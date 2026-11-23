@@ -16,6 +16,14 @@ Information for contributors and developers working on the ICE codebase.
 
     [:octicons-arrow-right-24: Structure](structure.md)
 
+-   :material-swap-horizontal:{ .lg .middle } __Coupling Interface__
+
+    ---
+
+    What a coupler exchanges with ICE: the gas state, the exchange, the removals, the births
+
+    [:octicons-arrow-right-24: Coupling](coupling.md)
+
 -   :material-test-tube:{ .lg .middle } __Testing__
 
     ---

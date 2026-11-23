@@ -70,9 +70,11 @@ src/lib/
 ├── parallel/
 │   ├── Mod_MPI.f90             # Environment, block partition, collectives
 │   └── Mod_GhostExchange.f90   # Halo schedule and persistent requests
+├── coupling/
+│   └── Mod_Exchange.f90        # Everything a coupler exchanges with ICE (Coupling Interface)
 ├── physics/
 │   ├── Lib_Model_MK/IG/AG.f90  # The three closures
-│   ├── Lib_Model.f90           # Binds the model procedures to the active family
+│   ├── Lib_Model.f90           # Binds the model procedures to the active family; any family's conversions
 │   ├── Lib_Drag.f90            # Twelve drag correlations
 │   ├── Lib_Heat.f90            # Seven Nusselt correlations
 │   ├── Lib_Evaporation.f90     # Five evaporation models and their interface options
@@ -92,6 +94,7 @@ src/lib/
 | A closure | the three `physics/Lib_Model_*.f90` plus `ncond` in `config/Assign_Setup.f90` |
 | A boundary type | `io/IO_BC.f90` to parse it and `numerics/space/Lib_Ghost.f90` to apply it |
 | The time integrator | `numerics/time/explicit/Lib_RK.f90` |
+| What a coupler exchanges with ICE | `coupling/Mod_Exchange.f90` ([Coupling Interface](coupling.md)) |
 
 ## Module naming
 
@@ -121,9 +124,10 @@ be called from a `pure` context.
 **Procedure pointers.** `Lib_Model`, `Lib_Riemann` and `Lib_Limiters` hold module-level
 pointers bound once per family, before the loop that uses them
 (`assign_all`, `assign_riemann`, `assign_limiter`). Because the binding is per family
-and the loops over families are serial, this is safe as written, but it is why
-`Lib_Ghost` — which walks every family in one loop — dispatches on the closure name
-explicitly instead of using the pointers.
+and the loops over families are serial, this is safe as written. A loop that reaches
+another family, such as `Lib_Ghost`, which walks every family in one loop, or a birth in
+a family other than the one being stepped, uses `model_prim_2_cons` and `model_cons_2_prim`
+(`Lib_Model`), which dispatch on the closure name instead of using the pointers.
 
 ## Build system
 

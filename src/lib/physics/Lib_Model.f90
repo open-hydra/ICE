@@ -19,6 +19,7 @@ module ICE_Lib_Model
   public :: assign_flux_make
   public :: assign_source_make
   public :: assign_all
+  public :: model_prim_2_cons, model_cons_2_prim
 
   !> Concrete "model" procedure pointing to one of the function realizations
   procedure(prim_2_cons_if), pointer, public   :: prim_2_cons
@@ -263,6 +264,56 @@ contains
     call assign_source_make (phase)
 
   end subroutine assign_all
+
+
+  !> The conversions of family p's own closure, whatever family the procedure pointers above are bound to. The
+  !> pointers serve one family at a time; these serve any family in any loop, and are safe in a parallel region.
+  function model_prim_2_cons(p, prim, mat) result(cons)
+    implicit none
+    integer(kind=I4), intent(in) :: p
+    real(kind=R8),    intent(in) :: prim(:)
+    type(condensed_phase_t), intent(in) :: mat
+    real(kind=R8)                :: cons(size(prim))
+
+    if (solid_of(p)) then
+      select case (trim(obj_time_scheme%model(p)))
+      case ('MK'); cons = prim_2_cons_MK_S(prim, mat)
+      case ('IG'); cons = prim_2_cons_IG_S(prim, mat)
+      case ('AG'); cons = prim_2_cons_AG_S(prim, mat)
+      end select
+      return
+    endif
+    select case (trim(obj_time_scheme%model(p)))
+    case ('MK'); cons = prim_2_cons_MK(prim, mat)
+    case ('IG'); cons = prim_2_cons_IG(prim, mat)
+    case ('AG'); cons = prim_2_cons_AG(prim, mat)
+    end select
+
+  end function model_prim_2_cons
+
+
+  function model_cons_2_prim(p, cons, mat) result(prim)
+    implicit none
+    integer(kind=I4), intent(in) :: p
+    real(kind=R8),    intent(in) :: cons(:)
+    type(condensed_phase_t), intent(in) :: mat
+    real(kind=R8)                :: prim(size(cons))
+
+    if (solid_of(p)) then
+      select case (trim(obj_time_scheme%model(p)))
+      case ('MK'); prim = cons_2_prim_MK_S(cons, mat)
+      case ('IG'); prim = cons_2_prim_IG_S(cons, mat)
+      case ('AG'); prim = cons_2_prim_AG_S(cons, mat)
+      end select
+      return
+    endif
+    select case (trim(obj_time_scheme%model(p)))
+    case ('MK'); prim = cons_2_prim_MK(cons, mat)
+    case ('IG'); prim = cons_2_prim_IG(cons, mat)
+    case ('AG'); prim = cons_2_prim_AG(cons, mat)
+    end select
+
+  end function model_cons_2_prim
 
 
 end module ICE_Lib_Model

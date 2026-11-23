@@ -5,15 +5,12 @@ module ICE_Lib_Ghost
   use ICE_Config_Types_m, only: obj_time_scheme, obj_condensed, condensed_phase_t
   use ICE_Lib_Properties, only : mat_rho
   use ICE_Mod_Metrics, only : delthe
-  use ICE_Lib_MK, only : prim_2_cons_MK, cons_2_prim_MK
-  use ICE_Lib_IG, only : prim_2_cons_IG, cons_2_prim_IG
-  use ICE_Lib_AG, only : prim_2_cons_AG, cons_2_prim_AG, mirror_tensor_AG
+  use ICE_Lib_AG, only : mirror_tensor_AG
+  use ICE_Lib_Model, only : model_prim_2_cons, model_cons_2_prim
   use ICE_Mod_MPI, only : is_local_block
   use ICE_Mod_GhostExchange, only : exchange_ghost_prim
   use ICE_Mod_Timers,        only : timer_comm_begin, timer_comm_end
   use ICE_Lib_Solidification, only : solidPhaseAtInjection
-  use ICE_Lib_Solid, only : prim_2_cons_MK_S, cons_2_prim_MK_S, prim_2_cons_IG_S, cons_2_prim_IG_S, &
-                           prim_2_cons_AG_S, cons_2_prim_AG_S
   use ICE_Mod_ThreadGroups, only : n_tgroups, thread_group, split_range
   !$ use omp_lib, only : omp_get_thread_num
 
@@ -467,56 +464,6 @@ contains
     blk(bc%b)%cond_phase(pm)%prim(1:nv,ig,jg,kg) = model_cons_2_prim(pm, consg(1:nv), mat)
 
   end subroutine ghost_chimera
-
-
-  !> Group-specific conversions. The model procedure pointers in ICE_Lib_Model are bound to
-  !> one group at a time, while the ghost loops cover every group, so dispatch explicitly.
-  function model_prim_2_cons(p, prim, mat) result(cons)
-    implicit none
-    integer(kind=I4), intent(in) :: p
-    real(kind=R8),    intent(in) :: prim(:)
-    type(condensed_phase_t), intent(in) :: mat
-    real(kind=R8)                :: cons(size(prim))
-
-    if (solid_of(p)) then
-      select case (trim(obj_time_scheme%model(p)))
-      case ('MK'); cons = prim_2_cons_MK_S(prim, mat)
-      case ('IG'); cons = prim_2_cons_IG_S(prim, mat)
-      case ('AG'); cons = prim_2_cons_AG_S(prim, mat)
-      end select
-      return
-    endif
-    select case (trim(obj_time_scheme%model(p)))
-    case ('MK'); cons = prim_2_cons_MK(prim, mat)
-    case ('IG'); cons = prim_2_cons_IG(prim, mat)
-    case ('AG'); cons = prim_2_cons_AG(prim, mat)
-    end select
-
-  end function model_prim_2_cons
-
-
-  function model_cons_2_prim(p, cons, mat) result(prim)
-    implicit none
-    integer(kind=I4), intent(in) :: p
-    real(kind=R8),    intent(in) :: cons(:)
-    type(condensed_phase_t), intent(in) :: mat
-    real(kind=R8)                :: prim(size(cons))
-
-    if (solid_of(p)) then
-      select case (trim(obj_time_scheme%model(p)))
-      case ('MK'); prim = cons_2_prim_MK_S(cons, mat)
-      case ('IG'); prim = cons_2_prim_IG_S(cons, mat)
-      case ('AG'); prim = cons_2_prim_AG_S(cons, mat)
-      end select
-      return
-    endif
-    select case (trim(obj_time_scheme%model(p)))
-    case ('MK'); prim = cons_2_prim_MK(cons, mat)
-    case ('IG'); prim = cons_2_prim_IG(cons, mat)
-    case ('AG'); prim = cons_2_prim_AG(cons, mat)
-    end select
-
-  end function model_cons_2_prim
 
 
   !> The range of local_bc_grp holding family p's records, or every record.

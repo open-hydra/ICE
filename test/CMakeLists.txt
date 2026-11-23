@@ -418,9 +418,9 @@ ice_add_unit_test(NearEmptyCapUnit unit/test_near_empty_cap.f90 "fast;unit;imple
 # cell and the neighbour across the face; equal cells keep the limiter's own slope bit for bit, linear data are exact
 ice_add_unit_test(MusclBoundsUnit unit/test_muscl_bounds.f90 "fast;unit;implementation")
 
-# The source a coupler sets on a family (cond_phase%ext): the stage's residual gains it over the family's own dt in every
-# slot, a frozen slot stays 0, a family without one is untouched
-ice_add_unit_test(ExternalSourceUnit unit/test_external_source.f90 "fast;unit;implementation")
+# ICE's exchange with a coupler (ICE_Mod_Exchange): the gas state, the exchange rate, the removals, the births at once
+# and in force, where a birth goes, what a burning material generates; and ICE's own generated mass, born the same way
+ice_add_unit_test(ExchangeUnit unit/test_exchange.f90 "fast;unit;implementation")
 
 # The step of the empty cells of a family a source fills (bound_empty_dt): steady, at most what the source's speed, the
 # family's occupied cells and the cell's own width allow; time-accurate, the global step at most the source's; without
