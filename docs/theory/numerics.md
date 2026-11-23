@@ -12,16 +12,26 @@ $$
 $$
 
 with $\Omega_i$ the cell volume, $A_f$ the face area and $\hat{\mathbf{n}}_f$ the outward
-unit normal. Face areas, normals, volumes and the three cell lengths are computed once, at
-setup, from the node coordinates.
+unit normal.
 
-The volume of a cell is the integral of the Jacobian determinant of the trilinear map of its
-eight nodes,
-$\Omega = \frac{1}{6} \sum_d \mathbf{e}_d \cdot (\mathbf{S}_d^- + \mathbf{S}_d^+)$, with
-$\mathbf{e}_d$ the mean edge of direction $d$ and $\mathbf{S}_d^\mp$ the area vectors (half
-the cross product of the diagonals) of its two faces of that direction. It is exact on every
-cell, twisted faces included, so the cell volumes add up to the volume their boundary
-encloses. A cell whose volume is zero, or turned over, stops the setup.
+### Cell geometry
+
+Face areas, normals, volumes and the three cell lengths are computed once, at set-up, from
+the node coordinates. The volume of a cell is the integral of the Jacobian determinant of
+the trilinear map of its eight nodes,
+
+$$
+\Omega = \frac{1}{6} \sum_d \mathbf{e}_d \cdot (\mathbf{S}_d^- + \mathbf{S}_d^+),
+$$
+
+with $\mathbf{e}_d$ the mean edge of direction $d$ and $\mathbf{S}_d^\mp$ the area vectors
+(half the cross product of the diagonals) of its two faces of that direction.
+
+- It is exact on every cell, twisted faces included, so the cell volumes add up to the
+  volume their boundary encloses.
+- A cell whose volume is zero, or turned over, stops the set-up.
+
+### Ghost layers and the dimension of the mesh
 
 Each block carries **two ghost layers** on every face. Nothing about the dimensions has to
 be declared:
@@ -40,10 +50,12 @@ lines, $\mathbf{x}_{-1} = 2\mathbf{x}_0 - \mathbf{x}_1$, so a ghost cell has the
 first cell across the face, whatever the stretching. Beyond the side faces of a wedge they
 are rotated by its angle instead.
 
+### The same answer on any number of threads
+
 The interior faces of a block are swept in two passes, odd faces then even, so that two
-faces sharing a cell never accumulate into it at the same time. This is what makes the
-OpenMP result independent of the thread count. Boundary faces are handled separately,
-from the ghost values.
+faces sharing a cell never add into it at the same time. This makes the OpenMP result
+independent of the thread count. Boundary faces are handled separately, from the ghost
+values.
 
 ## Reconstruction
 
@@ -56,6 +68,8 @@ $$
 $$
 
 where $s$ are the one-sided slopes on the non-uniform mesh, $\phi$ the limiter and $\beta$ the shock-detector weight described below.
+
+### Slopes on cells of different lengths
 
 The limited slopes are bounded so that the value of a cell at each of its faces lies between the value of the cell and
 that of the neighbour across that face, on a line of cells of any lengths: the change over half the cell is at most the
@@ -76,16 +90,20 @@ taken, and $\delta$ is half the length of the cell. A few consequences:
 - Next to an inlet whose state sits on the face, that state is half a cell away, and the bound there is $\psi \le r$.
 - Minmod never reaches the bounds. Van Albada and OSPRE are not zero at $r < 0$, where the bounds do not apply.
 
+### Next to an empty cell
+
 A side whose three cells include an empty one (a density at or below $10^{-6}$ kg/m³) is
 first order: $\mathbf{P}_L$ is then $\mathbf{P}_i$, and $\mathbf{P}_R$ is $\mathbf{P}_{i+1}$.
 Each side looks at its own three cells — $i-1$, $i$, $i+1$ for $\mathbf{P}_L$ and $i$, $i+1$,
 $i+2$ for $\mathbf{P}_R$ — so the two sides of a face fall back as their mirror images do, and
 a symmetric flow stays symmetric to round-off.
 
-A family of a solidifying material reconstructs, in place of $T_p$, its liquid-branch temperature $T_\ell = e/c_l$,
-which is continuous where the content nucleates, and takes each face's $T_p$ and $f$ from the face's $T_\ell$ and
-$\chi$ by the rule of a cell ([Solidification](physics.md#solidification)); a liquid face is unchanged, and a cold solid,
-whose $T_\ell$ is negative, gets its physical temperature back.
+### Solidifying families
+
+A family of a solidifying material reconstructs its liquid-branch temperature $T_\ell = e/c_l$ instead of $T_p$,
+because $T_\ell$ is continuous where the content nucleates. Each face then takes its $T_p$ and $f$ from its $T_\ell$
+and $\chi$, by the rule of a cell ([Solidification](physics.md#solidification)). A liquid face is unchanged, and a
+cold solid, whose $T_\ell$ is negative, gets its physical temperature back.
 
 ### Limiters
 
@@ -107,13 +125,19 @@ slope of cell $i$; for $\mathbf{P}_R$ the same of cell $i+1$.
 | `superbee` | $\max(0, \min(2r, 1), \min(r, 2))$ | 1/2 |
 
 $\nu_{\max}$ is the largest `cfl` at which explicit Euler (`time-scheme = euler`) keeps the
-reconstruction TVD for 1-D scalar advection on a uniform mesh. It follows from Harten's
-sufficient condition in incremental form, over every $r$ and both signs of the speed:
-$\nu_{\max} = 1/(1 + A/2 - \psi_{\min}/2)$ for $a > 0$ and $1/(1 + \psi_{\max}/2 - B/2)$ for
-$a < 0$, with $A$ and $B$ the largest and smallest $\psi(r)/r$. It bounds `cfl` because `cfl`
-bounds the sum of the direction limits ([time step](time-integration.md#the-time-step)). On a mesh whose cells change
-length along a line, the bounds of the reconstruction keep every limiter but van Albada and OSPRE TVD up to
-$\nu = 1/2$ (Berger, Aftosmis and Murman, eq. 17).
+reconstruction TVD, for 1-D scalar advection on a uniform mesh. It matters only with Euler:
+RK2 and RK3 are not checked.
+
+- It follows from Harten's sufficient condition in incremental form, over every $r$ and both
+  signs of the speed: $\nu_{\max} = 1/(1 + A/2 - \psi_{\min}/2)$ for $a > 0$ and
+  $1/(1 + \psi_{\max}/2 - B/2)$ for $a < 0$, with $A$ and $B$ the largest and smallest
+  $\psi(r)/r$.
+- It bounds `cfl` because `cfl` bounds the sum of the direction limits
+  ([time step](time-integration.md#the-time-step)).
+- On a mesh whose cells change length along a line, every limiter but van Albada and OSPRE
+  stays TVD up to $\nu = 1/2$ (Berger, Aftosmis and Murman, eq. 17).
+
+Three of the bounds need a word:
 
 - Van Albada's $\psi$ is not clipped at $r < 0$ (it goes down to $(1 - \sqrt{2})/2$), so its
   bound is below the 0.624 of $r > 0$ alone.
@@ -122,13 +146,13 @@ $\nu = 1/2$ (Berger, Aftosmis and Murman, eq. 17).
   $a > 0$ gives 2/3.
 
 Above $\nu_{\max}$ the run goes on with a warning,
-`[WARNING] [ICE-Numerics] forward Euler with MUSCL ...`, at setup and whenever `input.ini`
-is read again; with `irs = true` an `[INFO]` line takes its place. RK2 and RK3 are not
-checked.
+`[WARNING] [ICE-Numerics] forward Euler with MUSCL ...`, at set-up and whenever `input.ini`
+is read again; with `irs = true` an `[INFO]` line takes its place.
 
 ### Shock detector
 
-The shock-detector adds a sensor on density,
+The shock detector lowers the reconstruction to first order at a shock. Its sensor is a normalised second difference
+of the density,
 
 $$
 s = \max_{d}\ \left|\frac{\rho_{d+1} - 2\rho + \rho_{d-1}}{\rho_{d+1} + 2\rho + \rho_{d-1}}\right|,
@@ -144,44 +168,47 @@ $$
 \qquad \Delta = 20 .
 $$
 
-So $\beta = 1$ in smooth flow, where the scheme is the plain MUSCL one, falls continuously with the sensor, and is 0 at
-a shock ($s \ge 1/\Delta$), where the scheme drops to first order. A face inside a block takes the smaller weight of its
-two cells, $\min(\beta_L, \beta_R)$, and so does a face between two connected blocks (`101`, `201`), which lies inside the
-domain just the same ([Boundary faces](#boundary-faces)). A face on a physical boundary, and a chimera face (`102`), whose
-ghost is a blend of donor cells rather than a cell, take their own cell's weight.
+So:
 
-The form is that of Tramel, Nichols and Buning (AIAA 2009-3988, Eqs. 29-30), with one
-change. There the weight is $1 - \tanh(10\,\varphi^3)$ with $\varphi = s/\Delta$; with
-$\Delta = 20$ this is a switch, 1 below the threshold $1/\Delta$ and 0 above it. ICE takes
-$\varphi = s\,\Delta$, which keeps the threshold but spreads the fall of $\beta$ over
-$0 \le s < 1/\Delta$, from 1 at $s = 0$ to $1 - \tanh 10$ ($4\times10^{-9}$) at the threshold.
+| Flow | $\beta$ | Scheme |
+|---|---|---|
+| smooth ($s = 0$) | 1 | plain MUSCL |
+| steepening ($0 < s < 1/\Delta$) | falls continuously | between the two |
+| shock ($s \ge 1/\Delta$) | 0 | first order |
 
-The paper also thickens the sensor (its Eq. 31 takes the largest $s$ of the 27 cells around a
-cell). ICE gives each face the weight of the more shocked of its two cells,
-$\min(\beta_L, \beta_R)$, which treats a face the same from both sides and keeps mirror-image
-flows symmetric to round-off.
+Which weight a face takes:
 
-The continuous weight matters for steady computations: with a switch, the cells near the
-threshold flip from one iteration to the next and the residual levels off instead of
-falling. The price is a little more dissipation below the threshold: on the AG crossing
-jets, the RMS distance to the exact solution grows from $2.7\times10^{-2}$ to
-$2.8\times10^{-2}$ kg/m³.
+- a face inside a block, or between two connected blocks (`101`, `201`): the smaller of its two cells',
+  $\min(\beta_L, \beta_R)$. This treats a face the same from both sides and keeps mirror-image flows symmetric to
+  round-off;
+- a face on a physical boundary, and a chimera face (`102`), whose ghost is a blend of donor cells: its own cell's.
 
-A domain split into connected blocks gets the same weights as in one block, so the two
-differ by round-off only, which the detector can amplify where the crossing jets collide:
-$2\times10^{-9}$ of the peak density after 5000 iterations, less than a change of the last
-digit of an inlet value ([Multi-block and MPI](../vv/multiblock-mpi.md)). Blocks joined by
-chimera faces still differ where the detector acts at the interface.
+**Differences from the original.** The form is that of Tramel, Nichols and Buning (AIAA 2009-3988, eqs. 29-30), with
+two changes:
 
-On the [crossing jets](../vv/crossing-jets.md) the detector lets the MK and AG runs converge, keeps the AG pressure
-tensor off its floor in the nearly empty cells around the jets, and keeps AG from gathering mass on either side of the
-crossing. It costs accuracy where the flow is smooth: without it MK and AG are nearer their exact solutions, but neither
-converges (MK's residual stalls; AG's residual cycles). The crossing-jets tests run without it, for all three
-closures.
+- There $\varphi = s/\Delta$, which with $\Delta = 20$ makes the weight a switch: 1 below the threshold $1/\Delta$
+  and 0 above. ICE takes $\varphi = s\,\Delta$, which keeps the threshold but spreads the fall of $\beta$ over
+  $0 \le s < 1/\Delta$, down to $1 - \tanh 10$ ($4\times10^{-9}$) at the threshold.
+- The paper thickens the sensor over the 27 cells around a cell (its eq. 31); ICE uses the face rule above instead.
+
+**Why a continuous weight.** With a switch, the cells near the threshold flip from one iteration to the next, and a
+steady residual levels off instead of falling. The price is a little more dissipation below the threshold: on the AG
+crossing jets, the RMS distance to the exact solution grows from $2.7\times10^{-2}$ to $2.8\times10^{-2}$ kg/m³.
+
+**Several blocks.** A domain split into connected blocks gets the same weights as in one block. The two runs differ by
+round-off only, which the detector can amplify where the crossing jets collide: $2\times10^{-9}$ of the peak density
+after 5000 iterations ([Multi-block and MPI](../vv/multiblock-mpi.md)). Blocks joined by chimera faces still differ
+where the detector acts at the interface.
+
+**When to use it.** On the [crossing jets](../vv/crossing-jets.md) the detector lets the MK and AG runs converge,
+keeps the AG pressure tensor off its floor in the nearly empty cells around the jets, and keeps AG from gathering mass
+on either side of the crossing. It costs accuracy where the flow is smooth: without it MK and AG are nearer their exact
+solutions, but neither converges (MK's residual stalls, AG's cycles). The crossing-jets tests run without it, for all
+three closures.
 
 ## Riemann solvers
 
-The face flux is a two-state flux solved via three possible schemes.
+The flux at a face comes from its two reconstructed states, by one of three solvers.
 
 | Name | Form | Applies to |
 |---|---|---|
@@ -195,28 +222,31 @@ HLLE is less dissipative than Rusanov on a contact and is worth trying when a co
 
 ## Boundary faces
 
-Boundary fluxes are built from the ghost values, so every boundary type — connection, chimera, symmetry, extrapolation, inlet —
-reaches the flux loop through the same path. The ghost fill is described under [Boundary Conditions](../user/boundary-conditions.md).
-On the side faces of an axisymmetric wedge the ghost is the cell's mirror image, so the flux carries no mass, and for IG and
+Boundary fluxes are built from the ghost values, so every boundary type (connection, chimera, symmetry,
+extrapolation, inlet) reaches the flux loop through the same path. The ghost fill is described under
+[Boundary Conditions](../user/boundary-conditions.md).
+
+**Axisymmetric wedge.** On the side faces the ghost is the cell's mirror image, so the flux carries no mass. For IG and
 AG the pressure on those faces is the hoop term of the radial momentum; MK has no flux there.
 
-A face between two blocks (`101`, `201`) has a record in each block. Its flux is computed
-once, by one of the two blocks — the one on the low-index side when the face is the high
-face of one block and the low face of the other, otherwise the first in
-(block, face, k, j, i) order — and the other block takes its negative. The two blocks
-therefore exchange exactly the same mass, momentum and energy across the cut. With MPI,
-the other block's rank sends its cell's detector weight, and gets the flux back, once per
-stage.
+**Connected blocks** (`101`, `201`). A face between two blocks has a record in each block, but its flux is computed
+once and the other block takes its negative, so the two blocks exchange exactly the same mass, momentum and energy. The
+block that computes it is the one on the low-index side when the face is the high face of one block and the low face of
+the other, otherwise the first in (block, face, k, j, i) order. With MPI, the other block's rank sends its cell's
+detector weight and gets the flux back, once per stage.
 
-The state an inlet injects is the state of the boundary face, not of the ghost cell's centre: the reconstructions take the
-length of an injecting ghost as zero, so the first cell's slope toward the inlet is the one-sided slope from the face, on
-the face itself and on the first interior face, and the scheme stays second order at the inlet. Where the particles leave
-through an inlet face, or its mass flux is zero, the ghost is a copy or a mirror of the cell and keeps its length.
+**Inlets.** An inlet injects its state at the boundary face, not at the ghost cell's centre: the reconstructions take
+the length of an injecting ghost as zero, so the first cell's slope toward the inlet is the one-sided slope from the
+face, and the scheme stays second order at the inlet. Where the particles leave through an inlet face, or its mass
+flux is zero, the ghost is a copy or a mirror of the cell and keeps its length.
 
-A reconstructed state that is unphysical has its slopes halved until it is not. If it is still unphysical at first order —
-a ghost that nothing filled, a NaN in the stencil — ICE prints the stencil and stops with a non-zero status.
+**Unphysical states.** A reconstructed state that is unphysical has its slopes halved until it is not. If it is still
+unphysical at first order (a ghost that nothing filled, a NaN in the stencil), ICE prints the stencil and stops with a
+non-zero status.
 
 ## Source terms
 
-Drag, convective and radiative heat, and evaporation are evaluated **explicitly**, once per Runge-Kutta stage, from the current primitive state, and added to the residual before it is integrated. There
-is no point-implicit or operator-split treatment.
+Drag, convective and radiative heat, evaporation and combustion are evaluated **explicitly**, once per Runge-Kutta
+stage, from the current primitive state, and added to the residual before it is integrated. There is no
+point-implicit or operator-split treatment, which is why the time step is bounded by the relaxation time
+([Time Integration](time-integration.md#why-dt-max-and-tau-factor)).

@@ -28,7 +28,13 @@ Both $\rho_p$ and $n$ are transported, and neither has a flux the other does not
 At the kinetic level the cloud is a distribution $f(\mathbf{x},\mathbf{v},t)$ over
 particle velocity. The moments of $f$ give the fields above, and the flux of each
 moment involves the next one, so the hierarchy has to be closed. ICE offers three
-closures.
+closures:
+
+| Closure | Velocities in a cell | Variables | Signal speed | Two crossing streams ([test](../vv/crossing-jets.md)) |
+|---|---|---|---|---|
+| MK, monokinetic | one | 6 | none | merge into a $\delta$-shock |
+| IG, isotropic Gaussian | spread equally in every direction | 7 | $\sqrt{3P/\rho_p}$ | merge, then spread as one jet |
+| AG, anisotropic Gaussian | spread differently by direction | 12 | $\sqrt{3P_{nn}/\rho_p}$, by direction | cross, diffused |
 
 ### MK — monokinetic
 
@@ -79,17 +85,18 @@ $$
 a = \sqrt{3P/\rho_p}.
 $$
 
-A near-empty cell, at or below the empty-cell density ($10^{-6}$ kg/m³), keeps its
-dispersion $P/\rho_p$ at or below $\theta_{cap} = 1$ m²/s². The conversion to the
+**Near-empty cells.** A cell at or below the empty-cell density ($10^{-6}$ kg/m³) keeps
+its dispersion $P/\rho_p$ at or below $\theta_{cap} = 1$ m²/s²: the conversion to the
 primitives caps $P$ at $\rho_p\theta_{cap}$, removing $\tfrac32(P - \rho_p\theta_{cap})$
-of energy and leaving the temperature as it is. Without the cap, a cell holding
-$10^{-20}$ kg/m³ with the inlet's $P = 10^{-6}$ Pa would carry a signal speed of
-$1.7\times10^{7}$ m/s, and spread its mass into cells the stream never reaches.
+of energy and leaving the temperature as it is.
 
-With the cap, such a cell keeps its initial content, as an MK cell always has. In
-particular, empty cells that start cold stay cold where nothing arrives, and their
-temperature residual levels off (the stop criterion, on the density, is unaffected).
-To get an isothermal field, start the empty cells at the gas temperature.
+- Without the cap, a cell holding $10^{-20}$ kg/m³ with the inlet's $P = 10^{-6}$ Pa
+  would carry a signal speed of $1.7\times10^{7}$ m/s, and spread its mass into cells the
+  stream never reaches.
+- With the cap, such a cell keeps its initial content, as an MK cell always does. Empty
+  cells that start cold stay cold where nothing arrives, and their temperature residual
+  levels off (the stop criterion, on the density, is unaffected). To get an isothermal
+  field, start the empty cells at the gas temperature.
 
 ### AG — anisotropic Gaussian
 
@@ -100,23 +107,26 @@ $$
 \mathbf{P} = (\rho_p,\ u,\ v,\ w,\ P_{11},\ P_{12},\ P_{13},\ P_{22},\ P_{23},\ P_{33},\ T_p,\ n),
 $$
 
-whose conservative form is $\rho_p u_i u_j + P_{ij}$ for the six tensor components. The
-off-diagonal terms are what let the closure carry a shear: two streams crossing at an
-angle show up as a $P_{12}$ that the transport equation then carries along, which is
-the quantity the [Berthon Riemann problems](../vv/berthon.md) check. The total energy
-$\rho_p e(T_p) + \tfrac12(\rho_p|\mathbf{u}|^2 + P_{11} + P_{22} + P_{33})$ is carried at
-$u_n$ plus the pressure work $\mathbf{u}\cdot(\mathsf{P}\hat{\mathbf n})$. Across a face of
-normal $\hat{\mathbf n}$ the waves travel at $u_n$ and $u_n \pm a_n$, with
+with the conservative form $\rho_p u_i u_j + P_{ij}$ for the six tensor components.
 
-$$
-a_n = \sqrt{3P_{nn}/\rho_p}, \qquad P_{nn} = \hat{\mathbf n}\cdot\mathsf{P}\,\hat{\mathbf n},
-$$
+- **Shear.** The off-diagonal terms let the closure carry a shear: two streams crossing at
+  an angle show up as a $P_{12}$ that the transport equation then carries along. The
+  [Berthon Riemann problems](../vv/berthon.md) check it.
+- **Energy.** The total energy $\rho_p e(T_p) + \tfrac12(\rho_p|\mathbf{u}|^2 + P_{11} + P_{22} + P_{33})$
+  is carried at $u_n$, plus the pressure work $\mathbf{u}\cdot(\mathsf{P}\hat{\mathbf n})$.
+- **Waves.** Across a face of normal $\hat{\mathbf n}$ the waves travel at $u_n$ and
+  $u_n \pm a_n$, with
 
-so a dispersion that differs by direction gives a signal speed that does too.
-In a near-empty cell the tensor is scaled by one factor to the trace $3\rho_p\theta_{cap}$ when its trace is
-larger, which keeps it positive definite. With $\rho_p \le 0$ or a trace that is not positive the test can still
-fire with a factor that means nothing (zero, negative, infinite or NaN); such a cell has $\rho_p < 10^{-25}$, and the
-density floor then overwrites the whole tensor, so none of those values survives the conversion.
+    $$
+    a_n = \sqrt{3P_{nn}/\rho_p}, \qquad P_{nn} = \hat{\mathbf n}\cdot\mathsf{P}\,\hat{\mathbf n},
+    $$
+
+    so a dispersion that differs by direction gives a signal speed that does too.
+
+**Near-empty cells.** The tensor is scaled by one factor down to the trace
+$3\rho_p\theta_{cap}$ when its trace is larger, which keeps it positive definite. A cell with
+$\rho_p \le 0$ or a non-positive trace can get a meaningless factor, but such a cell has
+$\rho_p < 10^{-25}$, and the density floor then overwrites the whole tensor.
 
 ## Energy and temperature
 
@@ -149,7 +159,9 @@ $\mathbf{S}$ collects, for every closure,
 - **drag**, as a relaxation of the particle velocity towards the gas over a time $\tau_p$, together with the work it does on the energy;
 - **convective heat exchange** with the gas, through a Nusselt number;
 - **radiative exchange** with the gas, as a grey body;
-- **mass transfer** between the phases, from the selected evaporation model. The leaving mass carries its own enthalpy and momentum out of the condensed phase, and the latent heat is applied to it in the energy equation. The number density is not a source of anything, so the droplets shrink rather than vanish.
+- **mass transfer** to the gas, by evaporation or burning. The leaving mass carries its own enthalpy and momentum
+  out of the condensed phase, and the latent heat is applied to it in the energy equation. The number density has no
+  source, so the drops shrink rather than vanish.
 
 The latent heat of fusion of a solidifying material has no term of its own: it is inside the energy, and it reaches
 the gas through the convective exchange.
@@ -159,4 +171,8 @@ field is present, which is the 0-way coupled mode.
 
 ## Several families
 
-Each family has its own closure. The families are advanced one after another inside each time step, over the same mesh and against the same gas field. They do not exchange anything with each other, so $N$ families are $N$ independent systems sharing a grid — the way a polydisperse cloud is represented is by giving each size its own family.
+Each family has its own closure. The families are advanced one after another inside each time step, over the same
+mesh and against the same gas field. A polydisperse cloud is represented by giving each size its own family.
+
+The families do not interact, with one exception: the oxide a burning family generates can be born in another family
+([Generated mass](physics.md#generated-mass)).

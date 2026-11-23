@@ -9,7 +9,7 @@ MK; some repeat on IG and AG.
 | [N](#n-a-closed-cell) | `SolidCooling` | Supercooling, nucleation, the plateau, the solid, melting | Closed form |
 | [O](#o-a-steady-stream) | `SolidAdvection`, `SolidAdvectionMPI` | The nucleation front and the plateau in a steady stream | Closed form (a recursion at first order) |
 
-## The material
+## The material of the tests
 
 Both cases use IGLOO's solid-box material (`tests/solidification/solid-box` there):
 

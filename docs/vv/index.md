@@ -17,7 +17,7 @@ These pages ask two different questions, and it helps to keep them apart:
 Most cases do both: they establish the answer against an exact solution once, and keep a
 stored reference so that a change is caught.
 
-## The pages
+## What each page covers
 
 The pages fall into three groups.
 

@@ -191,7 +191,7 @@ surface temperature `Ts_p1` of a cell. Five legs:
 | M4 | water, $d$ 50 µm, $T_0$ 300 K, $T_g$ 800 K | `P2T`, $k_l$ = 0.6, CEM | 1e-5 s, 3001 | $\bar T$ 363.1647 K, $m/m_0$ 0.450683 |
 | M5 | water, $d$ 20 µm, $T_0$ 640.002 K, $T_g = T_B$ = 600 K | `ZGR`, then CEM below $T_B$ | 1e-6 s, 75000 | $\bar T$ 463.8254 K (the wet bulb), $m/m_0$ 0.226316 |
 
-### Against the same equations
+### How the reference is computed
 
 The reference is ICE's own time scheme on the same equations, written in the test driver: RK2
 in $(\rho_p, \rho_p e)$ with $n$ fixed, the sources from the
@@ -247,7 +247,7 @@ A mistyped constant passes every other check and fails these:
 M5c runs M5 at `dt-max` = 1e-4 s, which does not resolve the switch at $T_B$: the step that
 crosses it removes 0.977 of the drop mass (at 61.3 ms, the reference's value to four digits).
 ICE must write the
-[warning](../../theory/physics.md#boiling-above-the-boiling-temperature) of an unresolved
+[warning](../../theory/physics.md#boiling) of an unresolved
 step exactly once. M2, M3 and M5, whose fractions are 1.3e-4, 1.3e-4 and 0.012, must write
 none. Without the warning, M5c fails.
 

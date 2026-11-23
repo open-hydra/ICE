@@ -53,11 +53,16 @@ $5\times10^{-15}$ (IG) and $6\times10^{-13}$ (AG).
 
 ## Riemann/AG: an anisotropic Sod tube against the γ = 3 solution
 
-400 × 4 cells over $[0, 1]$ (the slab 0.01 thick, faces 3 and 4 walls, faces 1 and 2
-extrapolation), left $\rho = 1$, $P_{11} = 10^5$, right $\rho = 0.125$, $P_{11} = 10^4$, at rest,
-$P_{22} = P_{33} = 0.01\rho$, no shear, $T = 300$. Explicit Euler at first order, CFL 0.8, to
-$t = 2.7\times10^{-4}$ s. The pressures are $10^5$ times those of a unit problem so that the CFL
-step (3.7 µs) stays under `dt-max`, which the INI sets to $10^{-3}$ s.
+| | |
+|---|---|
+| Mesh | 400 × 4 cells over $[0, 1]$, a slab 0.01 thick; faces 3 and 4 walls, faces 1 and 2 extrapolation |
+| Left state | $\rho = 1$, $P_{11} = 10^5$ |
+| Right state | $\rho = 0.125$, $P_{11} = 10^4$ |
+| Both | at rest, $P_{22} = P_{33} = 0.01\rho$, no shear, $T = 300$ |
+| Scheme | explicit Euler, first order, CFL 0.8, to $t = 2.7\times10^{-4}$ s |
+
+The pressures are $10^5$ times those of a unit problem, so that the CFL step (3.7 µs) stays
+under `dt-max` ($10^{-3}$ s).
 
 In one dimension with no shear, $(\rho, \rho u, \rho u^2 + P_{11})$ obey the Euler equations
 with γ = 3, and $P_{22}/\rho$, $P_{33}/\rho$ and $T$ are carried with the mass, so the exact
@@ -87,12 +92,17 @@ edge of stability. The field oscillates instead:
 
 ## Reflect/AG: no shear through a symmetry plane
 
-The upper half of a sheared blob moving along a symmetry plane: 200 × 100 cells over $2\times1$
-(slab 0.01 thick), face 3 ($y = 0$) code 200, faces 1, 2 and 4 extrapolation. The blob is
-$\rho = 0.01 + b$, $b = e^{-((x-1)^2+y^2)/(2\sigma^2)}$, $\sigma = 0.1$, moving at $u = 1$, with
-$P_{11} = P_{22} = P_{33} = \rho$, $P_{12} = 0.3\,b\,y/\sigma$ and $T = 1$, run to $t = 0.1$ with RK3,
-MUSCL and the van Leer limiter. $P_{12}$ is odd in $y$ and zero on the plane: the field is the
-upper half of a symmetric full-domain one.
+The upper half of a sheared blob moving along a symmetry plane.
+
+| | |
+|---|---|
+| Mesh | 200 × 100 cells over $2\times1$, a slab 0.01 thick; face 3 ($y = 0$) code 200, faces 1, 2 and 4 extrapolation |
+| Blob | $\rho = 0.01 + b$, $b = e^{-((x-1)^2+y^2)/(2\sigma^2)}$, $\sigma = 0.1$, moving at $u = 1$ |
+| Tensor | $P_{11} = P_{22} = P_{33} = \rho$, $P_{12} = 0.3\,b\,y/\sigma$, $T = 1$ |
+| Scheme | RK3, MUSCL, van Leer, to $t = 0.1$ |
+
+$P_{12}$ is odd in $y$ and zero on the plane: the field is the upper half of a symmetric
+full-domain one.
 
 **Why $M_x$ is conserved.** Code 200 mirrors both ghost layers, so the reconstructed states at
 the plane are an exact mirror pair. The reflected tensor $\mathsf{H}\mathsf{P}\mathsf{H}$,
