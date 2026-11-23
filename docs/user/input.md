@@ -113,7 +113,7 @@ that also exist in `[ICE-Physics]` override it for that material.
 | `solidification = on` | The material freezes and melts, with `T-melt`, `h-fus`, `T-nuc` and `cp-solid` |
 | `combustion = direct` | The drop burns on the d^2 law at its burning temperature; its constants are a row of the models file ([Combustion](#combustion)) |
 | `combustion = Beckstead` | The drop burns on the d^n law from its ignition temperature; its constants are a row of the models file |
-| `K-burn`, `n-burn`, `X-eff`, `beta-part`, `T-ign`, `T-burn`, `q-comb`, `d-stop`, `d-burnout`, `d-smoke` | The constants of the burning models: refused on the line, their place is the models file |
+| `K-burn`, `n-burn`, `X-eff`, `beta-part`, `T-ign`, `T-burn`, `q-comb`, `d-stop`, `d-burnout`, `d-gen` | The constants of the burning models: refused on the line, their place is the models file |
 | `cap` | The oxide cap of a burning drop, which ICE does not carry: refused, and so is a `cap` row of the models file |
 | `breakup` | The breakup model of a drop, which ICE does not have: ignored with a warning, and so is a `breakup` row of the models file |
 
@@ -200,9 +200,9 @@ A combustion direct q-comb=9.53e6 d-stop=6e-5 T-burn=2791
 
 A row is `<material> combustion <model> key=value ...`, the keys in any order; `-` in place of the
 model stands for the one the line or `[ICE-Physics]` names; a line that starts with `#` is a comment.
-`direct` reads `T-burn` [K], `q-comb` [J/kg], `d-stop` [m], `d-burnout` [m] and `d-smoke` [m];
+`direct` reads `T-burn` [K], `q-comb` [J/kg], `d-stop` [m], `d-burnout` [m] and `d-gen` [m];
 `Beckstead` reads `K-burn`, `n-burn`, `X-eff`, `beta-part`, `T-ign` [K], `q-comb`, `d-stop`,
-`d-burnout` and `d-smoke`. The setup
+`d-burnout` and `d-gen`. The setup
 stops on one of these constants left on the material line, on a row of another kind (`cap`, the oxide
 cap, is IGLOO's), of another model than the material's, with a key its model does not read, on a
 second row for one material, and on a row for no material of the phase file. A row of the kind
@@ -231,10 +231,10 @@ does not burn is not removed, whatever its size. To compare a material with its 
 decks, at about 0.1 of the injected diameter: the removal then hands a thousandth of the
 drop's mass.
 
-`d-smoke` (> 0) is the diameter the drops of the material's smoke are born with. The smoke is the
+`d-gen` (> 0) is the diameter the drops of the mass the material generates are born with. The generated mass is the
 condensed oxide of the burnt metal, born in another ICE family: a coupler that knows the reaction
-(hydra-MI2) names that family and the kg of smoke per kg burnt. ICE running alone makes no smoke
-([Particle Physics](../theory/physics.md#the-smoke)).
+(hydra-MI2) names that family and the kg of generated mass per kg burnt. ICE running alone generates no mass
+([Particle Physics](../theory/physics.md#generated-mass)).
 
 The model of every material in `[ICE-Physics]`, its constants in a row under `-`:
 

@@ -149,10 +149,10 @@ contains
         call timer_region_end(TR_FLUX)
 
         !> A steady burn-out: f of what leaves a cell whose drops are near the removal size burns at its exit. Then
-        !> the smoke the stage's burn makes and the stage's source in the step's rates, both of the final source
+        !> the mass the stage's burn generates and the stage's source in the step's rates, both of the final source
         if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) then
           call divert_burnout(grid, p)
-          call smoke_accumulate(grid, p, srk)
+          call gen_accumulate(grid, p, srk)
           if (obj_sim_param%twcoupled .and. nrk > 1) call add_stage_source(grid, p, srk)
         end if
 
@@ -186,8 +186,8 @@ contains
 
     end do
 
-    !> The smoke the burning families made in this step is born in its families, after every family's step
-    if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) call smoke_birth(grid)
+    !> The mass the burning families generated in this step is born in its families, after every family's step
+    if (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled) call gen_birth(grid)
 
     !> res-threshold ends steady runs only, on the finest level: the density change of a
     !  time step says nothing of convergence, and a transient whose density happens to be

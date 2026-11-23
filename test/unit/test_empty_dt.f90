@@ -5,7 +5,7 @@
 !>   E2 a source (srate) at 800 m/s in empty cell 3: both empty cells step at most cfl dx/800 (to 4 ulp), the occupied
 !>      cells keep theirs, bit for bit
 !>   E3 the same source as ext: the same steps
-!>   E4 no occupied cell (a smoke family before its first births): every cell steps at the source's cfl dx/800
+!>   E4 no occupied cell (a generation family before its first births): every cell steps at the source's cfl dx/800
 !>   E5 a source in an occupied cell only: the empty cells, which the cells it fills fill, step at most the occupied
 !>      cells' smallest step, bit for bit
 !>   E6 the same, empty cell 4 ten times narrower (0.1 mm): it steps at most its own cfl dx/100 at the occupied cells'

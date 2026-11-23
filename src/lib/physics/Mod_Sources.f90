@@ -5,7 +5,7 @@ module ICE_Mod_Sources
 
   implicit none
   private
-  public :: compute_source, burnout_switch, smoke_accumulate, smoke_birth, bound_burn_dt
+  public :: compute_source, burnout_switch, gen_accumulate, gen_birth, bound_burn_dt
   !> compute_source_ for the unit test; cell_surface for the unit test and the probes
   public :: compute_source_, cell_surface
 
@@ -319,11 +319,11 @@ contains
           if (s(1) < 0._R8) gone = gone .or. q(1) <= -s(1)*dt
           if (.not. (gone .and. dt > 0._R8)) cycle
           held = prim_2_cons(q, mat)
-          ! the remnant's metal burns at once: its smoke is born with its velocity, at its temperature, over this step
-          ! (born holds rates)
+          ! the remnant's metal burns at once: its generated mass is born with its velocity, at its temperature, over
+          ! this step (born holds rates)
           sm = 0._R8
-          if (mat%smokeFam > 0) then
-            sm = smoke_of(held(1), q(2:4), q(n-1), mat)
+          if (mat%genFam > 0) then
+            sm = gen_of(held(1), q(2:4), q(n-1), mat)
             grid%blk(b)%cond_phase(p)%born(:,i,j,k) = grid%blk(b)%cond_phase(p)%born(:,i,j,k) + sm/dt
           endif
           grid%blk(b)%cond_phase(p)%gone(1,i,j,k)   = grid%blk(b)%cond_phase(p)%gone(1,i,j,k)   + held(1)
@@ -344,10 +344,10 @@ contains
   end subroutine burnout_switch
 
 
-  !> The smoke of a mass dm [kg/m^3] (or a rate [kg/(m^3 s)]) of a burning material, born with velocity u at
-  !> temperature T: mass, momentum (3), energy (the smoke material's in ICE's datum, with the kinetic part), number
-  !> (each drop at d-smoke).
-  pure function smoke_of(dm, u, T, mat) result(sm)
+  !> The generated mass of a mass dm [kg/m^3] (or a rate [kg/(m^3 s)]) of a burning material, born with velocity u at
+  !> temperature T: mass, momentum (3), energy (the generated material's in ICE's datum, with the kinetic part), number
+  !> (each drop at d-gen).
+  pure function gen_of(dm, u, T, mat) result(sm)
     use ICE_Parameters_m,   only: pi
     use ICE_Config_Types_m, only: condensed_phase_t, obj_condensed
     use ICE_Global_m,       only: mat_of
@@ -355,8 +355,8 @@ contains
     real(kind=R8),           intent(in) :: dm, u(3), T
     type(condensed_phase_t), intent(in) :: mat
     real(kind=R8) :: sm(6), ms, es
-    associate (smat => obj_condensed(mat_of(mat%smokeFam)))
-      ms = mat%nuSmoke*dm
+    associate (smat => obj_condensed(mat_of(mat%genFam)))
+      ms = mat%nuGen*dm
       if (smat%cs_varies) then
         es = mat_e(smat, T)
       else
@@ -365,16 +365,16 @@ contains
       sm(1)   = ms
       sm(2:4) = ms*u
       sm(5)   = ms*(es + 0.5_R8*dot_product(u, u))
-      sm(6)   = ms/(pi/6._R8*mat_rho(smat, T)*mat%dSmoke**3)
+      sm(6)   = ms/(pi/6._R8*mat_rho(smat, T)*mat%dGen**3)
     end associate
-  end function smoke_of
+  end function gen_of
 
 
-  !> After the source of family p in stage srk (of the nrk the scheme takes): the smoke its drops make, as rates (birth, the coupler takes them
-  !> out of the gas's share) and accumulated with the stage weights of the scheme (born; RK_stage on an accumulator
-  !> from 0: forward Euler dt r1, RK2 dt (r1 + r2)/2, RK3 dt (r1/6 + r2/6 + 2 r3/3), the weights the state of p
-  !> receives its burning with).
-  subroutine smoke_accumulate (grid, p, srk)
+  !> After the source of family p in stage srk (of the nrk the scheme takes): the mass its drops generate, as rates
+  !> (birth, the coupler takes them out of the gas's share) and accumulated with the stage weights of the scheme (born;
+  !> RK_stage on an accumulator from 0: forward Euler dt r1, RK2 dt (r1 + r2)/2, RK3 dt (r1/6 + r2/6 + 2 r3/3), the
+  !> weights the state of p receives its burning with).
+  subroutine gen_accumulate (grid, p, srk)
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m, only: obj_condensed
@@ -385,7 +385,7 @@ contains
     integer(kind=I4) :: b, i, j, k, n
     real(kind=R8)    :: r(6)
 
-    if (obj_condensed(mat_of(p))%smokeFam == 0) return
+    if (obj_condensed(mat_of(p))%genFam == 0) return
     n = nbase(p)
     associate (mat => obj_condensed(mat_of(p)))
     !$OMP PARALLEL PRIVATE(b, i, j, k, r)
@@ -397,8 +397,8 @@ contains
       do i = 1, grid%blk(b)%dim(1)
         r = 0._R8
         if (grid%blk(b)%cond_phase(p)%burn(i,j,k) > 0._R8) &
-          r = smoke_of(grid%blk(b)%cond_phase(p)%burn(i,j,k), grid%blk(b)%cond_phase(p)%prim(2:4,i,j,k), &
-                       grid%blk(b)%cond_phase(p)%prim(n-1,i,j,k), mat)
+          r = gen_of(grid%blk(b)%cond_phase(p)%burn(i,j,k), grid%blk(b)%cond_phase(p)%prim(2:4,i,j,k), &
+                     grid%blk(b)%cond_phase(p)%prim(n-1,i,j,k), mat)
         ! the step's birth rates, the stages' weighted as a two-way coupled family's source is (RK_accumulate)
         grid%blk(b)%cond_phase(p)%born(:,i,j,k)  = RK_accumulate(srk, nrk, grid%blk(b)%cond_phase(p)%born(:,i,j,k), r)
         grid%blk(b)%cond_phase(p)%birth(:,i,j,k) = grid%blk(b)%cond_phase(p)%born(1:5,i,j,k)
@@ -408,15 +408,16 @@ contains
     !$OMP END PARALLEL
     end associate
 
-  end subroutine smoke_accumulate
+  end subroutine gen_accumulate
 
 
-  !> After every family's step: the smoke the burning families made (born, the step's weighted birth rates), and the
-  !> accumulators cleared. A time-accurate run (one dt for every family): born in its family, dt times the rates of
-  !> mass, momentum, energy and number added to the conservative state cell by cell, with the smoke family's own
-  !> closure. A steady run (each family its own local dt): the rates themselves, the source of the smoke family in every
-  !> stage of its next step (srate, add_external_source), so that its fixed point holds whatever either family's dt.
-  subroutine smoke_birth (grid)
+  !> After every family's step: the mass the burning families generated (born, the step's weighted birth rates), and
+  !> the accumulators cleared. A time-accurate run (one dt for every family): born in its family, dt times the rates of
+  !> mass, momentum, energy and number added to the conservative state cell by cell, with the generation family's own
+  !> closure. A steady run (each family its own local dt): the rates themselves, the source of the generation family in
+  !> every stage of its next step (srate, add_external_source), so that its fixed point holds whatever either family's
+  !> dt.
+  subroutine gen_birth (grid)
     use ICE_Global_m
     use ICE_Advanced_Types_m
     use ICE_Config_Types_m, only: obj_condensed, obj_time_scheme
@@ -432,7 +433,7 @@ contains
     ! a steady run: this step's rates replace the last step's
     if (steady) then
       do p = 1, ngroups
-        ps = obj_condensed(mat_of(p))%smokeFam
+        ps = obj_condensed(mat_of(p))%genFam
         if (ps == 0) cycle
         do b = 1, grid%nb
           if (.not. is_local_block(b)) cycle
@@ -444,10 +445,10 @@ contains
       enddo
     endif
     do p = 1, ngroups
-      ps = obj_condensed(mat_of(p))%smokeFam
+      ps = obj_condensed(mat_of(p))%genFam
       if (ps == 0) cycle
       ns = nbase(ps)
-      ! the conversions of the smoke family's closure: the family loop left those of the last family it stepped
+      ! the conversions of the generation family's closure: the family loop left those of the last family it stepped
       call assign_prim_2_cons(ps)
       call assign_cons_2_prim(ps)
       associate (smat => obj_condensed(mat_of(ps)))
@@ -484,7 +485,7 @@ contains
       end associate
     enddo
 
-  end subroutine smoke_birth
+  end subroutine gen_birth
 
 
   !> The source of one cell. gas_heat is the heat the gas receives that the source does not carry [W/m^3]: the heat of

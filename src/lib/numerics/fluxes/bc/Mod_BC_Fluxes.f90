@@ -307,9 +307,9 @@ contains
   !> flagged with a fraction f (burnout_fraction: 1 at or below band_lo times it, 0 at or above band_hi times it):
   !> f of what flows out of it through an interior face or a physical boundary face does not reach the cell beyond
   !> (or leave the domain), it burns at the cell's exit, a sink of the cell in source and in burn, so the coupler
-  !> hands it to the gas as every burn and its smoke is born at the cell's velocity and temperature; 1 - f of the
-  !> face's flux reaches the cell beyond. The diverted outflow is the flux of the cell's own state on both sides of the
-  !> face (its own velocity: the MK flux upwinds at the mean of the two cells' velocities, and the cell beyond is
+  !> hands it to the gas as every burn, and the mass it generates is born at the cell's velocity and temperature; 1 - f
+  !> of the face's flux reaches the cell beyond. The diverted outflow is the flux of the cell's own state on both sides
+  !> of the face (its own velocity: the MK flux upwinds at the mean of the two cells' velocities, and the cell beyond is
   !> emptied by this), so at f = 1 the cell's content, and so its drop size, does not depend on the cell beyond, and a
   !> cell fed only by cells at f = 1 holds nothing at the fixed point, as the switch leaves it. A flag that is only 0
   !> or 1 cycled with MUSCL (a cell at the threshold flipped, and the faces around it followed); f moves the diverted
