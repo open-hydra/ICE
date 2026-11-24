@@ -157,9 +157,9 @@ contains
 
 
   !> The sources set on family p from outside its own physics, per unit volume and time in its conservative variables:
-  !> a coupler's (cond_phase(p)%ext) and, in a steady run, the smoke ICE's burning families made (cond_phase(p)%srate);
-  !> each added to the residual of the stage over the family's own dt, as source is; the frozen slots stay zero. A block
-  !> with neither: nothing.
+  !> a coupler's (cond_phase(p)%ext) and, in a steady run, the mass ICE's burning families generated
+  !> (cond_phase(p)%srate); each added to the residual of the stage over the family's own dt, as source is; the frozen
+  !> slots stay zero. A block with neither: nothing.
   subroutine add_external_source(grid, p)
     use ICE_Mod_Freeze, only: nfrozen, frozen
     implicit none

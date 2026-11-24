@@ -460,13 +460,13 @@ which heats it. The burn ends as that of `direct` does: at the residue `d-stop`,
 not carry the oxide cap IGLOO's law can grow on the drop: `xi-cap` other than 0, `xi-law`, `xi-ox0`, `product`,
 `residue` and `d-residue` are refused, and so is a line of 0 groups, the cap's product.
 
-### The smoke
+### Generated mass
 
-The burnt metal can make a condensed oxide, a material of another ICE family: the smoke. ICE running alone makes
+The burnt metal can make a condensed oxide, a material of another ICE family: the generated mass. ICE running alone makes
 none. A coupler that knows the reaction (hydra-MI2, from the products file ATLAS writes) sets, for a burning
-material, the family its smoke is born in and $\nu_s$, the kg of smoke per kg burnt; `d-smoke` of the material's row
-is the diameter $d_s$ each smoke drop is born with. Drops that burn $\dot m_b$ per unit volume and time give the
-smoke family, per unit volume and time,
+material, the family its generated mass is born in and $\nu_s$, the kg of generated mass per kg burnt; `d-gen` of the material's row
+is the diameter $d_s$ each generated drop is born with. Drops that burn $\dot m_b$ per unit volume and time give the
+generation family, per unit volume and time,
 
 $$
 \dot M = \nu_s\,\dot m_b, \qquad \dot M\,\mathbf u_p, \qquad
@@ -474,29 +474,29 @@ $$
 \dot N = \frac{\dot M}{\tfrac{\pi}{6}\,\rho_s(T_p)\,d_s^3},
 $$
 
-its mass, momentum, energy and number: the smoke is born with the burning drops' velocity $\mathbf u_p$ and
-temperature $T_p$, with $e_s$ the smoke material's energy (its table, else its constant $c_p$ times $T_p$) and
+its mass, momentum, energy and number: the generated mass is born with the burning drops' velocity $\mathbf u_p$ and
+temperature $T_p$, with $e_s$ the generated material's energy (its table, else its constant $c_p$ times $T_p$) and
 $\rho_s$ its density.
 
-ICE integrates its families one after the other, each through all its stages, so the smoke's source is split from
+ICE integrates its families one after the other, each through all its stages, so the source of the generated mass is split from
 them. In each stage of the burning family, after its fluxes (so that a steady burn-out's sink, above, is in them),
 the rates above are taken at the stage's state and summed with the weights the burning family's state receives its
 burning with, the scheme's: $r_1$ (Euler), $(r_1 + r_2)/2$ (RK2), $r_1/6 + r_2/6 + 2r_3/3$ (RK3), as a two-way
 coupled family's source is (`RK_accumulate`). These are the step's birth rates; the burning family's `birth` holds
 those of mass, momentum and energy, which a coupler takes out of what the gas receives. After every family has taken
-its step they are born, with the smoke family's own closure, and cleared: in a time-accurate run (one step for every
-family) $\Delta t$ times them is added to the conservative state of the smoke family, cell by cell; in a steady run
-(each family its own local step) they are the smoke family's source in every stage of its next step (`srate`), so
-that its fixed point holds whatever either family's step. Per cell and step the smoke family gains $\nu_s$ times the
+its step they are born, with the generation family's own closure, and cleared: in a time-accurate run (one step for every
+family) $\Delta t$ times them is added to the conservative state of the generation family, cell by cell; in a steady run
+(each family its own local step) they are the generation family's source in every stage of its next step (`srate`), so
+that its fixed point holds whatever either family's step. Per cell and step the generation family gains $\nu_s$ times the
 mass burnt, with that mass's momentum and the birth energy.
 
-A time-accurate removal without a residue (above) gives its smoke at once, as a rate over the step it ends: the
-remnant's metal burns, its smoke is born with the remnant's velocity at its temperature, and `gone` keeps the
-remnant's mass, and its momentum and energy less the smoke's. In a steady run what burns at a cell's exit is a burn
-like any other, and makes its smoke as one.
+A time-accurate removal without a residue (above) gives its generated mass at once, as a rate over the step it ends: the
+remnant's metal burns, its generated mass is born with the remnant's velocity at its temperature, and `gone` keeps the
+remnant's mass, and its momentum and energy less those of the generated mass. In a steady run what burns at a cell's exit is a burn
+like any other, and generates its mass as one.
 
 A coupler can set a source of its own on a family (`ext`, per unit volume and time in the family's conservative
-variables: the smoke of another solver's burning particles). Like `srate` it is added to the residual of every stage
+variables: the generated mass of another solver's burning particles). Like `srate` it is added to the residual of every stage
 over the family's own step, after the fluxes and the family's own source and before the update, so that a steady
 fixed point balances it whatever the step; neither is the family's `source`, so neither is handed to the gas.
 
@@ -517,7 +517,7 @@ gives the burnt mass the species of its reaction.
 | `q-comb` | heat of reaction $Q$ per unit burnt mass [J/kg] | required (0 allowed) |
 | `d-stop` | diameter of the inert residue [m] | 0: no residue, the drop burns out |
 | `d-burnout` | diameter at which the drops of a cell, without residue, are removed [m] | 0: a drop mass of $10^{-20}$ kg |
-| `d-smoke` | diameter the smoke drops are born with [m], > 0 | none; used only when a coupler gives the material a smoke |
+| `d-gen` | diameter the generated drops are born with [m], > 0 | none; used only when a coupler has the material generate mass |
 | `T-burn`, else `boiling-temperature` | `direct`: $T_{sat}$, the burning temperature [K] | required |
 | the `Lv` column, else `latent-heat` | `direct`: $L_v$ [J/kg], the material's latent heat, taken at the burning temperature | required |
 | `K-burn`, `n-burn`, `X-eff` | `Beckstead`: the law's coefficient [m$^n$/s], its exponent, the oxidiser fraction | required, 1.8, 1 |

@@ -31,12 +31,12 @@ change an input or a build.
   velocity kept); their mass, momentum and energy are kept as an amount (`gone`) that a coupler hands to its gas.
   Steady, a burning cell's exit burns a fraction of what leaves it, rising from 0 at the removal size to all of it
   at 0.90 times it (`burnout_band`, printed by the setup). A drop that does not burn is not removed.
-- The smoke of a burning material: a coupler that names the family its condensed oxide is born in (`smokeFam`, with
-  `nuSmoke` kg per kg burnt) gets it born there, with the burning drops' velocity and temperature, each drop at
-  `d-smoke` (a constant of the row), with the smoke family's own closure. The births are the step's rates, weighted
-  over the stages as the update weighs them (`birth`, which a coupler takes out of the gas's share): time-accurate,
-  the step times them is added after every family's step, a burn-out's at once; steady, they are the smoke family's
-  source in every stage of its next step. ICE alone makes no smoke.
+- The generated mass of a burning material: a coupler that names the family its condensed oxide is born in
+  (`genFam`, with `nuGen` kg per kg burnt) gets it born there, with the burning drops' velocity and temperature, each
+  drop at `d-gen` (a constant of the row), with the generation family's own closure. The births are the step's rates,
+  weighted over the stages as the update weighs them (`birth`, which a coupler takes out of the gas's share):
+  time-accurate, the step times them is added after every family's step, a burn-out's at once; steady, they are the
+  generation family's source in every stage of its next step. ICE alone generates no mass.
 - A source a coupler sets on a family (`ext`, per unit volume and time): added to the residual of every stage over
   the family's own step, not handed to the gas.
 - Steady coupled runs: a burning cell steps at most half its bulk density over its burn. The empty cells a source

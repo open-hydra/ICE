@@ -115,11 +115,12 @@ contains
 
 
 
-  !> The step of the cells a family does not occupy (bulk density at or below rho_empty) where a source fills them (a
-  !> smoke's births, srate; another solver's smoke, ext; in any cell) or where the family burns (empties: its drops burn
-  !> down to ICE's empty state and its flux fills the cells beyond). Their own state bounds nothing (velocity ~0, no
-  !> relaxation time), but the source fills them in the first stage of this step, at its own velocity, or the cells it
-  !> fills fill them, and the later stages and the reconstruction move that content with the cell's step.
+  !> The step of the cells a family does not occupy (bulk density at or below rho_empty) where a source fills them (the
+  !> births of a generation, srate; another solver's generated mass, ext; in any cell) or where the family burns
+  !> (empties: its drops burn down to ICE's empty state and its flux fills the cells beyond). Their own state bounds
+  !> nothing (velocity ~0, no relaxation time), but the source fills them in the first stage of this step, at its own
+  !> velocity, or the cells it fills fill them, and the later stages and the reconstruction move that content with the
+  !> cell's step.
   !> Steady (each cell its own step): an empty cell steps no further than the family's smallest step over the cells it
   !> occupies and over the empty cells the source fills (at the source's velocity: its momentum over its mass), nor
   !> than its own width allows at the family's largest speed, each Cartesian component's largest magnitude over those
