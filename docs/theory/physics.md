@@ -1,10 +1,30 @@
 # Particle Physics
 
-Source terms relate the particles with the gas phase.
+The drops and the gas exchange momentum, heat and mass. This page gives the models ICE uses for each exchange, cell
+by cell:
 
-## The dimensionless groups
+| Exchange | Models |
+|---|---|
+| Momentum | [Drag](#drag) |
+| Heat | [Convection](#convective-heat-transfer), [radiation](#radiation) |
+| Mass | [Evaporation](#evaporation), [boiling](#boiling), [combustion](#combustion) |
+| Phase of the drop | [Solidification](#solidification) |
 
-From the local slip $\Delta\mathbf u = \mathbf u_g - \mathbf u_p$ and the particle radius $R_p$ derived from $\rho_p$ and $n$:
+How to switch each model on, and the values it needs, is on the [Input File](../user/input.md) page.
+
+## Notation
+
+| Symbol | Meaning |
+|---|---|
+| $\rho_p$, $n$ | bulk density of the drops [kg/m³] and their number per unit volume [1/m³] |
+| $\rho_{al}$ | density of the drop material itself [kg/m³] |
+| $R_p$, $d_p$ | drop radius and diameter, from $\rho_p$, $n$ and $\rho_{al}$ |
+| $\mathbf u_p$, $T_p$ | drop velocity and temperature (the mean temperature $\bar T$ when the drop is not uniform) |
+| $\mathbf u_g$, $T_g$, $\rho_g$ | gas velocity, temperature and density |
+| $\mu_g$, $k_g$, $c_{p,g}$ | gas viscosity, conductivity and specific heat |
+| $\Delta\mathbf u = \mathbf u_g - \mathbf u_p$ | slip velocity |
+
+## Dimensionless numbers
 
 $$
 Re = \frac{2\rho_g R_p |\Delta\mathbf u|}{\mu_g}, \qquad
@@ -13,28 +33,25 @@ Pr = \frac{\gamma}{\gamma-1}\frac{R\,\mu_g}{k_g}, \qquad
 T_r = \frac{T_p}{T_g}.
 $$
 
-$Re$ is built on the **diameter**. $T_r$ and $\gamma$ are used only by the
-compressible drag correlations.
-
+- $Re$ is built on the **diameter**.
+- $T_r$ and $\gamma$ are used only by the compressible drag correlations.
 
 ## Drag
 
-The drag coefficient sets a relaxation time,
+The drag coefficient $C_d$ sets the relaxation time of the drops,
 
 $$
-\tau_p = \frac{8\,\rho_{al}(T_p)\,R_p}{3\,\rho_g\,C_d\,|\Delta\mathbf u|},
+\tau_p = \frac{8\,\rho_{al}(T_p)\,R_p}{3\,\rho_g\,C_d\,|\Delta\mathbf u|}.
 $$
 
-and the momentum source is that relaxation applied to the bulk density,
+The drops relax toward the gas velocity at that rate:
 
 $$
 \mathbf S_{\rho_p \mathbf u} = \rho_p \frac{\mathbf u_g - \mathbf u_p}{\tau_p},
 $$
 
-with the matching work term $\rho_p\,\mathbf u_p\cdot(\mathbf u_g-\mathbf u_p)/\tau_p$
-in the energy equation. For $C_d = 24/Re$ the relaxation time reduces exactly to the
-Stokes value $\rho_{al}d_p^2/(18\mu_g)$, which is the identity
-[case A](../vv/verification/exchange.md#a-relaxation-under-stokes-drag) verifies.
+and the energy equation gains the matching work, $\rho_p\,\mathbf u_p\cdot(\mathbf u_g-\mathbf u_p)/\tau_p$.
+With $C_d = 24/Re$ the relaxation time is exactly Stokes's, $\rho_{al}d_p^2/(18\mu_g)$.
 
 | Name | $C_d$ | Notes |
 |---|---|---|
@@ -52,19 +69,19 @@ Stokes value $\rho_{al}d_p^2/(18\mu_g)$, which is the identity
 | `Hermsen` | Same structure as Crowe with a rational $Re$ function | |
 | `NoDrag` | $0$ | No momentum exchange; the relaxation time is infinite |
 
-Each correlation is a pure function of $(Re, Ma, \gamma, T_r)$; the choice travels as an
-integer, so nothing mutable is shared between threads. Every one of them is checked
-against an independent integration in
-[case D](../vv/verification/exchange.md#d-every-drag-correlation), including at transonic and
-supersonic slip for the four that have a compressible branch.
+Verification: [case A](../vv/verification/exchange.md#a-relaxation-under-stokes-drag) checks the Stokes limit, and
+[case D](../vv/verification/exchange.md#d-every-drag-correlation) checks every correlation, including transonic and
+supersonic slip for the four with a compressible branch.
 
 ## Convective heat transfer
 
+Per unit volume, the drops of a cell receive
+
 $$
-\dot q_{\text{conv}} = 2\,Nu\;k_g\,\pi R_p\,n\,(T_g - T_p)
+\dot q_{\text{conv}} = 2\,Nu\;k_g\,\pi R_p\,n\,(T_g - T_p),
 $$
 
-per unit volume, which is the familiar $h A \Delta T$ with $h = Nu\,k_g/d_p$ summed over the $n$ particles in the cell.
+the familiar $h A \Delta T$ with $h = Nu\,k_g/d_p$, summed over the $n$ drops.
 
 | Name | $Nu$ | Limit as $Re \to 0$ |
 |---|---|---|
@@ -77,66 +94,83 @@ per unit volume, which is the familiar $h A \Delta T$ with $h = Nu\,k_g/d_p$ sum
 | `Kavanau-Drake` | $\dfrac{N}{1 + 3.42\,Ma\,N/(Re\,Pr)}$, $N = 2+0.459\,Re^{0.55}Pr^{0.33}$ | rarefaction-dependent |
 | `NoHeat` | $0$ | 0 (no convective exchange) |
 
-In a coupled run the word `Chang` is refused with a pointer to `JAXA3`; the constant 0.654 and the exponent $Pr^{1/2}$ of
-`JAXA4` are NASA SP-8039 Table II's last row (Shimada 2006 eq. 50 prints $Pr^{1/3}$).
+!!! note "Sources of two correlations"
+    Chang's correlation is `JAXA3`. The constant 0.654 and the exponent $Pr^{1/2}$ of `JAXA4` are those of the last
+    row of NASA SP-8039, Table II; Shimada (2006, eq. 50) prints $Pr^{1/3}$.
 
 ## Radiation
 
 $$
 \dot q_{\text{rad}} = \varepsilon\,\sigma\,4\pi R_p^2\,n\,\big(T_g^4 - T_p^4\big),
+\qquad \sigma = 5.670374419\times10^{-8}\ \mathrm{W\,m^{-2}\,K^{-4}}.
 $$
 
-with $\sigma = 5.670374419\times10^{-8}$ W m⁻² K⁻⁴ (CODATA). The area factor is $4\pi R_p^2 = \pi d_p^2$, the whole sphere surface. Radiation is exchanged with the local gas temperature, not with a wall or a far-field temperature. The emissivity $\varepsilon$ is `emissivity` in `[ICE-Physics]`, one value per material: 0, the default, switches radiation off; a grey body cannot exceed 1, so a value above 1 is cut to 1 with a warning, and a negative value stops the run. A material whose property table carries an `Emissivity` column takes $\varepsilon(T_p)$ from it instead, at the particle temperature, linear between the nodes and the end value outside.
+- The drop exchanges over its whole surface, $4\pi R_p^2 = \pi d_p^2$.
+- It exchanges with the local gas temperature, not with a wall or the far field.
+- The emissivity $\varepsilon$ belongs to the material, and 0 switches radiation off. A property table with an
+  `Emissivity` column gives $\varepsilon(T_p)$ at the drop temperature.
 
 ## Evaporation
 
-Particles evaporation provides a mass source term. Every model returns a rate $\dot m$ **per particle**, negative while the droplet loses mass. The source routine multiplies it by the number density, so the bulk density loses $n\dot m$ per unit volume, the energy equation loses both the
-enthalpy that mass carries away and the latent heat $L_v$ needed to vaporise it, and the momentum equation loses the momentum it carries. The number density has no source term at all: droplets shrink, they never disappear, and the radius follows from $\rho_p$ and $n$ as it always does.
+### What evaporation changes in a cell
 
-The mass leaves at the surface temperature $T_s$, which every gas-side model takes. Without the two models below
-$T_s$ is the mean temperature $\bar T$ the energy equation carries. Under `liquid-conduction = P2T`, and in the
-boiling branch of `boiling = ZGR`, $T_s$ differs from it, and the energy equation of the cell reads
+Every model returns a rate $\dot m$ **per drop**, negative while the drop loses mass. Per unit volume, the cell's drops
+then lose:
+
+- the mass $n\,|\dot m|$;
+- the momentum that mass carries;
+- the energy that mass carries, plus the latent heat $L_v$ needed to vaporise it.
+
+The number of drops does not change: drops shrink, they never disappear. Their radius always follows from $\rho_p$ and
+$n$.
+
+### The surface temperature
+
+The vapour leaves at the surface temperature $T_s$, which every gas-side model takes. Usually $T_s$ is the mean
+temperature $\bar T$. It differs from it in two cases: inside a drop with a temperature profile
+([conduction inside the drop](#conduction-inside-the-drop)), and in a boiling drop ([boiling](#boiling)). Then the
+energy of the cell reads
 
 $$
 \rho_p\frac{d\bar e}{dt} = n\left[\dot Q(T_s) + \dot Q_r(T_s) + \dot m(T_s)\,\big(L_v(T_s) + e(T_s) - e(\bar T)\big)\right],
 \qquad \frac{d\rho_p}{dt} = n\,\dot m(T_s),
 $$
 
-with $e(T)$ the material's energy ($c\,T$, or the table's): the vapour takes its enthalpy at $T_s$, and the mean
+with $e(T)$ the material's energy ($c\,T$, or the property table's). The vapour takes its enthalpy at $T_s$; the mean
 temperature receives $e(\bar T) - e(T_s)$ per unit of evaporated mass.
 
-When the [property table](../user/initial-conditions.md#property-table) carries the `Lv`, `Mv` and `Cpv` columns, $L_v$ and the vapour heat capacity $c_{p,v}$ are functions of the particle temperature, $L_v(T_p)$ and $c_{p,v}(T_p)$, wherever a model reads them: the latent sink, $B_T$ of the d2-law, $\varphi$ and the gas-side heat of ASM, and the vapour Lewis number and the gas-side heat of TC. $M_v$ is then the column's constant. Without the columns the `[ICE-Physics]` values hold, and a vapour heat capacity of 0 stands for the gas one.
+### Saturation at the surface
 
-The model, the interface and the accommodation coefficient belong to the material: each takes its phase-file tokens, or the `[ICE-Physics]` default without them (see [Materials](../user/input.md#materials)), together with its own vapour properties.
-
-### The surface state
-
-All five models share one surface condition. The saturation pressure is the `Psat` column
-of the [property table](../user/initial-conditions.md#property-table) when it has a non-zero one, linear
-between the nodes and constant beyond its ends, and otherwise Clausius-Clapeyron, anchored at
-the boiling point:
+All five models share one surface condition. The saturation pressure is the `Psat` column of the
+[property table](../user/initial-conditions.md#property-table) when there is one (linear between nodes, constant beyond
+the ends). Otherwise it is the Clausius-Clapeyron curve through the boiling point:
 
 $$
 p_{sat}(T_p) = p_{B}\,\exp\left[-\frac{L_v M_v}{\mathcal{R}}
   \left(\frac{1}{T_p} - \frac{1}{T_{boil}}\right)\right],
 $$
 
-with $M_v$ as the vapour molar mass, $T_{boil}$ the boiling-temperature, $p_B$ the boiling-pressure at which it is
-given (one atmosphere by default), $L_v$ the latent-heat. ICE evaluates it anchored at one atmosphere, through the
-boiling point of the same line there, $1/T_{boil,1} = 1/T_{boil} + \ln(p_B/p_{atm})\,\mathcal{R}/(L_v M_v)$. The surface mole fraction is
-$X_s = p_{sat}/p$, clamped to $1 - 10^{-12}$ once $p_{sat}$ reaches the local gas pressure — the
-boiling regime. The cap keeps $B_M$ finite, about $10^{12}\,M_v/M_g$, so every model returns a finite
-rate while the droplet boils. Converting to a mass fraction $Y_s$ against the gas molar mass gives the Spalding mass-transfer number
+with $M_v$ the vapour molar mass, $T_{boil}$ the boiling temperature and $p_B$ the pressure it is given at (one
+atmosphere by default).
 
-$$
-B_M = \frac{Y_s - Y_\infty}{1 - Y_s},
-$$
+From the saturation pressure:
 
-Evaporation stops when $Y_s$ falls to
-$Y_\infty$: a gas already saturated at the droplet's own temperature takes no more vapour. The vapour diffusivity comes from the Lewis number as
-$D_v = k_g/(\rho_g c_{p,g} Le)$, and $Sc = Pr\,Le$.
+1. The surface mole fraction is $X_s = p_{sat}/p$. It is capped at $1 - 10^{-12}$ once $p_{sat}$ reaches the gas
+   pressure, so that every model still returns a finite rate while the drop boils.
+2. $X_s$ becomes a mass fraction $Y_s$, through the gas molar mass.
+3. The Spalding mass-transfer number is
 
-### The models
+    $$
+    B_M = \frac{Y_s - Y_\infty}{1 - Y_s}.
+    $$
+
+Evaporation stops when $Y_s$ falls to $Y_\infty$: a gas already saturated at the drop's temperature takes no more
+vapour. The vapour diffusivity is $D_v = k_g/(\rho_g c_{p,g} Le)$, and $Sc = Pr\,Le$.
+
+With the `Lv`, `Mv` and `Cpv` columns in the property table, $L_v$ and the vapour specific heat $c_{p,v}$ follow the
+drop temperature wherever a model reads them, and $M_v$ is the column's value.
+
+### Evaporation models
 
 |  Model | $\dot m$ | Gas-side heat |
 |---|---|---|
@@ -146,60 +180,65 @@ $D_v = k_g/(\rho_g c_{p,g} Le)$, and $Sc = Pr\,Le$.
 | **ASM** | CEM with $Sh^\star = 2 + (Sh_0-2)/F(B_M)$, $Sh_0$ Frössling, $F(B)=(1+B)^{0.7}\ln(1+B)/B$ | its own |
 | **TC** | $-\pi d\,\rho_g D_v\,Sh\,\hat m$, $\hat m$ from a monotone transcendental solved by Newton | its own |
 
-`d2-law` is the only one driven by the thermal Spalding number rather than the mass one; it is the classical Godsave-Spalding stagnant-film rate. `CEM` adds theRanz-Marshall convective correction, `CEM-B` the Hubbard film rule on top of it.
-
-`ASM` (Abramzon-Sirignano) and `TC` (Tonini-Cossali) also resolve the **gas-side heat** inside their own film, Stefan flow included, and that value replaces the Nusselt one
-for those two models.
+- `d2-law` is the classical Godsave-Spalding stagnant-film rate, the only model driven by the thermal Spalding number.
+- `CEM` adds the Ranz-Marshall convective correction; `CEM-B` adds the Hubbard film rule on top.
+- `ASM` (Abramzon-Sirignano) and `TC` (Tonini-Cossali) compute the gas-side heat inside their own film, Stefan flow
+  included. That heat replaces the Nusselt one.
 
 ### Non-equilibrium interface
 
-This model replaces the equilibrium surface condition with the
-Langmuir-Knudsen one (Miller-Harstad-Bellan model M2): the surface mole fraction is depressed below its equilibrium value by a Knudsen-layer term proportional to the evaporation rate itself,
+The Langmuir-Knudsen interface (Miller-Harstad-Bellan model M2) replaces the equilibrium surface condition. A Knudsen
+layer lowers the surface mole fraction in proportion to the evaporation rate itself:
 
 $$
 X_s = X_{s,eq} - \frac{2L_K}{d}\beta, \qquad
-\beta = -\frac{\dot m\,Pr}{2\pi\mu_g d},
+\beta = -\frac{\dot m\,Pr}{2\pi\mu_g d}.
 $$
 
-which is implicit in $\dot m$ and is closed by a damped Picard iteration. $\alpha_e$ in $L_K$ is the accommodation coefficient. Because $L_K/d$ grows as the droplet shrinks while
-$\beta$ does not, the depression deepens over a droplet's life.
+$\alpha_e$ in $L_K$ is the accommodation coefficient. The relation is implicit in $\dot m$; a damped fixed-point
+iteration solves it. Since $L_K/d$ grows as the drop shrinks, the effect grows over a drop's life.
 
 ### Stefan blowing
 
-It multiplies the convective heat by the Miller-Harstad-Bellan reduction factor
+The outgoing vapour thickens the thermal film and reduces the convective heat by the Miller-Harstad-Bellan factor
 
 $$
-f_2 = \frac{b}{e^{b}-1}, \qquad b = -\frac{3}{2}\,Pr\,\tau_p\,\frac{\dot m}{m_p},
+f_2 = \frac{b}{e^{b}-1}, \qquad b = -\frac{3}{2}\,Pr\,\tau_p\,\frac{\dot m}{m_p}.
 $$
 
-which accounts for the outgoing vapour thickening the thermal film. It applies only
-where the Nusselt correlation is in use, so it is ignored under `ASM` and `TC`, and
-$f_2 \to 1$ as the rate vanishes.
+It applies only where the Nusselt correlation is in use, so not under `ASM` and `TC`. $f_2 \to 1$ as the rate
+vanishes.
 
-!!! note "`d2-law` with $Nu = 2$ and blowing is exactly isothermal"
-    Substituting the $d^2$-law rate into $b$ makes every property cancel and leaves
-    $b = \ln(1+B_T)$ identically, so $f_2 = \ln(1+B_T)/B_T$ and the blown convective
-    heat $2\pi d k_g (T_g-T_p) f_2$ equals the latent sink $-\dot m L_v$ term for
-    term — for any gas, any material and any droplet temperature. That combination
-    holds $T_p$ fixed and reproduces the textbook $d^2$ law exactly, which is what
-    [case F](../vv/verification/phase-change.md#an-exact-check-with-nothing-frozen) uses as its sharpest check.
+!!! note "`d2-law` with $Nu = 2$ and blowing keeps the drop temperature fixed"
+    Substituting the $d^2$-law rate into $b$ cancels every property and leaves $b = \ln(1+B_T)$, so
+    $f_2 = \ln(1+B_T)/B_T$. The blown convective heat $2\pi d k_g (T_g-T_p) f_2$ then equals the latent sink
+    $-\dot m L_v$ exactly, for any gas, material and drop temperature. The drop temperature stays fixed and the
+    textbook $d^2$ law is reproduced exactly:
+    [case F](../vv/verification/phase-change.md#an-exact-check-with-nothing-frozen) uses this as its sharpest check.
 
 ### Conduction inside the drop
 
-`liquid-conduction = ITC` (the default) gives the drop a uniform temperature. Under `P2T` the liquid temperature
-is parabolic in the radius (Dombrovsky & Sazhin 2003), $T(r) = T_c + (T_s - T_c)(r/R)^2$, so that the mean
-temperature is $\bar T = (2T_c + 3T_s)/5$. The heat the liquid conducts inward at the surface is the heat the
-surface absorbs, which fixes $T_s$:
+By default (`ITC`) a drop has one uniform temperature. Under `P2T` its temperature is parabolic in the radius
+(Dombrovsky & Sazhin 2003):
+
+$$
+T(r) = T_c + (T_s - T_c)\,(r/R)^2, \qquad \bar T = \frac{2T_c + 3T_s}{5}.
+$$
+
+**Surface temperature.** The heat the liquid conducts inward at the surface is the heat the surface absorbs. That
+balance fixes $T_s$:
 
 $$
 T_s - \bar T = \frac{\dot Q_{net}(T_s)}{10\pi\,k_{eff}\,d}, \qquad
 \dot Q_{net}(T) = \dot Q_g(T) + \dot Q_r(T) + \dot m(T)\,L_v(T),
 $$
 
-$\dot Q_g = \pi d\,k_g\,Nu\,(T_g - T)$ the convective heat (times $f_2$ under `evaporation-blowing = LK`, or the
-model's own heat under ASM and TC), $\dot Q_r$ the radiative exchange and $\dot m$ the material's evaporation model
-with the surface state at $T$. The effective conductivity $k_{eff} = \chi\,k_l$ accounts for the circulation
-inside a drop in a slip flow (Abramzon & Sirignano 1989, eqs. 30, 32, 39):
+where $\dot Q_g = \pi d\,k_g\,Nu\,(T_g - T)$ is the convective heat (times $f_2$ with Stefan blowing, or the model's
+own heat under ASM and TC), $\dot Q_r$ the radiative exchange, and $\dot m$ the evaporation rate with the surface
+state at $T$.
+
+**Circulation inside the drop.** A drop in a slip flow circulates inside, which raises its effective conductivity to
+$k_{eff} = \chi\,k_l$ (Abramzon & Sirignano 1989, eqs. 30, 32, 39):
 
 $$
 U_s = \frac{12.69}{32}\,|\Delta u|\,\frac{\mu_g}{\mu_l}\,\frac{Re^{1/3}}{1 + B_M}, \qquad
@@ -207,100 +246,126 @@ Pe_L = \frac{U_s\,d\,\rho_l\,c_l}{k_l}, \qquad
 \chi = 1.86 + 0.86\tanh\left[2.245\log_{10}\frac{Pe_L}{30}\right],
 $$
 
-with $\chi = 1$ without slip, $B_M$ the gas-side model's Spalding number at $\bar T$, $\rho_l$ and $c_l$ at
-$\bar T$ ($c_l$ the chord $e(\bar T + 1/2) - e(\bar T - 1/2)$ when the specific heat varies), $k_l$ the material's
-`k-liq` or its `Conductivity` column at $\bar T$, and $\mu_l$ its `mu-liq` or its `Viscosity` column at the
-surface temperature, as Abramzon & Sirignano evaluate it: with the column, $U_s$, $Pe_L$ and $k_{eff}$ follow each
-trial $T_s$ of the solve. The drop's diameter is the family's one size in the cell. $T_s$ is found by
-Brent's method on the bracket between $\bar T$ and $\bar T + \dot Q_{net}(\bar T)/(10\pi k_{eff} d)$ (clipped to
-$[\max(1, T_{min} - 1), \max(T_g, T_{max})]$ K, the table's range), widened to $T_g$ for a heated drop or to the
-low end for a cooled one, to $4\varepsilon$ in at most 100 evaluations. Every gas-side quantity then takes $T_s$:
-$p_{sat}$, $Y_s$ and $B_M$, $L_v$ and $c_{p,v}$ of the table, the convective and radiative heats, and the
-temperature ratio of the drag laws; the density, the diameter and the energy stay at $\bar T$.
+with $\chi = 1$ without slip. $k_l$ and $\mu_l$ are the liquid conductivity and viscosity (`k-liq`, `mu-liq`, or the
+`Conductivity` and `Viscosity` columns). $\rho_l$, $c_l$ and $k_l$ are taken at $\bar T$, and $\mu_l$ at the surface
+temperature, as Abramzon & Sirignano do.
 
-At $Re = 0$ without mass transfer the solution is closed: $T_s = (5\bar T + \zeta T_g)/(5 + \zeta)$ with
-$\zeta = Nu\,k_g/(2k_l)$, and $\bar T$ relaxes with the time constant $\tau_{ITC}(1 + \zeta/5)$. A cell below the
-empty-cell density keeps $T_s = \bar T$. A surface balance without a root gives $T_s$ = NaN, and the run stops on
-the invalid state after the update, naming the cell: ICE has no step rejection to retry it with.
+**How $T_s$ is found.** Brent's method solves the balance, to $4\varepsilon$ in at most 100 evaluations. The
+bracket starts between $\bar T$ and $\bar T + \dot Q_{net}(\bar T)/(10\pi k_{eff} d)$ and widens to $T_g$ for a heated
+drop, or to the low end for a cooled one. Every gas-side quantity then takes $T_s$: $p_{sat}$, $Y_s$, $B_M$, $L_v$ and
+$c_{p,v}$, the convective and radiative heats, and the temperature ratio of the drag laws. The density, the diameter
+and the energy stay at $\bar T$.
 
-### Boiling above the boiling temperature
+**A closed form.** At $Re = 0$ without mass transfer, $T_s = (5\bar T + \zeta T_g)/(5 + \zeta)$ with
+$\zeta = Nu\,k_g/(2k_l)$, and $\bar T$ relaxes with the time constant $\tau_{ITC}(1 + \zeta/5)$.
 
-`boiling = clamp` (the default) keeps the surface vapour fraction below 1 at any temperature. Under `ZGR` a drop
-boils when its mean temperature reaches the boiling temperature at the gas pressure, $\bar T \ge T_B(p)$,
-$p = \rho_g R_g T_g$ (Zuo, Gomes & Rutland 2000), with $T_B$ the inverse of Clausius-Clapeyron,
+**Edge cases.**
+
+- A cell below the empty-cell density keeps $T_s = \bar T$.
+- A surface balance with no root gives $T_s$ = NaN. The run then stops on the invalid state after the update and
+  names the cell: ICE has no step rejection to retry it with.
+
+### Boiling
+
+By default (`clamp`) the surface vapour fraction stays below 1 at any temperature. Under `ZGR` (Zuo, Gomes & Rutland
+2000) a drop **boils** once its mean temperature reaches the boiling temperature at the gas pressure,
+$\bar T \ge T_B(p)$ with $p = \rho_g R_g T_g$. $T_B$ inverts the Clausius-Clapeyron curve,
 
 $$
 T_B = \left(\frac{1}{T_{boil,1}} - \frac{\mathcal{R}}{L_v M_v}\ln\frac{p}{p_{atm}}\right)^{-1},
 $$
 
-or of the `Psat` column (on its linear interpolant: a column below $p$ at its last node has no boiling regime, one
-at or above $p$ at its first node gives $T_{min}$). Below $T_B$ the material's model runs as under the clamp. In the
-regime the surface sits at $T_B$. With $\Delta T = \bar T - T_B$ and $\Delta T_f = \max(\Delta T, 0.5\ \mathrm{K})$,
-the flash fed by the superheat is
+with $T_{boil,1}$ the boiling temperature at one atmosphere, on the same curve:
+$1/T_{boil,1} = 1/T_{boil} + \ln(p_B/p_{atm})\,\mathcal{R}/(L_v M_v)$. With a `Psat` column, $T_B$ inverts the column
+instead: a column below $p$ at its last node has no boiling regime, and one at or above $p$ at its first node gives
+$T_{min}$.
+
+Below $T_B$ the material's evaporation model runs as usual.
+
+While the drop boils, its surface sits at $T_B$ and two mechanisms vaporise it.
+
+**The flash, fed by the superheat.** With $\Delta T = \bar T - T_B$ and $\Delta T_f = \max(\Delta T, 0.5\ \mathrm{K})$,
 
 $$
 G_f = \frac{\alpha_s\,\Delta T_f\,\pi d^2}{L_v}, \qquad
 \alpha_s = 760\,\Delta T_f^{0.26}\ (\Delta T_f < 5),\quad 27\,\Delta T_f^{2.33}\ (< 25),\quad
-13800\,\Delta T_f^{0.39}\ \mathrm{W\,m^{-2}\,K^{-1}},
+13800\,\Delta T_f^{0.39}\ \mathrm{W\,m^{-2}\,K^{-1}}.
 $$
 
-and for a `P2T` drop the parabolic conduction $G_f = 10\pi k_l d\,\Delta T_f/L_v$ ($k_l$ at $\bar T$). The gas heat reaches the surface
-through the film blown by the vapour: with $A = c_{p,g}(T_g - T_B)/L_v$, the film conductivity
-$k_f = k_g (T_f/T_g)^{0.7}$ at $T_f = T_B + (T_g - T_B)/3$ and $B = \pi k_f d\,Nu/c_{p,g}$, the heat-fed rate $G$
-solves $G(1 + G_f/G) = B\ln(1 + A(1 + G_f/G))$ ($G = 0$ for $A \le 0$), by Brent's method in $\ln(G_f/G)$ on
-$[-60, 60]$. With $S = G + G_f$,
+A `P2T` drop takes its parabolic conduction instead, $G_f = 10\pi k_l d\,\Delta T_f/L_v$.
+
+**The heat from the gas**, through the film the vapour blows. With $A = c_{p,g}(T_g - T_B)/L_v$, the film
+conductivity $k_f = k_g (T_f/T_g)^{0.7}$ at $T_f = T_B + (T_g - T_B)/3$, and $B = \pi k_f d\,Nu/c_{p,g}$, the
+heat-fed rate $G$ solves
 
 $$
-\dot Q_s = \frac{S\,c_{p,g}(T_g - T_B)}{e^{S/B} - 1}, \qquad \dot m = -S,
+G\,(1 + G_f/G) = B\ln\big(1 + A(1 + G_f/G)\big)
 $$
 
-$\dot Q_s$ replacing the convective heat; it is negative for a gas colder than $T_B$ and 0 at $T_g = T_B$, the
-adiabatic flash, where $m\,(L_v - c\,\Delta T)$ is conserved. $L_v$ and the radiative exchange are taken at $T_B$;
-the interface and blowing models do not act in the regime.
+($G = 0$ for $A \le 0$). With $S = G + G_f$ the drop then loses mass and receives heat as
 
-Just below $T_B$ the clamp's rate is far larger than the boiling branch's just above it: on a 20 µm water drop in a
-gas at $T_B$, $d\bar T/dt = -7.7\times10^6$ K/s at $10^{-6}$ K below against $-24$ K/s at 0.1 K above. The explicit
-step that carries a drop across $T_B$ overshoots the continuous transient, the more the longer the step, and a step
-close to $m/|\dot m|$ at the clamp's rate ($7\times10^{-5}$ s for that drop) can leave a negative density, which
-the update floors, counts and warns about ([time integration](time-integration.md)). ICE adds no limiter of its
-own for this: with `boiling = ZGR` it watches, at every stage, the fraction
-$\Delta t\,|S_1|/\rho_p$ of a cell's drop mass that the step removes, and the first time a family's exceeds 0.5 it
-writes once
+$$
+\dot m = -S, \qquad \dot Q_s = \frac{S\,c_{p,g}(T_g - T_B)}{e^{S/B} - 1},
+$$
 
-    [WARNING] boiling = ZGR, family <p> (material <m>, rank <r>): at iteration <n>, time <t>, a step removes <f> of a
-    cell's drop mass (more than 0.5): the step does not resolve the evaporation at the boiling temperature and the
-    result is not trusted; lower dt-max
+$\dot Q_s$ replacing the convective heat. It is negative for a gas colder than $T_B$ and 0 at $T_g = T_B$, the
+adiabatic flash. $L_v$ and the radiative exchange are taken at $T_B$; the interface and blowing models do not act while
+the drop boils.
 
-and the run goes on unchanged. A run that writes it has either crossed $T_B$ with a step the clamp does not resolve,
-or emptied a cell of the family within a step (a drop evaporating to its end); in the first case its solution is not
-to be trusted: take a smaller `dt-max`. On that drop, integrated by ICE's scheme, the fraction is 0.012 at `dt-max` =
-1e-6 s and 0.37 at 4e-5 s, where the mean temperature still ends on the wet bulb from above (463.8254 K, $m/m_0$
-within 0.7 %); at 5e-5 s it is 0.57 and the mean temperature undershoots to 382 K, at 1e-4 s 0.98 and 84 K.
+!!! warning "The time step near the boiling temperature"
+    Just below $T_B$ the evaporation rate is far larger than just above it. On a 20 µm water drop in a gas at $T_B$,
+    $d\bar T/dt = -7.7\times10^6$ K/s at $10^{-6}$ K below, against $-24$ K/s at 0.1 K above. A step that carries a
+    drop across $T_B$ overshoots, the more the longer the step, and can even leave a negative density.
+
+    Under `ZGR`, ICE watches the fraction $\Delta t\,|S_1|/\rho_p$ of a cell's drop mass that one step removes. The
+    first time it exceeds 0.5 for a family, ICE warns once:
+
+        [WARNING] boiling = ZGR, family <p> (material <m>, rank <r>): at iteration <n>, time <t>, a step removes <f> of a
+        cell's drop mass (more than 0.5): the step does not resolve the evaporation at the boiling temperature and the
+        result is not trusted; lower dt-max
+
+    The run goes on. The warning has two causes: a drop crossing $T_B$ with too long a step, or a cell whose drops
+    evaporate completely within one step. In the first case the solution is not to be trusted: lower `dt-max`. On the drop above, the fraction is 0.012 at `dt-max` = 1e-6 s and 0.37 at 4e-5 s, where the result is
+    still right; at 5e-5 s it is 0.57 and the mean temperature undershoots to 382 K.
 
 ## Solidification
 
-A material with `solidification = on` on its line of the phase file freezes and melts: a
-molten droplet supercools, recalesces, freezes on a plateau at the melting point and cools as a solid, and a solid or
-a partly frozen droplet heated past the melting point melts there. The families of that material carry two more
-variables after $n_p$, the frozen fraction $f$ and the nucleated fraction $\chi$, both carried with the mass.
+A material with solidification on freezes and melts:
 
-### The energy
+- a molten drop **supercools**, **recalesces**, **freezes** on a plateau at the melting point and cools as a solid;
+- a solid or partly frozen drop heated past the melting point **melts** there.
 
-The latent heat is part of the energy per unit mass,
+Its families carry two more variables after $n_p$, both carried with the mass: the frozen fraction $f$ and the
+nucleated fraction $\chi$.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    Liquid --> Undercooled: cools below T-melt
+    Undercooled --> Liquid: heated to T-melt
+    Undercooled --> Plateau: reaches T-nuc, recalesces
+    Undercooled --> Solid: reaches T-nuc, f0 ≥ 1
+    Plateau --> Solid: f reaches 1
+    Solid --> Plateau: heated to T-melt
+    Plateau --> Liquid: f falls to 0 (melted)
+```
+
+### Energy with latent heat
+
+The latent heat is part of the energy per unit mass:
 
 $$
 e(T, f) = c_l\,T - f\,L(T), \qquad L(T) = h_{fus} - (c_l - c_s)(T_m - T),
 $$
 
-with $c_l$ the material's constant specific heat (the liquid's), $c_s$ = `cp-solid`, $h_{fus}$ = `h-fus` and
-$T_m$ = `T-melt`: a fraction $f$ of solid and $1 - f$ of liquid at one temperature. With a `Cp` column that varies,
-$c_l T$ becomes the table's liquid energy $e_l(T)$ and $L(T) = h_{fus} - \big(e_l(T_m) - e_l(T)\big) + c_s(T_m - T)$;
-$T_\ell = e_l^{-1}(e)$, and below every $c_l(T_m - T_\ell)$ reads $e_l(T_m) - e_l(T_\ell)$.
+with $c_l$ the liquid's specific heat, $c_s$ the solid's, $h_{fus}$ the heat of fusion and $T_m$ the melting
+temperature: a fraction $f$ of solid and $1 - f$ of liquid at one temperature. With a `Cp` column that varies,
+$c_l T$ becomes the table's liquid energy $e_l(T)$ and $L(T) = h_{fus} - \big(e_l(T_m) - e_l(T)\big) + c_s(T_m - T)$.
 
-### The phase of a cell
+### Liquid, plateau or solid
 
-After every update, $T_p$ and $f$ follow from the energy and $\chi$. With $T_\ell = e/c_l$, the temperature the content
-would have if it were all liquid:
+After every update, $T_p$ and $f$ follow from the energy and $\chi$. Let $T_\ell = e/c_l$ be the temperature the
+content would have if it were all liquid:
 
 | Energy | $\chi$ | State |
 |---|---|---|
@@ -309,165 +374,186 @@ would have if it were all liquid:
 | $T_{nuc} < T_\ell < T_m$ | $\ge \tfrac12$ | nucleated; $\chi$ kept |
 | $T_{nuc} < T_\ell < T_m$ | $< \tfrac12$ | undercooled liquid, $T_p = T_\ell$, $f = 0$; $\chi$ kept |
 
-A nucleated content takes the lever rule at $T_m$: the plateau, $T_p = T_m$ with $f = c_l(T_m - T_\ell)/h_{fus}$,
-while that is below 1, and otherwise the solid at $T_p = T_m - \big(c_l(T_m - T_\ell) - h_{fus}\big)/c_s$ with $f = 1$.
+A nucleated content follows the lever rule at $T_m$:
 
-So a liquid supercools down to $T_{nuc}$ = `T-nuc` and then recalesces at constant energy, to the plateau with
-$f_0 = c_l(T_m - T_{nuc})/h_{fus}$ or, when $f_0 \ge 1$, straight to the solid; it freezes on the plateau at the rate the
-gas takes its heat, $h_{fus}\,\mathrm{d}f/\mathrm{d}t = -\dot q/\rho_p$, and cools as a solid. Heated, a nucleated content
-warms as a solid to $T_m$, melts on the plateau at the same rate, and is liquid again at $f = 0$: nothing is solid above
-$T_m$, and a melted content supercools again before it refreezes. The convective and radiative exchanges use the cell's
-temperature; the recalescence exchanges nothing with the gas, and the latent heat leaves or enters it through the
-plateau's exchange.
+- **plateau**, while $f = c_l(T_m - T_\ell)/h_{fus}$ is below 1: $T_p = T_m$;
+- **solid** otherwise: $f = 1$ and $T_p = T_m - \big(c_l(T_m - T_\ell) - h_{fus}\big)/c_s$.
 
-### The nucleated fraction
+### The freezing path
 
-$\chi$ is the fraction of a cell's mass that has nucleated and not melted completely since. Nucleation sets it,
-complete melting clears it, and otherwise it is only carried with the mass, so a cell follows the history of what
-flows through it: liquid flowing into a cell that once nucleated replaces its content and returns it to the liquid,
-and the nucleation front moves wherever the gas moves it. The frozen fraction itself could not hold that memory: it
-is derived from the energy, so a nucleated cell would rebuild it every step and nucleate all the liquid that enters.
-A cell where particles of different histories meet ($0 < \chi < 1$) holds one state, decided by its energy and the
-majority.
+1. A liquid supercools down to the nucleation temperature $T_{nuc}$.
+2. It recalesces at constant energy: to the plateau with $f_0 = c_l(T_m - T_{nuc})/h_{fus}$, or straight to the
+   solid when $f_0 \ge 1$. The recalescence exchanges nothing with the gas.
+3. It freezes on the plateau at the rate the gas takes its heat, $h_{fus}\,\mathrm{d}f/\mathrm{d}t = -\dot q/\rho_p$.
+4. It cools as a solid.
+
+Heated, a nucleated content warms as a solid to $T_m$, melts on the plateau at the same rate and is liquid again at
+$f = 0$. Nothing is solid above $T_m$, and a melted content supercools again before it refreezes.
+
+### Why the nucleated fraction is carried
+
+$\chi$ is the fraction of a cell's mass that has nucleated and not completely melted since. Nucleation sets it,
+complete melting clears it, and otherwise it is only carried with the mass. A cell therefore follows the history of
+what flows through it: liquid flowing into a cell that once nucleated replaces its content and returns it to the
+liquid.
+
+The frozen fraction could not hold that memory: it is computed from the energy, so a nucleated cell would rebuild it
+every step and nucleate all the liquid that enters.
 
 ### Accuracy
 
-Along a single history, a closed cell, the formulation reproduces the particle model exactly. Its one time-step error
-is the nucleation switch, which happens at the end of a stage: the plateau is shifted by at most
-$\pi d_p k_g Nu\,(T_m - T_{nuc})\,\Delta t/(m h_{fus})$ in $f$. Melting has none, the heat rate being continuous through
-both of its switches.
+**In time.** Along a single history (a closed cell) the formulation reproduces the particle model exactly. Its one
+time-step error is the nucleation switch, at the end of a stage: the plateau is shifted by at most
+$\pi d_p k_g Nu\,(T_m - T_{nuc})\,\Delta t/(m h_{fus})$ in $f$. Melting has no such error.
 
-In a steady stream the nucleation front and both melting points are located within one cell. The reconstruction works
-on $T_\ell$ in place of $T_p$ ([Reconstruction](numerics.md#reconstruction)): $T_\ell$ is continuous where a content
-nucleates, since the recalescence keeps its energy, so $T_\ell$ has no jump at the nucleation front ($\chi$ still has
-one, and its limited value decides a face in the band), and in every configuration measured a steady run converges
-there with MUSCL as at first order: `space-reconstruction = first-order` is not needed for that. Three approximations
-remain. A cell where contents of different histories meet ($0 < \chi < 1$) holds one state, decided by the majority;
-carrying the nucleated and the liquid parts as two populations would lift it. At the nucleation front the liquid and
-the nucleated state of the front cell can both be steady when its inflow lies in a narrow window, which puts the front
-one cell earlier or later. In a time-accurate run nucleation happens at the end of a stage (above).
+**In space.** In a steady stream the nucleation front and both melting points are located within one cell. The
+reconstruction works on $T_\ell$ instead of $T_p$ ([Reconstruction](numerics.md#reconstruction)), which has no jump at
+the nucleation front, so a steady run converges there with MUSCL as at first order. Two approximations remain:
 
-The Rusanov and HLLE fluxes leak $\chi$ upstream of a sharp front. At first order Rusanov puts $c/(2u + c)$ into the
-first cell and HLLE nothing while $c \le u$ and $(c - u)/(c + u)$ above, where $u$ is the flow speed and $c$ the
-closure's signal speed; with MUSCL and the van Leer limiter the Rusanov leak is about half as large
-($2.5\times10^{-5}$ against $5.0\times10^{-5}$ at first order on the stream of the verification case O3). No cell
-flips while $c < 2u$ (Rusanov) or $c < 3u$ (HLLE); above that one or two cells upstream of the front are nucleated by
-the leak, and the tail decays, so the front moves by that much and no further. An IG or AG stream injected with the
-inlet's pseudo-pressure ($P = 10^{-6}$) is far below that bound unless its bulk density is tiny.
+- a cell where contents of different histories meet ($0 < \chi < 1$) holds one state, decided by the majority;
+- when the inflow of the front cell lies in a narrow window, both its liquid and its nucleated state can be steady,
+  which puts the front one cell earlier or later.
 
-### Inputs
+**Leak upstream.** The Rusanov and HLLE fluxes leak $\chi$ upstream of a sharp front, with $u$ the flow speed and $c$
+the closure's signal speed:
 
-All on the material's line of the phase file:
-
-| Token | Meaning | Default |
+| Flux | Leak into the first upstream cell (first order) | No cell flips while |
 |---|---|---|
-| `solidification` | `on` or `off` | `off` |
-| `T-melt` | melting temperature $T_m$ [K] | 2327 |
-| `h-fus` | heat of fusion [J/kg] | required, > 0 |
-| `T-nuc` | nucleation temperature [K], below `T-melt` | 0.8 `T-melt` |
-| `cp-solid` | specific heat of the solid [J/(kg K)] | required, > 0 |
+| Rusanov | $c/(2u + c)$, about half that with MUSCL | $c < 2u$ |
+| HLLE | none while $c \le u$, else $(c - u)/(c + u)$ | $c < 3u$ |
 
-The liquid's specific heat and the density are the material's; the specific heat may vary with the temperature (a
-`Cp` column, the liquid's energy then being the table's), the density must be constant: a `Density` column that varies
-stops the run, as does a material that also evaporates. The setup prints each solidifying material's values.
-For alumina the NIST-JANAF tables give $T_m$ = 2327 K, $h_{fus}$ = 1.09 MJ/kg, a liquid specific heat of
-1.89 kJ/(kg K) and a solid one of 1.36 kJ/(kg K) at the melting point; the default `T-nuc` is a nominal supercooling.
+Beyond these bounds one or two cells upstream of the front nucleate and the front moves by that much, no further. An
+IG or AG stream injected at the inlet's pseudo-pressure ($P = 10^{-6}$) is far below them unless its bulk density is
+tiny.
 
-## Direct combustion
+### Limits
 
-A material with `combustion = direct` on its line of the phase file burns as the drops of Gallier and Godfroy
-(J. Propuls. Power 25(2), 2009, section II.A): a simple, diffusion-limited burning that holds for any drop whose
-vapour burns in the gas around it, not only aluminium. The drop vaporises at its saturation temperature, the vapour
-burns at once, and its heat of reaction goes to the gas.
+- The density of the material must be constant (its specific heat may vary).
+- A material that solidifies does not evaporate or burn.
 
-### The burning drop
+!!! example "Alumina"
+    The NIST-JANAF tables give $T_m$ = 2327 K, $h_{fus}$ = 1.09 MJ/kg, and at the melting point a liquid specific
+    heat of 1.89 kJ/(kg K) and a solid one of 1.36 kJ/(kg K).
 
-A drop burns while its temperature is at least $T_{sat}$ (`T-burn` of the material's row of the models file, else
-`boiling-temperature`, the boiling temperature at one atmosphere, at which the paper burns its drops: with another
-`boiling-pressure`, `T-burn` is required) and its diameter is larger than the residue's, $d_{res}$ = `d-stop`.
-It loses mass at the $d^2$ law of a vaporising drop, with the heat of reaction in
-the transfer number (unit Lewis number):
+## Combustion
+
+ICE has two burning models. Each material burns on its own.
+
+| | Direct | Beckstead |
+|---|---|---|
+| Source | Gallier & Godfroy (2009) | Beckstead (2005), as IGLOO's parcels |
+| Burns from | the burning temperature $T_{sat}$ | the ignition temperature $T_{ign}$ |
+| Rate | $d^2$ law, with the heat of reaction in the transfer number | $d^n$ law |
+| Drop temperature while burning | constant | follows its heat balance |
+
+Both end at a residue, or burn out completely ([burn-out](#burn-out)). Both can make the oxide of a burning metal born
+as drops of another family ([generated mass](#generated-mass)).
+
+### Direct model
+
+A burning drop vaporises at its saturation temperature, the vapour burns at once, and the heat of reaction goes to the
+gas (Gallier & Godfroy, J. Propuls. Power 25(2), 2009, section II.A). It holds for any drop whose vapour burns in the
+gas around it, not only aluminium.
+
+**Burning rate.** The drop loses mass by the $d^2$ law of a vaporising drop, with the heat of reaction $Q$ in the
+transfer number (unit Lewis number):
 
 $$
 \dot m = \pi d_p\,\frac{k_g}{c_{p,g}}\,Nu\,\ln(1 + B), \qquad
 B = \frac{c_{p,g}\,(T_g - T_p) + Q}{L_v},
 $$
 
-with $Q$ = `q-comb`, $L_v$ the material's latent heat at the burning temperature (the `Lv` column of its property
-table, else `latent-heat`) and $Nu$ the `heat-transfer` law's. With
-`heat-transfer = Ranz-Marshall`, $Nu = 2 + 0.6\,Re^{1/2}Pr^{1/3}$, this is their eq. 4: the convective correction
-that makes the burning respond to the slip.
+with $L_v$ the material's latent heat at the burning temperature and $Nu$ from the chosen heat-transfer law. With
+`Ranz-Marshall`, this is their eq. 4: the burning responds to the slip.
 
-Every heat the drop receives feeds its vaporisation, $\dot Q = \dot m L_v$, so its temperature does not change while
-it burns. The vapour leaves with the drop's energy and kinetic energy, and the gas receives, per unit volume,
+**Energy.** All the heat the drop receives feeds its vaporisation, $\dot Q = \dot m L_v$, so its temperature stays
+constant while it burns. The gas receives, per unit volume and apart from the drag work,
 
 $$
-n\,\dot m\,\big(e_p(T_p) + \tfrac12|\mathbf u_p|^2 + Q\big),
+n\,\dot m\,\big(e_p(T_p) + \tfrac12|\mathbf u_p|^2 + Q\big).
 $$
 
-the drag work aside. The first two terms are the opposite of the drop's source, as for evaporation. $n\,\dot m\,Q$
-is not part of it: ICE stores it per cell in the family's `heat` field, which a gas of one species coupled to ICE
-adds to its energy (`exchange_rate`, [Coupling Interface](../development/coupling.md)). A coupler that knows the
-species the burnt mass becomes (hydra-MI2, from the reaction ATLAS records) leaves the field alone: there the heat of
-reaction is the difference of the formation enthalpies.
+The first two terms are what the drops lose, as in evaporation. The heat of reaction $n\,\dot m\,Q$ is kept apart, in
+the family's `heat` field: a gas of one species adds it to its energy, while a gas whose species carry their formation
+enthalpies gains it from the change of species ([Coupling Interface](../development/coupling.md)).
 
-The number density does not change, so the drop shrinks along $d^2 = d_0^2 - K t$ with
-$K = 8 k_g \ln(1 + B)/(c_{p,g}\,\rho_m)$ at $Nu = 2$, and burns out in $d_0^2/K$ without a residue, their eq. 10.
+**Burning time.** The number of drops does not change, so a drop shrinks as $d^2 = d_0^2 - K t$ with
+$K = 8 k_g \ln(1 + B)/(c_{p,g}\,\rho_{al})$ at $Nu = 2$, and burns out in $d_0^2/K$ (their eq. 10).
 
-### Before and after
+!!! example "Aluminium"
+    Gallier and Godfroy take $Q$ = 9.53 MJ/kg, $L_v$ = 10.8 MJ/kg and $T_{sat}$ = 2791 K.
 
-Below $T_{sat}$ a drop is inert: drag, convection and radiation heat it as any other drop, and it ignites when it
-reaches $T_{sat}$. At $d_{res}$ the burning stops, and what remains is an inert residue of that diameter, the
-alumina of an aluminium drop. A gas so cold that $B \le 0$ does not keep a drop burning either.
+### Beckstead model
 
-The switches act at the end of a stage. A drop that ignites holds the temperature it reached in that stage, up to
-$\Delta t\,\mathrm{d}T/\mathrm{d}t$ above $T_{sat}$, and a residue is up to $K\Delta t/(2 d_{res})$ smaller than
-$d_{res}$. The temperature is compared within $10^{-10}$ of $T_{sat}$, so that round-off does not switch off a drop
-held there.
-
-### Without a residue
-
-A material that gives no `d-stop` burns out. The number density has no sink in the equations, so the last of the
-drops of a cell leave together. In a time-accurate run, after the last stage of a step, a cell whose drops burn
-(`direct` from $T_{sat}$, within $10^{-10}$ of it; `Beckstead` from `T-ign`) and are at or below the removal size
-(`d-burnout`, a diameter; without it a drop mass of $10^{-20}$ kg), or where the step burnt as much as is left, is
-emptied: every primitive goes to the empty state but the velocity, which stays, since the flux upwinds at the mean
-of two cells' velocities and an emptied cell at rest would halve its inflow. What the cell held is not a rate of
-that step: its mass, momentum and energy per unit volume are added to the family's record of removals (`removed`),
-an amount that a coupler takes (`take_removed`) and delivers to its gas whole, over its own steps. Nothing is lost and no density is floored. A drop
-that does not burn is never removed, whatever its size: it stays, an inert drop. `d-stop` beside `d-burnout` is
-refused: a drop that stops at its residue is never removed.
-
-A steady run has no step to remove at, and a removal at once has no fixed point: there the switch is a sink on the
-flux instead. Of what leaves a cell whose drops burn and are smaller than the removal size, the fraction $f$ burns at
-the cell's exit and is handed to the gas as every burn is (mass, number, momentum and energy alike); $f$ rises as a
-cubic in the diameter from 0 at `burnout_band(2)` times the removal size to 1 at `burnout_band(1)` times it
-(`burnout_band` = [0.90, 1], `Mod_BC_Fluxes.f90`; the setup prints it), so that no cell's outflow jumps at a
-threshold (`divert_burnout`). The flux of a face next to such a cell is blended toward its first-order
-value by $f$.
-
-### The other model: Beckstead's $d^n$ law
-
-A material with `combustion = Beckstead` burns on the law of Beckstead (2005), as IGLOO's parcels do: at and above
-`T-ign`,
+At and above the ignition temperature $T_{ign}$ the drop burns by Beckstead's $d^n$ law, as IGLOO's parcels do:
 
 $$
-d^n = d_0^n - K X_{eff}\,t, \qquad \dot m = \rho_m\,\frac{\pi K X_{eff}}{2 n}\,d^{\,3-n},
+d^n = d_0^n - K X_{eff}\,t, \qquad \dot m = \rho_{al}\,\frac{\pi K X_{eff}}{2 n}\,d^{\,3-n},
 $$
 
-with $K$ = `K-burn`, $n$ = `n-burn` (between 0 and 3) and $X_{eff}$ = `X-eff`. The law has no latent sink: the drop
-exchanges heat with the gas as an inert drop does and keeps the share `beta-part` of the heat of reaction `q-comb`,
-which heats it. The burn ends as that of `direct` does: at the residue `d-stop`, or with the removal above. ICE does
-not carry the oxide cap IGLOO's law can grow on the drop: `xi-cap` other than 0, `xi-law`, `xi-ox0`, `product`,
-`residue` and `d-residue` are refused, and so is a line of 0 groups, the cap's product.
+with $K$ the burning coefficient, $n$ the exponent (between 0 and 3) and $X_{eff}$ the oxidiser fraction.
+
+- The law has no latent sink: the drop exchanges heat with the gas as an inert drop does.
+- The drop keeps a share $\beta$ of the heat of reaction, which heats it; the gas pays that share through the drop's
+  energy.
+- ICE does not model the material a burning drop carries (IGLOO's carried material, an oxide cap for instance).
+
+### Ignition and extinction
+
+A drop burns only while three conditions hold:
+
+| Condition | Otherwise |
+|---|---|
+| it is hot enough: $T_p \ge T_{sat}$ (direct) or $T_p \ge T_{ign}$ (Beckstead) | it is inert: drag, convection and radiation heat it like any drop, until it ignites |
+| it is larger than the residue, $d_p > d_{res}$ | it stops: an inert residue of that diameter remains, the alumina of an aluminium drop |
+| direct: the gas is hot enough to keep it burning, $B > 0$ | it stops burning |
+
+These switches act at the end of a stage, which costs a little accuracy: a drop that ignites keeps the temperature
+it reached in that stage (up to $\Delta t\,\mathrm{d}T/\mathrm{d}t$ above $T_{sat}$), and a residue can be up to
+$K\Delta t/(2 d_{res})$ smaller than $d_{res}$. The temperature is compared within $10^{-10}$ of $T_{sat}$, so that
+round-off does not switch off a drop held there.
+
+### Burn-out
+
+A material with no residue burns out. The number of drops has no sink in the equations, so the last drops of a cell
+must leave together. ICE removes them in two ways, depending on the run.
+
+**Time-accurate runs.** After the last stage of a step, a cell whose drops are burning is emptied when
+
+- its drops are at or below the removal size (a diameter, or else a drop mass of $10^{-20}$ kg), or
+- the step burnt as much as was left.
+
+Every primitive goes to the empty state except the velocity, which stays: the flux upwinds at the mean of two cells'
+velocities, and an emptied cell at rest would halve its inflow. What the cell held is kept as an amount for the gas
+(`removed`); a coupler takes it and hands it to its gas over its own steps. Nothing is lost.
+
+**Steady runs.** A removal at once has no fixed point, so the removal becomes a sink on the flux instead. Of what
+leaves a cell whose burning drops are smaller than the removal size, a fraction $f$ burns at the cell's exit and goes
+to the gas like any burn. $f$ rises as a cubic in the diameter, from 0 at 1.0 times the removal size to 1 at 0.9 times
+it, so no cell's outflow jumps at a threshold. The flux of a face next to such a cell is blended toward its
+first-order value by $f$.
+
+A drop that does not burn is never removed, whatever its size.
 
 ### Generated mass
 
-The burnt metal can make a condensed oxide, a material of another ICE family: the generated mass. ICE running alone
-makes none. A coupler that knows the reaction (hydra-MI2, from the products file ATLAS writes) declares, for a burning
-material, the material its generated mass is born as and $\nu_s$, the kg of generated mass per kg burnt
-(`set_generation`); `d-gen` of the material's row is the diameter $d_s$ each generated drop is born with. Drops that burn $\dot m_b$ per unit volume and time give the
-generation family, per unit volume and time,
+A burning metal can make a condensed oxide, a material of another ICE family: the **generated mass**. ICE running
+alone generates none. A coupler that knows the reaction declares it (`set_generation`): the material the oxide is,
+and $\nu_s$, the kilograms of oxide per kilogram burnt.
+
+```mermaid
+flowchart LR
+    burn["Burning drops"]
+    gas["Gas"]
+    oxide["Generation family<br/>(oxide drops)"]
+    burn -- "vapour, heat of reaction" --> gas
+    gas -- "oxygen" --> oxide
+    burn -- "ν<sub>s</sub> × burnt mass" --> oxide
+```
+
+The oxide takes its oxygen from the gas, so $\nu_s$ can exceed 1: aluminium makes 1.89 kg of alumina per kg burnt.
+
+Drops that burn $\dot m_b$ per unit volume and time give the generation family, per unit volume and time,
 
 $$
 \dot M = \nu_s\,\dot m_b, \qquad \dot M\,\mathbf u_p, \qquad
@@ -475,63 +561,29 @@ $$
 \dot N = \frac{\dot M}{\tfrac{\pi}{6}\,\rho_s(T_p)\,d_s^3},
 $$
 
-its mass, momentum, energy and number: the generated mass is born with the burning drops' velocity $\mathbf u_p$ and
-temperature $T_p$, with $e_s$ the generated material's energy (its table, else its constant $c_p$ times $T_p$) and
-$\rho_s$ its density.
+its mass, momentum, energy and number of drops. The oxide is born with the burning drops' velocity and temperature;
+$e_s$ and $\rho_s$ are its energy and density, and $d_s$ the diameter each oxide drop is born with.
 
-ICE integrates its families one after the other, each through all its stages, so the generated mass is split from
-them. In each stage of the burning family, after its fluxes (so that a steady burn-out's sink, above, is in them),
-the rates above are taken at the stage's state and summed with the weights the burning family's state receives its
-burning with, the scheme's: $r_1$ (Euler), $(r_1 + r_2)/2$ (RK2), $r_1/6 + r_2/6 + 2r_3/3$ (RK3), as a two-way
-coupled family's source is (`RK_accumulate`). These are the step's birth rates. The burning family keeps their mass,
-momentum and energy (`gen_rate`), which the gas does not receive: `exchange_rate` leaves them out of what it hands the
-gas and reports the mass as `generated`. After every family has taken its step, the rates are born in the generation
-family and cleared. In a time-accurate run (one step for every family) $\Delta t$ times them is added to the
-generation family's state, cell by cell. In a steady run (each family its own local step) they are the births in
-force on the generation family over every stage of its next step (`births_gen`), so that its fixed point holds
-whatever either family's step. Per cell and step the generation family gains $
-u_s$ times the mass burnt, with that
-mass's momentum and the birth energy.
+**When it is born.** ICE steps its families one after the other, so the generated mass is collected first and born
+afterwards:
 
-A time-accurate removal without a residue (above) gives its generated mass with the step it ends: the remnant burns,
-its generated mass is born with the remnant's velocity at its temperature, and the record of removals keeps what the
-gas receives (the remnant's mass, momentum and energy less those of the generated mass) and the generated mass. In a
-steady run what burns at a cell's exit is a burn like any other, and generates its mass as one.
+1. In each stage of the burning family, the rates above are added to the step's sum with the weight the update gives
+   the stage: $r_1$ (Euler), $(r_1 + r_2)/2$ (RK2), $r_1/6 + r_2/6 + 2r_3/3$ (RK3).
+2. After every family has taken its step, the sum is born in the generation family:
+    - in a time-accurate run, $\Delta t$ times it is added to the cells at once;
+    - in a steady run, it becomes the births in force over every stage of the generation family's next step, so that
+      the fixed point does not depend on either family's step.
 
-A coupler can have mass born in a family too, the generated mass of another solver's burning particles for instance
-(`add_birth`, `add_birth_rate`). A rate it sets (`births_ext`) is added to the residual of every stage over the
-family's own step, as `births_gen` is, after the fluxes and the family's own source and before the update, so that a
-steady fixed point balances it whatever the step. Neither is the family's `source`, so neither is handed to the gas.
-The routes and the calls are on the page [Coupling Interface](../development/coupling.md).
+Per cell and step, the generation family thus gains $\nu_s$ times the mass burnt, with that mass's momentum and the
+birth energy. The gas does not receive it.
 
-### Which species, how many materials
+A burn-out (above) generates its oxide too, at the end of the step it ends. A coupler can also have mass born in a
+family, the oxide of another solver's burning particles for instance. Both routes are described on the
+[Coupling Interface](../development/coupling.md) page.
 
-Each material burns on its own model, named on its line of the phase file. ICE running alone takes the vapour that
-burns to be the gas itself, as in the paper, and adds the burnt mass to the gas without saying which species it is:
-the setup reads the gas phase file ATLAS writes, `INPUT/phase.txt`, or `INPUT/<gas-phase>-phase.txt` with
-`gas-phase` in `[ICE-Parameters]`, and stops unless it declares one species (a `real-fluid` phase is one). A coupler
-that owns the gas phase (hydra-MI2) says so before the setup: ICE then reads no gas phase file, and the coupler
-gives the burnt mass the species of its reaction.
+### The gas the burnt mass becomes
 
-### Inputs
-
-| Input | Meaning | Default |
-|---|---|---|
-| `combustion` | `direct`, `Beckstead` or `none` | `none` |
-| `q-comb` | heat of reaction $Q$ per unit burnt mass [J/kg] | required (0 allowed) |
-| `d-stop` | diameter of the inert residue [m] | 0: no residue, the drop burns out |
-| `d-burnout` | diameter at which the drops of a cell, without residue, are removed [m] | 0: a drop mass of $10^{-20}$ kg |
-| `d-gen` | diameter the generated drops are born with [m], > 0 | none; used only when a coupler has the material generate mass |
-| `T-burn`, else `boiling-temperature` | `direct`: $T_{sat}$, the burning temperature [K] | required |
-| the `Lv` column, else `latent-heat` | `direct`: $L_v$ [J/kg], the material's latent heat, taken at the burning temperature | required |
-| `K-burn`, `n-burn`, `X-eff` | `Beckstead`: the law's coefficient [m$^n$/s], its exponent, the oxidiser fraction | required, 1.8, 1 |
-| `T-ign`, `beta-part` | `Beckstead`: the ignition temperature [K], the share of $Q$ the drop keeps | 2350, 0 |
-
-`combustion` goes in `[ICE-Physics]`, on the material's line of the phase file, or both: the token overrides the key.
-The constants of the two models are a row of the models file beside the phase file, `<material> combustion <model>
-key=value ...`, and only there: `q-comb`, `d-stop` and `d-burnout` in `[ICE-Physics]` stop the run, naming the row.
-`T-burn` overrides `boiling-temperature`, and is required when `boiling-pressure` is not one atmosphere. An absent
-`combustion` key leaves the decision to the line.
-
-The setup stops when the material also evaporates or solidifies. ICE reads the model only in a coupled run. For
-aluminium, Gallier and Godfroy take $Q$ = 9.53 MJ/kg, $L_v$ = 10.8 MJ/kg and $T_{sat}$ = 2791 K.
+- **ICE running alone** takes the burning vapour to be the gas itself, as in the paper. The gas phase file must then
+  declare one species.
+- **A coupler that owns the gas** (hydra-MI2) tells ICE so before the set-up. ICE then reads no gas phase file, and the
+  coupler gives the burnt mass the species of its reaction.

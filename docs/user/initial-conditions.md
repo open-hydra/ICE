@@ -150,7 +150,7 @@ At setup ICE prints the tabulated vapour values of each evaporating material: $L
 298.15 K, which becomes its scalar latent heat, and $L_v$, $M_v$ and $c_{p,v}$ at the
 boiling temperature.
 
-### Checks
+### What ICE checks in the table
 
 ICE refuses the table, with the reason, when:
 

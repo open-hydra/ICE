@@ -225,8 +225,9 @@ def p5(rep):
     refusal(rep, 'two-ends', 'd-stop beside d-burnout', models=(MODELS[0] + ' d-burnout=3e-5',))
     refusal(rep, 'old-line', 'the constants of the burning models are rows of INPUT/part-models.txt',
             phase=(PHASE + ' q-comb=9.53e6 d-stop=6e-5',), models=())
-    refusal(rep, 'cap-word', 'names the oxide cap of a burning drop', phase=(PHASE + ' cap=constant',))
-    refusal(rep, 'cap-row', 'a cap row gives the oxide cap', models=MODELS + ('A cap constant xi-cap=0.2',))
+    refusal(rep, 'carry-word', 'names a material a burning drop carries', phase=(PHASE + ' carry=constant',))
+    refusal(rep, 'carry-row', 'a carry row gives a material a burning drop carries',
+            models=MODELS + ('A carry constant share=0.2',))
     refusal(rep, 'unknown-kind', 'unknown kind "Foo"', models=MODELS + ('A Foo TAB Comega=8',))
     refusal(rep, 'other-model', 'the material burns with combustion=direct',
             models=('A combustion Beckstead K-burn=1e-6',))

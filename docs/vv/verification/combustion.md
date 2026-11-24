@@ -6,9 +6,9 @@ law, down to their residue, or out. A unit test checks the cell source against t
 | Case | ctest | What it pins down | Reference |
 |---|---|---|---|
 | [P](#p-a-closed-cell) | `DirectCombustion` | The $d^2$ law at the burning temperature, the residue, the burn-out, ignition from below, the refusals, a cold drop kept | Closed form |
-| [Unit](#the-cell-source) | `CombustionUnit` | The burn rate with slip, the heat to the gas, the inert source | Gallier and Godfroy's eq. 4 |
+| [Unit](#unit-test-the-source-of-one-cell) | `CombustionUnit` | The burn rate with slip, the heat to the gas, the inert source | Gallier and Godfroy's eq. 4 |
 
-## The material
+## The aluminium of the tests
 
 Gallier and Godfroy's aluminium (J. Propuls. Power 25(2), 2009, Tables 1 and 2):
 
@@ -69,7 +69,7 @@ Notes on the legs:
   `boiling-pressure` 2×10⁵ Pa without `T-burn` are not refused; the cold drop is removed, its cell ends empty. Six of
   P9's ten checks fail there; the four that pass are those of the two burning legs, whose inputs that code reads too.
 
-## The cell source
+## Unit test: the source of one cell
 
 `CombustionUnit` calls the cell source on the same aluminium, with the drop 5 m/s slower than the gas ($Re$ = 60)
 and `heat-transfer = Ranz-Marshall`.

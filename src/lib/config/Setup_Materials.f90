@@ -355,7 +355,7 @@ contains
         call next_field(line, k1, f2, k2)
         read(f2, *, iostat=ios) q
         if (len_trim(f1) > 0 .and. ios == 0 .and. q == 0) call refuse(trim(file)//': material '//trim(f1)// &
-          ' has 0 groups: it is the product of an oxide cap, which ICE does not carry (IGLOO does)')
+          ' has 0 groups: it is a material a burning drop carries, which ICE does not model (IGLOO does)')
         if (len_trim(f1) == 0 .or. ios /= 0 .or. q < 1) &
           call refuse(trim(file)//': "'//trim(line)//'" is not a material line, "<name> <groups> [key=value ...]"')
         n = n + 1
@@ -411,14 +411,14 @@ contains
           case ('off'); obj_condensed(m)%solidSelect = 0
           case default; call refuse_word(key, value, ['on ', 'off'])
           end select
-        case ('cap')
-          call refuse(material_label(m)//': cap='//trim(value)//' names the oxide cap of a burning drop, which ICE '// &
-                      'does not carry (IGLOO does): remove it')
+        case ('carry')
+          call refuse(material_label(m)//': carry='//trim(value)//' names a material a burning drop carries, which '// &
+                      'ICE does not model (IGLOO does): remove it')
         case ('breakup')
           if (mpi_is_root) write(*,'(A)') ' [WARNING] [ICE::Setup_Materials] '//material_label(m)//': breakup='// &
             trim(value)//' on the material line is ignored: ICE has no breakup model (IGLOO has)'
         case ('K-burn', 'n-burn', 'X-eff', 'beta-part', 'T-ign', 'T-burn', 'q-comb', 'd-stop', 'd-burnout', 'd-res', &
-              'd-gen', 'xi-law', 'xi-cap', 'xi-ox0', 'product', 'residue', 'd-residue')
+              'd-gen', 'share', 'yield', 'carried', 'carried-0', 'residue', 'd-residue')
           call refuse(material_label(m)//': '//trim(key)//'='//trim(value)//' on the material line: the constants of '// &
                       'the burning models are rows of '//models_file()//', "<material> combustion <model> key=value '// &
                       '..." (ATLAS GPB writes it; the line keeps combustion=<model>)')
@@ -478,7 +478,7 @@ contains
 
     !> The rows of the models file that name material m, dispatched on their kind. combustion: the constants of the
     !> material's burning model, which the row names ('-' stands for the model its line or [ICE-Physics] names);
-    !> cap: the oxide cap of a burning drop, which ICE does not carry. An unknown kind, a second row of a kind,
+    !> carry: a material a burning drop carries, which ICE does not model. An unknown kind, a second row of a kind,
     !> another model than the material's, a key the model does not read and a value that is not a finite real number
     !> are refused. A row of the kind breakup is ignored with a warning, its model and keys unread: ICE has no
     !> breakup model (IGLOO has, and reads them).
@@ -518,8 +518,9 @@ contains
           end select
           if (trim(model) /= '-' .and. trim(model) /= word) &
             call refuse(where//': the material burns with combustion='//word)
-        case ('cap')
-          call refuse(where//': a cap row gives the oxide cap of a burning drop, which ICE does not carry (IGLOO does)')
+        case ('carry')
+          call refuse(where//': a carry row gives a material a burning drop carries, which ICE does not model '// &
+                      '(IGLOO does)')
         case default
           call refuse(where//': unknown kind "'//trim(kind)//'"; ICE reads the kind combustion')
         end select

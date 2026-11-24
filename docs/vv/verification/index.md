@@ -66,7 +66,7 @@ ctest --test-dir build -R DropHeating -V                     # one case, with li
 - `ICE_KEEP_WORK=1` keeps the generated case directories instead of deleting them on
   success: that is how to look at what a failing case actually produced.
 
-## The figures
+## Regenerating the figures
 
 ```bash
 cd test/verification && python3 plot_vv.py [figure ...]

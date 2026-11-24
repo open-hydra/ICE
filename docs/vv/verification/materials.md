@@ -81,13 +81,13 @@ The legs come in five groups:
 
 | Group | What it checks |
 |---|---|
-| [L1](#properties) | Each family heats with its own material's properties |
-| [L2](#model-tokens) | The per-material model tokens, and the INI defaults |
+| [L1](#each-material-heats-with-its-own-properties) | Each family heats with its own material's properties |
+| [L2](#each-material-takes-its-own-models) | The per-material model tokens, and the INI defaults |
 | [L3, L4](#inlet-records) | Each family reads its own inlet records and its own inlet density |
-| [L5](#latent-heat) | Each material evaporates with its own latent heat |
+| [L5](#each-material-evaporates-with-its-own-latent-heat) | Each material evaporates with its own latent heat |
 | [L6](#the-401-inlet-of-several-families) | The `401` inlet of several families: the mixture rule |
 
-### Properties
+### Each material heats with its own properties
 
 Families at rest heat in a gas at 400 K ($Nu = 2$). Each must follow
 $T_g + (T_0 - T_g)\,e^{-t/\tau}$ with its own $\tau = \rho_p c_s/(4\pi k_g R_p n)$, and $R_p$
@@ -103,7 +103,7 @@ The tolerance is $10^{-6}$ of the initial gap. RK2 at $\Delta t = \tau_A/1000$ l
 $(t/\tau)(\Delta t/\tau)^2/6 = 6\times10^{-8}$ of it, and a family that heats with the other
 material misses by 0.165.
 
-### Model tokens
+### Each material takes its own models
 
 | Leg | Phase file | What it checks | Measured |
 |---|---|---|---|
@@ -130,7 +130,7 @@ L3 and L4 compare ratios that are exact in binary ($r_2 = 2r_1$, $\rho_A = 2\rho
 flux and a limiter that are homogeneous of degree one in $n$, so $10^{-12}$ bounds their
 round-off. A cell counts as filled at half the inlet density.
 
-### Latent heat
+### Each material evaporates with its own latent heat
 
 | Leg | Phase file | What it checks | Measured |
 |---|---|---|---|

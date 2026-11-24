@@ -55,8 +55,8 @@ change an input or a build.
   `[ICE-Physics]` it is a key ICE does not know, which stops the run.
 - **Breaking.** The constants of the burning models leave the material line for the models file: a constant on the
   line stops and names the file, and the line's real keys are `alpha-e`, `k-liq`, `mu-liq`, `T-melt`, `h-fus`,
-  `T-nuc` and `cp-solid`. An oxide cap (`cap=` on the line, a cap row, a material of 0 groups) stops: ICE does
-  not carry it.
+  `T-nuc` and `cp-solid`. A carried material (`carry=` on the line, a carry row, a material of 0 groups) stops: ICE
+  does not model it.
 - A breakup model (`breakup=` on the material line, a `breakup` row of the models file) is ignored with a warning:
   ICE has no breakup model (IGLOO has). It stopped the run before, as an unknown key or kind.
 - **Breaking.** `q-comb`, `d-stop` and `d-burnout` are no longer keys of `[ICE-Physics]`: there they stop the run,

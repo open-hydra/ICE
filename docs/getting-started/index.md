@@ -68,7 +68,7 @@ binary and VTK forms). Without one, ICE transports the cloud with no exchange at
 | Evaporation | Mass transfer to the gas. Five models, with an optional non-equilibrium interface and a Stefan-blowing correction. |
 | Inside the drop | A uniform temperature or a parabolic profile, and an optional boiling branch above the boiling point. |
 | Solidification | Freezing and melting of the material, with its latent heat. |
-| Combustion | Drops that burn at their boiling temperature down to an inert residue, the heat of reaction going to the gas. |
+| Combustion | Drops that burn (the direct model, or Beckstead's $d^n$ law) down to an inert residue or out completely; the oxide they make can be born as drops of another family. |
 
 The material properties are constants, or tables against temperature in
 `INPUT/part-properties.dat`. Several materials can be carried, each with its own

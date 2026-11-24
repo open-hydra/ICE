@@ -8,7 +8,7 @@ Every block has two layers of ghost cells around it. A boundary condition sets t
 ghost cells, and the flux through the boundary face is then computed from them with
 the same reconstruction and Riemann solver as an interior face.
 
-## The codes
+## Boundary codes
 
 | Code | Type | What ICE does |
 |------|------|---------------|
