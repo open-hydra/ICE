@@ -56,6 +56,8 @@ contains
       !> an empty cell a source fills, or a burning family empties, steps no further than what fills it
       call bound_empty_dt(p, obj_time_scheme%cfl, grid, empties=obj_condensed(mat_of(p))%combSelect > 0 .and. &
                           (obj_sim_param%owcoupled .or. obj_sim_param%twcoupled))
+      !> a cell a coupler takes mass out of steps no further than empties it
+      call bound_removal_dt(p, grid)
     end do
     call timer_region_end(TR_DT)
 
