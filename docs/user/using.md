@@ -31,7 +31,7 @@ my_case/
   creates it.
 
 The formats are described in [Initial Conditions](initial-conditions.md) and
-[Boundary Conditions](boundary-conditions.md); the settings in [Input File](input.md).
+[Boundary Conditions](boundary-conditions.md); the settings in [Input Files](input.md).
 
 ## Running
 
@@ -139,7 +139,7 @@ the last iteration. A row holds:
 
 With several families, five more columns follow for each family alone, so a row has
 $2 + 5\,(1 + n_f)$ values. `res-threshold` reads column 3, the density residual of the
-whole domain ([Stopping conditions](input.md#stopping-conditions)).
+whole domain ([Stopping conditions](general.md#when-the-run-stops)).
 
 `shell-diter` sets how often the progress line is printed on screen.
 
@@ -236,4 +236,4 @@ does not change.
 A file with an error (a value that breaks its rule, a changed `levels` or `closure`,
 a file saved half-written) is ignored with a warning, and the run keeps its previous
 settings. With `ini-error = stop`, the run stops instead. See
-[Reading again during the run](input.md#reading-again-during-the-run).
+[Reading again during the run](general.md#reading-again-during-the-run).

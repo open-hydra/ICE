@@ -32,12 +32,36 @@ Mathematical and physical foundations of the ICE solver.
 
     [:octicons-arrow-right-24: Time integration](time-integration.md)
 
--   :material-atom:{ .lg .middle } __Particle Physics__
+-   :material-arrow-right-bold-outline:{ .lg .middle } __Drag & Heat Transfer__
 
     ---
 
-    Drag, heat transfer and radiation correlations
+    The notation, drag, convective heat and radiation correlations
 
-    [:octicons-arrow-right-24: Particle physics](physics.md)
+    [:octicons-arrow-right-24: Drag & heat](drag-heat.md)
+
+-   :material-water-outline:{ .lg .middle } __Evaporation__
+
+    ---
+
+    Surface state, the evaporation models, conduction inside the drop, boiling
+
+    [:octicons-arrow-right-24: Evaporation](evaporation.md)
+
+-   :material-snowflake:{ .lg .middle } __Solidification__
+
+    ---
+
+    Supercooling, recalescence, freezing and melting
+
+    [:octicons-arrow-right-24: Solidification](solidification.md)
+
+-   :material-fire:{ .lg .middle } __Combustion__
+
+    ---
+
+    The direct and Beckstead models, burn-out, the generated mass
+
+    [:octicons-arrow-right-24: Combustion](combustion.md)
 
 </div>

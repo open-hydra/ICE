@@ -123,7 +123,7 @@ again, and the run lasts until `CEM` has lost 10 % of its mass ($1.2\times10^{-4
 ### `Psat` from the property table { #psat-from-the-property-table }
 
 The droplet material is written as a
-[property table](../../user/initial-conditions.md#property-table) on 250 to 450 K with a
+[property table](../../user/properties.md#the-property-table) on 250 to 450 K with a
 `Psat` column, which replaces Clausius-Clapeyron. A specific heat of $10^{16}$ holds $T_p$ on
 the 300 K row to $6\times10^{-11}$ K, so the interpolation between rows never enters. The
 reference is the integrated `CEM` ODE with $p_{sat}$ read from the table as written.
@@ -195,7 +195,7 @@ surface temperature `Ts_p1` of a cell. Five legs:
 
 The reference is ICE's own time scheme on the same equations, written in the test driver: RK2
 in $(\rho_p, \rho_p e)$ with $n$ fixed, the sources from the
-[models](../../theory/physics.md#conduction-inside-the-drop) at $Re = 0$, each root found by
+[models](../../theory/evaporation.md#conduction-inside-the-drop) at $Re = 0$, each root found by
 bisection, and $T_s$ at each row's state.
 
 | Check | Tolerance | Measured |
@@ -247,7 +247,7 @@ A mistyped constant passes every other check and fails these:
 M5c runs M5 at `dt-max` = 1e-4 s, which does not resolve the switch at $T_B$: the step that
 crosses it removes 0.977 of the drop mass (at 61.3 ms, the reference's value to four digits).
 ICE must write the
-[warning](../../theory/physics.md#boiling) of an unresolved
+[warning](../../theory/evaporation.md#boiling) of an unresolved
 step exactly once. M2, M3 and M5, whose fractions are 1.3e-4, 1.3e-4 and 0.012, must write
 none. Without the warning, M5c fails.
 

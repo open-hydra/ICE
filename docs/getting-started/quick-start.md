@@ -81,6 +81,6 @@ per family follow: see [Using ICE](../user/using.md#the-residual-history)).
 ## Next steps
 
 * **[Using ICE](../user/using.md)** — case layout, running in parallel, restarting.
-* **[Input File](../user/input.md)** — the sections of `input.ini`.
+* **[Input Files](../user/input.md)** — the files of a case, and where to switch on every mode and model.
 * **[Input Parameters](../user/registry.md)** — every parameter, default and rule.
 * **[Verification & Validation](../vv/index.md)** — what the shipped cases demonstrate.

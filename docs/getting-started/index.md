@@ -1,10 +1,16 @@
 # Getting Started
 
-ICE (*Integration of a Condensed phase via an Eulerian method*) solves a dispersed
-condensed phase — droplets or solid particles — on multi-block structured grids. It
-carries the cloud as a continuum: each cell holds fields that describe the particles
-inside it, rather than tracking parcels one by one. It runs on its own, or one-way
-coupled to a frozen gas field computed by another solver.
+ICE (*Integration of a Condensed phase via an Eulerian method*) is an open-source Eulerian solver of a dispersed
+condensed phase — droplets or solid particles — written in modern Fortran, on multi-block structured grids. It
+carries the cloud as a continuum: each cell holds the bulk and number densities of the drops, their velocity,
+temperature and, with a Gaussian closure, their velocity spread. The gas field is read from a file, or passed in
+memory by a coupler. Drag and heat transfer act in every coupled run; radiation, evaporation, combustion and
+solidification are switched on per material.
+
+!!! info "ICE within Hydra"
+    ICE is the Eulerian solver of the dispersed phase in the **Hydra** suite. The pre-processor **ATLAS** writes the
+    boundary, initial and material files ICE reads, and **hydra-MI2** couples it with the gas and with IGLOO
+    ([Hydra Suite](#hydra-suite)).
 
 <div class="grid cards" markdown>
 
@@ -12,7 +18,7 @@ coupled to a frozen gas field computed by another solver.
 
     ---
 
-    Prerequisites, the build script and the CMake options.
+    Build ICE from source — standalone or as a hydra submodule
 
     [:octicons-arrow-right-24: Install ICE](installation.md)
 
@@ -20,82 +26,103 @@ coupled to a frozen gas field computed by another solver.
 
     ---
 
-    Run a shipped case, a few minutes on one thread, and check its result.
+    Run a shipped case, a few minutes on one thread, and check its result
 
-    [:octicons-arrow-right-24: Run the Quick Start](quick-start.md)
+    [:octicons-arrow-right-24: Quick start tutorial](quick-start.md)
 
 </div>
 
-## What ICE solves
+## Scope of This Section
 
-The cloud is described by two fields: the **bulk density** $\rho_p$, the mass of
-particles per unit volume of mixture (kg/m³), and the **number density** $n$, the
-number of particles per m³. The particle radius follows from the two,
+1. **Installation** — prerequisites, the build script and the CMake options, standalone or as a hydra submodule.
+2. **Quick Start** — run one shipped case end to end and check its result.
 
-$$
-R_p = \left(\frac{3}{4\pi}\,\frac{\rho_p}{n\,\rho_{al}}\right)^{1/3},
-$$
+Then the [User Guide](../user/index.md) explains how to set up a case, and [Input Files](../user/input.md) where each
+mode and model is switched on.
 
-where $\rho_{al}$ is the density of the material itself. The size can therefore
-change from one cell to the next with no extra bookkeeping.
+---
 
-Inside a cell, the particle velocities follow one of three **closures**:
+## Hydra Suite
 
-| Closure | Variables | State |
-|---|---|---|
-| **MK** — monokinetic | 6 | $\rho_p,\ u,\ v,\ w,\ T_p,\ n$ |
-| **IG** — isotropic Gaussian | 7 | $\rho_p,\ u,\ v,\ w,\ P,\ T_p,\ n$ |
-| **AG** — anisotropic Gaussian | 12 | $\rho_p,\ u,\ v,\ w,\ P_{11},\ P_{12},\ P_{13},\ P_{22},\ P_{23},\ P_{33},\ T_p,\ n$ |
+**Hydra** composes focused solvers into coupled multi-physics simulations: compressible flows, heat conduction in
+solids, radiation and dispersed phases. Each solver is a library with its own repository, documentation and tests;
+hydra builds them as submodules and runs them through its `figaro` command line.
 
-MK gives every particle of a cell the same velocity. It is the cheapest, but two
-jets that meet cannot cross: they merge into a singular sheet. IG adds a scalar
-velocity dispersion and AG a full dispersion tensor, which is what lets crossing
-jets and sheared clouds be represented. See [Governing Equations](../theory/governing-equations.md).
+| Component | Role |
+|-----------|------|
+| [**ATLAS**](https://github.com/open-hydra/ATLAS) | Pre-processor: grids, initial and boundary conditions, the phase and material tables of every solver |
+| [**MOSE**](https://github.com/open-hydra/MOSE) | Compressible Euler and Navier–Stokes: RANS turbulence, finite-rate chemistry, soot |
+| [**ARES**](https://github.com/open-hydra/ARES) | Real-fluid dynamics |
+| [**FUSS**](https://github.com/open-hydra/FUSS) | Heat conduction in solids, steady and transient |
+| [**GROOT**](https://github.com/open-hydra/GROOT) | Radiative heat transfer |
+| **ICE** | Dispersed condensed phase, Eulerian moment closures — *this package* |
+| [**IGLOO**](https://github.com/open-hydra/IGLOO) | Dispersed condensed phase, Lagrangian parcels |
 
-A run can carry several **families** at once, each with its own closure. They share
-the mesh and the gas field, and do not exchange mass or momentum with each other.
+Hydra links the solvers into coupled executables. Some examples:
 
-## Exchange with the gas
+| Executable | Solvers | Use |
+|------------|---------|-----|
+| `hydra-MF` | MOSE + FUSS | conjugate heat transfer, compressible fluid and solid |
+| `hydra-MI2` | MOSE + ICE + IGLOO | two-phase flow: a compressible gas with Eulerian and Lagrangian dispersed phases |
 
-The source terms are active only when a gas field is given (`INPUT/gas.tec`, or its
-binary and VTK forms). Without one, ICE transports the cloud with no exchange at all.
+A typical workflow:
 
-| Term | What it does |
-|---|---|
-| Drag | Momentum exchange with the gas. Twelve correlations. |
-| Convective heat | Energy exchange through a Nusselt number. Seven correlations. |
-| Radiation | Grey-body exchange with the local gas temperature. |
-| Evaporation | Mass transfer to the gas. Five models, with an optional non-equilibrium interface and a Stefan-blowing correction. |
-| Inside the drop | A uniform temperature or a parabolic profile, and an optional boiling branch above the boiling point. |
-| Solidification | Freezing and melting of the material, with its latent heat. |
-| Combustion | Drops that burn (the direct model, or Beckstead's $d^n$ law) down to an inert residue or out completely; the oxide they make can be born as drops of another family. |
+```mermaid
+flowchart LR
+    atlas["ATLAS<br/>boundary, initial, phase<br/>and material files"]
+    mose["MOSE<br/>the gas field"]
+    ice["ICE"]
+    mi2["hydra-MI2<br/>MOSE + ICE + IGLOO"]
+    atlas -- "INPUT/" --> ice
+    mose -- "gas file: one-way" --> ice
+    atlas -- "INPUT/" --> mi2
+    ice -. "in memory, both ways" .- mi2
+```
 
-The material properties are constants, or tables against temperature in
-`INPUT/part-properties.dat`. Several materials can be carried, each with its own
-models. The correlations are given in [Particle Physics](../theory/physics.md).
+1. **ATLAS** writes `INPUT/part-ic.tec`, `INPUT/part-bc.txt`, `INPUT/part-phase.txt`, `INPUT/part-models.txt` and
+   `INPUT/part-properties.dat`.
+2. **MOSE** (or another gas solver) computes the gas field and writes it as `INPUT/gas.tec`.
+3. **ICE** reads that field as a frozen background and advances the cloud on it: one-way coupling. Without the gas
+   file the cloud moves with no exchange at all.
 
-## Numerical methods
+Inside **hydra-MI2** the gas comes in memory instead, and the cloud gives it back mass, momentum and energy; the
+exchange is described in [Coupling Interface](../development/coupling.md).
 
-| | |
-|-|-|
-| Discretisation | Cell-centred finite volumes on multi-block structured hexahedral grids |
-| Reconstruction | First order, or MUSCL with ten limiters; an optional Jameson shock sensor |
-| Riemann solver | Saurel, Rusanov or HLLE |
-| Dimensions | 1-D, 2-D, axisymmetric or 3-D, from the block dimensions |
-| Time integration | Explicit forward Euler, SSP-RK2 or SSP-RK3 |
-| Time step | Global (time accurate) or per cell (steady state), from a CFL number |
-| Steady-state aids | Implicit residual smoothing and grid sequencing |
-| Parallel runs | OpenMP over the cells of a block, MPI over whole blocks, or both |
+!!! info "Using ICE without ATLAS"
+    ATLAS is the standard way to write the boundary, initial and material files. Without it, every file can be
+    written by hand; the formats are in [Initial Conditions](../user/initial-conditions.md) and
+    [Boundary Conditions](../user/boundary-conditions.md).
 
-The number of MPI ranks does not change the answer: a run on four ranks is
-bit-for-bit identical to a serial one. See [Spatial Discretization](../theory/numerics.md),
-[Time Integration](../theory/time-integration.md) and [Parallel Execution](../user/parallel.md).
+---
 
-## The inputs of a case
+## Capabilities
 
-ICE reads a mesh with its initial state, a table of boundary conditions and
-`input.ini`. [ATLAS](https://github.com/open-hydra/ATLAS), the Hydra pre-processor,
-writes the boundary table, the initial field and the material tables. All of them
-are plain text, and can also be written by hand: see
-[Initial Conditions](../user/initial-conditions.md) and
-[Boundary Conditions](../user/boundary-conditions.md).
+| Feature | Details |
+|---------|---------|
+| **Closures** | MK, monokinetic (6 variables); IG, isotropic Gaussian (7); AG, anisotropic Gaussian (12), which lets crossing jets cross ([Families & Closures](../user/families.md)) |
+| **Families** | Several at once, each with its own closure and material; a polydisperse cloud is one family per size |
+| **Drag** | 12 correlations: Newton, Stokes, Schlichting, Schiller–Naumann, Wen–Yu, Putnam, Clift–Gauvin, Morsi–Alexander (incompressible); Carlson–Hoglund, Henderson, Crowe, Hermsen (compressible) |
+| **Heat transfer** | Seven Nusselt correlations: Stokes, Ranz–Marshall, Kavanau–Drake, JAXA1–JAXA4; grey-body radiation with the gas temperature (emissivity per material) |
+| **Evaporation** | d²-law, CEM, CEM-B, Abramzon–Sirignano and Tonini–Cossali; equilibrium or Langmuir–Knudsen interface; Stefan-blowing reduction; conduction inside the drop and boiling |
+| **Combustion** | The direct model, or Beckstead's $d^n$ law with ignition; a residue or a burn-out; the oxide can be born as drops of another family |
+| **Solidification** | Supercooling, recalescence, freezing and melting with the heat of fusion |
+| **Coupling** | One interface for a coupler: the gas state, the exchange, the removed and born mass ([Coupling Interface](../development/coupling.md)) |
+| **Discretisation** | Cell-centred finite volumes; first order or MUSCL with ten limiters, a Jameson shock sensor; Saurel, Rusanov or HLLE fluxes; 1-D, 2-D, axisymmetric or 3-D |
+| **Time integration** | Forward Euler, SSP-RK2 or SSP-RK3; a global step (time accurate) or one per cell (steady), with residual smoothing and grid sequencing |
+| **Parallelism** | OpenMP over the cells of a block, MPI over whole blocks, or both; the answer does not depend on the rank count |
+| **I/O** | Tecplot ASCII/binary and VTK through ORION; solution, residual history and probes |
+
+---
+
+## Dependencies
+
+ICE is built on two companion libraries. In a standalone build FiNeR is a Git submodule and ORION a release the
+configure checks out; as a hydra submodule it shares them with the suite.
+
+| Library | Role |
+|---------|------|
+| [ORION](https://github.com/MarcoGrossi92/ORION) | Multi-format I/O (Tecplot ASCII/binary, VTK) |
+| [FiNeR](https://github.com/szaghi/FiNeR) | INI configuration file parser |
+
+Optional: **OpenMP** (threads over the cells of a block), **MPI** (ranks over whole blocks, hybrid with OpenMP),
+**TecIO** (Tecplot binary output, pulled in by ORION).

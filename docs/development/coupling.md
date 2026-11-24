@@ -149,4 +149,4 @@ ICE's developers can find the routes in these fields of each family, `cond_phase
 | `births_ext` | the birth rates a coupler set, as packets | `add_birth_rate` | `add_births` |
 | `births_gen` | steady runs: the birth rates of ICE's own generated mass | `gen_birth` | `add_births` |
 
-The physics behind these routes is in [Particle Physics](../theory/physics.md#generated-mass).
+The physics behind these routes is in [Generated mass](../theory/combustion.md#generated-mass).

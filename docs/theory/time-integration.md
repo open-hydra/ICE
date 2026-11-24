@@ -188,5 +188,5 @@ from fine to coarse during the solve, and it does not speed up convergence on th
   grid, fields, time and iteration count.
 - A restart resumes on the level of the solution it reads ([Restarting](../user/using.md#restarting)). The solution
   file is written on the finest level, so a restart from it does not run the coarse levels again.
-- Each level is a complete grid with its own metrics, its own [boundary table](../user/input.md#grid-levels) and,
+- Each level is a complete grid with its own metrics, its own [boundary table](../user/numerics.md#grid-levels) and,
   under MPI, its own halo schedule. Block ownership is decided once on the fine grid and kept on every level.

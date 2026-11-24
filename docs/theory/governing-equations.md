@@ -133,7 +133,7 @@ $\rho_p < 10^{-25}$, and the density floor then overwrites the whole tensor.
 In all three closures the particle temperature enters through the internal energy per
 unit mass $e(T_p)$ of the condensed material. With a constant specific heat $c_s$, the
 `specific-heat` of `[ICE-Physics]` or a constant `Cp` column of the
-[property table](../user/initial-conditions.md#property-table), it is $e = c_s T_p$, and
+[property table](../user/properties.md#the-property-table), it is $e = c_s T_p$, and
 $T_p$ follows from the energy variable in one division. With a `Cp` column that varies, it
 is the table's enthalpy less the value its first segment extrapolates to at 0 K,
 
@@ -150,7 +150,7 @@ temperature near zero, as it does with a constant $c_s$.
 
 A family of a solidifying material carries $\rho_p f$ and $\rho_p \chi$ after $n_p$, the frozen and nucleated
 fractions, and its energy per unit mass includes the latent part, $e = c_l T_p - f\,L(T_p)$; $T_p$, $f$ and $\chi$
-follow from the energy and the transported $\chi$ (see [Solidification](physics.md#solidification)).
+follow from the energy and the transported $\chi$ (see [Solidification](solidification.md#solidification)).
 
 ## Source terms
 
@@ -166,7 +166,7 @@ $\mathbf{S}$ collects, for every closure,
 The latent heat of fusion of a solidifying material has no term of its own: it is inside the energy, and it reaches
 the gas through the convective exchange.
 
-The expressions are in [Particle Physics](physics.md). All of them vanish when no gas
+The expressions are in the physics pages ([Drag & Heat Transfer](drag-heat.md), [Evaporation](evaporation.md), [Combustion](combustion.md)). All of them vanish when no gas
 field is present, which is the 0-way coupled mode.
 
 ## Several families
@@ -175,4 +175,4 @@ Each family has its own closure. The families are advanced one after another ins
 mesh and against the same gas field. A polydisperse cloud is represented by giving each size its own family.
 
 The families do not interact, with one exception: the oxide a burning family generates can be born in another family
-([Generated mass](physics.md#generated-mass)).
+([Generated mass](combustion.md#generated-mass)).

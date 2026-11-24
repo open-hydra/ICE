@@ -42,7 +42,7 @@ cloud is a continuum, transported on its own or through a frozen gas field.</p>
 <div class="ice-tools" markdown>
 
 [:material-scatter-plot-outline: <b>Three closures</b> <i>Monokinetic, isotropic and anisotropic Gaussian: the anisotropic one lets crossing jets pass through each other.</i>](theory/governing-equations.md){ .ice-tool }
-[:material-thermometer-water: <b>Exchange with the gas</b> <i>Drag, heat, radiation, evaporation and boiling, solidification and combustion.</i>](theory/physics.md){ .ice-tool }
+[:material-thermometer-water: <b>Exchange with the gas</b> <i>Drag, heat, radiation, evaporation and boiling, solidification and combustion.</i>](theory/drag-heat.md){ .ice-tool }
 [:material-grid: <b>Multi-block grids</b> <i>1-D, 2-D, axisymmetric or 3-D, joined by connections, periodic faces or overlapping chimera blocks.</i>](user/boundary-conditions.md){ .ice-tool }
 [:material-chart-bell-curve: <b>Robust numerics</b> <i>Finite volumes with MUSCL reconstruction, three Riemann solvers and Runge-Kutta time stepping.</i>](theory/numerics.md){ .ice-tool }
 [:material-chip: <b>Parallel runs</b> <i>OpenMP and MPI, alone or together; the answer does not depend on the number of ranks.</i>](user/parallel.md){ .ice-tool }

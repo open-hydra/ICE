@@ -102,7 +102,7 @@ a symmetric flow stays symmetric to round-off.
 
 A family of a solidifying material reconstructs its liquid-branch temperature $T_\ell = e/c_l$ instead of $T_p$,
 because $T_\ell$ is continuous where the content nucleates. Each face then takes its $T_p$ and $f$ from its $T_\ell$
-and $\chi$, by the rule of a cell ([Solidification](physics.md#solidification)). A liquid face is unchanged, and a
+and $\chi$, by the rule of a cell ([Solidification](solidification.md#solidification)). A liquid face is unchanged, and a
 cold solid, whose $T_\ell$ is negative, gets its physical temperature back.
 
 ### Limiters

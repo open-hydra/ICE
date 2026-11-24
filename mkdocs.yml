@@ -108,17 +108,25 @@ nav:
     - user/index.md
     - Using ICE: user/using.md
     - Parallel Execution: user/parallel.md
-    - Input File: user/input.md
-    - Input Parameters: user/registry.md
+    - Input Files: user/input.md
+    - Run Settings: user/general.md
+    - Families & Closures: user/families.md
+    - Materials & Models: user/models.md
+    - Material Properties: user/properties.md
+    - Numerics: user/numerics.md
     - Initial Conditions: user/initial-conditions.md
     - Boundary Conditions: user/boundary-conditions.md
+    - Parameter Registry: user/registry.md
 
   - Theoretical Guide:
     - theory/index.md
     - Governing Equations: theory/governing-equations.md
     - Spatial Discretization: theory/numerics.md
     - Time Integration: theory/time-integration.md
-    - Particle Physics: theory/physics.md
+    - Drag & Heat Transfer: theory/drag-heat.md
+    - Evaporation: theory/evaporation.md
+    - Solidification: theory/solidification.md
+    - Combustion: theory/combustion.md
 
   - Verification & Validation:
     - vv/index.md
