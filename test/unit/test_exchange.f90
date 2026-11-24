@@ -11,13 +11,22 @@
 !>   G3 take_removed: the record of the cell, with the heat of reaction of all of its mass, and the record emptied
 !>   B1 birth_packet: m, m u, m (cp T + |u|^2/2), m / (pi/6 rho d^3)
 !>   B2 add_birth: the cell's conservative state gains the packet (to round-off), the other cell untouched
-!>   B3 add_birth_rate after clear_birth_rates, twice: the stage's residual gains the sum times dt in slots 1:4, 5
+!>   B3 add_birth_rate after clear_import_rates, twice: the stage's residual gains the sum times dt in slots 1:4, 5
 !>      and 6; a frozen slot stays 0; a family with no births is untouched, bit for bit
 !>   B4 birth_family: the family of an inert MK material; none for a burning material, an IG family, a material with
 !>      two families or an unknown name, each with its reason
 !>   B5 set_generation: taken for the burning material; refused, with nothing set, for an inert one or without d-gen
 !>   B6 gen_birth, time-accurate: the generation family gains dt times the burning family's gen_due, which is cleared
 !>   B7 gen_birth, steady: the generation family's births_gen is the burning family's gen_due, which is cleared
+!>   A1 absorption_packet: m, m u, m (cp T + |u|^2/2)
+!>   A2 add_absorption_rate, MK: the imports gain the packet in slots 1:5, none in the number; the residual gains them
+!>      times dt
+!>   A3 add_absorption_rate, IG: the second moment (slot 5) gains m |u|^2, the energy is slot 6
+!>   A4 add_absorption_rate refuses a mass that is not positive, a cell with no drops, a family that solidifies
+!>   R1 add_removal_rate: taken is the fraction m / rho of the cell's conservative state; the imports lose it; the
+!>      drops left keep their velocity, temperature and mass per drop
+!>   R2 add_removal_rate refuses a mass that is not positive and a cell with no drops
+!>   R3 bound_removal_dt, steady: the cell steps no further than its mass over the rate removed; others untouched
 !> Prints every assertion and exits non-zero if any failed.
 program test_exchange
   use, intrinsic :: iso_fortran_env, only: R8 => real64
@@ -25,7 +34,8 @@ program test_exchange
   use ICE_Advanced_Types_m, only: ICE_domain_type
   use ICE_Config_Types_m,   only: obj_condensed, obj_time_scheme
   use ICE_Mod_Freeze,       only: nfrozen, frozen
-  use ICE_Lib_MK,           only: prim_2_cons_MK
+  use ICE_Lib_MK,           only: prim_2_cons_MK, cons_2_prim_MK
+  use ICE_Mod_dt,           only: bound_removal_dt
   use ICE_Lib_Residual,     only: add_births
   use ICE_Mod_Sources,      only: gen_birth
   use ICE_Mod_Exchange
@@ -34,7 +44,7 @@ program test_exchange
   type(ICE_domain_type) :: grid
   type(exchange_t)      :: x
   character(len=:), allocatable :: why
-  real(R8) :: pk(6), pk2(6), c0(6), c1(6), r0(6,2,1,1), r1(7,2,1,1), dt
+  real(R8) :: pk(6), pk2(6), c0(6), c1(6), r0(6,2,1,1), r1(7,2,1,1), dt, pa(5), tk(6), q(6), f
   integer  :: nfail = 0, p
 
   call setup()
@@ -92,7 +102,7 @@ program test_exchange
   r0 = grid%blk(1)%cond_phase(2)%residual
   r1 = grid%blk(1)%cond_phase(3)%residual
   pk2 = [1._R8, 2._R8, 3._R8, 4._R8, 5._R8, 6._R8]
-  call clear_birth_rates(grid, 2)
+  call clear_import_rates(grid, 2)
   call add_birth_rate(grid%blk(1), 2, 1, 1, 1, pk)
   call add_birth_rate(grid%blk(1), 2, 1, 1, 1, pk2)
   call add_births(grid, 2)
@@ -110,8 +120,8 @@ program test_exchange
   call add_births(grid, 2)
   call check(grid%blk(1)%cond_phase(2)%residual(3,1,1,1) == 0._R8, 'B3 a frozen slot stays 0')
   nfrozen = 0
-  call clear_birth_rates(grid, 2)
-  call check(all(grid%blk(1)%cond_phase(2)%births_ext == 0._R8), 'B3 clear_birth_rates clears')
+  call clear_import_rates(grid, 2)
+  call check(all(grid%blk(1)%cond_phase(2)%imports == 0._R8), 'B3 clear_import_rates clears')
 
   ! B4: where a birth goes
   call check(birth_family('B', why) == 2 .and. why == '', 'B4 the family of an inert MK material')
@@ -153,6 +163,69 @@ program test_exchange
   call check(all(grid%blk(1)%cond_phase(2)%births_gen(:,2,1,1) == pk) .and. &
              all(grid%blk(1)%cond_phase(2)%births_gen(:,1,1,1) == 0._R8), 'B7 steady: the births in force')
   call check(all(grid%blk(1)%cond_phase(1)%gen_due == 0._R8), 'B7 gen_due cleared')
+
+  ! A1: an absorbed mass
+  pa = absorption_packet(2, 2._R8, [3._R8, 0._R8, 4._R8], 1000._R8)
+  call check(pa(1) == 2._R8 .and. all(pa(2:4) == [6._R8, 0._R8, 8._R8]) .and. &
+             near1(pa(5), 2._R8*(CP*1000._R8 + 12.5_R8)), 'A1 absorption_packet: mass, momentum, energy')
+
+  ! A2: absorbed by the MK family 2 in cell 1
+  call clear_import_rates(grid, 2)
+  call add_absorption_rate(grid%blk(1), 2, 1, 1, 1, pa, why)
+  call check(why == '' .and. all(grid%blk(1)%cond_phase(2)%imports(:,1,1,1) == [pa, 0._R8]), &
+             'A2 MK: the imports gain the packet, no drops')
+  grid%blk(1)%cond_phase(2)%residual = r0
+  call add_births(grid, 2)
+  call check(all(abs(grid%blk(1)%cond_phase(2)%residual(:,1,1,1) - (r0(:,1,1,1) + [pa, 0._R8]*dt)) <= &
+                 4._R8*epsilon(1._R8)*abs(r0(:,1,1,1) + [pa, 0._R8]*dt)), 'A2 MK: the residual gains them times dt')
+
+  ! A3: absorbed by the IG family 3, once its cell holds drops
+  call clear_import_rates(grid, 3)
+  call add_absorption_rate(grid%blk(1), 3, 1, 1, 1, pa, why)
+  call check(len(why) > 0 .and. all(grid%blk(1)%cond_phase(3)%imports == 0._R8), 'A4 refused, no drops: '//why)
+  grid%blk(1)%cond_phase(3)%prim(1,1,1,1) = 0.1_R8
+  call add_absorption_rate(grid%blk(1), 3, 1, 1, 1, pa, why)
+  call check(why == '' .and. all(grid%blk(1)%cond_phase(3)%imports(:,1,1,1) == &
+                                 [pa(1:4), pa(1)*25._R8, pa(5), 0._R8]), 'A3 IG: the second moment gains m |u|^2')
+
+  ! A4: the other refusals
+  call add_absorption_rate(grid%blk(1), 2, 2, 1, 1, [0._R8, 0._R8, 0._R8, 0._R8, 0._R8], why)
+  call check(len(why) > 0 .and. all(grid%blk(1)%cond_phase(2)%imports(:,2,1,1) == 0._R8), &
+             'A4 refused, no mass: '//why)
+  solid_of(2) = .true.
+  call add_absorption_rate(grid%blk(1), 2, 2, 1, 1, pa, why)
+  call check(len(why) > 0 .and. all(grid%blk(1)%cond_phase(2)%imports(:,2,1,1) == 0._R8), &
+             'A4 refused, solidifies: '//why)
+  solid_of(2) = .false.
+
+  ! R1: 0.02 kg/(m^3 s) taken out of cell 2 of family 2
+  call clear_import_rates(grid, 2)
+  grid%blk(1)%cond_phase(2)%prim(:,2,1,1) = drops()
+  c0 = prim_2_cons_MK(drops(), obj_condensed(2))
+  f  = 0.02_R8/0.1_R8
+  call add_removal_rate(grid%blk(1), 2, 2, 1, 1, 0.02_R8, tk, why)
+  call check(why == '' .and. all(abs(tk - f*c0) <= 4._R8*epsilon(1._R8)*abs(f*c0)), &
+             'R1 taken: the fraction m / rho of the state')
+  call check(all(grid%blk(1)%cond_phase(2)%imports(:,2,1,1) == -tk) .and. &
+             all(grid%blk(1)%cond_phase(2)%imports(:,1,1,1) == 0._R8), 'R1 the imports lose it, in that cell only')
+  q = cons_2_prim_MK(c0 + 0.5_R8*grid%blk(1)%cond_phase(2)%imports(:,2,1,1), obj_condensed(2))
+  call check(all(abs(q(2:5) - [5._R8, 1._R8, 0._R8, 1500._R8]) <= 1.e-12_R8*[5._R8, 1._R8, 1._R8, 1500._R8]) .and. &
+             abs(q(1)/q(6) - 1.e-13_R8) <= 1.e-12_R8*1.e-13_R8, &
+             'R1 the drops left keep velocity, temperature and mass per drop')
+
+  ! R2: refusals
+  call add_removal_rate(grid%blk(1), 2, 1, 1, 1, 0._R8, tk, why)
+  call check(len(why) > 0 .and. all(tk == 0._R8), 'R2 refused, no mass: '//why)
+  grid%blk(1)%cond_phase(4)%prim(1,1,1,1) = 0._R8
+  call clear_import_rates(grid, 4)
+  call add_removal_rate(grid%blk(1), 4, 1, 1, 1, 0.01_R8, tk, why)
+  call check(len(why) > 0 .and. all(grid%blk(1)%cond_phase(4)%imports == 0._R8), 'R2 refused, no drops: '//why)
+
+  ! R3: the step of the cell removed from, steady
+  grid%blk(1)%cond_phase(2)%dt = 10._R8
+  call bound_removal_dt(2, grid)
+  call check(near1(grid%blk(1)%cond_phase(2)%dt(2,1,1), 0.1_R8/0.02_R8) .and. &
+             grid%blk(1)%cond_phase(2)%dt(1,1,1) == 10._R8, 'R3 the step bound: rho over the rate removed')
 
   if (nfail > 0) then
     write(*,'(A,I0,A)') 'test_exchange: ', nfail, ' FAILED'

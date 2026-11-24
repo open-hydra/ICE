@@ -42,8 +42,12 @@ change an input or a build.
   state a coupler sets (`set_gas`); what a family gives the gas over its last step (`exchange_rate`) and what its
   burn-out removed (`take_removed`), each as the gas's mass, momentum and energy, the generated mass and the heat of
   reaction; where mass is born (`set_generation`, `birth_family`); births from any solver, at once (`add_birth`) or
-  as rates in force (`add_birth_rate`, `clear_birth_rates`), each a packet of mass, momentum, energy and number
+  as rates in force (`add_birth_rate`, `clear_import_rates`), each a packet of mass, momentum, energy and number
   (`birth_packet`). ICE's own generated mass is born through the same calls.
+- Absorption and removal for a coupler (`ICE_Mod_Exchange`): `add_absorption_rate` puts a mass into the drops of a
+  cell without adding drops (`absorption_packet`; the `IG` and `AG` velocity moments included);
+  `add_removal_rate` takes a mass out of a cell as whole drops at its state and returns what left. Both are rates in
+  force until `clear_import_rates`, as births are, and a cell a removal empties steps no further than empties it.
 - Steady coupled runs: a burning cell steps at most half its bulk density over its burn. The empty cells a source
   fills or a burning family empties step no further than what fills them (time-accurate: the global step at most
   the source's).

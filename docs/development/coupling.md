@@ -19,8 +19,13 @@ flowchart LR
     burn -- "exchange_rate<br/>rates over the last step" --> gas
     burn -- "take_removed<br/>amounts left by the burn-out" --> gas
     burn -- "generated mass,<br/>born at the end of the step" --> oxide
-    other -- "add_birth, add_birth_rate<br/>birth packets" --> oxide
+    other -- "add_birth, add_birth_rate<br/>new drops" --> oxide
+    gas -- "add_absorption_rate<br/>mass into the drops" --> burn
+    oxide -- "add_removal_rate<br/>whole drops out" --> other
 ```
+
+Any family can take any of the three import routes (births, absorption, removal) within the limits below; the chart
+shows one of each.
 
 | Route | Direction | Call | What travels |
 |---|---|---|---|
@@ -28,12 +33,14 @@ flowchart LR
 | Exchange | ICE to gas | `exchange_rate` | mass, momentum and energy per unit volume and time, over the family's last step |
 | Removals | ICE to gas | `take_removed` | mass, momentum and energy per unit volume that the burn-out removed at once |
 | Births | any solver to ICE | `add_birth`, `add_birth_rate` | a birth packet: mass, momentum, energy and number of drops |
+| Absorption | any solver to ICE | `add_absorption_rate` | an absorption packet: mass, momentum and energy, no drops |
+| Removal | ICE to any solver | `add_removal_rate` | a mass taken out as whole drops; the call returns what leaves |
 
 Two more calls declare, at set-up, where mass is born: `set_generation` (what a burning material generates) and
 `birth_family` (the family in which a mass of a given material is born).
 
 Every call that takes a cell, `(blk, p, i, j, k)`, reads or writes only that cell of family `p`. These calls are safe
-inside a parallel loop over cells. `clear_birth_rates` works on every block of the rank, so call it outside parallel
+inside a parallel loop over cells. `clear_import_rates` works on every block of the rank, so call it outside parallel
 regions.
 
 ## Set-up
@@ -125,7 +132,7 @@ There are two ways to hand a packet to ICE:
 | Call | Kind | When |
 |---|---|---|
 | `add_birth` | an amount, born at once: added to the cell's state | both the sender and ICE are time-accurate |
-| `add_birth_rate` | a rate, in force over every stage of the family's next steps, until `clear_birth_rates` | either the sender or ICE is steady |
+| `add_birth_rate` | a rate, in force over every stage of the family's next steps, until `clear_import_rates` | either the sender or ICE is steady |
 
 A steady run gives each cell its own pseudo-time step. A mass handed at once would then depend on those steps, and so
 would the fixed point. A rate in force does not.
@@ -134,6 +141,27 @@ ICE's own generated mass follows the same rule. In each stage of a burning famil
 to the step's sum, with the stage weights of the update. At the end of the step, after every family, the sum is born
 in the generation family. A time-accurate run adds it at once (`add_birth`). A steady run makes it the generation
 family's births in force over its next step.
+
+## Absorption and removal
+
+Mass can also join the drops already in a cell, or leave them, without a birth. Both are rates per unit volume and
+time, in force over every stage of the family's next steps until `clear_import_rates`, as births in force are. Neither
+reaches the gas through `exchange_rate`: the coupler takes the absorbed mass from its donor and gives the removed
+mass to its receiver.
+
+| Call | What it does | Refused when |
+|---|---|---|
+| `add_absorption_rate(blk, p, i, j, k, pk, why)` | the drops of the cell take in the packet `pk` (`absorption_packet(p, m, u, T)`): mass, momentum and energy grow, the number of drops does not | the mass is not positive, the cell holds no drops, the family solidifies |
+| `add_removal_rate(blk, p, i, j, k, m, taken, why)` | the mass `m` leaves the cell as whole drops at the cell's state; `taken` returns what leaves as a birth packet | the mass is not positive, the cell holds no drops |
+
+An absorbed mass arrives with one velocity $\mathbf u$. The momentum gains $m\,\mathbf u$ and the energy
+$m\,(e(T) + \tfrac12|\mathbf u|^2)$. A closure that carries velocity moments also gains the moment of that mass:
+$m\,|\mathbf u|^2$ for `IG`, $m\,\mathbf u\otimes\mathbf u$ for `AG`.
+
+A removal takes the same fraction $f = m/\rho_b$ of every slot of the cell's conservative state, with $\rho_b$ the
+cell's bulk density when the call is made. The drops left keep their diameter, velocity and temperature. The rate is
+fixed while it is in force. ICE steps such a cell no further than the step that would empty it. The coupler keeps the
+rate, times the time it stays in force, below what the cell holds, and sets it again at each coupling step.
 
 ## Where it is stored
 
@@ -146,7 +174,7 @@ ICE's developers can find the routes in these fields of each family, `cond_phase
 | `gen_rate` | the generated mass of the last step: mass, momentum, energy | `gen_accumulate` | `exchange_rate` |
 | `gen_due` | the same as a birth packet, still to be born | `gen_accumulate`, `burnout_switch` | `gen_birth` |
 | `removed` | the burn-out's record: the gas's mass, momentum, energy, then the generated mass | `burnout_switch` | `take_removed` |
-| `births_ext` | the birth rates a coupler set, as packets | `add_birth_rate` | `add_births` |
+| `imports` | the births, absorptions and removals a coupler set, in the family's conservative slots | `add_birth_rate`, `add_absorption_rate`, `add_removal_rate` | `add_births` |
 | `births_gen` | steady runs: the birth rates of ICE's own generated mass | `gen_birth` | `add_births` |
 
 The physics behind these routes is in [Generated mass](../theory/combustion.md#generated-mass).

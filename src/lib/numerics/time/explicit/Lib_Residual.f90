@@ -156,11 +156,11 @@ contains
   end subroutine compute_residual_
 
 
-  !> The births in force on family p, added to the residual of the stage over the family's own dt, as its source
-  !> is: those a coupler set (births_ext, add_birth_rate) and, in a steady run, those of the mass ICE's own burning
-  !> families generated (births_gen, gen_birth). Each is a birth packet per unit volume and time, [mass, momentum (3),
-  !> energy, number], which goes to slots 1:4, nbase-1 and nbase. The frozen slots stay zero. Neither is the family's
-  !> source, so neither reaches the gas.
+  !> What is in force on family p, added to the residual of the stage over the family's own dt, as its source is:
+  !> what a coupler set (imports: births, absorptions, removals, in the family's conservative slots) and, in a steady
+  !> run, the births of the mass ICE's own burning families generated (births_gen, birth packets [mass, momentum (3),
+  !> energy, number] into slots 1:4, nbase-1 and nbase). The frozen slots stay zero. Neither is the family's source,
+  !> so neither reaches the gas.
   subroutine add_births(grid, p)
     use ICE_Mod_Freeze, only: nfrozen, frozen
     implicit none
@@ -172,36 +172,40 @@ contains
     if (allocated(nfrozen)) nf = nfrozen(p)
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
-      if (allocated(grid%blk(b)%cond_phase(p)%births_ext)) &
-        call add_packets(grid%blk(b), grid%blk(b)%cond_phase(p)%births_ext)
-      if (allocated(grid%blk(b)%cond_phase(p)%births_gen)) &
-        call add_packets(grid%blk(b), grid%blk(b)%cond_phase(p)%births_gen)
+      call add_cells(grid%blk(b)%cond_phase(p), grid%blk(b)%dim)
     enddo
 
   contains
 
-    !> Adds the packets pk (6, cells) of block blk times the cells' dt to family p's residual
-    subroutine add_packets(blk, pk)
-      type(ICE_block_type), intent(inout) :: blk
-      real(kind=R8),        intent(in)    :: pk(:,:,:,:)
+    !> Adds what is in force on the cells of cp, the family's state in one block of dimensions dims, times their dt
+    subroutine add_cells(cp, dims)
+      type(ICE_cond_phase_type), intent(inout) :: cp
+      integer(kind=I4),          intent(in)    :: dims(:)
       integer(kind=I4) :: i, j, k, ien, inum
       real(kind=R8)    :: dt
+      logical          :: ext, gen
 
+      ext = allocated(cp%imports)
+      gen = allocated(cp%births_gen)
+      if (.not. (ext .or. gen)) return
       ! the slots of the energy and of the number
       ien  = nbase(p) - 1
       inum = nbase(p)
       !$OMP PARALLEL DO COLLAPSE (3) PRIVATE(dt) schedule(runtime)
-      do k = 1, blk%dim(3)
-      do j = 1, blk%dim(2)
-      do i = 1, blk%dim(1)
-        dt = blk%cond_phase(p)%dt(i,j,k)
-        blk%cond_phase(p)%residual(1:4,i,j,k)  = blk%cond_phase(p)%residual(1:4,i,j,k)  + pk(1:4,i,j,k)*dt
-        blk%cond_phase(p)%residual(ien,i,j,k)  = blk%cond_phase(p)%residual(ien,i,j,k)  + pk(5,i,j,k)*dt
-        blk%cond_phase(p)%residual(inum,i,j,k) = blk%cond_phase(p)%residual(inum,i,j,k) + pk(6,i,j,k)*dt
-        if (nf > 0) blk%cond_phase(p)%residual(frozen(1:nf,p),i,j,k) = 0._R8
+      do k = 1, dims(3)
+      do j = 1, dims(2)
+      do i = 1, dims(1)
+        dt = cp%dt(i,j,k)
+        if (ext) cp%residual(:,i,j,k) = cp%residual(:,i,j,k) + cp%imports(:,i,j,k)*dt
+        if (gen) then
+          cp%residual(1:4,i,j,k)  = cp%residual(1:4,i,j,k)  + cp%births_gen(1:4,i,j,k)*dt
+          cp%residual(ien,i,j,k)  = cp%residual(ien,i,j,k)  + cp%births_gen(5,i,j,k)*dt
+          cp%residual(inum,i,j,k) = cp%residual(inum,i,j,k) + cp%births_gen(6,i,j,k)*dt
+        endif
+        if (nf > 0) cp%residual(frozen(1:nf,p),i,j,k) = 0._R8
       enddo ; enddo ; enddo
       !$OMP END PARALLEL DO
-    end subroutine add_packets
+    end subroutine add_cells
 
   end subroutine add_births
 

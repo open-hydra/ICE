@@ -4,7 +4,7 @@ module ICE_Mod_dt
 
   implicit none
   private
-  public :: compute_dt, set_dt_global, bound_empty_dt
+  public :: compute_dt, set_dt_global, bound_empty_dt, bound_removal_dt
 
 contains
 
@@ -116,7 +116,7 @@ contains
 
 
   !> The step of the cells a family does not occupy (bulk density at or below rho_empty) where births fill them (the
-  !> births in force, births_gen and births_ext, in any cell) or where the family burns
+  !> births in force, births_gen and the coupler's imports, in any cell) or where the family burns
   !> (empties: its drops burn down to ICE's empty state and its flux fills the cells beyond). Their own state bounds
   !> nothing (velocity ~0, no relaxation time), but the source fills them in the first stage of this step, at its own
   !> velocity, or the cells it fills fill them, and the later stages and the reconstruction move that content with the
@@ -151,7 +151,7 @@ contains
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
       any_src = any_src .or. allocated(grid%blk(b)%cond_phase(p)%births_gen) &
-                        .or. allocated(grid%blk(b)%cond_phase(p)%births_ext)
+                        .or. allocated(grid%blk(b)%cond_phase(p)%imports)
     enddo
     if (.not. (filled .or. any_src)) return
     floor_dt = huge(floor_dt)
@@ -166,7 +166,7 @@ contains
       do i = 1, grid%blk(b)%dim(1)
         s = 0._R8
         if (allocated(cp%births_gen)) s = s + cp%births_gen(1:4,i,j,k)
-        if (allocated(cp%births_ext)) s = s + cp%births_ext(1:4,i,j,k)
+        if (allocated(cp%imports))    s = s + cp%imports(1:4,i,j,k)
         if (s(1) > 0._R8) filled = .true.
         if (cp%prim(1,i,j,k) > rho_empty) then
           floor_dt = min(floor_dt, cp%dt(i,j,k))
@@ -208,6 +208,38 @@ contains
     enddo
 
   end subroutine bound_empty_dt
+
+
+  !> The step of the cells a coupler takes mass out of (add_removal_rate): no further than the step that takes all
+  !> the cell holds. Steady: each such cell's own step; time-accurate: the global step, before the minimum over the
+  !> ranks. A family with no removal keeps its steps, bit for bit. Outside parallel regions.
+  subroutine bound_removal_dt (p, grid)
+    use ICE_Advanced_Types_m, only: ICE_domain_type
+    use ICE_Config_Types_m,   only: obj_time_scheme
+    implicit none
+    integer(kind=I4),      intent(in)    :: p
+    type(ICE_domain_type), intent(inout) :: grid
+    integer(kind=I4) :: b, i, j, k
+    real(kind=R8)    :: out, dts
+
+    do b = 1, grid%nb
+      if (.not. is_local_block(b)) cycle
+      if (.not. allocated(grid%blk(b)%cond_phase(p)%imports)) cycle
+      do k = 1, grid%blk(b)%dim(3)
+      do j = 1, grid%blk(b)%dim(2)
+      do i = 1, grid%blk(b)%dim(1)
+        out = - grid%blk(b)%cond_phase(p)%imports(1,i,j,k)
+        if (.not. out > 0._R8) cycle
+        dts = grid%blk(b)%cond_phase(p)%prim(1,i,j,k)/out
+        if (obj_time_scheme%time_accurate) then
+          grid%dtglobal = min(grid%dtglobal, dts)
+        else
+          grid%blk(b)%cond_phase(p)%dt(i,j,k) = min(grid%blk(b)%cond_phase(p)%dt(i,j,k), dts)
+        endif
+      enddo ; enddo ; enddo
+    enddo
+
+  end subroutine bound_removal_dt
 
 
   !> The step of a cell, one rule over the directions the mesh resolves:

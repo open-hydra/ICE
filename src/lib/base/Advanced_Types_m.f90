@@ -64,10 +64,11 @@ module ICE_Advanced_Types_m
     ! gen_due: the same as a birth packet, with the number of drops, still to be born in the generation family
     ! at the end of the step (and the generated mass of the step's burn-out)
     real(R8), dimension(:,:,:,:),   allocatable :: gen_rate, gen_due
-    ! The births in force on this family, birth packets per unit volume and time, added to the residual of every
-    ! stage over the family's own step. births_ext: set by a coupler (add_birth_rate), allocated by the first
-    ! clear_birth_rates. births_gen: a steady run, what ICE's own burning families generated in their last step.
-    real(R8), dimension(:,:,:,:),   allocatable :: births_ext, births_gen
+    ! What is added to the residual of every stage over the family's own step, per unit volume and time.
+    ! imports: what a coupler set (births, absorptions, removals; ICE_Mod_Exchange), in the family's conservative
+    ! slots, allocated by the first clear_import_rates. births_gen: a steady run, what ICE's own burning families
+    ! generated in their last step, as birth packets.
+    real(R8), dimension(:,:,:,:),   allocatable :: imports, births_gen
     ! The running weighted sums of source and heat over the stages of a two-way coupled multi-stage step
     real(R8), dimension(:,:,:,:),   allocatable :: source_step
     real(R8), dimension(:,:,:),     allocatable :: heat_step

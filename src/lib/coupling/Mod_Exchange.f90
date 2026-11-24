@@ -6,7 +6,11 @@
 !>   exchange    ICE -> gas     exchange_rate      what a family gives the gas, per unit time, over its last step
 !>   removals    ICE -> gas     take_removed       what the burn-out removed from a cell at once: an amount
 !>   births      any -> ICE     add_birth          a mass born at once in a family, for instance another solver's
-!>                              add_birth_rate     a rate of births, in force until clear_birth_rates
+!>                              add_birth_rate     a rate of births: new drops, of one diameter
+!>   absorption  any -> ICE     add_absorption_rate  a rate of mass the drops of a cell take in: no new drops
+!>   removal     ICE -> any     add_removal_rate     a rate of mass taken out of a cell: whole drops, at their state
+!>
+!> The three rates stay in force over every step of the family until clear_import_rates.
 !>
 !> Two calls at set-up, after ICE's own set-up and before its first step, declare where mass is born:
 !>
@@ -20,7 +24,8 @@
 !> ICE's: the energy e(T) of the material on ICE's datum, plus the kinetic energy, as the conservative state holds
 !> them. A coupler whose gas measures energy from another datum adds its own offsets.
 !>
-!> A birth is described by a packet of six numbers: [mass, momentum (3), energy, number of drops] (birth_packet).
+!> A birth is described by a packet of six numbers: [mass, momentum (3), energy, number of drops] (birth_packet), an
+!> absorbed mass by the first five (absorption_packet).
 module ICE_Mod_Exchange
   use iso_fortran_env, only: I4 => int32, R8 => real64
 
@@ -30,7 +35,8 @@ module ICE_Mod_Exchange
   public :: exchange_t
   public :: set_gas, exchange_rate, take_removed
   public :: set_generation, birth_family
-  public :: birth_packet, add_birth, add_birth_rate, clear_birth_rates
+  public :: birth_packet, add_birth, add_birth_rate
+  public :: absorption_packet, add_absorption_rate, add_removal_rate, clear_import_rates
 
   !> What one family gives out of one cell: per unit volume and time for exchange_rate, per unit volume for
   !> take_removed. The drops lose mass by evaporating or burning. Part of it can be born again as drops of another
@@ -207,10 +213,26 @@ contains
     use ICE_Parameters_m,   only: pi
     use ICE_Global_m,       only: mat_of
     use ICE_Config_Types_m, only: obj_condensed
-    use ICE_Lib_Properties, only: mat_rho, mat_e, mat_cp_const
+    use ICE_Lib_Properties, only: mat_rho
     integer(I4), intent(in) :: p
     real(R8),    intent(in) :: m, u(3), T, d
-    real(R8) :: pk(6), e
+    real(R8) :: pk(6)
+
+    pk(1:5) = absorption_packet(p, m, u, T)
+    pk(6)   = m/(pi/6._R8*mat_rho(obj_condensed(mat_of(p)), T)*d**3)
+
+  end function birth_packet
+
+
+  !> The packet of a mass m that family p absorbs, arriving with velocity u [m/s] at temperature T [K]:
+  !> [m, m u, m (e(T) + |u|^2/2)], with e of the family's material on ICE's datum.
+  pure function absorption_packet(p, m, u, T) result(pk)
+    use ICE_Global_m,       only: mat_of
+    use ICE_Config_Types_m, only: obj_condensed
+    use ICE_Lib_Properties, only: mat_e, mat_cp_const
+    integer(I4), intent(in) :: p
+    real(R8),    intent(in) :: m, u(3), T
+    real(R8) :: pk(5), e
 
     if (obj_condensed(mat_of(p))%cs_varies) then
       e = mat_e(obj_condensed(mat_of(p)), T)
@@ -220,9 +242,8 @@ contains
     pk(1)   = m
     pk(2:4) = m*u
     pk(5)   = m*(e + 0.5_R8*dot_product(u, u))
-    pk(6)   = m/(pi/6._R8*mat_rho(obj_condensed(mat_of(p)), T)*d**3)
 
-  end function birth_packet
+  end function absorption_packet
 
 
   !> A mass born at once in cell (i,j,k) of family p: the packet pk, an amount per unit volume, added to the cell's
@@ -246,27 +267,102 @@ contains
   end subroutine add_birth
 
 
-  !> Adds the packet pk, a rate per unit volume and time, to the births in force in cell (i,j,k) of family p. Every
-  !> stage of the family's steps receives the births in force over its own step, until clear_birth_rates. Call
-  !> clear_birth_rates once first. Writes only that cell.
+  !> Adds the packet pk (birth_packet), a rate per unit volume and time, to the births in force in cell (i,j,k) of
+  !> family p. Call clear_import_rates once first. Writes only that cell.
   subroutine add_birth_rate(blk, p, i, j, k, pk)
     use ICE_Advanced_Types_m, only: ICE_block_type
+    use ICE_Global_m,         only: ncond, nbase
     type(ICE_block_type), intent(inout) :: blk
     integer(I4),          intent(in)    :: p, i, j, k
     real(R8),             intent(in)    :: pk(6)
+    real(R8) :: r(ncond(p))
 
-    if (.not. allocated(blk%cond_phase(p)%births_ext)) then
-      write(*,'(A,I0,A)') ' [ERROR] [ICE::add_birth_rate] family ', p, ': call clear_birth_rates first'
-      error stop 1
-    endif
-    blk%cond_phase(p)%births_ext(:,i,j,k) = blk%cond_phase(p)%births_ext(:,i,j,k) + pk
+    call need_imports(blk, p, 'add_birth_rate')
+    r = 0._R8
+    r(1:4)        = pk(1:4)
+    r(nbase(p)-1) = pk(5)
+    r(nbase(p))   = pk(6)
+    blk%cond_phase(p)%imports(:,i,j,k) = blk%cond_phase(p)%imports(:,i,j,k) + r
 
   end subroutine add_birth_rate
 
 
-  !> Clears the birth rates in force in every cell of family p on this rank (add_birth_rate). Outside parallel regions.
-  subroutine clear_birth_rates(grid, p)
+  !> Adds the packet pk (absorption_packet), a rate per unit volume and time, to the mass the drops of cell (i,j,k) of
+  !> family p take in: their mass, momentum and energy grow, their number does not. The mass arrives with one velocity,
+  !> so a closure with velocity moments (IG, AG) gains its m u u too. why is empty when it is taken, else it says why
+  !> not, and nothing is added. Call clear_import_rates once first. Writes only that cell.
+  subroutine add_absorption_rate(blk, p, i, j, k, pk, why)
+    use ICE_Advanced_Types_m, only: ICE_block_type
+    use ICE_Global_m,         only: ncond, nbase, solid_of, rho_empty
+    use ICE_Config_Types_m,   only: obj_time_scheme
+    type(ICE_block_type),          intent(inout) :: blk
+    integer(I4),                   intent(in)    :: p, i, j, k
+    real(R8),                      intent(in)    :: pk(5)
+    character(len=:), allocatable, intent(out)   :: why
+    real(R8) :: u(3), r(ncond(p))
+
+    why = ''
+    if (.not. pk(1) > 0._R8) then
+      why = 'the mass absorbed must be positive'
+    elseif (solid_of(p)) then
+      why = 'the family solidifies: an absorbed mass would change its solid fraction'
+    elseif (.not. blk%cond_phase(p)%prim(1,i,j,k) > rho_empty) then
+      why = 'the cell holds no drops to take the mass in'
+    endif
+    if (len(why) > 0) return
+    call need_imports(blk, p, 'add_absorption_rate')
+    u = pk(2:4)/pk(1)
+    r = 0._R8
+    r(1:4)        = pk(1:4)
+    r(nbase(p)-1) = pk(5)
+    select case (trim(obj_time_scheme%model(p)))
+    case ('IG'); r(5)    = pk(1)*dot_product(u, u)
+    case ('AG'); r(5:10) = pk(1)*[u(1)*u, u(2)*u(2:3), u(3)*u(3)]
+    end select
+    blk%cond_phase(p)%imports(:,i,j,k) = blk%cond_phase(p)%imports(:,i,j,k) + r
+
+  end subroutine add_absorption_rate
+
+
+  !> Takes a mass m, a rate per unit volume and time, out of cell (i,j,k) of family p: whole drops at the cell's
+  !> state, so every slot of the conservative state loses the same fraction and the drops left keep their diameter,
+  !> velocity and temperature. taken is what leaves, as a birth packet [mass, momentum (3), energy, number], for the
+  !> coupler to hand on. The rate is fixed over the steps it stays in force: ICE steps a cell no further than empties
+  !> it, and the coupler keeps the rate times the time it stays in force below what the cell holds. why is empty when
+  !> it is taken, else it says why not, and nothing is taken. Call clear_import_rates once first. Writes only that cell.
+  subroutine add_removal_rate(blk, p, i, j, k, m, taken, why)
+    use ICE_Advanced_Types_m, only: ICE_block_type
+    use ICE_Global_m,         only: ncond, nbase, mat_of, rho_empty
+    use ICE_Config_Types_m,   only: obj_condensed
+    use ICE_Lib_Model,        only: model_prim_2_cons
+    type(ICE_block_type),          intent(inout) :: blk
+    integer(I4),                   intent(in)    :: p, i, j, k
+    real(R8),                      intent(in)    :: m
+    real(R8),                      intent(out)   :: taken(6)
+    character(len=:), allocatable, intent(out)   :: why
+    real(R8) :: c(ncond(p))
+
+    taken = 0._R8
+    why   = ''
+    if (.not. m > 0._R8) then
+      why = 'the mass removed must be positive'
+    elseif (.not. blk%cond_phase(p)%prim(1,i,j,k) > rho_empty) then
+      why = 'the cell holds no drops to remove'
+    endif
+    if (len(why) > 0) return
+    call need_imports(blk, p, 'add_removal_rate')
+    c = model_prim_2_cons(p, blk%cond_phase(p)%prim(:,i,j,k), obj_condensed(mat_of(p)))*(m/blk%cond_phase(p)%prim(1,i,j,k))
+    blk%cond_phase(p)%imports(:,i,j,k) = blk%cond_phase(p)%imports(:,i,j,k) - c
+    taken = [c(1:4), c(nbase(p)-1), c(nbase(p))]
+
+  end subroutine add_removal_rate
+
+
+  !> Clears the births, absorptions and removals in force in every cell of family p on this rank. Outside parallel
+  !> regions.
+  subroutine clear_import_rates(grid, p)
     use ICE_Advanced_Types_m, only: ICE_domain_type
+    use ICE_Global_m,         only: ncond
     use ICE_Mod_MPI,          only: is_local_block
     type(ICE_domain_type), intent(inout) :: grid
     integer(I4),           intent(in)    :: p
@@ -274,11 +370,26 @@ contains
 
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
-      if (.not. allocated(grid%blk(b)%cond_phase(p)%births_ext)) &
-        allocate(grid%blk(b)%cond_phase(p)%births_ext(6, grid%blk(b)%dim(1), grid%blk(b)%dim(2), grid%blk(b)%dim(3)))
-      grid%blk(b)%cond_phase(p)%births_ext = 0._R8
+      if (.not. allocated(grid%blk(b)%cond_phase(p)%imports)) &
+        allocate(grid%blk(b)%cond_phase(p)%imports(ncond(p), grid%blk(b)%dim(1), grid%blk(b)%dim(2), &
+                                                   grid%blk(b)%dim(3)))
+      grid%blk(b)%cond_phase(p)%imports = 0._R8
     enddo
 
-  end subroutine clear_birth_rates
+  end subroutine clear_import_rates
+
+
+  !> Stops a setter called before clear_import_rates.
+  subroutine need_imports(blk, p, who)
+    use ICE_Advanced_Types_m, only: ICE_block_type
+    type(ICE_block_type), intent(in) :: blk
+    integer(I4),          intent(in) :: p
+    character(len=*),     intent(in) :: who
+
+    if (allocated(blk%cond_phase(p)%imports)) return
+    write(*,'(A,I0,A)') ' [ERROR] [ICE::'//who//'] family ', p, ': call clear_import_rates first'
+    error stop 1
+
+  end subroutine need_imports
 
 end module ICE_Mod_Exchange
