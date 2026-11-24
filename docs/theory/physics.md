@@ -496,7 +496,7 @@ with $K$ the burning coefficient, $n$ the exponent (between 0 and 3) and $X_{eff
 - The law has no latent sink: the drop exchanges heat with the gas as an inert drop does.
 - The drop keeps a share $\beta$ of the heat of reaction, which heats it; the gas pays that share through the drop's
   energy.
-- ICE does not carry the oxide cap that IGLOO's law can grow on the drop.
+- ICE does not model the material a burning drop carries (IGLOO's carried material, an oxide cap for instance).
 
 ### Ignition and extinction
 

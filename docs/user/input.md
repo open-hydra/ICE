@@ -113,7 +113,7 @@ models of each material.
 | `boiling` | `clamp` or `ZGR`, the behaviour above the boiling temperature | [Conduction and boiling](#conduction-and-boiling) |
 | `solidification` | `on`: the material freezes and melts | [Solidification](#solidification) |
 | `combustion` | `direct` or `Beckstead`: the drop burns | [Combustion](#combustion) |
-| `cap` | The oxide cap of a burning drop: ICE does not carry it, so the token is refused | |
+| `carry` | A material a burning drop carries (IGLOO's model): ICE does not model it, so the token is refused | |
 | `breakup` | The breakup of a drop: ICE has no such model, so the token is ignored with a warning | |
 
 `evaporation-blowing` has no token: it applies to every material.
@@ -275,7 +275,7 @@ GAS 30.14
 - a constant of the models file left on the material line, or given in `[ICE-Physics]`
   (`q-comb`, `d-stop`, `d-burnout`);
 - a row without `q-comb`; `d-stop` beside `d-burnout`; the former key `d-res`;
-- a row of another kind (`cap`, IGLOO's oxide cap), of another model than the
+- a row of another kind (`carry`, IGLOO's carried material), of another model than the
   material's, with a key its model does not read, a second row for one material, or a
   row for no material of the phase file;
 - `direct` without its latent heat or its burning temperature;
