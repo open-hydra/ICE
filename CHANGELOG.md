@@ -28,17 +28,22 @@ change an input or a build.
   and kind: `<material> combustion <model> key=value ...`; the row gives `q-comb` (`q-comb=0` allowed).
 - A burning material without `d-stop` burns out. Time-accurate, in a run with a gas, the burning drops of a cell at
   or below `d-burnout` (else a drop mass of 1e-20 kg), or whose step burns what is left, leave the cell empty (its
-  velocity kept); their mass, momentum and energy are kept as an amount (`gone`) that a coupler hands to its gas.
+  velocity kept); their mass, momentum and energy are kept as an amount that a coupler takes (`take_removed`) and
+  hands to its gas.
   Steady, a burning cell's exit burns a fraction of what leaves it, rising from 0 at the removal size to all of it
   at 0.90 times it (`burnout_band`, printed by the setup). A drop that does not burn is not removed.
-- The generated mass of a burning material: a coupler that names the family its condensed oxide is born in
-  (`genFam`, with `nuGen` kg per kg burnt) gets it born there, with the burning drops' velocity and temperature, each
-  drop at `d-gen` (a constant of the row), with the generation family's own closure. The births are the step's rates,
-  weighted over the stages as the update weighs them (`birth`, which a coupler takes out of the gas's share):
-  time-accurate, the step times them is added after every family's step, a burn-out's at once; steady, they are the
-  generation family's source in every stage of its next step. ICE alone generates no mass.
-- A source a coupler sets on a family (`ext`, per unit volume and time): added to the residual of every stage over
-  the family's own step, not handed to the gas.
+- The generated mass of a burning material: a coupler that declares the material its condensed oxide is born as
+  (`set_generation`, with the kg generated per kg burnt) gets it born in that material's family, with the burning
+  drops' velocity and temperature, each drop at `d-gen` (a constant of the row). The births are the step's rates,
+  weighted over the stages as the update weighs them, and the gas does not receive them: time-accurate, the step
+  times them is added after every family's step; steady, they are the births in force on the generation family over
+  its next step. ICE alone generates no mass.
+- The coupling interface, `ICE_Mod_Exchange` (a [Coupling Interface](docs/development/coupling.md) page): the gas
+  state a coupler sets (`set_gas`); what a family gives the gas over its last step (`exchange_rate`) and what its
+  burn-out removed (`take_removed`), each as the gas's mass, momentum and energy, the generated mass and the heat of
+  reaction; where mass is born (`set_generation`, `birth_family`); births from any solver, at once (`add_birth`) or
+  as rates in force (`add_birth_rate`, `clear_birth_rates`), each a packet of mass, momentum, energy and number
+  (`birth_packet`). ICE's own generated mass is born through the same calls.
 - Steady coupled runs: a burning cell steps at most half its bulk density over its burn. The empty cells a source
   fills or a burning family empties step no further than what fills them (time-accurate: the global step at most
   the source's).

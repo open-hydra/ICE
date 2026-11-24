@@ -158,7 +158,7 @@ contains
 
         call timer_region_begin(TR_RESID)
         call compute_residual(grid, p)
-        call add_external_source(grid, p)
+        call add_births(grid, p)
         call timer_region_end(TR_RESID)
 
         if (obj_irs%enabled) then

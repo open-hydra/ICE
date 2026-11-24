@@ -407,8 +407,9 @@ $$
 
 the drag work aside. The first two terms are the opposite of the drop's source, as for evaporation. $n\,\dot m\,Q$
 is not part of it: ICE stores it per cell in the family's `heat` field, which a gas of one species coupled to ICE
-adds to its energy. A coupler that knows the species the burnt mass becomes (hydra-MI2, from the reaction ATLAS
-records) leaves the field alone: there the heat of reaction is the difference of the formation enthalpies.
+adds to its energy (`exchange_rate`, [Coupling Interface](../development/coupling.md)). A coupler that knows the
+species the burnt mass becomes (hydra-MI2, from the reaction ATLAS records) leaves the field alone: there the heat of
+reaction is the difference of the formation enthalpies.
 
 The number density does not change, so the drop shrinks along $d^2 = d_0^2 - K t$ with
 $K = 8 k_g \ln(1 + B)/(c_{p,g}\,\rho_m)$ at $Nu = 2$, and burns out in $d_0^2/K$ without a residue, their eq. 10.
@@ -432,8 +433,8 @@ drops of a cell leave together. In a time-accurate run, after the last stage of 
 (`d-burnout`, a diameter; without it a drop mass of $10^{-20}$ kg), or where the step burnt as much as is left, is
 emptied: every primitive goes to the empty state but the velocity, which stays, since the flux upwinds at the mean
 of two cells' velocities and an emptied cell at rest would halve its inflow. What the cell held is not a rate of
-that step: its mass, momentum and energy per unit volume are added to the family's `gone`, an amount that a coupler
-delivers to its gas whole, over its own steps, and then clears. Nothing is lost and no density is floored. A drop
+that step: its mass, momentum and energy per unit volume are added to the family's record of removals (`removed`),
+an amount that a coupler takes (`take_removed`) and delivers to its gas whole, over its own steps. Nothing is lost and no density is floored. A drop
 that does not burn is never removed, whatever its size: it stays, an inert drop. `d-stop` beside `d-burnout` is
 refused: a drop that stops at its residue is never removed.
 
@@ -462,10 +463,10 @@ not carry the oxide cap IGLOO's law can grow on the drop: `xi-cap` other than 0,
 
 ### Generated mass
 
-The burnt metal can make a condensed oxide, a material of another ICE family: the generated mass. ICE running alone makes
-none. A coupler that knows the reaction (hydra-MI2, from the products file ATLAS writes) sets, for a burning
-material, the family its generated mass is born in and $\nu_s$, the kg of generated mass per kg burnt; `d-gen` of the material's row
-is the diameter $d_s$ each generated drop is born with. Drops that burn $\dot m_b$ per unit volume and time give the
+The burnt metal can make a condensed oxide, a material of another ICE family: the generated mass. ICE running alone
+makes none. A coupler that knows the reaction (hydra-MI2, from the products file ATLAS writes) declares, for a burning
+material, the material its generated mass is born as and $\nu_s$, the kg of generated mass per kg burnt
+(`set_generation`); `d-gen` of the material's row is the diameter $d_s$ each generated drop is born with. Drops that burn $\dot m_b$ per unit volume and time give the
 generation family, per unit volume and time,
 
 $$
@@ -478,27 +479,30 @@ its mass, momentum, energy and number: the generated mass is born with the burni
 temperature $T_p$, with $e_s$ the generated material's energy (its table, else its constant $c_p$ times $T_p$) and
 $\rho_s$ its density.
 
-ICE integrates its families one after the other, each through all its stages, so the source of the generated mass is split from
+ICE integrates its families one after the other, each through all its stages, so the generated mass is split from
 them. In each stage of the burning family, after its fluxes (so that a steady burn-out's sink, above, is in them),
 the rates above are taken at the stage's state and summed with the weights the burning family's state receives its
 burning with, the scheme's: $r_1$ (Euler), $(r_1 + r_2)/2$ (RK2), $r_1/6 + r_2/6 + 2r_3/3$ (RK3), as a two-way
-coupled family's source is (`RK_accumulate`). These are the step's birth rates; the burning family's `birth` holds
-those of mass, momentum and energy, which a coupler takes out of what the gas receives. After every family has taken
-its step they are born, with the generation family's own closure, and cleared: in a time-accurate run (one step for every
-family) $\Delta t$ times them is added to the conservative state of the generation family, cell by cell; in a steady run
-(each family its own local step) they are the generation family's source in every stage of its next step (`srate`), so
-that its fixed point holds whatever either family's step. Per cell and step the generation family gains $\nu_s$ times the
-mass burnt, with that mass's momentum and the birth energy.
+coupled family's source is (`RK_accumulate`). These are the step's birth rates. The burning family keeps their mass,
+momentum and energy (`gen_rate`), which the gas does not receive: `exchange_rate` leaves them out of what it hands the
+gas and reports the mass as `generated`. After every family has taken its step, the rates are born in the generation
+family and cleared. In a time-accurate run (one step for every family) $\Delta t$ times them is added to the
+generation family's state, cell by cell. In a steady run (each family its own local step) they are the births in
+force on the generation family over every stage of its next step (`births_gen`), so that its fixed point holds
+whatever either family's step. Per cell and step the generation family gains $
+u_s$ times the mass burnt, with that
+mass's momentum and the birth energy.
 
-A time-accurate removal without a residue (above) gives its generated mass at once, as a rate over the step it ends: the
-remnant's metal burns, its generated mass is born with the remnant's velocity at its temperature, and `gone` keeps the
-remnant's mass, and its momentum and energy less those of the generated mass. In a steady run what burns at a cell's exit is a burn
-like any other, and generates its mass as one.
+A time-accurate removal without a residue (above) gives its generated mass with the step it ends: the remnant burns,
+its generated mass is born with the remnant's velocity at its temperature, and the record of removals keeps what the
+gas receives (the remnant's mass, momentum and energy less those of the generated mass) and the generated mass. In a
+steady run what burns at a cell's exit is a burn like any other, and generates its mass as one.
 
-A coupler can set a source of its own on a family (`ext`, per unit volume and time in the family's conservative
-variables: the generated mass of another solver's burning particles). Like `srate` it is added to the residual of every stage
-over the family's own step, after the fluxes and the family's own source and before the update, so that a steady
-fixed point balances it whatever the step; neither is the family's `source`, so neither is handed to the gas.
+A coupler can have mass born in a family too, the generated mass of another solver's burning particles for instance
+(`add_birth`, `add_birth_rate`). A rate it sets (`births_ext`) is added to the residual of every stage over the
+family's own step, as `births_gen` is, after the fluxes and the family's own source and before the update, so that a
+steady fixed point balances it whatever the step. Neither is the family's `source`, so neither is handed to the gas.
+The routes and the calls are on the page [Coupling Interface](../development/coupling.md).
 
 ### Which species, how many materials
 

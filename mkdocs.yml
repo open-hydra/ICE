@@ -142,6 +142,7 @@ nav:
   - Developer Guide:
     - development/index.md
     - Code Structure: development/structure.md
+    - Coupling Interface: development/coupling.md
     - Testing: development/testing.md
     - Contributing: development/contributing.md
     - Versioning: development/versioning.md

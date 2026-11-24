@@ -6,7 +6,7 @@ module ICE_Lib_Residual
 
   implicit none
   private
-  public :: zero_residual, compute_residual, add_external_source
+  public :: zero_residual, compute_residual, add_births
 
 contains
 
@@ -156,46 +156,54 @@ contains
   end subroutine compute_residual_
 
 
-  !> The sources set on family p from outside its own physics, per unit volume and time in its conservative variables:
-  !> a coupler's (cond_phase(p)%ext) and, in a steady run, the mass ICE's burning families generated
-  !> (cond_phase(p)%srate); each added to the residual of the stage over the family's own dt, as source is; the frozen
-  !> slots stay zero. A block with neither: nothing.
-  subroutine add_external_source(grid, p)
+  !> The births in force on family p, added to the residual of the stage over the family's own dt, as its source
+  !> is: those a coupler set (births_ext, add_birth_rate) and, in a steady run, those of the mass ICE's own burning
+  !> families generated (births_gen, gen_birth). Each is a birth packet per unit volume and time, [mass, momentum (3),
+  !> energy, number], which goes to slots 1:4, nbase-1 and nbase. The frozen slots stay zero. Neither is the family's
+  !> source, so neither reaches the gas.
+  subroutine add_births(grid, p)
     use ICE_Mod_Freeze, only: nfrozen, frozen
     implicit none
     type(ICE_domain_type), intent(inout) :: grid
     integer(kind=I4), intent(in)  :: p
-    integer(kind=I4) :: b, i, j, k, nf
+    integer(kind=I4) :: b, nf
 
     nf = 0
     if (allocated(nfrozen)) nf = nfrozen(p)
     do b = 1, grid%nb
       if (.not. is_local_block(b)) cycle
-      if (allocated(grid%blk(b)%cond_phase(p)%ext)) then
-        !$OMP PARALLEL DO COLLAPSE (3) schedule(runtime)
-        do k = 1, grid%blk(b)%dim(3)
-        do j = 1, grid%blk(b)%dim(2)
-        do i = 1, grid%blk(b)%dim(1)
-          grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) &
-            + grid%blk(b)%cond_phase(p)%ext(1:ncond(p),i,j,k) * grid%blk(b)%cond_phase(p)%dt(i,j,k)
-          if (nf > 0) grid%blk(b)%cond_phase(p)%residual(frozen(1:nf,p),i,j,k) = 0._R8
-        enddo ; enddo ; enddo
-        !$OMP END PARALLEL DO
-      endif
-      if (allocated(grid%blk(b)%cond_phase(p)%srate)) then
-        !$OMP PARALLEL DO COLLAPSE (3) schedule(runtime)
-        do k = 1, grid%blk(b)%dim(3)
-        do j = 1, grid%blk(b)%dim(2)
-        do i = 1, grid%blk(b)%dim(1)
-          grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) = grid%blk(b)%cond_phase(p)%residual(1:ncond(p),i,j,k) &
-            + grid%blk(b)%cond_phase(p)%srate(1:ncond(p),i,j,k) * grid%blk(b)%cond_phase(p)%dt(i,j,k)
-          if (nf > 0) grid%blk(b)%cond_phase(p)%residual(frozen(1:nf,p),i,j,k) = 0._R8
-        enddo ; enddo ; enddo
-        !$OMP END PARALLEL DO
-      endif
+      if (allocated(grid%blk(b)%cond_phase(p)%births_ext)) &
+        call add_packets(grid%blk(b), grid%blk(b)%cond_phase(p)%births_ext)
+      if (allocated(grid%blk(b)%cond_phase(p)%births_gen)) &
+        call add_packets(grid%blk(b), grid%blk(b)%cond_phase(p)%births_gen)
     enddo
 
-  end subroutine add_external_source
+  contains
+
+    !> Adds the packets pk (6, cells) of block blk times the cells' dt to family p's residual
+    subroutine add_packets(blk, pk)
+      type(ICE_block_type), intent(inout) :: blk
+      real(kind=R8),        intent(in)    :: pk(:,:,:,:)
+      integer(kind=I4) :: i, j, k, ien, inum
+      real(kind=R8)    :: dt
+
+      ! the slots of the energy and of the number
+      ien  = nbase(p) - 1
+      inum = nbase(p)
+      !$OMP PARALLEL DO COLLAPSE (3) PRIVATE(dt) schedule(runtime)
+      do k = 1, blk%dim(3)
+      do j = 1, blk%dim(2)
+      do i = 1, blk%dim(1)
+        dt = blk%cond_phase(p)%dt(i,j,k)
+        blk%cond_phase(p)%residual(1:4,i,j,k)  = blk%cond_phase(p)%residual(1:4,i,j,k)  + pk(1:4,i,j,k)*dt
+        blk%cond_phase(p)%residual(ien,i,j,k)  = blk%cond_phase(p)%residual(ien,i,j,k)  + pk(5,i,j,k)*dt
+        blk%cond_phase(p)%residual(inum,i,j,k) = blk%cond_phase(p)%residual(inum,i,j,k) + pk(6,i,j,k)*dt
+        if (nf > 0) blk%cond_phase(p)%residual(frozen(1:nf,p),i,j,k) = 0._R8
+      enddo ; enddo ; enddo
+      !$OMP END PARALLEL DO
+    end subroutine add_packets
+
+  end subroutine add_births
 
 
 end module ICE_Lib_Residual

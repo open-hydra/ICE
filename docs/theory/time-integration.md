@@ -98,8 +98,8 @@ Two bounds follow where the rule above does not see what changes a cell. In a st
 burn steps at most half its bulk density over its burn rate (`burn_dt_factor` = 0.5): the burn per unit mass grows
 without bound as the drops burn down, and nothing else bounds the step by it; a cell at or below $\rho_p = 10^{-6}$
 that still holds drops takes the `tau-factor` cap too. And the cells a family does not occupy, where a source fills
-them (the births of a steady generation, a coupler's source) or which a burning family empties into from its own cells, step
-no further than what fills them: in steady mode the family's smallest step over the cells it occupies and the cells
+them (the births in force: a steady run's generated mass, a coupler's births) or which a burning family empties into
+from its own cells, step no further than what fills them: in steady mode the family's smallest step over the cells it occupies and the cells
 the source fills, and their own width at the family's largest speed; in time-accurate mode the global step at most
 the source's step in the empty cells it fills. A family that no source fills and that does not burn keeps the steps
 above, bit for bit.

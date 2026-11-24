@@ -47,29 +47,27 @@ module ICE_Advanced_Types_m
   type :: ICE_cond_phase_type
     real(R8), dimension(:,:,:),     allocatable :: dt, tau, beta
     real(R8), dimension(:,:,:,:),   allocatable :: prim, prim_old
-    ! source: the rates of the stage being integrated; after a step of a two-way coupled run, the step's own, the
-    ! stages' weighted as the update weighs them, which is what the phase exchanged and what the gas takes
+    ! source: the rates at which the drops gain mass, momentum, energy (and the other slots), per unit volume and
+    ! time, in the stage being integrated. After a step of a two-way coupled run it holds the step's rates instead:
+    ! the stages weighted as the update weighs them, which is what the family exchanged with the gas.
     real(R8), dimension(:,:,:,:),   allocatable :: source, residual
-    ! The heat the gas receives that source does not carry [W/m^3], the heat of reaction of a burning material
-    ! (combustion = direct), else 0: a two-way coupled gas takes -source plus heat, both the step's
+    ! What the family exchanges beyond its own cells. A coupler reads and writes these through ICE_Mod_Exchange only.
+    ! heat: the heat of reaction of the mass that burns, per unit volume and time [W/m^3]; 0 where nothing burns
     real(R8), dimension(:,:,:),     allocatable :: heat
-    ! What the burn-out switch removed and a coupler has not yet delivered to its gas, per unit volume: mass,
-    ! momentum (3), energy; added to at each removal, cleared by the coupler
-    real(R8), dimension(:,:,:,:),   allocatable :: gone
-    ! A burning family that generates mass: the mass it burns per unit volume and time (burn, the stage's), and the
-    ! birth rates of the mass it generates over the stages, weighted as the update weighs them (RK_accumulate, as
-    ! source): birth (mass, momentum (3), energy), which a coupler takes out of what the gas receives, and born (the
-    ! same and the number), born in the generation family after every family's step (dt times it, or its rate in a
-    ! steady run)
+    ! removed: what the burn-out removed from the cell and the coupler has not taken yet, per unit volume: the gas's
+    ! mass, momentum (3) and energy, then the generated mass (as exchange_t)
+    real(R8), dimension(:,:,:,:),   allocatable :: removed
+    ! burn: the mass the drops burn, per unit volume and time, in the stage being integrated
     real(R8), dimension(:,:,:),     allocatable :: burn
-    real(R8), dimension(:,:,:,:),   allocatable :: birth, born
-    ! A source a coupler sets on this family, per unit volume and time, in its conservative variables (the generated
-    ! mass of another solver's burning particles): added to the residual of every stage over the family's own dt, as
-    ! source is, and not handed to the gas; allocated by the coupler only
-    real(R8), dimension(:,:,:,:),   allocatable :: ext
-    ! A generation family in a steady run: the mass the burning families generated in their last step, per unit
-    ! volume and time (their born rates), in its conservative variables; added to the residual of every stage as ext is
-    real(R8), dimension(:,:,:,:),   allocatable :: srate
+    ! gen_rate: the mass the family's burning generated over its last step, per unit volume and time, weighted over
+    ! the stages as source is: mass, momentum (3), energy. It left the drops but does not reach the gas.
+    ! gen_due: the same as a birth packet, with the number of drops, still to be born in the generation family
+    ! at the end of the step (and the generated mass of the step's burn-out)
+    real(R8), dimension(:,:,:,:),   allocatable :: gen_rate, gen_due
+    ! The births in force on this family, birth packets per unit volume and time, added to the residual of every
+    ! stage over the family's own step. births_ext: set by a coupler (add_birth_rate), allocated by the first
+    ! clear_birth_rates. births_gen: a steady run, what ICE's own burning families generated in their last step.
+    real(R8), dimension(:,:,:,:),   allocatable :: births_ext, births_gen
     ! The running weighted sums of source and heat over the stages of a two-way coupled multi-stage step
     real(R8), dimension(:,:,:,:),   allocatable :: source_step
     real(R8), dimension(:,:,:),     allocatable :: heat_step

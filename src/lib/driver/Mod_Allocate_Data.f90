@@ -88,10 +88,10 @@ contains
       allocate( blk%cond_phase(p)%source   (1:ncond(p), 1:ni, 1:nj, 1:nk) )
       allocate( blk%cond_phase(p)%residual (1:ncond(p), 1:ni, 1:nj, 1:nk) )
       allocate( blk%cond_phase(p)%heat     (1:ni, 1:nj, 1:nk) )
-      allocate( blk%cond_phase(p)%gone     (1:5, 1:ni, 1:nj, 1:nk) )
+      allocate( blk%cond_phase(p)%removed  (1:6, 1:ni, 1:nj, 1:nk) )
       allocate( blk%cond_phase(p)%burn     (1:ni, 1:nj, 1:nk) )
-      allocate( blk%cond_phase(p)%birth    (1:5, 1:ni, 1:nj, 1:nk) )
-      allocate( blk%cond_phase(p)%born     (1:6, 1:ni, 1:nj, 1:nk) )
+      allocate( blk%cond_phase(p)%gen_rate (1:5, 1:ni, 1:nj, 1:nk) )
+      allocate( blk%cond_phase(p)%gen_due  (1:6, 1:ni, 1:nj, 1:nk) )
 
       !> First touch by the threads, plane by plane with the static partition the
       !> per-cell phases use (and, per socket, the flux kernel's k-ranges): a page
@@ -116,10 +116,10 @@ contains
         blk%cond_phase(p)%source  (:,:,:,k) = 0._R8
         blk%cond_phase(p)%residual(:,:,:,k) = 0._R8
         blk%cond_phase(p)%heat    (:,:,k)   = 0._R8
-        blk%cond_phase(p)%gone    (:,:,:,k) = 0._R8
+        blk%cond_phase(p)%removed (:,:,:,k) = 0._R8
         blk%cond_phase(p)%burn    (:,:,k)   = 0._R8
-        blk%cond_phase(p)%birth   (:,:,:,k) = 0._R8
-        blk%cond_phase(p)%born    (:,:,:,k) = 0._R8
+        blk%cond_phase(p)%gen_rate(:,:,:,k) = 0._R8
+        blk%cond_phase(p)%gen_due (:,:,:,k) = 0._R8
       end do
       !$OMP END PARALLEL DO
       end if
@@ -181,10 +181,10 @@ contains
             blk%cond_phase(p)%source  (:,:,:,k) = 0._R8
             blk%cond_phase(p)%residual(:,:,:,k) = 0._R8
             blk%cond_phase(p)%heat    (:,:,k)   = 0._R8
-            blk%cond_phase(p)%gone    (:,:,:,k) = 0._R8
+            blk%cond_phase(p)%removed (:,:,:,k) = 0._R8
             blk%cond_phase(p)%burn    (:,:,k)   = 0._R8
-            blk%cond_phase(p)%birth   (:,:,:,k) = 0._R8
-            blk%cond_phase(p)%born    (:,:,:,k) = 0._R8
+            blk%cond_phase(p)%gen_rate(:,:,:,k) = 0._R8
+            blk%cond_phase(p)%gen_due (:,:,:,k) = 0._R8
             blk%cond_phase(p)%dt      (:,:,k)   = 0._R8
           end if
         end do

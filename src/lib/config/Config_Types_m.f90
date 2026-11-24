@@ -255,8 +255,8 @@ module ICE_Config_Types_m
     logical  :: qcomb_set = .false.  ! q-comb was given in the row (0 included)
     real(R8) :: dRes  = 0._R8        ! d-stop: diameter of the inert residue, where the burning stops [m]; 0 = the drop burns out
     real(R8) :: dBurn = 0._R8        ! d-burnout: a burning drop this small is removed, handed whole to the gas [m]; 0 = built-in
-    ! The mass a burning material generates: the family its condensed product is born in (a coupler sets it from its
-    ! products file; 0 = none), the kg generated per kg burnt, and the diameter each generated drop is born with (d-gen)
+    ! The mass a burning material generates: the family it is born in (0 = none) and the kg generated per kg burnt,
+    ! which a coupler declares (set_generation), and the diameter each generated drop is born with (d-gen)
     integer  :: genFam = 0
     real(R8) :: nuGen  = 0._R8     ! [-]
     real(R8) :: dGen   = 0._R8     ! [m]
